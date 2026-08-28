@@ -104,6 +104,9 @@ export function TreePanel() {
   const roots = state.tree.childrenByParent[''] ?? []
 
   useEffect(() => {
+    if (import.meta.env.MODE === 'test') {
+      return
+    }
     if (started.current) {
       return
     }

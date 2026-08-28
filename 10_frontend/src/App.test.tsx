@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { expect, test } from 'vitest'
 import { UnsProvider } from './app/UnsProvider'
-import { ConsoleHeader } from './features/shell/AppShell'
+import { ConsoleHeader } from './features/shell/ConsoleHeader'
 
 test('renders Unified Namespace title and nav', () => {
   render(

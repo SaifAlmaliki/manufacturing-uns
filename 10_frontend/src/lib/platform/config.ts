@@ -1,4 +1,15 @@
-import type { PlatformSettings } from '../../../platform/settings'
+export type PlatformSettings = {
+  instanceName: string
+  organizationName: string
+  displayName: string
+  graphqlHost: string
+  graphqlPort: number
+  graphqlPath: string
+  graphqlUrl: string
+  graphqlProxyTarget: string
+  frontendDevPort: number
+  frontendComposePort: number
+}
 
 declare const __UNS_PLATFORM_CONFIG__: PlatformSettings
 

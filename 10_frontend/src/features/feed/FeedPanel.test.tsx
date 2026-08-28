@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import { expect, test } from 'vitest'
+import { isFeedHighlight } from '../../lib/uns/topics'
 import { FeedRow } from './feed-row'
 import type { FeedItem } from './feed-buffer'
 
@@ -48,6 +49,7 @@ test('highlights matching topic', () => {
     kind: 'uns',
     preview: { a: 1 },
   }
-  render(<FeedRow item={item} selectedNamespace="acme" onClick={() => undefined} />)
+  expect(isFeedHighlight(item.topic, 'acme/l1')).toBe(true)
+  render(<FeedRow item={item} selectedNamespace="acme/l1" onClick={() => undefined} />)
   expect(screen.getByTestId('feed-row').getAttribute('data-highlighted')).toBe('true')
 })
