@@ -5,8 +5,10 @@ All UNS modules read from this folder. Configure once per deployment; every serv
 ## Setup
 
 1. Edit [`settings.yaml`](./settings.yaml) for your environment (hosts, ports, instance name, CORS origins, MQTT topics).
-2. Copy [`.secrets_template.yaml`](./.secrets_template.yaml) to `.secrets.yaml` and fill in credentials.
+2. Edit [`.secrets.yaml`](./.secrets.yaml) with your credentials (initial local-dev values are pre-filled).
 3. Optionally override any key via environment variables with the `UNS_` prefix (for example `UNS_PLATFORM__INSTANCE_NAME=PlantA`).
+
+The frontend (`10_frontend`) reads `settings.yaml` automatically for GraphQL URL, dev server port, and display name.
 
 ## Per-module overrides
 

@@ -5,9 +5,19 @@ test('dev uses relative /graphql', () => {
   expect(resolveGraphqlHttpUrl({ prod: false, envUrl: undefined })).toBe('/graphql')
 })
 
-test('prod requires VITE_GRAPHQL_URL', () => {
+test('prod requires VITE_GRAPHQL_URL when no platform default is set', () => {
   expect(() => resolveGraphqlHttpUrl({ prod: true, envUrl: '' })).toThrow(GraphqlConfigError)
   expect(() => resolveGraphqlHttpUrl({ prod: true, envUrl: undefined })).toThrow(GraphqlConfigError)
+})
+
+test('prod falls back to platform graphql url', () => {
+  expect(
+    resolveGraphqlHttpUrl({
+      prod: true,
+      envUrl: undefined,
+      defaultProdUrl: 'http://localhost:8000/graphql',
+    }),
+  ).toBe('http://localhost:8000/graphql')
 })
 
 test('prod http url converts to ws', () => {

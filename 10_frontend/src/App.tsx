@@ -3,6 +3,7 @@ import { AppShell } from './features/shell/AppShell'
 import { UnsProvider } from './app/UnsProvider'
 import { createApolloClient } from './lib/graphql/client'
 import { GraphqlConfigError } from './lib/graphql/graphql-url'
+import { platformConfig } from './lib/platform/config'
 
 function buildClient() {
   try {
@@ -18,7 +19,7 @@ export function App() {
   if (clientOrError instanceof GraphqlConfigError) {
     return (
       <main className="p-8">
-        <h1>Unified Namespace</h1>
+        <h1>{platformConfig.displayName}</h1>
         <p>{clientOrError.message}</p>
       </main>
     )

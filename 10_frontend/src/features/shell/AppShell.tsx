@@ -2,6 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { Group, Panel, Separator } from 'react-resizable-panels'
 import { connectionChip, connectionLabel } from '../../app/connection'
 import { useUnsState } from '../../app/UnsProvider'
+import { platformConfig } from '../../lib/platform/config'
 import { ExplorePanel } from '../explore/ExplorePanel'
 import { FeedPanel } from '../feed/FeedPanel'
 import { PayloadPanel } from '../payload/PayloadPanel'
@@ -13,7 +14,12 @@ export function ConsoleHeader() {
   return (
     <header className="flex items-center justify-between border-b border-console-border px-4 py-2">
       <div className="flex items-center gap-6">
-        <h1 className="text-base font-semibold">Unified Namespace</h1>
+        <div>
+          <h1 className="text-base font-semibold">{platformConfig.displayName}</h1>
+          <p className="text-xs text-console-muted">
+            {platformConfig.organizationName} · {platformConfig.instanceName}
+          </p>
+        </div>
         <nav className="flex gap-2">
           <NavLink
             to="/"

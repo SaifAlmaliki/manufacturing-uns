@@ -1,3 +1,5 @@
+import { platformConfig } from '../platform/config'
+
 export class GraphqlConfigError extends Error {
   constructor(message: string) {
     super(message)
@@ -8,11 +10,12 @@ export class GraphqlConfigError extends Error {
 export function resolveGraphqlHttpUrl(args: {
   prod: boolean
   envUrl: string | undefined
+  defaultProdUrl?: string
 }): string {
   if (!args.prod) {
     return '/graphql'
   }
-  const url = args.envUrl?.trim()
+  const url = args.envUrl?.trim() || args.defaultProdUrl?.trim()
   if (!url) {
     throw new GraphqlConfigError('Missing VITE_GRAPHQL_URL for production build.')
   }
@@ -36,10 +39,13 @@ export function httpToWs(
   return httpUrl
 }
 
+import { platformConfig } from '../platform/config'
+
 export function getGraphqlHttpUrl(): string {
   return resolveGraphqlHttpUrl({
     prod: import.meta.env.PROD,
     envUrl: import.meta.env.VITE_GRAPHQL_URL,
+    defaultProdUrl: platformConfig.graphqlUrl,
   })
 }
 

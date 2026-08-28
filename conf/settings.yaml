@@ -1,5 +1,5 @@
 # Unified Namespace platform configuration.
-# Copy .secrets_template.yaml to .secrets.yaml and fill in credentials.
+# Edit this file and conf/.secrets.yaml for your deployment.
 # Override any value with environment variables: export UNS_PLATFORM__INSTANCE_NAME=MyPlant
 # Per-module overrides use Dynaconf environments (graphql, graphdb, historian, etc.).
 
