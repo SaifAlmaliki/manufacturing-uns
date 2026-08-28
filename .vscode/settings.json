@@ -25,7 +25,7 @@
     "./99_simulator/src",
     "./99_simulator/test"
   ],
-  "python.languageServer": "Default",
+  "python.languageServer": "None",
   "python.missingPackage.severity": "Error",
   "python.analysis.diagnosticMode": "workspace",
   "python.analysis.inlayHints.callArgumentNames": "all",
