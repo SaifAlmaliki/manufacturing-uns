@@ -18,6 +18,7 @@ test('loads root nodes and selects one', async () => {
         data: {
           getUnsNodes: [
             {
+              __typename: 'UNSNode',
               nodeName: 'acme',
               nodeType: 'ENTERPRISE',
               namespace: 'acme',
@@ -31,7 +32,7 @@ test('loads root nodes and selects one', async () => {
     },
   ]
   render(
-    <MockedProvider mocks={mocks} addTypename={false}>
+    <MockedProvider mocks={mocks}>
       <UnsProvider>
         <TreePanel />
       </UnsProvider>

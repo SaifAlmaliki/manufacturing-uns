@@ -9,7 +9,7 @@ import { ExplorePanel } from './ExplorePanel'
 test('does not query without criteria and shows hint', async () => {
   const user = userEvent.setup()
   render(
-    <MockedProvider mocks={[]} addTypename={false}>
+    <MockedProvider mocks={[]}>
       <UnsProvider>
         <ExplorePanel />
       </UnsProvider>
@@ -32,6 +32,7 @@ test('topic search lists matches', async () => {
         data: {
           getUnsNodes: [
             {
+              __typename: 'UNSNode',
               nodeName: 'l1',
               nodeType: 'LINE',
               namespace: 'acme/l1',
@@ -45,7 +46,7 @@ test('topic search lists matches', async () => {
     },
   ]
   render(
-    <MockedProvider mocks={mocks} addTypename={false}>
+    <MockedProvider mocks={mocks}>
       <UnsProvider>
         <ExplorePanel />
       </UnsProvider>

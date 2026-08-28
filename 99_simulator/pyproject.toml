@@ -23,6 +23,7 @@ classifiers = [
 ]
 dependencies = [
     "logger~=1.4",
+    "uns_config",
     "aiomqtt>=2.5.1,<3",
     "dynaconf~=3.2",
 
@@ -46,6 +47,9 @@ test = [
 
 [tool.uv]
 default-groups = ["test"]
+
+[tool.uv.sources]
+uns_config = { path = "../00_uns_config", editable = true }
 
 [tool.hatch.build.targets.sdist]
 include = [

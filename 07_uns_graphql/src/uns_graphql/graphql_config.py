@@ -25,23 +25,17 @@ from typing import Literal
 
 import neo4j
 from aiomqtt import ProtocolVersion, TLSParameters
-from dynaconf import Dynaconf
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
+from uns_config import PlatformConfig, get_settings
 
 # Logger
 LOGGER = logging.getLogger(__name__)
 
-current_folder = Path(__file__).resolve()
+settings = get_settings("graphql")
 
-settings = Dynaconf(
-    envvar_prefix="UNS",
-    root_path=current_folder,
-    settings_files=["../../conf/settings.yaml", "../../conf/.secrets.yaml"],
-)
-
+# Platform settings: conf/settings.yaml at the repository root.
 # `envvar_prefix` = export envvars with `export UNS_FOO=bar`.
-# `settings_files` = Load these files in the order.
 
 
 class MQTTConfig:
@@ -83,7 +77,7 @@ class MQTTConfig:
     mqtt_timestamp_key = settings.get("mqtt.timestamp_attribute", "timestamp")
     if host is None:
         LOGGER.error(
-            "MQTT Host not provided. Update key 'mqtt.host' in '../../conf/settings.yaml'",
+            "MQTT Host not provided. Update key 'mqtt.host' in 'conf/settings.yaml' at the repository root",
         )
 
     @classmethod
@@ -97,7 +91,7 @@ class MQTTConfig:
 
 class GraphDBConfig:
     """
-    Loads the configurations from '../../conf/settings.yaml' and '../../conf/.secrets.yaml'"
+    Loads the configurations from the repository root conf/settings.yaml and conf/.secrets.yaml
     """
 
     conn_url: str = settings.get("graphdb.url")
@@ -116,14 +110,14 @@ class GraphDBConfig:
 
     if conn_url is None:
         LOGGER.error(
-            "GraphDB Url not provided. Update key 'graphdb.url' in '../../conf/settings.yaml'",
+            "GraphDB Url not provided. Update key 'graphdb.url' in 'conf/settings.yaml' at the repository root",
         )
 
     if (user is None) or (password is None):
         LOGGER.error(
             "GraphDB Username & Password not provided."
             "Update keys 'graphdb.username' and 'graphdb.password' "
-            "in '../../conf/.secrets.yaml'"
+            "in 'conf/.secrets.yaml' at the repository root"
         )
 
     @classmethod
@@ -138,7 +132,7 @@ class GraphDBConfig:
 class KAFKAConfig:
     """
     Read the Kafka configurations required to connect to the Kafka broker
-    from '../../conf/settings.yaml' and '../../conf/.secrets.yaml'
+    from the repository root conf/settings.yaml and conf/.secrets.yaml
     """
 
     config_map: dict = settings.get("kafka.config")
@@ -167,22 +161,22 @@ class HistorianConfig:
 
     if hostname is None:
         LOGGER.error(
-            "Historian Url not provided. " "Update key 'historian.hostname' in '../../conf/settings.yaml'",
+            "Historian Url not provided. Update key 'historian.hostname' in 'conf/settings.yaml' at the repository root",
         )
     if database is None:
         LOGGER.error(
-            "Historian Database name  not provided. " "Update key 'historian.database' in '../../conf/settings.yaml'",
+            "Historian Database name not provided. Update key 'historian.database' in 'conf/settings.yaml' at the repository root",
         )
     if table is None:
         LOGGER.error(
             f"""Table in Historian Database {database} not provided.
-            Update key 'historian.table' in '../../conf/settings.yaml'"""
+            Update key 'historian.table' in 'conf/settings.yaml' at the repository root"""
         )
     if (db_user is None) or (db_password is None):
         LOGGER.error(
             "Historian DB  Username & Password not provided."
             "Update keys 'historian.username' and 'historian.password' "
-            "in '../../conf/.secrets.yaml'"
+            "in 'conf/.secrets.yaml' at the repository root"
         )
 
     @classmethod

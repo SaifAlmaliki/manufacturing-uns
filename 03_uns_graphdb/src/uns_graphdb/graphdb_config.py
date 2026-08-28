@@ -19,29 +19,20 @@ Configuration reader for mqtt server and Neo4J DB server details
 """
 
 import logging
-from pathlib import Path
 from typing import Literal
 
-from dynaconf import Dynaconf
+from uns_config import get_settings
 from uns_mqtt.mqtt_listener import MQTTVersion
 
 # Logger
 LOGGER = logging.getLogger(__name__)
 
-current_folder = Path(__file__).resolve()
-
-settings = Dynaconf(
-    envvar_prefix="UNS",
-    root_path=current_folder,
-    settings_files=["../../conf/settings.yaml", "../../conf/.secrets.yaml"],
-    # `envvar_prefix` = export envvars with `export UNS_FOO=bar`.
-    # `settings_files` = Load these files in the order.
-)
+settings = get_settings("graphdb")
 
 
 class MQTTConfig:
     """
-    Loads the configurations from '../../conf/settings.yaml' and '../../conf/.secrets.yaml'"
+    Loads the configurations from the repository root conf/settings.yaml and conf/.secrets.yaml
     for all MQTT Broker specific configurations
     """
 
@@ -69,7 +60,7 @@ class MQTTConfig:
     timestamp_key = settings.get("mqtt.timestamp_attribute", "timestamp")
     if host is None:
         LOGGER.error(
-            "MQTT Host not provided. Update key 'mqtt.host' in '../../conf/settings.yaml'",
+            "MQTT Host not provided. Update key 'mqtt.host' in 'conf/settings.yaml' at the repository root",
         )
 
     @classmethod
@@ -83,7 +74,7 @@ class MQTTConfig:
 
 class GraphDBConfig:
     """
-    Loads the configurations from '../../conf/settings.yaml' and '../../conf/.secrets.yaml'"
+    Loads the configurations from the repository root conf/settings.yaml and conf/.secrets.yaml
     """
 
     db_url: str = settings.get("graphdb.url")
@@ -105,14 +96,14 @@ class GraphDBConfig:
 
     if db_url is None:
         LOGGER.error(
-            "GraphDB Url not provided. Update key 'graphdb.url' in '../../conf/settings.yaml'",
+            "GraphDB Url not provided. Update key 'graphdb.url' in 'conf/settings.yaml' at the repository root",
         )
 
     if (user is None) or (password is None):
         LOGGER.error(
             "GraphDB Username & Password not provided."
             "Update keys 'graphdb.username' and 'graphdb.password' "
-            "in '../../conf/.secrets.yaml'"
+            "in 'conf/.secrets.yaml' at the repository root"
         )
 
     @classmethod

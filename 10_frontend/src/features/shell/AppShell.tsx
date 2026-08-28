@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { Group, Panel, Separator } from 'react-resizable-panels'
 import { connectionChip, connectionLabel } from '../../app/connection'
@@ -8,46 +7,54 @@ import { FeedPanel } from '../feed/FeedPanel'
 import { PayloadPanel } from '../payload/PayloadPanel'
 import { TreePanel } from '../tree/TreePanel'
 
-function NavItem({ to, children }: { to: string; children: ReactNode }) {
+export function ConsoleHeader() {
+  const state = useUnsState()
+  const chip = connectionChip(state.httpOk, state.wsOk)
   return (
-    <NavLink
-      to={to}
-      className={({ isActive }) =>
-        `rounded px-2 py-1 text-sm ${isActive ? 'bg-console-panel text-console-accent' : 'text-console-muted hover:text-console-text'}`
-      }
-    >
-      {children}
-    </NavLink>
+    <header className="flex items-center justify-between border-b border-console-border px-4 py-2">
+      <div className="flex items-center gap-6">
+        <h1 className="text-base font-semibold">Unified Namespace</h1>
+        <nav className="flex gap-2">
+          <NavLink
+            to="/"
+            className={({ isActive }) =>
+              `rounded px-2 py-1 text-sm ${isActive ? 'bg-console-panel text-console-accent' : 'text-console-muted hover:text-console-text'}`
+            }
+          >
+            Home
+          </NavLink>
+          <NavLink
+            to="/explore"
+            className={({ isActive }) =>
+              `rounded px-2 py-1 text-sm ${isActive ? 'bg-console-panel text-console-accent' : 'text-console-muted hover:text-console-text'}`
+            }
+          >
+            Explore
+          </NavLink>
+        </nav>
+      </div>
+      <span
+        className={`rounded px-2 py-0.5 text-xs ${
+          chip === 'live'
+            ? 'bg-console-accent/20 text-console-accent'
+            : chip === 'degraded'
+              ? 'bg-console-warn/20 text-console-warn'
+              : 'bg-console-danger/20 text-console-danger'
+        }`}
+      >
+        {connectionLabel(chip, state.httpOk, state.wsOk)}
+      </span>
+    </header>
   )
 }
 
 export function AppShell() {
   const state = useUnsState()
-  const chip = connectionChip(state.httpOk, state.wsOk)
   const explore = useLocation().pathname.startsWith('/explore')
 
   return (
     <div className="flex h-full flex-col bg-console-bg text-console-text">
-      <header className="flex items-center justify-between border-b border-console-border px-4 py-2">
-        <div className="flex items-center gap-6">
-          <h1 className="text-base font-semibold">Unified Namespace</h1>
-          <nav className="flex gap-2">
-            <NavItem to="/">Home</NavItem>
-            <NavItem to="/explore">Explore</NavItem>
-          </nav>
-        </div>
-        <span
-          className={`rounded px-2 py-0.5 text-xs ${
-            chip === 'live'
-              ? 'bg-console-accent/20 text-console-accent'
-              : chip === 'degraded'
-                ? 'bg-console-warn/20 text-console-warn'
-                : 'bg-console-danger/20 text-console-danger'
-          }`}
-        >
-          {connectionLabel(chip, state.httpOk, state.wsOk)}
-        </span>
-      </header>
+      <ConsoleHeader />
       {state.treeBanner ? (
         <div className="border-b border-console-danger/40 bg-console-danger/10 px-4 py-2 text-sm">
           {state.treeBanner}

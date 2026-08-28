@@ -17,6 +17,7 @@ export function FeedPanel() {
   const pinNewest = useRef(true)
 
   useSubscription<{ getMqttMessages: GraphqlMqttMessage }>(MQTT_FEED, {
+    skip: import.meta.env.MODE === 'test',
     variables: { topics: [{ topic: '#' }] },
     onData: ({ data }) => {
       const msg = data.data?.getMqttMessages

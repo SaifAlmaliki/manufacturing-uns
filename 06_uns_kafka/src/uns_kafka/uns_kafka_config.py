@@ -19,25 +19,15 @@ Configuration reader for mqtt server where UNS are read from and the Kafka broke
 """
 
 import logging
-from pathlib import Path
 from typing import Literal
 
-from dynaconf import Dynaconf
+from uns_config import get_settings
 from uns_mqtt.mqtt_listener import MQTTVersion
 
 # Logger
 LOGGER = logging.getLogger(__name__)
 
-current_folder = Path(__file__).resolve()
-
-settings = Dynaconf(
-    envvar_prefix="UNS",
-    root_path=current_folder,
-    settings_files=["../../conf/settings.yaml", "../../conf/.secrets.yaml"],
-)
-
-# `envvar_prefix` = export envvars with `export UNS_FOO=bar`.
-# `settings_files` = Load these files in the order.
+settings = get_settings("kafka_mapper")
 
 
 class MQTTConfig:
@@ -66,7 +56,7 @@ class MQTTConfig:
     timestamp_key: str = settings.get("mqtt.timestamp_attribute", "timestamp")
     if host is None:
         LOGGER.error(
-            "MQTT Host not provided. Update key 'mqtt.host' in '../../conf/settings.yaml'",
+            "MQTT Host not provided. Update key 'mqtt.host' in 'conf/settings.yaml' at the repository root",
         )
 
     @classmethod

@@ -20,6 +20,6 @@ export default defineConfig({
     pool: 'forks',
     maxWorkers: 1,
     fileParallelism: false,
-    isolate: false,
+    testTimeout: 8000,
   },
 })

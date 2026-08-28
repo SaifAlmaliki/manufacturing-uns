@@ -28,6 +28,7 @@ from strawberry.fastapi import GraphQLRouter
 from strawberry.schema.config import StrawberryConfig
 from strawberry.subscriptions import GRAPHQL_TRANSPORT_WS_PROTOCOL, GRAPHQL_WS_PROTOCOL
 
+from uns_graphql.graphql_config import PlatformConfig
 from uns_graphql.queries import graph, historian
 from uns_graphql.subscriptions.kafka import KAFKASubscription
 from uns_graphql.subscriptions.mqtt import MQTTSubscription
@@ -79,12 +80,6 @@ class UNSGraphql:
     schema = strawberry.Schema(
         query=Query, subscription=Subscription, config=StrawberryConfig(
             scalar_map={int: Int64}))
-    CORS_ORIGINS = [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:8088",
-        "http://127.0.0.1:8088",
-    ]
 
     graphql_app = GraphQLRouter(
         schema,
@@ -97,7 +92,7 @@ class UNSGraphql:
     app = FastAPI()
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=CORS_ORIGINS,
+        allow_origins=PlatformConfig.cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

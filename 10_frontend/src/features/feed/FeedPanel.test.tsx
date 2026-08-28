@@ -49,5 +49,5 @@ test('highlights matching topic', () => {
     preview: { a: 1 },
   }
   render(<FeedRow item={item} selectedNamespace="acme" onClick={() => undefined} />)
-  expect(screen.getByRole('button').getAttribute('data-highlighted')).toBe('true')
+  expect(screen.getByTestId('feed-row').getAttribute('data-highlighted')).toBe('true')
 })

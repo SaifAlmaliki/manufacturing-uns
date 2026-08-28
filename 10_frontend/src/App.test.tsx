@@ -1,19 +1,16 @@
-import { MockedProvider } from '@apollo/client/testing'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { expect, test } from 'vitest'
 import { UnsProvider } from './app/UnsProvider'
-import { AppShell } from './features/shell/AppShell'
+import { ConsoleHeader } from './features/shell/AppShell'
 
 test('renders Unified Namespace title and nav', () => {
   render(
-    <MockedProvider mocks={[]} addTypename={false}>
-      <MemoryRouter>
-        <UnsProvider>
-          <AppShell />
-        </UnsProvider>
-      </MemoryRouter>
-    </MockedProvider>,
+    <MemoryRouter>
+      <UnsProvider>
+        <ConsoleHeader />
+      </UnsProvider>
+    </MemoryRouter>,
   )
   expect(screen.getByText('Unified Namespace')).toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/')

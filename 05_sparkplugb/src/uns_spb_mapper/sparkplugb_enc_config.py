@@ -19,24 +19,14 @@ Configuration reader for mqtt server where UNS and SparkplugB are published
 """
 
 import logging
-from pathlib import Path
 from typing import Literal
 
-from dynaconf import Dynaconf
+from uns_config import get_settings
 from uns_mqtt.mqtt_listener import MQTTVersion
 
 LOGGER = logging.getLogger(__name__)
 
-current_folder = Path(__file__).resolve()
-
-settings = Dynaconf(
-    envvar_prefix="UNS",
-    root_path=current_folder,
-    settings_files=["../../conf/settings.yaml", "../../conf/.secrets.yaml"],
-)
-
-# `envvar_prefix` = export envvars with `export UNS_FOO=bar`.
-# `settings_files` = Load these files in the order.
+settings = get_settings("sparkplugb")
 
 
 class MQTTConfig:
@@ -65,7 +55,7 @@ class MQTTConfig:
     timestamp_key = settings.get("mqtt.timestamp_attribute", "timestamp")
     if host is None:
         LOGGER.error(
-            "MQTT Host not provided. Update key 'mqtt.host' in '../../conf/settings.yaml'",
+            "MQTT Host not provided. Update key 'mqtt.host' in 'conf/settings.yaml' at the repository root",
         )
 
     @classmethod

@@ -30,6 +30,7 @@ classifiers = [
     #"Topic :: Industry 4.0 :: Unified Name Space :: MQTT client",
 ]
 dependencies = [
+    "uns_config",
     "uns_mqtt",
     "uns_graphdb",
     "uns_historian",
@@ -58,6 +59,7 @@ package = false
 default-groups = ["test"]
 
 [tool.uv.sources]
+uns_config = { path = "./00_uns_config", editable = true }
 uns_mqtt = { path = "./02_mqtt-cluster", editable = true  }
 uns_graphdb = { path = "./03_uns_graphdb", editable = true }
 uns_historian = { path = "./04_uns_historian", editable = true}
@@ -67,7 +69,7 @@ uns_graphql = { path = "./07_uns_graphql", editable = true }
 uns_simulator = { path = "./99_simulator", editable = true }
 
 [tool.uv.workspace]
-members = ["uns_mqtt", "uns_graphdb", "uns_historian", "uns_spb_mapper", "uns_kafka_mapper", "uns_graphql","uns_simulator"]
+members = ["uns_config", "uns_mqtt", "uns_graphdb", "uns_historian", "uns_spb_mapper", "uns_kafka_mapper", "uns_graphql","uns_simulator"]
 
 [tool.pytest.ini_options]
 markers = ["integrationtest: mark a test as an integration test"]
@@ -75,6 +77,7 @@ norecursedirs = [".git", "build", "node_modules", "env*", "tmp*"]
 addopts = "--import-mode=importlib -n auto --dist loadgroup --timeout=300 --durations=10"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = [
+    "00_uns_config/test",
     "02_mqtt-cluster/test",
     "03_uns_graphdb/test",
     "04_uns_historian/test",
@@ -84,6 +87,7 @@ testpaths = [
     "99_simulator/test",
 ]
 pythonpath = [
+    "00_uns_config/test",
     "02_mqtt-cluster/test",
     "03_uns_graphdb/test",
     "04_uns_historian/test",

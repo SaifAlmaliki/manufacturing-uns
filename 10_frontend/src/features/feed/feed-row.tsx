@@ -15,6 +15,7 @@ export function FeedRow({
   return (
     <button
       type="button"
+      data-testid="feed-row"
       data-highlighted={highlighted ? 'true' : 'false'}
       className={`block w-full border-b border-console-border px-3 py-2 text-left text-xs ${
         highlighted ? 'bg-console-accent/10' : ''

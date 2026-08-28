@@ -18,10 +18,11 @@
 
 from fastapi.testclient import TestClient
 
+from uns_graphql.graphql_config import PlatformConfig
 from uns_graphql.uns_graphql_app import UNSGraphql
 
-VITE_ORIGIN = "http://localhost:5173"
-COMPOSE_UI_ORIGIN = "http://localhost:8088"
+VITE_ORIGIN = PlatformConfig.frontend_dev_origin()
+COMPOSE_UI_ORIGIN = PlatformConfig.frontend_compose_origin()
 
 
 def test_cors_preflight_allows_vite_origin():

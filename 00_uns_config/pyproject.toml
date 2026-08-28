@@ -1,0 +1,42 @@
+[project]
+name = "uns_config"
+version = "0.9.38"
+description = "Shared platform configuration loader for the Unified Namespace"
+authors = [{ name = "Ashwin Krishnan", email = "mkashwin@gmail.com" }]
+requires-python = ">=3.14, <4"
+readme = "README.md"
+license = { text = "MIT" }
+dependencies = [
+    "dynaconf~=3.2",
+]
+
+[project.urls]
+Repository = "https://github.com/mkashwin/unifiednamespace/tree/main/00_uns_config"
+
+[dependency-groups]
+test = [
+    "pytest>=9.0.3,<10",
+]
+
+[tool.uv]
+default-groups = ["test"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/uns_config"]
+
+[tool.hatch.build.targets.wheel]
+include = ["src/uns_config"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src/uns_config" = "uns_config"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+addopts = "--timeout=60"
+
+[tool.ruff]
+extend = "../pyproject.toml"

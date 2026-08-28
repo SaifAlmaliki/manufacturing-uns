@@ -1,0 +1,146 @@
+# Unified Namespace platform configuration.
+# Copy .secrets_template.yaml to .secrets.yaml and fill in credentials.
+# Override any value with environment variables: export UNS_PLATFORM__INSTANCE_NAME=MyPlant
+# Per-module overrides use Dynaconf environments (graphql, graphdb, historian, etc.).
+
+default:
+  platform:
+    instance_name: "Instance01"
+    organization_name: "ManufacturingCo"
+    display_name: "Unified Namespace"
+
+  applications:
+    graphql:
+      name: "uns_graphql_server"
+      port: 8000
+    frontend:
+      name: "uns_frontend"
+      dev_port: 5173
+      compose_port: 8088
+    graphdb_mapper:
+      name: "uns_graphdb_mapper"
+    historian_mapper:
+      name: "uns_historian_mapper"
+    kafka_mapper:
+      name: "uns_kafka_mapper"
+    sparkplugb_mapper:
+      name: "uns_spb_mapper"
+    simulator:
+      name: "uns_simulator"
+
+  urls:
+    graphql_host: "localhost"
+    graphql_port: 8000
+    graphql_path: "/graphql"
+    cors_origins:
+      - "http://localhost:5173"
+      - "http://127.0.0.1:5173"
+      - "http://localhost:8088"
+      - "http://127.0.0.1:8088"
+
+  mqtt:
+    host: "localhost"
+    port: 1883
+    topics: ["#"]
+    qos: 1
+    keep_alive: 60
+    reconnect_on_failure: true
+    version: 5
+    transport: "tcp"
+    timestamp_attribute: "timestamp"
+    ignored_attributes: {}
+
+  graphdb:
+    url: "bolt://localhost:7687"
+    uns_node_types: ["ENTERPRISE", "FACILITY", "AREA", "LINE", "DEVICE"]
+    spB_node_types: ["spBv1_0", "GROUP", "MESSAGE_TYPE", "EDGE_NODE", "DEVICE"]
+    nested_attribute_node_type: "NESTED_ATTRIBUTE"
+
+  historian:
+    hostname: "localhost"
+    database: "uns_historian"
+    table: "unifiednamespace"
+
+  kafka:
+    bootstrap_servers: "localhost:9092"
+
+graphql:
+  mqtt:
+    topics: ["#"]
+  kafka:
+    config:
+      client.id: "uns_graphql_server"
+      group.id: "graphql"
+      bootstrap.servers: "localhost:9092"
+      auto.offset.reset: "earliest"
+    consumer_timeout: 0.5
+
+graphdb:
+  mqtt:
+    topics: ["test/uns/#", "ManufacturingCo/#", "spBv1.0/uns_group/#"]
+
+historian:
+  mqtt:
+    topics: ["test/uns/#", "ManufacturingCo/#", "spBv1.0/#"]
+
+kafka_mapper:
+  mqtt:
+    topics: ["test/uns/#", "ManufacturingCo/#"]
+  kafka:
+    config:
+      client.id: "uns_kafka_client"
+      bootstrap.servers: "localhost:9092"
+      enable.idempotence: true
+      retries: 10
+      compression.type: "gzip"
+
+sparkplugb:
+  mqtt:
+    topics: ["spBv1.0/uns_group/#"]
+
+simulator:
+  mqtt:
+    client_id: "uns_simulator_client"
+  hierarchy:
+    enterprise: "ManufacturingCo"
+    site: "PlantA"
+    area: "Production"
+    line: "Line1"
+    cell: "Cell1"
+  plc:
+    - id: "001"
+      equipment: "MixerTank"
+      sensors:
+        Temperature:
+          base_value: 75.0
+          variation: 2.0
+          unit: "°C"
+        Pressure:
+          base_value: 150.0
+          variation: 5.0
+          unit: "psi"
+    - id: "002"
+      equipment: "FillingMachine"
+      sensors:
+        FlowRate:
+          base_value: 450.0
+          variation: 20.0
+          unit: "L/min"
+  simulation:
+    interval: 5.0
+    duration: 5
+    plc_count: 2
+  equipment:
+    mixer_tank:
+      name: "MixerTank"
+      sensors:
+        Temperature:
+          base_value: 75.0
+          variation: 2.0
+          unit: "°C"
+        Pressure:
+          base_value: 150.0
+          variation: 5.0
+          unit: "psi"
+
+dynaconf_merge: true

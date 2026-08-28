@@ -19,26 +19,17 @@ Configuration reader for the simulator
 """
 
 import logging
-from pathlib import Path
 from typing import Literal
 
 from aiomqtt import ProtocolVersion, TLSParameters
-from dynaconf import Dynaconf
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
+from uns_config import get_settings
 
 # Logger
 LOGGER = logging.getLogger(__name__)
 
-current_folder = Path(__file__).resolve()
-
-settings = Dynaconf(
-    envvar_prefix="UNS",
-    root_path=current_folder,
-    settings_files=["../../conf/settings.yaml", "../../conf/.secrets.yaml"],
-    # `envvar_prefix` = export envvars with `export UNS_FOO=bar`.
-    # `settings_files` = Load these files in the order.
-)
+settings = get_settings("simulator")
 
 
 class MQTTConfig:
