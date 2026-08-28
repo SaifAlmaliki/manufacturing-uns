@@ -1,14 +1,14 @@
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vitest/config'
-import { loadPlatformSettings } from './platform/settings'
+import { loadPlatformSettings } from './platform/settings.ts'
 
 const platform = loadPlatformSettings()
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   define: {
-    __UNS_PLATFORM_CONFIG__: JSON.stringify(platform),
+    __UNS_PLATFORM_CONFIG__: platform,
   },
   server: {
     port: platform.frontendDevPort,
@@ -19,7 +19,8 @@ export default defineConfig({
         ws: true,
       },
     },
-  },  test: {
+  },
+  test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     globals: false,

@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 
-declare const __UNS_PLATFORM_CONFIG__: string
+declare const __UNS_PLATFORM_CONFIG__: import('../../platform/settings').PlatformSettings
 
 interface ImportMetaEnv {
   readonly VITE_GRAPHQL_URL?: string

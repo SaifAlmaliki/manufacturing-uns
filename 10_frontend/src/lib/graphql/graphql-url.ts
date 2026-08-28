@@ -39,8 +39,6 @@ export function httpToWs(
   return httpUrl
 }
 
-import { platformConfig } from '../platform/config'
-
 export function getGraphqlHttpUrl(): string {
   return resolveGraphqlHttpUrl({
     prod: import.meta.env.PROD,
