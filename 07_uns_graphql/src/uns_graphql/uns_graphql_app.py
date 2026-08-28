@@ -23,8 +23,10 @@ import logging
 import strawberry
 from fastapi import FastAPI
 from fastapi.concurrency import asynccontextmanager
+from fastapi.middleware.cors import CORSMiddleware
 from strawberry.fastapi import GraphQLRouter
 from strawberry.schema.config import StrawberryConfig
+from strawberry.subscriptions import GRAPHQL_TRANSPORT_WS_PROTOCOL, GRAPHQL_WS_PROTOCOL
 
 from uns_graphql.queries import graph, historian
 from uns_graphql.subscriptions.kafka import KAFKASubscription
@@ -77,8 +79,28 @@ class UNSGraphql:
     schema = strawberry.Schema(
         query=Query, subscription=Subscription, config=StrawberryConfig(
             scalar_map={int: Int64}))
-    graphql_app = GraphQLRouter(schema)
+    CORS_ORIGINS = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:8088",
+        "http://127.0.0.1:8088",
+    ]
+
+    graphql_app = GraphQLRouter(
+        schema,
+        subscription_protocols=[
+            GRAPHQL_TRANSPORT_WS_PROTOCOL,
+            GRAPHQL_WS_PROTOCOL,
+        ],
+    )
     LOGGER.info("GraphQL app created")
     app = FastAPI()
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     app.include_router(graphql_app, prefix="/graphql")
     app.lifespan = lifespan
