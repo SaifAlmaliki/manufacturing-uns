@@ -75,3 +75,30 @@ test('shows historical event label', async () => {
   )
   expect(await screen.findByText('Historical event')).toBeInTheDocument()
 })
+
+test('shows No payload when selected node has none', async () => {
+  render(
+    <Harness
+      boot={(dispatch) => {
+        dispatch({
+          type: 'tree/load-ok',
+          parent: '',
+          nodes: [
+            {
+              nodeName: 'l1',
+              nodeType: 'LINE',
+              namespace: 'acme/l1',
+              payload: null,
+              created: 'c',
+              lastUpdated: 'u',
+            },
+          ],
+        })
+        dispatch({ type: 'ui/select-node', namespace: 'acme/l1' })
+      }}
+    >
+      <PayloadPanel />
+    </Harness>,
+  )
+  expect(await screen.findByText('No payload.')).toBeInTheDocument()
+})

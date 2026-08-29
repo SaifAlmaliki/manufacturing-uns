@@ -3,42 +3,19 @@ import { useMemo, useRef, useState, type FormEvent } from 'react'
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { useUnsDispatch, useUnsState } from '../../app/UnsProvider'
 import { Button } from '../../components/ui/button'
-import { GET_HISTORIC_EVENTS, GET_UNS_NODES, GET_UNS_NODES_BY_PROPERTY } from '../../lib/graphql/operations'
-import type { GraphqlHistoricalEvent, GraphqlUnsNode } from '../../lib/graphql/types'
 import { parseJsonPayload } from '../../lib/uns/payload'
-import { historianTopic } from '../../lib/uns/topics'
 import { graphqlNodesToRecords } from '../tree/graphql-nodes'
 import { expandToNamespace } from '../tree/expand-to'
 import { getNumericPath, numericLeafPaths } from './numeric-paths'
+import {
+  historianRange,
+  historicPayloadPreview,
+  loadHistoricEvents,
+  searchUnsNodes,
+  splitPropertyKeys,
+} from './useExploreQueries'
 
 type Match = { namespace: string; nodeType: string; lastUpdated: string }
-
-function splitKeys(raw: string): string[] {
-  return raw
-    .split(/[,\s]+/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-}
-
-function presetRange(preset: '15m' | '1h' | '24h' | 'custom', customFrom: string, customTo: string): {
-  from: Date
-  to: Date
-} | null {
-  const to = new Date()
-  if (preset === 'custom') {
-    if (!customFrom || !customTo) {
-      return null
-    }
-    const from = new Date(customFrom)
-    const until = new Date(customTo)
-    if (from > until) {
-      return null
-    }
-    return { from, to: until }
-  }
-  const ms = preset === '15m' ? 15 * 60 * 1000 : preset === '1h' ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000
-  return { from: new Date(to.getTime() - ms), to }
-}
 
 export function ExplorePanel() {
   const state = useUnsState()
@@ -54,11 +31,11 @@ export function ExplorePanel() {
   const [preset, setPreset] = useState<'15m' | '1h' | '24h' | 'custom'>('1h')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
-  const [events, setEvents] = useState<GraphqlHistoricalEvent[]>([])
+  const [events, setEvents] = useState<Awaited<ReturnType<typeof loadHistoricEvents>>['events']>([])
   const [eventsMessage, setEventsMessage] = useState<string | null>(null)
   const [trendPath, setTrendPath] = useState('')
 
-  const range = presetRange(preset, customFrom, customTo)
+  const range = historianRange(preset, customFrom, customTo)
   const invalidRange = preset === 'custom' && customFrom && customTo && new Date(customFrom) > new Date(customTo)
 
   const numericFields = useMemo(() => {
@@ -94,7 +71,7 @@ export function ExplorePanel() {
 
   async function onSearch(event: FormEvent) {
     event.preventDefault()
-    const keys = splitKeys(properties)
+    const keys = splitPropertyKeys(properties)
     const t = topic.trim()
     if (!t && keys.length === 0) {
       setHint('Enter a topic or property.')
@@ -102,33 +79,15 @@ export function ExplorePanel() {
       return
     }
     setHint('')
-    try {
-      let nodes: GraphqlUnsNode[] = []
-      if (t && keys.length === 0) {
-        const result = await client.query<{ getUnsNodes: GraphqlUnsNode[] }>({
-          query: GET_UNS_NODES,
-          variables: { topics: [{ topic: t }] },
-        })
-        nodes = result.data.getUnsNodes ?? []
-      } else {
-        const result = await client.query<{ getUnsNodesByProperty: GraphqlUnsNode[] }>({
-          query: GET_UNS_NODES_BY_PROPERTY,
-          variables: {
-            propertyKeys: keys,
-            topics: t ? [{ topic: t }] : null,
-          },
-        })
-        nodes = result.data.getUnsNodesByProperty ?? []
-      }
-      dispatch({ type: 'conn/http', ok: true })
-      const records = graphqlNodesToRecords(nodes)
-      setMatches(records.map((n) => ({ namespace: n.namespace, nodeType: n.nodeType, lastUpdated: n.lastUpdated })))
-      if (records.length === 0) {
-        setHint('No nodes match.')
-      }
-    } catch {
-      dispatch({ type: 'conn/http', ok: false })
+    const result = await searchUnsNodes(client, dispatch, t, keys)
+    if (result.error) {
       setHint("Can't reach GraphQL")
+      return
+    }
+    const records = graphqlNodesToRecords(result.nodes)
+    setMatches(records.map((n) => ({ namespace: n.namespace, nodeType: n.nodeType, lastUpdated: n.lastUpdated })))
+    if (records.length === 0) {
+      setHint('No nodes match.')
     }
   }
 
@@ -136,24 +95,9 @@ export function ExplorePanel() {
     if (!state.selectedNamespace || !range) {
       return
     }
-    try {
-      const result = await client.query<{ getHistoricEventsInTimeRange: GraphqlHistoricalEvent[] }>({
-        query: GET_HISTORIC_EVENTS,
-        variables: {
-          topics: [{ topic: historianTopic(state.selectedNamespace) }],
-          fromDatetime: range.from.toISOString(),
-          toDatetime: range.to.toISOString(),
-        },
-      })
-      const rows = result.data.getHistoricEventsInTimeRange ?? []
-      setEvents(rows)
-      setEventsMessage(rows.length === 0 ? 'No events in this range' : null)
-      dispatch({ type: 'conn/http', ok: true })
-    } catch {
-      setEvents([])
-      setEventsMessage('No events in this range')
-      dispatch({ type: 'conn/http', ok: false })
-    }
+    const result = await loadHistoricEvents(client, dispatch, state.selectedNamespace, range)
+    setEvents(result.events)
+    setEventsMessage(result.events.length === 0 || result.error ? 'No events in this range.' : null)
   }
 
   return (
@@ -203,8 +147,18 @@ export function ExplorePanel() {
         </div>
         {preset === 'custom' ? (
           <div className="flex gap-2">
-            <input type="datetime-local" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} />
-            <input type="datetime-local" value={customTo} onChange={(e) => setCustomTo(e.target.value)} />
+            <input
+              type="datetime-local"
+              aria-label="From"
+              value={customFrom}
+              onChange={(e) => setCustomFrom(e.target.value)}
+            />
+            <input
+              type="datetime-local"
+              aria-label="To"
+              value={customTo}
+              onChange={(e) => setCustomTo(e.target.value)}
+            />
           </div>
         ) : null}
         {invalidRange ? <p className="text-console-danger">From must be before to.</p> : null}
@@ -219,6 +173,7 @@ export function ExplorePanel() {
                 <th>Time</th>
                 <th>Topic</th>
                 <th>Publisher</th>
+                <th>Payload</th>
               </tr>
             </thead>
             <tbody>
@@ -242,6 +197,7 @@ export function ExplorePanel() {
                   <td>{event.timestamp}</td>
                   <td>{event.topic}</td>
                   <td>{event.publisher}</td>
+                  <td>{historicPayloadPreview(event.payload)}</td>
                 </tr>
               ))}
             </tbody>
@@ -249,7 +205,7 @@ export function ExplorePanel() {
         ) : null}
         {numericFields.length > 0 && events.length > 0 ? (
           <div className="h-40">
-            <select value={trendPath} onChange={(e) => setTrendPath(e.target.value)}>
+            <select aria-label="Numeric field" value={trendPath} onChange={(e) => setTrendPath(e.target.value)}>
               <option value="">Numeric field</option>
               {numericFields.map((p) => (
                 <option key={p} value={p}>

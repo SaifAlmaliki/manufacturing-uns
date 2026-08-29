@@ -219,14 +219,23 @@ services:
       UNS_historian__table: "unifiednamespace"
       UNS_historian__username: uns_dbuser
       UNS_historian__password: ${UNS_historian__password}
-
+      UNS_kafka__config: '@json {"client.id": "uns_graphql_server", "group.id": "graphql", "bootstrap.servers": "uns_kafka_broker:29092", "auto.offset.reset": "earliest"}'
+    depends_on:
+      uns_mqtt_broker:
+        condition: service_healthy
+      uns_neo4j_db:
+        condition: service_healthy
+      uns_timescale_db:
+        condition: service_healthy
+      tsdb_setup_script:
+        condition: service_completed_successfully
       uns_kafka_broker:
         condition: service_healthy
 
   uns_frontend:
     build:
-      context: ./10_frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./10_frontend/Dockerfile
       args:
         VITE_GRAPHQL_URL: http://localhost:8000/graphql
     ports:

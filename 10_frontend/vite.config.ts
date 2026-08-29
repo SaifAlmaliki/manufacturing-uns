@@ -28,6 +28,6 @@ export default defineConfig({
     maxWorkers: 1,
     fileParallelism: false,
     testTimeout: 8000,
-    include: ['src/**/*.test.ts', 'platform/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'platform/**/*.test.ts'],
   },
 })

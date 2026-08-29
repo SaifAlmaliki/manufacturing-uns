@@ -1,6 +1,10 @@
+import { MockedProvider } from '@apollo/client/testing'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { expect, test } from 'vitest'
+import { UnsProvider, useUnsState } from '../../app/UnsProvider'
 import { isFeedHighlight } from '../../lib/uns/topics'
+import { FeedPanel } from './FeedPanel'
 import { FeedRow } from './feed-row'
 import type { FeedItem } from './feed-buffer'
 
@@ -52,4 +56,23 @@ test('highlights matching topic', () => {
   expect(isFeedHighlight(item.topic, 'acme/l1')).toBe(true)
   render(<FeedRow item={item} selectedNamespace="acme/l1" onClick={() => undefined} />)
   expect(screen.getByTestId('feed-row').getAttribute('data-highlighted')).toBe('true')
+})
+
+test('pause button toggles feed pause', async () => {
+  const user = userEvent.setup()
+  function PauseFlag() {
+    return <span data-testid="paused">{String(useUnsState().feedPaused)}</span>
+  }
+  render(
+    <MockedProvider>
+      <UnsProvider>
+        <FeedPanel />
+        <PauseFlag />
+      </UnsProvider>
+    </MockedProvider>,
+  )
+  expect(screen.getByTestId('paused').textContent).toBe('false')
+  await user.click(screen.getByRole('button', { name: 'Pause' }))
+  expect(screen.getByTestId('paused').textContent).toBe('true')
+  expect(screen.getByRole('button', { name: 'Resume' })).toBeInTheDocument()
 })

@@ -1,9 +1,10 @@
 import { useApolloClient } from '@apollo/client'
-import { useEffect, useRef, type MouseEvent } from 'react'
+import { type MouseEvent } from 'react'
 import { useUnsDispatch, useUnsState } from '../../app/UnsProvider'
 import { Button } from '../../components/ui/button'
 import { isStale } from '../../lib/uns/stale'
 import { loadChildren } from './expand-to'
+import { useTreeQueries } from './useTreeQueries'
 
 function formatRelative(iso: string, nowMs: number): string {
   const then = Date.parse(iso)
@@ -97,22 +98,9 @@ function TreeNode({ namespace, now }: { namespace: string; now: number }) {
 
 export function TreePanel() {
   const state = useUnsState()
-  const dispatch = useUnsDispatch()
-  const client = useApolloClient()
-  const started = useRef(false)
+  const { loadRoots } = useTreeQueries()
   const now = Date.now()
   const roots = state.tree.childrenByParent[''] ?? []
-
-  useEffect(() => {
-    if (import.meta.env.MODE === 'test') {
-      return
-    }
-    if (started.current) {
-      return
-    }
-    started.current = true
-    void loadChildren(client, dispatch, '')
-  }, [client, dispatch])
 
   return (
     <section aria-label="tree" className="flex h-full flex-col overflow-hidden bg-console-bg">
@@ -124,9 +112,7 @@ export function TreePanel() {
           <Button
             type="button"
             onClick={() => {
-              started.current = false
-              started.current = true
-              void loadChildren(client, dispatch, '')
+              loadRoots()
             }}
           >
             Retry

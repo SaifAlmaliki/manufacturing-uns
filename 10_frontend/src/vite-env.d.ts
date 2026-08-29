@@ -4,6 +4,7 @@ declare const __UNS_PLATFORM_CONFIG__: import('../../platform/settings').Platfor
 
 interface ImportMetaEnv {
   readonly VITE_GRAPHQL_URL?: string
+  readonly VITEST?: string
 }
 
 interface ImportMeta {

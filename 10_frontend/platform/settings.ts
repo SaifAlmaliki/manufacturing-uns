@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse } from 'yaml'
@@ -18,29 +18,19 @@ export type PlatformSettings = {
 
 const platformDir = dirname(fileURLToPath(import.meta.url))
 
-function resolveSettingsPath(): string {
+function resolveSettingsPath(): string | undefined {
   const candidates = [
     process.env.UNS_CONF_DIR ? resolve(process.env.UNS_CONF_DIR, 'settings.yaml') : '',
     resolve(process.cwd(), '../conf/settings.yaml'),
     resolve(process.cwd(), 'conf/settings.yaml'),
     resolve(platformDir, '../../conf/settings.yaml'),
   ].filter(Boolean)
-  for (const candidate of candidates) {
-    try {
-      readFileSync(candidate)
-      return candidate
-    } catch {
-      // try next
-    }
-  }
-  return resolve(process.cwd(), '../conf/settings.yaml')
+  return candidates.find((candidate) => existsSync(candidate))
 }
 
-export function loadPlatformSettings(): PlatformSettings {
-  const raw = parse(readFileSync(resolveSettingsPath(), 'utf8')) as {
-    default: Record<string, unknown>
-  }
-  const defaults = raw.default
+export function platformSettingsFromConfig(
+  defaults: Record<string, unknown> = {},
+): PlatformSettings {
   const urls = (defaults.urls ?? {}) as Record<string, unknown>
   const platform = (defaults.platform ?? {}) as Record<string, unknown>
   const applications = (defaults.applications ?? {}) as Record<string, Record<string, unknown>>
@@ -62,4 +52,13 @@ export function loadPlatformSettings(): PlatformSettings {
     frontendDevPort: Number(frontend.dev_port ?? 5173),
     frontendComposePort: Number(frontend.compose_port ?? 8088),
   }
+}
+
+export function loadPlatformSettings(): PlatformSettings {
+  const settingsPath = resolveSettingsPath()
+  if (!settingsPath) {
+    return platformSettingsFromConfig()
+  }
+  const raw = parse(readFileSync(settingsPath, 'utf8')) as { default?: Record<string, unknown> }
+  return platformSettingsFromConfig(raw.default ?? {})
 }
