@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { ResponsiveHeroBanner } from '../ui/responsive-hero-banner';
 import heroImage from '../../assets/images/smart_factory_uns_1788007138686.jpg';
 
 export const LandingView: React.FC = () => {
@@ -62,234 +63,67 @@ export const LandingView: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] dark:bg-[#050505] text-[#0F172A] dark:text-[#F8FAFC] flex flex-col font-sans selection:bg-amber-400/30 selection:text-amber-900 dark:selection:text-[#FFC107] transition-colors duration-200">
-      {/* Top Navigation Bar */}
-      <header className="sticky top-0 z-50 bg-white/90 dark:bg-[#0B0B0C]/90 backdrop-blur-md border-b border-[#E2E8F0] dark:border-[#1E293B] px-4 sm:px-8 py-3.5 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-amber-500/10 dark:bg-[#FFC107]/10 border border-amber-500/30 dark:border-[#FFC107]/30 flex items-center justify-center text-amber-600 dark:text-[#FFC107] shadow-xs">
-            <Layers className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="font-serif font-bold text-base sm:text-lg tracking-tight leading-none text-[#0F172A] dark:text-[#F8FAFC]">
-              UNS<span className="text-amber-600 dark:text-[#FFC107]">CONSOLE</span>
-            </div>
-            <div className="text-[10px] text-[#64748B] font-mono tracking-wider uppercase mt-0.5">
-              ISA-95 Unified Namespace
-            </div>
-          </div>
-        </div>
+      <ResponsiveHeroBanner
+        backgroundImageUrl={heroImage}
+        badgeLabel="Live"
+        badgeText="ISA-95 & Sparkplug B Unified Namespace Platform"
+        title="Unified Namespace"
+        titleLine2="for Smart Manufacturing"
+        description="A universal industrial data platform. Standardize shop-floor telemetry, Sparkplug B edge computing, Timescale historian analytics, and ISO/IEC 62443 security across every manufacturing site."
+        primaryButtonText="Launch Enterprise Console"
+        secondaryButtonText="Explore ISA-95 Architecture"
+        ctaButtonText={isAuthenticated ? `Enter Console` : 'Access Console'}
+        partnersTitle="Built on open industrial standards"
+        partners={[
+          { label: 'ISA-95' },
+          { label: 'Sparkplug B' },
+          { label: 'MQTT 5' },
+          { label: 'TimescaleDB' },
+          { label: 'Kafka' },
+        ]}
+        navLinks={[
+          { label: 'Core Engine', onClick: () => scrollToSection('features-section') },
+          { label: 'Hierarchy', onClick: () => scrollToSection('architecture-section'), isActive: true },
+          { label: 'Sparkplug B', onClick: () => scrollToSection('sparkplug-section') },
+          { label: 'Security', onClick: () => scrollToSection('compliance-section') },
+          { label: 'Multi-Site', onClick: () => scrollToSection('plants-section') },
+        ]}
+        onCtaClick={() => handleLaunchConsole()}
+        onPrimaryClick={() => handleLaunchConsole()}
+        onSecondaryClick={() => scrollToSection('architecture-section')}
+      />
 
-        {/* Center Desktop Navigation Links (Smooth scrolling handlers, avoids modifying HashRouter route) */}
-        <nav className="hidden lg:flex items-center gap-6 text-xs font-medium text-[#475569] dark:text-[#94A3B8]">
+      {/* Quick demo role access */}
+      <section className="border-b border-[#E2E8F0] dark:border-[#1E293B] bg-[#0B0B0C] px-4 py-4 sm:px-8">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-center gap-2 text-xs text-[#94A3B8]">
+          <span className="font-medium text-white/70">Quick Demo Logins:</span>
           <button
-            onClick={() => scrollToSection('features-section')}
-            className="hover:text-amber-600 dark:hover:text-[#FFC107] transition-colors cursor-pointer"
+            onClick={() => handleLaunchConsole('usr-admin-01')}
+            className="cursor-pointer rounded border border-[#1E293B] bg-[#111114] px-2.5 py-1 font-mono text-[11px] font-semibold text-[#F8FAFC] transition-colors hover:border-amber-500"
           >
-            Core Engine
+            System Admin
           </button>
           <button
-            onClick={() => scrollToSection('architecture-section')}
-            className="hover:text-amber-600 dark:hover:text-[#FFC107] transition-colors cursor-pointer"
+            onClick={() => handleLaunchConsole('usr-eng-02')}
+            className="cursor-pointer rounded border border-[#1E293B] bg-[#111114] px-2.5 py-1 font-mono text-[11px] font-semibold text-[#F8FAFC] transition-colors hover:border-amber-500"
           >
-            ISA-95 Hierarchy
+            Process Engineer
           </button>
           <button
-            onClick={() => scrollToSection('sparkplug-section')}
-            className="hover:text-amber-600 dark:hover:text-[#FFC107] transition-colors cursor-pointer flex items-center gap-1"
+            onClick={() => handleLaunchConsole('usr-op-03')}
+            className="cursor-pointer rounded border border-[#1E293B] bg-[#111114] px-2.5 py-1 font-mono text-[11px] font-semibold text-[#F8FAFC] transition-colors hover:border-amber-500"
           >
-            <span>Sparkplug B &amp; Edge</span>
-            <span className="px-1.5 py-0.2 rounded bg-amber-500/10 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 font-mono text-[9px] font-bold">
-              v3.0
-            </span>
+            Shift Operator
           </button>
-          <button
-            onClick={() => scrollToSection('compliance-section')}
-            className="hover:text-amber-600 dark:hover:text-[#FFC107] transition-colors cursor-pointer"
-          >
-            Security &amp; RBAC
-          </button>
-          <button
-            onClick={() => scrollToSection('plants-section')}
-            className="hover:text-amber-600 dark:hover:text-[#FFC107] transition-colors cursor-pointer"
-          >
-            Multi-Site Operations
-          </button>
-        </nav>
-
-        {/* Right Actions */}
-        <div className="flex items-center gap-3">
-          {/* Light / Dark Mode Toggle */}
           <button
             id="landing-theme-toggle-btn"
             onClick={toggleTheme}
-            className="p-2 rounded-lg bg-[#F8FAFC] dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] hover:border-amber-400 dark:hover:border-[#334155] text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC] transition-colors cursor-pointer"
+            className="ml-2 inline-flex cursor-pointer items-center gap-1.5 rounded border border-[#1E293B] bg-[#111114] px-2.5 py-1 text-[#94A3B8] transition-colors hover:text-[#FFC107]"
             title={`Switch to ${isDark ? 'Light' : 'Dark'} mode`}
           >
-            {isDark ? <Sun className="w-4 h-4 text-[#FFC107]" /> : <Moon className="w-4 h-4 text-slate-700" />}
+            {isDark ? <Sun className="h-3.5 w-3.5 text-[#FFC107]" /> : <Moon className="h-3.5 w-3.5" />}
+            <span>{isDark ? 'Light' : 'Dark'}</span>
           </button>
-
-          {isAuthenticated ? (
-            <button
-              id="landing-nav-enter-console-btn"
-              onClick={() => navigate('/tree')}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 dark:bg-[#FFC107] dark:hover:bg-[#FFB300] text-slate-950 font-bold text-xs shadow-sm transition-all cursor-pointer"
-            >
-              <span>Enter Console ({currentUser.name})</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          ) : (
-            <>
-              <button
-                id="landing-nav-login-btn"
-                onClick={() => navigate('/login')}
-                className="hidden sm:inline-flex px-3.5 py-2 text-xs font-semibold text-[#0F172A] dark:text-[#F8FAFC] hover:text-amber-600 dark:hover:text-[#FFC107] transition-colors cursor-pointer"
-              >
-                Sign In
-              </button>
-              <button
-                id="landing-nav-get-started-btn"
-                onClick={() => navigate('/login')}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 dark:bg-[#FFC107] dark:hover:bg-[#FFB300] text-slate-950 font-bold text-xs shadow-sm transition-all cursor-pointer"
-              >
-                <span>Access Console</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </>
-          )}
-        </div>
-      </header>
-
-      {/* Main Hero Section */}
-      <section className="relative pt-12 pb-16 lg:pt-20 lg:pb-24 px-4 sm:px-8 max-w-7xl mx-auto w-full">
-        {/* Background ambient accents */}
-        <div className="absolute top-10 left-1/2 -translate-x-1/2 w-3/4 h-96 bg-amber-500/5 dark:bg-[#FFC107]/5 blur-3xl -z-10 rounded-full pointer-events-none" />
-
-        <div className="text-center max-w-4xl mx-auto space-y-6">
-          {/* Eyebrow badge */}
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-[#FFC107]/30 text-amber-900 dark:text-[#FFC107] text-[11px] font-semibold tracking-wide shadow-xs">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="font-mono uppercase">ISA-95 &amp; Sparkplug B Certified</span>
-            <span className="text-[#CBD5E1] dark:text-[#334155]">|</span>
-            <span>Multi-Tenant Enterprise Platform v2.8</span>
-          </div>
-
-          {/* High-Impact Classic Serif Headline */}
-          <h1 className="font-serif text-3xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-[#0F172A] dark:text-[#F8FAFC] leading-[1.15]">
-            The Unified Namespace for Modern Smart Manufacturing
-          </h1>
-
-          {/* Subtitle */}
-          <p className="text-base sm:text-lg text-[#475569] dark:text-[#94A3B8] font-normal leading-relaxed max-w-3xl mx-auto">
-            A universal, multi-tenant industrial data platform. Standardize shop-floor telemetry, Sparkplug B edge computing, TimescaleDB time-series historian analytics, and ISO/IEC 62443 security across any manufacturing site or enterprise client.
-          </p>
-
-          {/* Primary Action Buttons */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-3.5 pt-2">
-            <button
-              id="hero-launch-primary-btn"
-              onClick={() => handleLaunchConsole()}
-              className="w-full sm:w-auto flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-lg bg-amber-500 hover:bg-amber-600 dark:bg-[#FFC107] dark:hover:bg-[#FFB300] text-slate-950 font-bold text-sm shadow-md transition-all cursor-pointer"
-            >
-              <span>Launch Enterprise Console</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-
-            <button
-              onClick={() => scrollToSection('architecture-section')}
-              className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3.5 rounded-lg bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] hover:border-amber-400 dark:hover:border-[#334155] text-[#0F172A] dark:text-[#F8FAFC] font-semibold text-sm transition-colors cursor-pointer shadow-xs"
-            >
-              <span>Explore ISA-95 Architecture</span>
-              <ChevronRight className="w-4 h-4 text-[#64748B]" />
-            </button>
-          </div>
-
-          {/* Instant Role Access Bar */}
-          <div className="pt-3 flex flex-wrap items-center justify-center gap-2 text-xs text-[#64748B]">
-            <span className="font-medium text-[#475569] dark:text-[#94A3B8]">Quick Demo Logins:</span>
-            <button
-              onClick={() => handleLaunchConsole('usr-admin-01')}
-              className="px-2.5 py-1 rounded bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] hover:border-amber-500 text-[#0F172A] dark:text-[#F8FAFC] font-mono text-[11px] font-semibold transition-colors cursor-pointer"
-            >
-              👑 System Admin
-            </button>
-            <button
-              onClick={() => handleLaunchConsole('usr-eng-02')}
-              className="px-2.5 py-1 rounded bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] hover:border-amber-500 text-[#0F172A] dark:text-[#F8FAFC] font-mono text-[11px] font-semibold transition-colors cursor-pointer"
-            >
-              ⚙️ Process Engineer
-            </button>
-            <button
-              onClick={() => handleLaunchConsole('usr-op-03')}
-              className="px-2.5 py-1 rounded bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] hover:border-amber-500 text-[#0F172A] dark:text-[#F8FAFC] font-mono text-[11px] font-semibold transition-colors cursor-pointer"
-            >
-              🎛️ Shift Operator
-            </button>
-          </div>
-        </div>
-
-        {/* Hero Visual Showcase with Generated Image */}
-        <div className="mt-12 lg:mt-16 relative rounded-2xl overflow-hidden border border-[#CBD5E1] dark:border-[#1E293B] shadow-2xl bg-slate-900 group">
-          {/* Top Industrial Header Overlay */}
-          <div className="absolute top-0 inset-x-0 bg-slate-950/80 backdrop-blur-md px-4 py-2.5 border-b border-white/10 flex items-center justify-between z-20 text-xs">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="font-mono text-emerald-400 font-bold text-[11px] tracking-wider uppercase">
-                EMQX Broker: CONNECTED
-              </span>
-              <span className="text-slate-500">|</span>
-              <span className="font-mono text-slate-300 text-[11px] hidden sm:inline">
-                Enterprise/Site_Alpha/Processing_Plant_01
-              </span>
-            </div>
-            <div className="flex items-center gap-2 font-mono text-[10px] text-amber-400">
-              <span className="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/40">
-                MQTT 5.0 + Protobuf
-              </span>
-            </div>
-          </div>
-
-          {/* Generated Hero Image */}
-          <div className="relative aspect-[16/9] w-full max-h-[580px] overflow-hidden">
-            <img
-              src={heroImage}
-              alt="Smart Factory Industrial Control Room with ISA-95 Unified Namespace"
-              className="w-full h-full object-cover object-center transform group-hover:scale-[1.01] transition-transform duration-700"
-              referrerPolicy="no-referrer"
-            />
-            {/* Dark vignette gradient overlay for contrast */}
-            <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/30 to-transparent" />
-          </div>
-
-          {/* Bottom Floating Telemetry Bar */}
-          <div className="absolute bottom-4 inset-x-4 sm:inset-x-6 bg-slate-950/85 backdrop-blur-md border border-white/15 rounded-xl p-4 z-20 grid grid-cols-2 sm:grid-cols-4 gap-4 text-left">
-            <div>
-              <div className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Broker Throughput</div>
-              <div className="text-base sm:text-lg font-mono font-bold text-amber-400 flex items-center gap-1.5 mt-0.5">
-                <Activity className="w-4 h-4 text-amber-400" />
-                <span>64.8 msg/sec</span>
-              </div>
-            </div>
-            <div>
-              <div className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">ISA-95 Hierarchy</div>
-              <div className="text-base sm:text-lg font-mono font-bold text-white flex items-center gap-1.5 mt-0.5">
-                <Layers className="w-4 h-4 text-sky-400" />
-                <span>142 Active Nodes</span>
-              </div>
-            </div>
-            <div>
-              <div className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Sparkplug B Edge</div>
-              <div className="text-base sm:text-lg font-mono font-bold text-emerald-400 flex items-center gap-1.5 mt-0.5">
-                <Radio className="w-4 h-4 text-emerald-400" />
-                <span>8 Gateways Online</span>
-              </div>
-            </div>
-            <div>
-              <div className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">Historian Latency</div>
-              <div className="text-base sm:text-lg font-mono font-bold text-purple-400 flex items-center gap-1.5 mt-0.5">
-                <Database className="w-4 h-4 text-purple-400" />
-                <span>1.4ms Ingestion</span>
-              </div>
-            </div>
-          </div>
         </div>
       </section>
 
