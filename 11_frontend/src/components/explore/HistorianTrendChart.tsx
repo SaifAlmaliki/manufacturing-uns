@@ -165,19 +165,19 @@ export const HistorianTrendChart: React.FC<HistorianTrendChartProps> = ({ events
 
   if (numericKeys.length === 0) {
     return (
-      <div className="p-4 bg-[#111114] border border-[#1E293B] rounded-lg text-center text-xs text-[#64748B] font-mono">
+      <div className="p-4 bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] rounded-lg text-center text-xs text-[#64748B] font-mono">
         No numeric fields found in loaded historian payloads to trend.
       </div>
     );
   }
 
   return (
-    <div id="historian-trend-chart-panel" className="bg-[#111114] border border-[#1E293B] rounded-lg overflow-hidden p-4 space-y-3">
+    <div id="historian-trend-chart-panel" className="bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] rounded-lg overflow-hidden p-4 space-y-3">
       {/* Header & Metric Toggles */}
-      <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-[#1E293B]">
+      <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-[#E2E8F0] dark:border-[#1E293B]">
         <div className="flex items-center gap-2">
-          <TrendingUp className="w-4 h-4 text-[#FFC107]" />
-          <span className="text-xs font-bold text-[#F8FAFC] font-mono uppercase tracking-wider">
+          <TrendingUp className="w-4 h-4 text-amber-600 dark:text-[#FFC107]" />
+          <span className="text-xs font-bold text-[#0F172A] dark:text-[#F8FAFC] font-mono uppercase tracking-wider">
             Numeric Telemetry Trend
           </span>
           <span className="text-[10px] text-[#64748B] font-mono">({parsedData.length} samples)</span>
@@ -196,8 +196,8 @@ export const HistorianTrendChart: React.FC<HistorianTrendChartProps> = ({ events
                 onClick={() => toggleMetric(key)}
                 className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono transition-all cursor-pointer ${
                   isActive
-                    ? 'bg-[#1E293B] border border-[#334155] text-[#F8FAFC] shadow-sm font-semibold'
-                    : 'bg-[#0B0B0C] text-[#64748B] hover:text-[#94A3B8] border border-[#1E293B]'
+                    ? 'bg-slate-200 dark:bg-[#1E293B] border border-[#CBD5E1] dark:border-[#334155] text-[#0F172A] dark:text-[#F8FAFC] shadow-sm font-semibold'
+                    : 'bg-[#F8FAFC] dark:bg-[#0B0B0C] text-[#64748B] hover:text-[#475569] dark:hover:text-[#94A3B8] border border-[#E2E8F0] dark:border-[#1E293B]'
                 }`}
               >
                 {color && <span className={`w-2 h-2 rounded-full ${color.bg}`} />}
@@ -209,7 +209,7 @@ export const HistorianTrendChart: React.FC<HistorianTrendChartProps> = ({ events
       </div>
 
       {/* SVG Multi-Line Chart Canvas */}
-      <div className="relative w-full overflow-hidden bg-[#0B0B0C] border border-[#1E293B] rounded p-1">
+      <div className="relative w-full overflow-hidden bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#E2E8F0] dark:border-[#1E293B] rounded p-1">
         <svg
           viewBox={`0 0 ${svgWidth} ${svgHeight}`}
           className="w-full h-48 select-none"
@@ -290,7 +290,7 @@ export const HistorianTrendChart: React.FC<HistorianTrendChartProps> = ({ events
         {/* Hover Tooltip Box */}
         {hoveredPoint && (
           <div
-            className="absolute z-20 pointer-events-none bg-[#111114] border border-[#FFC107]/50 rounded px-2.5 py-1.5 shadow-xl font-mono text-[10px] space-y-1"
+            className="absolute z-20 pointer-events-none bg-white dark:bg-[#111114] border border-amber-400/50 dark:border-[#FFC107]/50 rounded px-2.5 py-1.5 shadow-xl font-mono text-[10px] space-y-1"
             style={{
               left: `${Math.min(hoveredPoint.x, svgWidth - 160)}px`,
               top: `${Math.max(10, hoveredPoint.y - 60)}px`,
@@ -320,15 +320,15 @@ export const HistorianTrendChart: React.FC<HistorianTrendChartProps> = ({ events
           const color = colors[idx % colors.length];
 
           return (
-            <div key={m} className="p-2 rounded bg-[#0B0B0C] border border-[#1E293B] font-mono text-[10px]">
+            <div key={m} className="p-2 rounded bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#E2E8F0] dark:border-[#1E293B] font-mono text-[10px]">
               <div className={`font-semibold truncate flex items-center gap-1 ${color.text}`}>
                 <span className={`w-1.5 h-1.5 rounded-full ${color.bg}`} />
                 <span>{m}</span>
               </div>
               <div className="flex items-center justify-between text-[#64748B] text-[9px] mt-1">
-                <span>Min: <b className="text-[#F8FAFC]">{min.toFixed(1)}</b></span>
-                <span>Avg: <b className="text-[#F8FAFC]">{avg.toFixed(1)}</b></span>
-                <span>Max: <b className="text-[#F8FAFC]">{max.toFixed(1)}</b></span>
+                <span>Min: <b className="text-[#0F172A] dark:text-[#F8FAFC]">{min.toFixed(1)}</b></span>
+                <span>Avg: <b className="text-[#0F172A] dark:text-[#F8FAFC]">{avg.toFixed(1)}</b></span>
+                <span>Max: <b className="text-[#0F172A] dark:text-[#F8FAFC]">{max.toFixed(1)}</b></span>
               </div>
             </div>
           );

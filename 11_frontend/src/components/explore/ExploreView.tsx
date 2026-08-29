@@ -17,8 +17,10 @@ import { HistoricEvent, UnsNode, BinaryOperator } from '../../types/uns';
 import { unsGraphQLClient } from '../../services/graphql/client';
 import { HistorianTrendChart } from './HistorianTrendChart';
 import { HistorianTable } from './HistorianTable';
+import { historianTopic } from '../../lib/uns/topics';
 
 type QueryMode = 'topic_time' | 'publishers' | 'property_event' | 'property_nodes';
+type TimePreset = '5m' | '15m' | '1h' | '6h' | '24h' | 'all' | 'custom';
 
 export const ExploreView: React.FC = () => {
   const { historianInitialTopic, allLoadedNodes, selectedNode } = useUNS();
@@ -29,7 +31,7 @@ export const ExploreView: React.FC = () => {
   );
 
   // Time range presets
-  const [timePreset, setTimePreset] = useState<'5m' | '15m' | '1h' | '6h' | '24h' | 'custom'>('1h');
+  const [timePreset, setTimePreset] = useState<TimePreset>('1h');
   const [customStartTime, setCustomStartTime] = useState(() => new Date(Date.now() - 3600 * 1000).toISOString().slice(0, 16));
   const [customEndTime, setCustomEndTime] = useState(() => new Date().toISOString().slice(0, 16));
 
@@ -48,7 +50,8 @@ export const ExploreView: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Calculate start & end ISO strings based on preset
-  const getTimeBounds = useCallback((): { start: string; end: string } => {
+  const getTimeBounds = useCallback((): { start?: string; end?: string } => {
+    if (timePreset === 'all') return {};
     const now = Date.now();
     if (timePreset === '5m') return { start: new Date(now - 5 * 60 * 1000).toISOString(), end: new Date(now).toISOString() };
     if (timePreset === '15m') return { start: new Date(now - 15 * 60 * 1000).toISOString(), end: new Date(now).toISOString() };
@@ -58,6 +61,14 @@ export const ExploreView: React.FC = () => {
     return { start: new Date(customStartTime).toISOString(), end: new Date(customEndTime).toISOString() };
   }, [timePreset, customStartTime, customEndTime]);
 
+  const resolveHistorianTopic = (topic: string): string => {
+    const trimmed = topic.trim();
+    if (!trimmed || trimmed.includes('#') || trimmed.includes('+')) {
+      return trimmed;
+    }
+    return historianTopic(trimmed);
+  };
+
   // Execute Query
   const runQuery = useCallback(async () => {
     setLoading(true);
@@ -66,7 +77,11 @@ export const ExploreView: React.FC = () => {
       const { start, end } = getTimeBounds();
 
       if (mode === 'topic_time') {
-        const res = await unsGraphQLClient.getHistoricEvents(topicInput.trim(), start, end);
+        const res = await unsGraphQLClient.getHistoricEvents(
+          resolveHistorianTopic(topicInput),
+          start,
+          end,
+        );
         setEvents(res);
       } else if (mode === 'publishers') {
         const pubList = publishersInput
@@ -126,24 +141,24 @@ export const ExploreView: React.FC = () => {
   }, [runQuery]);
 
   return (
-    <div id="explore-historian-view" className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#050505] text-[#F8FAFC] font-mono text-xs">
+    <div id="explore-historian-view" className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#F8FAFC] dark:bg-[#050505] text-[#0F172A] dark:text-[#F8FAFC] font-mono text-xs transition-colors">
       {/* Top Query Builder Card */}
-      <div className="bg-[#111114] border border-[#1E293B] rounded-lg p-4 space-y-3 shadow-lg">
+      <div className="bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] rounded-lg p-4 space-y-3 shadow-lg">
         {/* Mode Selector Tabs */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[#1E293B]">
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[#E2E8F0] dark:border-[#1E293B]">
           <div className="flex items-center gap-2">
-            <Database className="w-4 h-4 text-[#FFC107]" />
-            <span className="font-bold text-[#F8FAFC] text-xs uppercase tracking-wider font-mono">
+            <Database className="w-4 h-4 text-amber-600 dark:text-[#FFC107]" />
+            <span className="font-bold text-[#0F172A] dark:text-[#F8FAFC] text-xs uppercase tracking-wider font-mono">
               Timescale Historian &amp; UNS Explorer
             </span>
           </div>
 
           {/* Mode Tabs */}
-          <div className="flex flex-wrap items-center gap-1 bg-[#0B0B0C] p-1 rounded border border-[#1E293B]">
+          <div className="flex flex-wrap items-center gap-1 bg-[#F1F5F9] dark:bg-[#0B0B0C] p-1 rounded border border-[#E2E8F0] dark:border-[#1E293B]">
             <button
               onClick={() => setMode('topic_time')}
               className={`px-2.5 py-1 rounded text-[10px] font-mono transition-colors cursor-pointer ${
-                mode === 'topic_time' ? 'bg-[#FFC107] text-[#0B0B0C] font-bold' : 'text-[#94A3B8] hover:text-[#F8FAFC]'
+                mode === 'topic_time' ? 'bg-amber-500 dark:bg-[#FFC107] text-[#0B0B0C] font-bold' : 'text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC]'
               }`}
             >
               getHistoricEvents (Topic + Time)
@@ -151,7 +166,7 @@ export const ExploreView: React.FC = () => {
             <button
               onClick={() => setMode('publishers')}
               className={`px-2.5 py-1 rounded text-[10px] font-mono transition-colors cursor-pointer ${
-                mode === 'publishers' ? 'bg-[#FFC107] text-[#0B0B0C] font-bold' : 'text-[#94A3B8] hover:text-[#F8FAFC]'
+                mode === 'publishers' ? 'bg-amber-500 dark:bg-[#FFC107] text-[#0B0B0C] font-bold' : 'text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC]'
               }`}
             >
               getHistoricEventsByPublishers
@@ -159,7 +174,7 @@ export const ExploreView: React.FC = () => {
             <button
               onClick={() => setMode('property_event')}
               className={`px-2.5 py-1 rounded text-[10px] font-mono transition-colors cursor-pointer ${
-                mode === 'property_event' ? 'bg-[#FFC107] text-[#0B0B0C] font-bold' : 'text-[#94A3B8] hover:text-[#F8FAFC]'
+                mode === 'property_event' ? 'bg-amber-500 dark:bg-[#FFC107] text-[#0B0B0C] font-bold' : 'text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC]'
               }`}
             >
               getHistoricEventsByProperty
@@ -167,7 +182,7 @@ export const ExploreView: React.FC = () => {
             <button
               onClick={() => setMode('property_nodes')}
               className={`px-2.5 py-1 rounded text-[10px] font-mono transition-colors cursor-pointer ${
-                mode === 'property_nodes' ? 'bg-[#FFC107] text-[#0B0B0C] font-bold' : 'text-[#94A3B8] hover:text-[#F8FAFC]'
+                mode === 'property_nodes' ? 'bg-amber-500 dark:bg-[#FFC107] text-[#0B0B0C] font-bold' : 'text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC]'
               }`}
             >
               getUnsNodesByProperty
@@ -180,8 +195,8 @@ export const ExploreView: React.FC = () => {
           {/* Mode 1: Topic + Time */}
           {mode === 'topic_time' && (
             <div className="md:col-span-6 space-y-1">
-              <label className="text-[#94A3B8] text-[10px] flex items-center gap-1">
-                <Layers className="w-3 h-3 text-[#FFC107]" />
+              <label className="text-[#64748B] dark:text-[#94A3B8] text-[10px] flex items-center gap-1">
+                <Layers className="w-3 h-3 text-amber-600 dark:text-[#FFC107]" />
                 <span>UNS TOPIC:</span>
               </label>
               <input
@@ -189,7 +204,7 @@ export const ExploreView: React.FC = () => {
                 value={topicInput}
                 onChange={(e) => setTopicInput(e.target.value)}
                 placeholder="e.g. CovestroAG/Dormagen/.../telemetry"
-                className="w-full bg-[#0B0B0C] border border-[#1E293B] rounded px-2.5 py-1.5 text-[#F8FAFC] text-[11px] focus:outline-none focus:border-[#FFC107]"
+                className="w-full bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#CBD5E1] dark:border-[#1E293B] rounded px-2.5 py-1.5 text-[#0F172A] dark:text-[#F8FAFC] text-[11px] focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107]"
               />
             </div>
           )}
@@ -206,7 +221,7 @@ export const ExploreView: React.FC = () => {
                 value={publishersInput}
                 onChange={(e) => setPublishersInput(e.target.value)}
                 placeholder="edge:siemens_s7_1500, edge:beckhoff_twincat"
-                className="w-full bg-[#0B0B0C] border border-[#1E293B] rounded px-2.5 py-1.5 text-[#F8FAFC] text-[11px] focus:outline-none focus:border-[#FFC107]"
+                className="w-full bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#CBD5E1] dark:border-[#1E293B] rounded px-2.5 py-1.5 text-[#0F172A] dark:text-[#F8FAFC] text-[11px] focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107]"
               />
             </div>
           )}
@@ -221,7 +236,7 @@ export const ExploreView: React.FC = () => {
                   value={propKeysInput}
                   onChange={(e) => setPropKeysInput(e.target.value)}
                   placeholder="site, cell_id"
-                  className="w-full bg-[#0B0B0C] border border-[#1E293B] rounded px-2.5 py-1.5 text-[#F8FAFC] text-[11px] focus:outline-none focus:border-[#FFC107]"
+                  className="w-full bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#CBD5E1] dark:border-[#1E293B] rounded px-2.5 py-1.5 text-[#0F172A] dark:text-[#F8FAFC] text-[11px] focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107]"
                 />
               </div>
               <div className="md:col-span-2 space-y-1">
@@ -229,7 +244,7 @@ export const ExploreView: React.FC = () => {
                 <select
                   value={propOperator}
                   onChange={(e) => setPropOperator(e.target.value as BinaryOperator)}
-                  className="w-full bg-[#0B0B0C] border border-[#1E293B] rounded px-2 py-1.5 text-[#F8FAFC] text-[11px] focus:outline-none focus:border-[#FFC107]"
+                  className="w-full bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#CBD5E1] dark:border-[#1E293B] rounded px-2 py-1.5 text-[#0F172A] dark:text-[#F8FAFC] text-[11px] focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107]"
                 >
                   <option value="OR">OR</option>
                   <option value="AND">AND</option>
@@ -248,7 +263,7 @@ export const ExploreView: React.FC = () => {
                   value={propKeysInput}
                   onChange={(e) => setPropKeysInput(e.target.value)}
                   placeholder="site, standard"
-                  className="w-full bg-[#0B0B0C] border border-[#1E293B] rounded px-2.5 py-1.5 text-[#F8FAFC] text-[11px] focus:outline-none focus:border-[#FFC107]"
+                  className="w-full bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#CBD5E1] dark:border-[#1E293B] rounded px-2.5 py-1.5 text-[#0F172A] dark:text-[#F8FAFC] text-[11px] focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107]"
                 />
               </div>
               <div className="md:col-span-4 space-y-1">
@@ -258,7 +273,7 @@ export const ExploreView: React.FC = () => {
                   value={excludeTopicsInput}
                   onChange={(e) => setExcludeTopicsInput(e.target.value)}
                   placeholder="spBv1.0/#"
-                  className="w-full bg-[#0B0B0C] border border-[#1E293B] rounded px-2.5 py-1.5 text-[#F8FAFC] text-[11px] focus:outline-none focus:border-[#FFC107]"
+                  className="w-full bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#CBD5E1] dark:border-[#1E293B] rounded px-2.5 py-1.5 text-[#0F172A] dark:text-[#F8FAFC] text-[11px] focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107]"
                 />
               </div>
             </>
@@ -267,17 +282,17 @@ export const ExploreView: React.FC = () => {
           {/* Time Range Selector (for time-based queries) */}
           {mode !== 'property_nodes' && (
             <div className="md:col-span-4 space-y-1">
-              <label className="text-[#94A3B8] text-[10px] flex items-center gap-1">
-                <Clock className="w-3 h-3 text-[#FFC107]" />
+              <label className="text-[#64748B] dark:text-[#94A3B8] text-[10px] flex items-center gap-1">
+                <Clock className="w-3 h-3 text-amber-600 dark:text-[#FFC107]" />
                 <span>TIME RANGE:</span>
               </label>
-              <div className="flex items-center gap-1 bg-[#0B0B0C] p-0.5 rounded border border-[#1E293B]">
-                {(['5m', '15m', '1h', '6h', '24h', 'custom'] as const).map((p) => (
+              <div className="flex items-center gap-1 bg-[#F1F5F9] dark:bg-[#0B0B0C] p-0.5 rounded border border-[#E2E8F0] dark:border-[#1E293B]">
+                {(['5m', '15m', '1h', '6h', '24h', 'all', 'custom'] as const).map((p) => (
                   <button
                     key={p}
                     onClick={() => setTimePreset(p)}
                     className={`flex-1 py-1 rounded text-[10px] font-mono transition-colors cursor-pointer ${
-                      timePreset === p ? 'bg-[#FFC107] text-[#0B0B0C] font-bold' : 'text-[#94A3B8] hover:text-[#F8FAFC]'
+                      timePreset === p ? 'bg-amber-500 dark:bg-[#FFC107] text-[#0B0B0C] font-bold' : 'text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC]'
                     }`}
                   >
                     {p}
@@ -293,7 +308,7 @@ export const ExploreView: React.FC = () => {
               id="execute-graphql-historian-query-btn"
               onClick={runQuery}
               disabled={loading}
-              className="w-full bg-[#FFC107] hover:bg-[#FFB300] text-[#0B0B0C] font-bold py-1.5 rounded transition-colors flex items-center justify-center gap-1.5 cursor-pointer font-mono text-xs"
+              className="w-full bg-amber-500 dark:bg-[#FFC107] hover:bg-amber-600 dark:hover:bg-[#FFB300] text-[#0B0B0C] font-bold py-1.5 rounded transition-colors flex items-center justify-center gap-1.5 cursor-pointer font-mono text-xs"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
               <span>{loading ? 'Querying...' : 'Run Query'}</span>
@@ -303,23 +318,23 @@ export const ExploreView: React.FC = () => {
 
         {/* Custom Date Picker row if custom selected */}
         {timePreset === 'custom' && mode !== 'property_nodes' && (
-          <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-[#1E293B] text-[10px]">
+          <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-[#E2E8F0] dark:border-[#1E293B] text-[10px]">
             <div className="flex items-center gap-1.5">
-              <span className="text-[#94A3B8]">Start ISO:</span>
+              <span className="text-[#64748B] dark:text-[#94A3B8]">Start ISO:</span>
               <input
                 type="datetime-local"
                 value={customStartTime}
                 onChange={(e) => setCustomStartTime(e.target.value)}
-                className="bg-[#0B0B0C] border border-[#1E293B] rounded px-2 py-0.5 text-[#F8FAFC] font-mono text-[10px]"
+                className="bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#CBD5E1] dark:border-[#1E293B] rounded px-2 py-0.5 text-[#0F172A] dark:text-[#F8FAFC] font-mono text-[10px]"
               />
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="text-[#94A3B8]">End ISO:</span>
+              <span className="text-[#64748B] dark:text-[#94A3B8]">End ISO:</span>
               <input
                 type="datetime-local"
                 value={customEndTime}
                 onChange={(e) => setCustomEndTime(e.target.value)}
-                className="bg-[#0B0B0C] border border-[#1E293B] rounded px-2 py-0.5 text-[#F8FAFC] font-mono text-[10px]"
+                className="bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#CBD5E1] dark:border-[#1E293B] rounded px-2 py-0.5 text-[#0F172A] dark:text-[#F8FAFC] font-mono text-[10px]"
               />
             </div>
           </div>
