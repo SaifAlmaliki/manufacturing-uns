@@ -16,6 +16,35 @@ import { childrenTopic } from '../lib/uns/topics';
 import { isStaleCandidate, isNodeStale } from '../lib/uns/node-meta';
 import { isSparkplugTopic } from '../lib/uns/sparkplug';
 
+function httpToWs(httpUrl: string): string {
+  if (httpUrl.startsWith('https://')) return `wss://${httpUrl.slice('https://'.length)}`;
+  if (httpUrl.startsWith('http://')) return `ws://${httpUrl.slice('http://'.length)}`;
+  if (httpUrl.startsWith('/') && typeof window !== 'undefined') {
+    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    return `${proto}://${window.location.host}${httpUrl}`;
+  }
+  return httpUrl;
+}
+
+function loadSettings(): AppSettings {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEYS.SETTINGS);
+    if (saved) {
+      const parsed = { ...DEFAULT_APP_SETTINGS, ...JSON.parse(saved) } as AppSettings;
+      // Older builds stored port 8080 (MQTT) as GraphQL — breaks historian and tree queries.
+      if (parsed.graphqlUrl?.includes(':8080')) {
+        parsed.graphqlUrl = DEFAULT_APP_SETTINGS.graphqlUrl;
+        parsed.graphqlWsUrl = httpToWs(parsed.graphqlUrl);
+        localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(parsed));
+      }
+      return parsed;
+    }
+  } catch {
+    // ignore
+  }
+  return DEFAULT_APP_SETTINGS;
+}
+
 export type NavigationTab = 'home' | 'explore' | 'sparkplug' | 'streams' | 'system' | 'users';
 
 interface UNSContextType {
@@ -89,15 +118,7 @@ function patchNodeInMap(
 
 export const UNSProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [activeTab, setActiveTab] = useState<NavigationTab>('home');
-  const [settings, setSettings] = useState<AppSettings>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.SETTINGS);
-      if (saved) return { ...DEFAULT_APP_SETTINGS, ...JSON.parse(saved) };
-    } catch {
-      // ignore
-    }
-    return DEFAULT_APP_SETTINGS;
-  });
+  const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
 
   const [health, setHealth] = useState<SystemHealthInfo>(unsGraphQLClient.getHealth());
   const [rootNodes, setRootNodes] = useState<UnsNode[]>([]);

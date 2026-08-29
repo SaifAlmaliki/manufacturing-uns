@@ -52,7 +52,9 @@ export const UnsTreeView: React.FC = () => {
     const role = getNodeRole(node.nodeType);
     const live = hasLiveTelemetry(node.payload);
     const bookmarked = isBookmarked(node.topic);
-    const isLeaf = node.isLeaf;
+    const isExpandable =
+      !['DEVICE_depth_3', 'NESTED_ATTRIBUTE'].includes(node.nodeType) ||
+      (node.children?.length ?? 0) > 0;
 
     // Filter by search query if present
     if (searchQuery.trim() !== '' && !node.topic.toLowerCase().includes(searchQuery.toLowerCase())) {
@@ -71,24 +73,24 @@ export const UnsTreeView: React.FC = () => {
           className={`flex items-center justify-between py-0.5 px-1.5 rounded text-[11px] font-mono cursor-pointer transition-colors group ${
             isSelected
               ? 'bg-amber-50 dark:bg-[#1E293B] text-amber-900 dark:text-[#FFC107] font-semibold border border-amber-300 dark:border-[#334155]'
-              : 'text-[#475569] dark:text-[#94A3B8] hover:bg-slate-100 dark:hover:bg-[#1E293B]/50 hover:text-[#0F172A] dark:hover:text-[#F8FAFC] border border-transparent'
-          } ${stale ? 'opacity-70' : ''}`}
+              : 'text-[#0F172A] dark:text-[#E2E8F0] hover:bg-slate-100 dark:hover:bg-[#1E293B]/50 hover:text-black dark:hover:text-[#F8FAFC] border border-transparent'
+          } ${stale ? 'opacity-90' : ''}`}
         >
           {/* Node Icon & Expansion Caret */}
           <div className="flex items-center gap-1.5 min-w-0 flex-1">
-            {!isLeaf ? (
+            {isExpandable ? (
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   toggleNodeExpanded(node.topic);
                 }}
-                className="p-0.5 hover:bg-slate-200 dark:hover:bg-[#334155] rounded text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#F8FAFC]"
+                className="p-0.5 hover:bg-slate-200 dark:hover:bg-[#334155] rounded text-[#334155] hover:text-[#0F172A] dark:hover:text-[#F8FAFC]"
               >
                 {isExpanded ? (
                   <ChevronDown className="w-3 h-3 text-amber-600 dark:text-[#FFC107]" />
                 ) : (
-                  <ChevronRight className="w-3 h-3 text-[#64748B]" />
+                  <ChevronRight className="w-3 h-3 text-[#334155] dark:text-[#94A3B8]" />
                 )}
               </button>
             ) : (
@@ -98,18 +100,18 @@ export const UnsTreeView: React.FC = () => {
             )}
 
             {/* Folder / Metric Icon */}
-            {!isLeaf ? (
+            {!isExpandable ? (
+              <FileCode className="w-3 h-3 text-emerald-600 dark:text-[#10B981] shrink-0" />
+            ) : (
               isExpanded ? (
                 <FolderOpen className="w-3 h-3 text-amber-600 dark:text-[#FFC107] shrink-0" />
               ) : (
-                <Folder className="w-3 h-3 text-slate-500 dark:text-[#64748B] shrink-0" />
+                <Folder className="w-3 h-3 text-slate-700 dark:text-[#64748B] shrink-0" />
               )
-            ) : (
-              <FileCode className="w-3 h-3 text-emerald-600 dark:text-[#10B981] shrink-0" />
             )}
 
             {/* Node Name */}
-            <span className="truncate font-mono text-[11px]">{node.name}</span>
+            <span className="truncate font-mono text-[11px] font-medium text-[#0F172A] dark:text-[#F1F5F9]">{node.name}</span>
 
             {/* Role / status tags */}
             <span className="px-1 py-0 rounded bg-slate-100 dark:bg-[#0B0B0C] border border-[#CBD5E1] dark:border-[#334155] text-[#64748B] dark:text-[#94A3B8] text-[8px] font-mono shrink-0">

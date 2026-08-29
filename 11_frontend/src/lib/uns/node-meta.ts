@@ -44,7 +44,7 @@ export function hasLiveTelemetry(payload: UnsNode['payload']): boolean {
 
 /** Only sensor leaves participate in stale telemetry alerts. */
 export function isStaleCandidate(node: Pick<UnsNode, 'nodeType' | 'payload'>): boolean {
-  return getNodeRole(node.nodeType) === 'sensor' || hasLiveTelemetry(node.payload)
+  return getNodeRole(node.nodeType) === 'sensor'
 }
 
 export function isNodeStale(lastUpdated: string, thresholdMinutes: number): boolean {

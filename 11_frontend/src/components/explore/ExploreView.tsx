@@ -77,6 +77,11 @@ export const ExploreView: React.FC = () => {
       const { start, end } = getTimeBounds();
 
       if (mode === 'topic_time') {
+        if (!topicInput.trim()) {
+          setErrorMsg('Enter a UNS topic (e.g. CovestroAG/Krefeld/.../G1). A /# suffix is added automatically.');
+          setEvents([]);
+          return;
+        }
         const res = await unsGraphQLClient.getHistoricEvents(
           resolveHistorianTopic(topicInput),
           start,

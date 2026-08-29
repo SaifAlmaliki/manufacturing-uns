@@ -9,7 +9,11 @@ import {
   graphqlUnsNodeToUnsNode,
 } from '../../lib/uns/map-nodes'
 import { mqttTopicInput, mqttTopicInputs, childrenTopic } from '../../lib/uns/topics'
-import { immediateChildTopics } from '../../lib/uns/node-meta'
+import {
+  isParameterGroupTopic,
+  probeParameterGroupTopics,
+  probeSensorTopics,
+} from '../../lib/uns/isa95-probe'
 import type {
   HistoricEvent,
   KafkaMessage,
@@ -172,8 +176,8 @@ export class UnsGraphQLClient {
   }
 
   /**
-   * Load direct children of a tree node. Falls back to property search when wildcard
-   * queries time out on deep ISA-95 paths (e.g. G1/+ under Cell2).
+   * Load direct children of a tree node. Uses exact ISA-95 segment probes when wildcard
+   * queries would OOM Neo4j on deep paths (e.g. G1/+).
    */
   public async getUnsNodeChildren(parentTopic: string): Promise<UnsNode[]> {
     const direct = await this.getUnsNodes([childrenTopic(parentTopic)])
@@ -181,24 +185,16 @@ export class UnsGraphQLClient {
       return direct
     }
 
-    const discovered = await this.getUnsNodesByProperty(['value'], [`${parentTopic}/#`])
-    if (discovered.length === 0) {
-      return []
+    const parameterGroups = await this.getUnsNodes(probeParameterGroupTopics(parentTopic))
+    if (parameterGroups.length > 0) {
+      return parameterGroups
     }
 
-    const childTopics = immediateChildTopics(
-      parentTopic,
-      discovered.map((node) => node.topic),
-    )
-
-    const children: UnsNode[] = []
-    for (const topic of childTopics) {
-      const nodes = await this.getUnsNodes([topic])
-      if (nodes[0]) {
-        children.push(nodes[0])
-      }
+    if (isParameterGroupTopic(parentTopic)) {
+      return this.getUnsNodes(probeSensorTopics(parentTopic))
     }
-    return children
+
+    return []
   }
 
   public async getHistoricEvents(
@@ -214,6 +210,9 @@ export class UnsGraphQLClient {
         toDatetime,
       },
     )
+    if (res.error) {
+      throw new Error(res.error)
+    }
     if (res.data?.getHistoricEventsInTimeRange) {
       return res.data.getHistoricEventsInTimeRange.map(graphqlHistoricalEventToHistoricEvent)
     }
@@ -235,6 +234,9 @@ export class UnsGraphQLClient {
         toDatetime,
       },
     )
+    if (res.error) {
+      throw new Error(res.error)
+    }
     if (res.data?.getHistoricEventsByPublishers) {
       return res.data.getHistoricEventsByPublishers.map(graphqlHistoricalEventToHistoricEvent)
     }
@@ -258,6 +260,9 @@ export class UnsGraphQLClient {
         toDatetime,
       },
     )
+    if (res.error) {
+      throw new Error(res.error)
+    }
     if (res.data?.getHistoricEventsByProperty) {
       return res.data.getHistoricEventsByProperty.map(graphqlHistoricalEventToHistoricEvent)
     }

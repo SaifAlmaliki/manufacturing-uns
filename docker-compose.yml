@@ -67,6 +67,8 @@ services:
       apoc.import.file.enabled: "true"
       apoc.import.file.use_neo4j_config: "true"
       NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 1G
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:7474 || exit 1"]
       interval: 10s
@@ -253,7 +255,7 @@ services:
       context: .
       dockerfile: ./11_frontend/Dockerfile
       args:
-        VITE_GRAPHQL_URL: http://localhost:8000/graphql
+        VITE_GRAPHQL_URL: /graphql
     ports:
       - "8088:80"
     depends_on:

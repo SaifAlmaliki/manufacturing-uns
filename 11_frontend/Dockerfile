@@ -9,7 +9,7 @@ COPY 11_frontend/index.html 11_frontend/vite.config.ts 11_frontend/tsconfig.json
 COPY 11_frontend/src ./src
 COPY 11_frontend/platform ./platform
 COPY conf/settings.yaml ./conf/settings.yaml
-ARG VITE_GRAPHQL_URL=http://localhost:8000/graphql
+ARG VITE_GRAPHQL_URL=/graphql
 ENV VITE_GRAPHQL_URL=$VITE_GRAPHQL_URL
 RUN npm run build
 
