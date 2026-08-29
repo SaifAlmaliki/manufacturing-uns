@@ -102,7 +102,12 @@ export const LiveMqttFeed: React.FC = () => {
           <div className="text-center py-12 text-[#64748B] text-xs font-mono">
             <Radio className="w-6 h-6 mx-auto mb-2 text-[#94A3B8] dark:text-[#475569] animate-pulse" />
             <p>Waiting for MQTT messages...</p>
-            <p className="text-[9px] mt-1 text-[#64748B]">Subscribed: {feedTopicFilter || '#'}</p>
+            <p className="text-[9px] mt-1 text-[#64748B]">
+              Subscribed:{' '}
+              {followSelection && selectedNode
+                ? `${selectedNode.topic}/#`
+                : feedTopicFilter || '#'}
+            </p>
           </div>
         ) : (
           mqttFeed.map((msg) => {

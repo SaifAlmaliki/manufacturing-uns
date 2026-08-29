@@ -61,14 +61,34 @@ async def test_shared_pool(mock_asyncpg):
     await HistorianHandler.close_pool()
 
 
+@pytest.mark.parametrize(
+    "timestamp, expected_epoch_s",
+    [
+        (1701232000, 1701232000.0),  # epoch seconds
+        (1701232000000, 1701232000.0),  # epoch milliseconds
+        (1701232000.5, 1701232000.5),
+    ],
+)
+def test_to_utc_datetime_epoch_units(timestamp: float, expected_epoch_s: float):
+    assert HistorianHandler.to_utc_datetime(timestamp).timestamp() == expected_epoch_s
+
+
+def test_to_utc_datetime_none_uses_current_time():
+    before = datetime.now(UTC)
+    result = HistorianHandler.to_utc_datetime(None)
+    after = datetime.now(UTC)
+    assert before <= result <= after
+
+
 @pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.integrationtest
 @pytest.mark.xdist_group(name="uns_historian")
 @pytest.mark.parametrize(
     "timestamp, topic, publisher, message, is_error",
     [
-        (1701232000, "a/b/c", "client1", {"key1": "value1"}, False),
+        (1701232000, "a/b/c", "client1", {"key1": "value1"}, False),  # epoch seconds
         (1701234000, "topic1", "client2", {"key2": "value2", "key3": 10}, False),
+        (1701234000000, "topic1/ms", "client2ms", {"key2": "value2", "key3": 10}, False),  # epoch milliseconds
         # if timestamp not provided, current time should be used
         (None, "topic2", "client3", {"key4": "value4"}, False),
         # Topic cant be null
@@ -102,8 +122,10 @@ async def test_persist_mqtt_msg(
             # accounting for some processing time
             assert current_time <= result[0]["time"]
         else:
-            # check for timestamp considering the  precision change done from milliseconds to microseconds
-            assert timestamp / 1000 == result[0]["time"].timestamp(), "timestamps did not match"
+            # persist_mqtt_msg accepts epoch seconds or milliseconds
+            ts = float(timestamp)
+            expected_epoch_s = ts if ts < 1e12 else ts / 1000
+            assert expected_epoch_s == result[0]["time"].timestamp(), "timestamps did not match"
 
         assert topic == result[0]["topic"], "topic stored is not what was received"
         result[0]["client_id"], "client_id stored is not what was received"

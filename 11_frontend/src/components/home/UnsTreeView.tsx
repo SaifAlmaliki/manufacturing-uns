@@ -14,6 +14,13 @@ import {
 } from 'lucide-react';
 import { UnsNode } from '../../types/uns';
 import { useUNS } from '../../context/UNSContext';
+import {
+  getNodeRole,
+  getNodeRoleLabel,
+  hasLiveTelemetry,
+  isNodeStale,
+  isStaleCandidate,
+} from '../../lib/uns/node-meta';
 
 export const UnsTreeView: React.FC = () => {
   const {
@@ -32,16 +39,18 @@ export const UnsTreeView: React.FC = () => {
 
   const [searchQuery, setSearchQuery] = useState('');
 
-  const isStale = (isoString: string) => {
-    const diffMs = Date.now() - new Date(isoString).getTime();
-    return diffMs > (settings.staleThresholdMinutes || 5) * 60 * 1000;
+  const isStale = (node: UnsNode) => {
+    if (!isStaleCandidate(node)) return false;
+    return isNodeStale(node.lastUpdated, settings.staleThresholdMinutes || 5);
   };
 
   // Render a single node row and its children recursively
   const renderNode = (node: UnsNode, level = 0) => {
     const isExpanded = expandedNodes.has(node.topic);
     const isSelected = selectedNode?.topic === node.topic;
-    const stale = isStale(node.lastUpdated);
+    const stale = isStale(node);
+    const role = getNodeRole(node.nodeType);
+    const live = hasLiveTelemetry(node.payload);
     const bookmarked = isBookmarked(node.topic);
     const isLeaf = node.isLeaf;
 
@@ -63,7 +72,7 @@ export const UnsTreeView: React.FC = () => {
             isSelected
               ? 'bg-amber-50 dark:bg-[#1E293B] text-amber-900 dark:text-[#FFC107] font-semibold border border-amber-300 dark:border-[#334155]'
               : 'text-[#475569] dark:text-[#94A3B8] hover:bg-slate-100 dark:hover:bg-[#1E293B]/50 hover:text-[#0F172A] dark:hover:text-[#F8FAFC] border border-transparent'
-          } ${stale ? 'opacity-50 text-[#64748B] italic' : ''}`}
+          } ${stale ? 'opacity-70' : ''}`}
         >
           {/* Node Icon & Expansion Caret */}
           <div className="flex items-center gap-1.5 min-w-0 flex-1">
@@ -102,7 +111,15 @@ export const UnsTreeView: React.FC = () => {
             {/* Node Name */}
             <span className="truncate font-mono text-[11px]">{node.name}</span>
 
-            {/* Stale tag */}
+            {/* Role / status tags */}
+            <span className="px-1 py-0 rounded bg-slate-100 dark:bg-[#0B0B0C] border border-[#CBD5E1] dark:border-[#334155] text-[#64748B] dark:text-[#94A3B8] text-[8px] font-mono shrink-0">
+              {getNodeRoleLabel(role)}
+            </span>
+            {live && (
+              <span className="px-1 py-0 rounded bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800/60 text-emerald-800 dark:text-[#10B981] text-[8px] font-mono shrink-0">
+                LIVE
+              </span>
+            )}
             {stale && (
               <span className="px-1 py-0 rounded bg-amber-100 dark:bg-amber-950/80 border border-amber-300 dark:border-amber-800/60 text-amber-800 dark:text-[#FFC107] text-[8px] font-mono shrink-0">
                 STALE

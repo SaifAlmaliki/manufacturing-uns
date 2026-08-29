@@ -140,6 +140,21 @@ class HistorianHandler:
             LOGGER.error(f"Error executing prepared statement: {ex}")
             raise
 
+    @staticmethod
+    def to_utc_datetime(timestamp: float | None) -> datetime:
+        """
+        Convert an MQTT epoch timestamp to a timezone-aware UTC datetime.
+
+        Accepts seconds or milliseconds. Values below 1e12 are treated as seconds
+        because some publishers (including the simulator) send seconds.
+        """
+        if timestamp is None:
+            return datetime.now(UTC)
+        ts = float(timestamp)
+        if ts < 1e12:
+            ts *= 1000
+        return datetime.fromtimestamp(ts / 1000, UTC)
+
     async def persist_mqtt_msg(self, client_id: str, topic: str, timestamp: float | None, message: dict):
         """
         Persists all mqtt message in the historian
@@ -149,18 +164,11 @@ class HistorianHandler:
         topic: str
             The topic on which the message was sent
         timestamp
-            The timestamp of the message received in milliseconds
+            The timestamp of the message received in epoch seconds or milliseconds
         message: str
             The MQTT message. String is expected to be JSON formatted
         """
-        if timestamp is None:
-            db_timestamp = datetime.now(UTC)
-        else:
-            # Accept epoch seconds or milliseconds (simulator may send seconds)
-            ts = float(timestamp)
-            if ts < 1e12:
-                ts *= 1000
-            db_timestamp = datetime.fromtimestamp(ts / 1000, UTC)
+        db_timestamp = self.to_utc_datetime(timestamp)
         # sometimes when qos is not 2, the mqtt message may be delivered multiple times. in such case avoid duplicate inserts
         sql_cmd = (
             f"INSERT INTO {HistorianConfig.table} ( time, topic, client_id, mqtt_msg ) \n"  # noqa:S608:

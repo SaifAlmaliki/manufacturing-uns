@@ -13,6 +13,7 @@ import {
 import { unsGraphQLClient } from '../services/graphql/client';
 import { DEFAULT_APP_SETTINGS, STORAGE_KEYS } from '../config/branding';
 import { childrenTopic } from '../lib/uns/topics';
+import { isStaleCandidate, isNodeStale } from '../lib/uns/node-meta';
 import { isSparkplugTopic } from '../lib/uns/sparkplug';
 
 export type NavigationTab = 'home' | 'explore' | 'sparkplug' | 'streams' | 'system' | 'users';
@@ -201,7 +202,7 @@ export const UNSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     try {
-      const children = await unsGraphQLClient.getUnsNodes([childrenTopic(topic)]);
+      const children = await unsGraphQLClient.getUnsNodeChildren(topic);
       setNodeChildrenMap((prev) => new Map(prev).set(topic, children));
       setExpandedNodes((prev) => new Set(prev).add(topic));
     } catch (e) {
@@ -230,8 +231,8 @@ export const UNSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [treeWithChildren]);
 
   const staleNodesCount = allLoadedNodes.filter((n) => {
-    const ms = Date.now() - new Date(n.lastUpdated).getTime();
-    return ms > (settings.staleThresholdMinutes || 5) * 60 * 1000;
+    if (!isStaleCandidate(n)) return false
+    return isNodeStale(n.lastUpdated, settings.staleThresholdMinutes || 5)
   }).length;
 
   const jumpToTopicInTree = async (targetTopic: string) => {
@@ -247,7 +248,7 @@ export const UNSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     for (let i = 0; i < segments.length - 1; i++) {
       currentPath = currentPath ? `${currentPath}/${segments[i]}` : segments[i];
       expanded.add(currentPath);
-      const children = await unsGraphQLClient.getUnsNodes([childrenTopic(currentPath)]);
+      const children = await unsGraphQLClient.getUnsNodeChildren(currentPath);
       setNodeChildrenMap((prev) => new Map(prev).set(currentPath, children));
     }
 

@@ -8,7 +8,8 @@ import {
   graphqlSpbNodeToSparkplugNode,
   graphqlUnsNodeToUnsNode,
 } from '../../lib/uns/map-nodes'
-import { mqttTopicInput, mqttTopicInputs } from '../../lib/uns/topics'
+import { mqttTopicInput, mqttTopicInputs, childrenTopic } from '../../lib/uns/topics'
+import { immediateChildTopics } from '../../lib/uns/node-meta'
 import type {
   HistoricEvent,
   KafkaMessage,
@@ -168,6 +169,36 @@ export class UnsGraphQLClient {
       return res.data.getUnsNodes.map(graphqlUnsNodeToUnsNode)
     }
     return []
+  }
+
+  /**
+   * Load direct children of a tree node. Falls back to property search when wildcard
+   * queries time out on deep ISA-95 paths (e.g. G1/+ under Cell2).
+   */
+  public async getUnsNodeChildren(parentTopic: string): Promise<UnsNode[]> {
+    const direct = await this.getUnsNodes([childrenTopic(parentTopic)])
+    if (direct.length > 0) {
+      return direct
+    }
+
+    const discovered = await this.getUnsNodesByProperty(['value'], [`${parentTopic}/#`])
+    if (discovered.length === 0) {
+      return []
+    }
+
+    const childTopics = immediateChildTopics(
+      parentTopic,
+      discovered.map((node) => node.topic),
+    )
+
+    const children: UnsNode[] = []
+    for (const topic of childTopics) {
+      const nodes = await this.getUnsNodes([topic])
+      if (nodes[0]) {
+        children.push(nodes[0])
+      }
+    }
+    return children
   }
 
   public async getHistoricEvents(

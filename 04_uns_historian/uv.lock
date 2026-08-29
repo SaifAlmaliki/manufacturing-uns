@@ -862,6 +862,20 @@ wheels = [
 ]
 
 [[package]]
+name = "uns-config"
+version = "0.9.38"
+source = { editable = "../00_uns_config" }
+dependencies = [
+    { name = "dynaconf" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "dynaconf", specifier = "~=3.2" }]
+
+[package.metadata.requires-dev]
+test = [{ name = "pytest", specifier = ">=9.0.3,<10" }]
+
+[[package]]
 name = "uns-historian"
 version = "0.9.38"
 source = { editable = "." }
@@ -870,6 +884,7 @@ dependencies = [
     { name = "dynaconf" },
     { name = "logger" },
     { name = "psutil" },
+    { name = "uns-config" },
 ]
 
 [package.dev-dependencies]
@@ -891,6 +906,7 @@ requires-dist = [
     { name = "dynaconf", specifier = "~=3.2" },
     { name = "logger", specifier = "~=1.4" },
     { name = "psutil", specifier = ">=6.1.1,<8" },
+    { name = "uns-config", editable = "../00_uns_config" },
 ]
 
 [package.metadata.requires-dev]

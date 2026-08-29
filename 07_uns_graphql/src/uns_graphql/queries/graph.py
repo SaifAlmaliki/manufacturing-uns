@@ -49,6 +49,16 @@ REL_ATTR_TYPE = "type"
 REL_INDEX = "index"
 
 
+def epoch_to_datetime(ts: float | int | None) -> datetime:
+    """Convert Neo4j epoch to UTC datetime (seconds or milliseconds)."""
+    if ts is None:
+        raise ValueError("timestamp is None")
+    value = float(ts)
+    if value >= 1e12:
+        return datetime.fromtimestamp(value / 1000, UTC)
+    return datetime.fromtimestamp(value, UTC)
+
+
 @strawberry.type(description="Query GraphDB for current consolidated UNS Nodes created by merging multiple UNS Events ")
 class Query:
     """
@@ -281,14 +291,9 @@ class Query:
             relationships: list[Relationship] = record["relationships"]
 
             if node[MODIFIED_TIMESTAMP_KEY]:
-                # Timestamp is normally in milliseconds and needs to be converted to microsecond
-                modified_timestamp = datetime.fromtimestamp(
-                    node[MODIFIED_TIMESTAMP_KEY] / 1000, UTC)
+                modified_timestamp = epoch_to_datetime(node[MODIFIED_TIMESTAMP_KEY])
             else:
-                # if the DB doesn't have any value, then created and modified timestamps are the same
-                # Timestamp is normally in milliseconds and needs to be converted to microsecond
-                modified_timestamp = datetime.fromtimestamp(
-                    node[CREATED_TIMESTAMP_KEY] / 1000, UTC)
+                modified_timestamp = epoch_to_datetime(node[CREATED_TIMESTAMP_KEY])
 
             uns_node: UNSNode = UNSNode(
                 node_name=node[NODE_NAME_KEY],
@@ -298,9 +303,7 @@ class Query:
                 namespace=topic,
                 payload=JSONPayload(Query.get_nested_properties(
                     node, child_nodes, relationships)),
-                # Timestamp is normally in milliseconds and needs to be converted to microsecond
-                created=datetime.fromtimestamp(
-                    node[CREATED_TIMESTAMP_KEY] / 1000, UTC),
+                created=epoch_to_datetime(node[CREATED_TIMESTAMP_KEY]),
                 last_updated=modified_timestamp,
             )
             uns_node_list.append(uns_node)
@@ -358,14 +361,9 @@ class Query:
             relationships: list[Relationship] = record["relationships"]
 
             if node[MODIFIED_TIMESTAMP_KEY]:
-                # Timestamp is normally in milliseconds and needs to be converted to microsecond
-                modified_timestamp = datetime.fromtimestamp(
-                    node[MODIFIED_TIMESTAMP_KEY] / 1000, UTC)
+                modified_timestamp = epoch_to_datetime(node[MODIFIED_TIMESTAMP_KEY])
             else:
-                # if the DB doesn't have any value, then created and modified timestamps are the same
-                # Timestamp is normally in milliseconds and needs to be converted to microsecond
-                modified_timestamp = datetime.fromtimestamp(
-                    node[CREATED_TIMESTAMP_KEY] / 1000, UTC)
+                modified_timestamp = epoch_to_datetime(node[CREATED_TIMESTAMP_KEY])
 
             uns_node: UNSNode = UNSNode(
                 node_name=node[NODE_NAME_KEY],
@@ -375,9 +373,7 @@ class Query:
                 namespace=topic,
                 payload=JSONPayload(Query.get_nested_properties(
                     node, child_nodes, relationships)),
-                # Timestamp is normally in milliseconds and needs to be converted to microsecond
-                created=datetime.fromtimestamp(
-                    node[CREATED_TIMESTAMP_KEY] / 1000, UTC),
+                created=epoch_to_datetime(node[CREATED_TIMESTAMP_KEY]),
                 last_updated=modified_timestamp,
             )
             uns_node_list.append(uns_node)

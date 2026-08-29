@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useUNS } from '../../context/UNSContext';
 import { JsonViewer } from '../common/JsonViewer';
+import { getNodeRole, getNodeRoleLabel, hasLiveTelemetry, isNodeStale, isStaleCandidate } from '../../lib/uns/node-meta';
 
 export const PayloadInspector: React.FC = () => {
   const {
@@ -53,23 +54,19 @@ export const PayloadInspector: React.FC = () => {
     setTimeout(() => setCopiedTopic(false), 1500);
   };
 
-  const isStale = (isoString: string) => {
-    const diffMs = Date.now() - new Date(isoString).getTime();
-    return diffMs > (settings.staleThresholdMinutes || 5) * 60 * 1000;
-  };
-
   const pathParts = selectedNode.topic.split('/');
   const bookmarked = isBookmarked(selectedNode.topic);
-  const stale = isStale(selectedNode.lastUpdated);
+  const role = getNodeRole(selectedNode.nodeType);
+  const live = hasLiveTelemetry(selectedNode.payload);
+  const stale =
+    isStaleCandidate(selectedNode) &&
+    isNodeStale(selectedNode.lastUpdated, settings.staleThresholdMinutes || 5);
   const payloadEmpty =
     selectedNode.payload === null ||
     (typeof selectedNode.payload === 'object' &&
       !Array.isArray(selectedNode.payload) &&
       Object.keys(selectedNode.payload).length === 0);
-  const nodeType = selectedNode.nodeType;
-  const isStructuralNode =
-    nodeType != null &&
-    ['ENTERPRISE', 'FACILITY', 'AREA', 'LINE', 'DEVICE', 'DEVICE_depth_1'].includes(nodeType);
+  const isStructuralNode = role === 'structural' || role === 'equipment' || role === 'parameter-group';
 
   // Extract key numeric telemetry properties for top parameter cards
   const numericMetrics: { key: string; value: number | string; unit?: string }[] = [];
@@ -146,6 +143,14 @@ export const PayloadInspector: React.FC = () => {
 
         {/* Node Metadata Strip */}
         <div className="flex flex-wrap items-center gap-3 text-[10px] font-mono text-[#475569] dark:text-[#94A3B8] pt-1">
+          <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-[#0B0B0C] border border-[#CBD5E1] dark:border-[#334155] text-[#64748B]">
+            {getNodeRoleLabel(role)}
+          </span>
+          {live && (
+            <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800/50 text-emerald-700 dark:text-[#10B981] font-semibold">
+              LIVE DATA
+            </span>
+          )}
           <div className="flex items-center gap-1">
             <Server className="w-3 h-3 text-[#64748B]" />
             <span>PUB:</span>
