@@ -10,7 +10,7 @@ Do not add per-module `conf/settings.yaml` copies. Module-specific values (MQTT 
 2. Copy [`.secrets_template.yaml`](./.secrets_template.yaml) to [`.secrets.yaml`](./.secrets.yaml) and fill in credentials.
 3. Optionally override any key via environment variables with the `UNS_` prefix (for example `UNS_PLATFORM__INSTANCE_NAME=PlantA`).
 
-The frontend (`10_frontend`) reads `settings.yaml` automatically for GraphQL URL, dev server port, and display name.
+The frontend (`11_frontend`) reads `settings.yaml` automatically for GraphQL URL, dev server port, and display name.
 
 ## Per-module overrides
 

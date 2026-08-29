@@ -251,7 +251,7 @@ services:
   uns_frontend:
     build:
       context: .
-      dockerfile: ./10_frontend/Dockerfile
+      dockerfile: ./11_frontend/Dockerfile
       args:
         VITE_GRAPHQL_URL: http://localhost:8000/graphql
     ports:

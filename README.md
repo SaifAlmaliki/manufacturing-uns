@@ -274,7 +274,7 @@ The current project contains the following microservices
 1. [05_sparkplugb](./05_sparkplugb/README.md): Python project for mqtt listener that listens to the SparkplugB namespace and for translates relevant messages to publish to the UNS namespace
 1. [06_uns_kafka](./06_uns_kafka/README.md): Python project for mqtt listener that subscribes to the MQTT broker and publishes to the KAFKA broker
 1. [07_uns_graphql](./07_uns_graphql/README.md): Python project for GraphQL server to query the Unified NameSpace
-1. [10_frontend](./10_frontend/README.md): React console that talks only to GraphQL (tree, live MQTT feed, search, historian)
+1. [11_frontend](./11_frontend/README.md): React console that talks only to GraphQL (tree, live MQTT feed, search, historian)
 1. [99_simulator](./99_simulator/README.md): Python project for simulating data creation to the UNS. _*NOT TO BE USED IN PRODUCTION*_
 
 Each microservice can be independently imported into VSCode by going into the specific microservice folder. Instructions on setting up the python pip & virtual environments are provided in the respective ´README.md´ within that folder

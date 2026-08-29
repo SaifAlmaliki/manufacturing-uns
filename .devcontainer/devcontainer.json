@@ -60,8 +60,11 @@
     "7687": {
       "label": "Neo4j database"
     },
-    "8000": {
-      "label": "GraphQL Server"
+    "8088": {
+      "label": "UNS Frontend"
+    },
+    "5173": {
+      "label": "UNS Frontend (dev)"
     },
     "8080": {
       "label": "MQTT Websockets"
