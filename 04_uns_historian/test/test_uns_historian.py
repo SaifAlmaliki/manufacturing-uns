@@ -146,6 +146,16 @@ def create_publisher() -> UnsMQTTClient:
     return uns_publisher
 
 
+def _wait_until(loop, condition, *, timeout_s: float = 5.0, sleep_s: float = 0.1) -> bool:
+    """Pump the historian event loop until condition() is true or timeout."""
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if condition():
+            return True
+        loop.run_until_complete(asyncio.sleep(sleep_s))
+    return condition()
+
+
 @pytest_asyncio.fixture(loop_scope="session", scope="session")
 async def clean_up_database():
     """
@@ -173,31 +183,20 @@ async def clean_up_database():
 def test_uns_mqtt_historian(clean_up_database, topic: str, messages: list):  # noqa: ARG001
     uns_mqtt_historian = None
     uns_publisher = None
+    publish_properties = None
     try:
         # 1. Start the historian listener in a new thread
         loop = asyncio.get_event_loop()
         uns_mqtt_historian = UnsMqttHistorian(loop=loop)
-        mgs_received: list = []
-        old_on_message = uns_mqtt_historian.uns_client.on_message
-
-        def on_message_decorator(client, userdata, msg):
-            """
-            Override / wrap the existing on_message callback so that
-            we can track the messages were processed
-            """
-            old_on_message(client, userdata, msg)
-            mgs_received.append(msg)
-
-        uns_mqtt_historian.uns_client.on_message = on_message_decorator
-
         uns_mqtt_historian.uns_client.loop_start()
-
-        # Allow some time for the historian to connect and subscribe
-        loop.run_until_complete(asyncio.sleep(1.0))
+        assert _wait_until(loop, uns_mqtt_historian.uns_client.is_connected), (
+            "Historian MQTT client did not connect before publish"
+        )
 
         # 2. Create an MQTT publisher
         uns_publisher: UnsMQTTClient = create_publisher()
         uns_publisher.loop_start()
+        assert _wait_until(loop, uns_publisher.is_connected), "Publisher MQTT client did not connect before publish"
 
         if MQTTConfig.version == MQTTVersion.MQTTv5:
             publish_properties = Properties(PacketTypes.PUBLISH)
@@ -207,42 +206,47 @@ def test_uns_mqtt_historian(clean_up_database, topic: str, messages: list):  # n
             # publish multiple message as non-persistent
             # to allow the tests to be idempotent across multiple runs
             uns_publisher.publish(topic=topic, payload=message, qos=2, retain=True, properties=publish_properties)
-            # allow for the message to be received
-            # We must use the loop to sleep so pending async tasks (DB writes) can run
+            # Pump the loop so persist_mqtt_msg tasks scheduled from on_message can run
             loop.run_until_complete(asyncio.sleep(0.1))
 
-        # wait for uns_mqtt_historian to have persisted to the database
-        # instead of waiting on messages received, we wait until the DB has the records
-        # this handles the async nature better as persistence happens after receipt
-        max_retries = 50
-        for _ in range(max_retries):
-            # We must use the loop to sleep so pending async tasks (DB writes) can run
-            loop.run_until_complete(asyncio.sleep(0.1))
-            if len(mgs_received) >= len(messages):
-                break
-
-        # disconnect the historian listener to free the asyncio loop
-        uns_mqtt_historian.uns_client.disconnect()
-        uns_mqtt_historian.uns_client.loop_stop()
-        # connect to the database and validate
         select_query = f""" SELECT * FROM {HistorianConfig.table} WHERE
                                topic = $1 AND
                                mqtt_msg = $2 AND
                                client_id = $3;"""  # noqa: S608
 
-        # Inline the async function
         async def execute_prepared_async(select_query, topic, message, client_id):
             async with HistorianHandler() as historian:
                 return await historian.execute_prepared(select_query, *[topic, json.dumps(message), client_id])
 
-        for message in messages:
-            if type(message) is bytes:
-                message = convert_spb_bytes_payload_to_dict(message)
+        normalized_messages = [
+            convert_spb_bytes_payload_to_dict(message) if type(message) is bytes else message for message in messages
+        ]
 
-            result = loop.run_until_complete(
-                execute_prepared_async(select_query, topic, message, uns_mqtt_historian.client_id)
-            )
+        # on_message only schedules persist_mqtt_msg; wait for the rows, not MQTT receipt
+        persisted: dict[str, list] = {}
 
+        def _all_persisted() -> bool:
+            for message in normalized_messages:
+                key = json.dumps(message)
+                if key in persisted:
+                    continue
+                result = loop.run_until_complete(
+                    execute_prepared_async(select_query, topic, message, uns_mqtt_historian.client_id)
+                )
+                if result:
+                    persisted[key] = result
+            return len(persisted) == len(normalized_messages)
+
+        assert _wait_until(loop, _all_persisted), (
+            f"Historian did not persist {len(normalized_messages)} message(s) for topic {topic}"
+        )
+
+        # disconnect the historian listener after persistence completed
+        uns_mqtt_historian.uns_client.disconnect()
+        uns_mqtt_historian.uns_client.loop_stop()
+
+        for message in normalized_messages:
+            result = persisted[json.dumps(message)]
             assert result is not None, "Should have gotten a result"
             assert len(result) == 1, "Should have gotten only one record because we inserted only one record"
 
@@ -251,4 +255,5 @@ def test_uns_mqtt_historian(clean_up_database, topic: str, messages: list):  # n
         if uns_publisher is not None:
             uns_publisher.publish(topic=topic, payload=b"", qos=2, retain=True, properties=publish_properties)
             uns_publisher.disconnect()
-        uns_mqtt_historian.uns_client.disconnect()
+        if uns_mqtt_historian is not None:
+            uns_mqtt_historian.uns_client.disconnect()
