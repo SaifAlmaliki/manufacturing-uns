@@ -13,6 +13,7 @@ import {
 import { unsGraphQLClient } from '../services/graphql/client';
 import { DEFAULT_APP_SETTINGS, STORAGE_KEYS } from '../config/branding';
 import { childrenTopic } from '../lib/uns/topics';
+import { isSyntheticUnsNode } from '../lib/uns/isa95-probe';
 import { isStaleCandidate, isNodeStale } from '../lib/uns/node-meta';
 import { isSparkplugTopic } from '../lib/uns/sparkplug';
 
@@ -127,7 +128,7 @@ export const UNSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [selectedNode, setSelectedNode] = useState<UnsNode | null>(null);
   const selectNode = useCallback((node: UnsNode | null) => {
     setSelectedNode(node);
-    if (!node) return;
+    if (!node || isSyntheticUnsNode(node)) return;
 
     void unsGraphQLClient.getUnsNodes([node.topic]).then((nodes) => {
       if (!nodes[0]) return;

@@ -68,7 +68,12 @@ export const UnsTreeView: React.FC = () => {
       <div key={node.topic} className="select-none">
         <div
           id={`uns-node-${node.topic.replace(/[^a-zA-Z0-9]/g, '-')}`}
-          onClick={() => selectNode(node)}
+          onClick={() => {
+            selectNode(node);
+            if (isExpandable && !expandedNodes.has(node.topic)) {
+              void toggleNodeExpanded(node.topic);
+            }
+          }}
           style={{ paddingLeft: `${level * 12 + 4}px` }}
           className={`flex items-center justify-between py-0.5 px-1.5 rounded text-[11px] font-mono cursor-pointer transition-colors group ${
             isSelected

@@ -11,8 +11,6 @@ import {
 import { mqttTopicInput, mqttTopicInputs, childrenTopic, topicDepth } from '../../lib/uns/topics'
 import {
   isParameterGroupTopic,
-  probeParameterGroupTopics,
-  probeSensorTopics,
   syntheticParameterGroupNodes,
   syntheticSensorNodes,
 } from '../../lib/uns/isa95-probe'
@@ -177,45 +175,23 @@ export class UnsGraphQLClient {
     return []
   }
 
-  /** Probe exact paths one-by-one to avoid Neo4j OOM from batched deep queries. */
-  private async probeNodesSequential(topics: string[]): Promise<UnsNode[]> {
-    const found: UnsNode[] = []
-    for (const topic of topics) {
-      const nodes = await this.getUnsNodes([topic])
-      if (nodes[0]) {
-        found.push(nodes[0])
-      }
-    }
-    return found
-  }
-
-  /**
-   * Load direct children of a tree node. Uses exact ISA-95 segment probes when wildcard
-   * queries would OOM Neo4j on deep paths (e.g. G1/+).
-   */
   public async getUnsNodeChildren(parentTopic: string): Promise<UnsNode[]> {
-    const useWildcard = topicDepth(parentTopic) < 6
-    if (useWildcard) {
-      const direct = await this.getUnsNodes([childrenTopic(parentTopic)])
-      if (direct.length > 0) {
-        return direct
-      }
-    }
-
-    const groups = await this.probeNodesSequential(probeParameterGroupTopics(parentTopic))
-    if (groups.length > 0) {
-      return groups
-    }
+    const depth = topicDepth(parentTopic)
 
     if (isParameterGroupTopic(parentTopic)) {
-      const sensors = await this.probeNodesSequential(probeSensorTopics(parentTopic))
-      if (sensors.length > 0) {
-        return sensors
-      }
       return syntheticSensorNodes(parentTopic)
     }
 
-    if (topicDepth(parentTopic) >= 5) {
+    if (depth >= 6) {
+      return syntheticParameterGroupNodes(parentTopic)
+    }
+
+    const direct = await this.getUnsNodes([childrenTopic(parentTopic)])
+    if (direct.length > 0) {
+      return direct
+    }
+
+    if (depth >= 5) {
       return syntheticParameterGroupNodes(parentTopic)
     }
 

@@ -1,5 +1,7 @@
 /** Known ISA-95 topic segments used by 99_simulator — avoids Neo4j OOM from deep wildcards. */
 
+import type { UnsNode } from '../../types/uns'
+
 export const ISA95_PARAMETER_GROUPS = [
   'ProcessValue',
   'Setpoint',
@@ -28,6 +30,10 @@ export function probeSensorTopics(parentTopic: string): string[] {
 export function isParameterGroupTopic(topic: string): boolean {
   const tail = topic.split('/').pop() ?? ''
   return (ISA95_PARAMETER_GROUPS as readonly string[]).includes(tail)
+}
+
+export function isSyntheticUnsNode(node: Pick<UnsNode, 'lastUpdated'>): boolean {
+  return new Date(node.lastUpdated).getTime() <= 0
 }
 
 function segmentName(topic: string): string {
