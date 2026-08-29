@@ -4,7 +4,7 @@ from typing import Any
 
 from uns_simulator.config import settings
 from uns_simulator.devices import HMI, PLC, SCADA
-from uns_simulator.models import ISA95Hierarchy
+from uns_simulator.models import expand_hierarchy_paths
 
 LOGGER = logging.getLogger(__name__)
 
@@ -22,47 +22,101 @@ def resolve_simulation_duration(
     return int(configured)
 
 
+def _plc_equipment_config(plc_cfg: Any) -> dict[str, Any]:
+    return {
+        "name": plc_cfg.get("equipment") or plc_cfg.get("name"),
+        "sensors": plc_cfg.get("sensors") or {},
+    }
+
+
 class UnifiedNamespaceSimulator:
     """Main simulator class following unifiednamespace patterns"""
 
     def __init__(self):
         self.mqtt_config = settings.mqtt
         self.simulation_config = settings.simulation
-        self.hierarchy = ISA95Hierarchy(**settings.hierarchy)
+        self.hierarchies = expand_hierarchy_paths(settings.hierarchy)
+        self.hierarchy = self.hierarchies[0]
+        self.plc_templates = list(settings.get("plc") or [])
+        self.equipment_fallback = settings.get("equipment.mixer_tank")
         self.devices: list = []
         self.tasks: list[asyncio.Task] = []
 
     def create_plc(self) -> list[PLC]:
-        """Create PLC instances from configuration"""
-        plc_list = []
-        plc_count = self.simulation_config.get('plc_count', 2)
+        """Create one PLC per cell for each configured equipment template."""
+        plc_list: list[PLC] = []
 
-        for i in range(plc_count):
-            plc_id = f"{i + 1:03d}"
-            equipment_config = settings.get("equipment.mixer_tank")
+        for path in self.hierarchies:
+            if self.plc_templates:
+                for plc_cfg in self.plc_templates:
+                    equipment_config = _plc_equipment_config(plc_cfg)
+                    if not equipment_config["name"]:
+                        continue
+                    plc_id = (
+                        f"{plc_cfg.get('id', 'plc')}-"
+                        f"{path.site}-{path.line}-{path.cell}"
+                    )
+                    plc_list.append(
+                        PLC(
+                            plc_id=plc_id,
+                            hierarchy=path,
+                            mqtt_config=self.mqtt_config,
+                            equipment_config=equipment_config,
+                        )
+                    )
+                continue
 
-            if equipment_config:
-                plc = PLC(
-                    plc_id=plc_id,
-                    hierarchy=self.hierarchy,
-                    mqtt_config=self.mqtt_config,
-                    equipment_config=equipment_config
+            if not self.equipment_fallback:
+                continue
+            plc_count = self.simulation_config.get("plc_count", 2)
+            for i in range(plc_count):
+                plc_list.append(
+                    PLC(
+                        plc_id=f"{i + 1:03d}-{path.site}-{path.line}-{path.cell}",
+                        hierarchy=path,
+                        mqtt_config=self.mqtt_config,
+                        equipment_config=self.equipment_fallback,
+                    )
                 )
-                plc_list.append(plc)
 
         return plc_list
 
-    def create_scada(self) -> SCADA:
-        """Create SCADA instance"""
-        return SCADA(hierarchy=self.hierarchy, mqtt_config=self.mqtt_config)
+    def create_scada(self) -> list[SCADA]:
+        """One SCADA publisher per site (first cell of that site)."""
+        seen_sites: set[str] = set()
+        scadas: list[SCADA] = []
+        for path in self.hierarchies:
+            if path.site in seen_sites:
+                continue
+            seen_sites.add(path.site)
+            scadas.append(
+                SCADA(
+                    hierarchy=path,
+                    mqtt_config=self.mqtt_config,
+                    system_name=f"SCADA_{path.site}",
+                )
+            )
+        return scadas
 
-    def create_hmi(self, count: int = 1) -> list[HMI]:
-        """Create HMI instances"""
-        return [
-            HMI(hmi_id=f"{i:02d}", hierarchy=self.hierarchy,
-                mqtt_config=self.mqtt_config)
-            for i in range(count)
-        ]
+    def create_hmi(self, count: int | None = None) -> list[HMI]:
+        """One HMI per line (first cell of that line)."""
+        if count is not None:
+            return [
+                HMI(hmi_id=f"{i:02d}", hierarchy=self.hierarchy,
+                    mqtt_config=self.mqtt_config)
+                for i in range(count)
+            ]
+        seen_lines: set[tuple[str, str, str]] = set()
+        hmis: list[HMI] = []
+        for path in self.hierarchies:
+            key = (path.site, path.area, path.line)
+            if key in seen_lines:
+                continue
+            seen_lines.add(key)
+            hmi_id = f"{path.site}-{path.line}"
+            hmis.append(HMI(hmi_id=hmi_id, hierarchy=path,
+                            mqtt_config=self.mqtt_config))
+        return hmis
 
     async def _run_until(self, duration: int) -> None:
         """Wait for the simulation window. duration 0 runs until cancelled."""
@@ -79,13 +133,17 @@ class UnifiedNamespaceSimulator:
             duration_minutes, self.simulation_config)
 
         LOGGER.info("Starting Unified Namespace Simulator")
-
-        # Create devices
-        self.devices = (
-            [*self.create_plc(), self.create_scada(), *self.create_hmi(2)]
+        LOGGER.info(
+            "Hierarchy cells: %s",
+            ", ".join(
+                f"{p.site}/{p.area}/{p.line}/{p.cell}" for p in self.hierarchies
+            ),
         )
 
-        # Start all devices
+        self.devices = (
+            [*self.create_plc(), *self.create_scada(), *self.create_hmi()]
+        )
+
         interval = self.simulation_config.interval
         for device in self.devices:
             task = asyncio.create_task(device.start(interval))
@@ -103,6 +161,5 @@ class UnifiedNamespaceSimulator:
         for device in self.devices:
             await device.stop()
 
-        # Wait for tasks to complete
         if self.tasks:
             await asyncio.gather(*self.tasks, return_exceptions=True)

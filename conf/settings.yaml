@@ -78,15 +78,15 @@ graphql:
 
 graphdb:
   mqtt:
-    topics: ["test/uns/#", "ManufacturingCo/#", "spBv1.0/uns_group/#"]
+    topics: ["test/uns/#", "CovestroAG/#", "spBv1.0/uns_group/#"]
 
 historian:
   mqtt:
-    topics: ["test/uns/#", "ManufacturingCo/#", "spBv1.0/#"]
+    topics: ["test/uns/#", "CovestroAG/#", "spBv1.0/#"]
 
 kafka_mapper:
   mqtt:
-    topics: ["test/uns/#", "ManufacturingCo/#"]
+    topics: ["test/uns/#", "CovestroAG/#"]
   kafka:
     config:
       client.id: "uns_kafka_client"
@@ -104,10 +104,26 @@ simulator:
     client_id: "uns_simulator_client"
   hierarchy:
     enterprise: "CovestroAG"
-    site: "Dormagen"
-    area: "Production"
-    line: "Line1"
-    cell: "Cell1" 
+    sites:
+      - name: "Dormagen"
+        areas:
+          - name: "Production"
+            lines:
+              - name: "Line1"
+                cells:
+                  - "Cell1"
+                  - "Cell2"
+              - name: "Line2"
+                cells:
+                  - "Cell1"
+      - name: "Krefeld"
+        areas:
+          - name: "Production"
+            lines:
+              - name: "Line1"
+                cells:
+                  - "Cell1"
+
   plc:
     - id: "001"
       equipment: "G1"

@@ -22,6 +22,17 @@ from enum import Enum
 from typing import Any
 
 
+def _node_name(node: Any) -> str:
+    if isinstance(node, str):
+        return node
+    if node is None:
+        raise ValueError("Hierarchy node is missing a name")
+    name = node.get("name") if hasattr(node, "get") else None
+    if not name:
+        raise ValueError(f"Hierarchy node is missing 'name': {node}")
+    return str(name)
+
+
 class ParameterType(Enum):
     """Types of industrial parameters following ISA-95 standards"""
     PROCESS_VALUE = "ProcessValue"    # Measured values from sensors
@@ -50,6 +61,61 @@ class ISA95Hierarchy:
         Example: ManufacturingCo/PlantA/Production/Line1/Cell1/MixerTank/ProcessValue/Temperature
         """
         return f"{self.enterprise}/{self.site}/{self.area}/{self.line}/{self.cell}/{equipment}/{param_type.value}/{param_name}"
+
+
+def expand_hierarchy_paths(raw: Any) -> list[ISA95Hierarchy]:
+    """
+    Expand simulator.hierarchy into one ISA-95 path per cell.
+
+    Nested shape:
+      enterprise / sites[] / areas[] / lines[] / cells[]
+    Legacy flat shape:
+      enterprise, site, area, line, cell
+    """
+    if raw is None:
+        raise ValueError("simulator.hierarchy is required")
+
+    enterprise = raw.get("enterprise")
+    if not enterprise:
+        raise ValueError("simulator.hierarchy.enterprise is required")
+
+    sites = raw.get("sites")
+    if sites:
+        paths: list[ISA95Hierarchy] = []
+        for site in sites:
+            site_name = _node_name(site)
+            for area in site.get("areas") or []:
+                area_name = _node_name(area)
+                for line in area.get("lines") or []:
+                    line_name = _node_name(line)
+                    cells = line.get("cells") or []
+                    if not cells:
+                        raise ValueError(
+                            f"Line {site_name}/{area_name}/{line_name} has no cells"
+                        )
+                    for cell in cells:
+                        paths.append(
+                            ISA95Hierarchy(
+                                enterprise=str(enterprise),
+                                site=site_name,
+                                area=area_name,
+                                line=line_name,
+                                cell=_node_name(cell),
+                            )
+                        )
+        if not paths:
+            raise ValueError("simulator.hierarchy.sites did not produce any cells")
+        return paths
+
+    return [
+        ISA95Hierarchy(
+            enterprise=str(enterprise),
+            site=str(raw.get("site")),
+            area=str(raw.get("area")),
+            line=str(raw.get("line")),
+            cell=str(raw.get("cell")),
+        )
+    ]
 
 
 class Equipment:
