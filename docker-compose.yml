@@ -105,6 +105,8 @@ services:
 
   tsdb_setup_script:
     image: "postgres:12"
+    volumes:
+      - ./04_uns_historian/sql_scripts:/sql:ro
     environment:
       PGPASSWORD: ${PGPASSWORD}
       UNS_historian__hostname: uns_timescale_db
@@ -125,6 +127,7 @@ services:
         PGPASSWORD=$${PGPASSWORD} psql -h $${UNS_historian__hostname} -U postgres -p 5432 -c "ALTER DATABASE $${UNS_historian__database} OWNER TO $${UNS_historian__username};"
         PGPASSWORD=$${UNS_historian__password} psql -h $${UNS_historian__hostname} -U $${UNS_historian__username} -d $${UNS_historian__database} -p 5432 -c "CREATE TABLE $${UNS_historian__table} (time TIMESTAMPTZ NOT NULL, topic TEXT NOT NULL, client_id TEXT, mqtt_msg JSONB, CONSTRAINT unique_event UNIQUE (time, topic, client_id, mqtt_msg));"
         PGPASSWORD=$${UNS_historian__password} psql -h $${UNS_historian__hostname} -U $${UNS_historian__username} -d $${UNS_historian__database} -p 5432 -c "SELECT create_hypertable('$${UNS_historian__table}', 'time');"
+        PGPASSWORD=$${UNS_historian__password} psql -h $${UNS_historian__hostname} -U $${UNS_historian__username} -d $${UNS_historian__database} -p 5432 -v ON_ERROR_STOP=1 -f /sql/03_setup_alert_rules.sql
         echo "Successfully created & configured timescaledb for the UNS"
 
   graphdb_client:

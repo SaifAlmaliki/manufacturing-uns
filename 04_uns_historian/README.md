@@ -55,6 +55,9 @@ psql -U postgres -h localhost -f './sql_scripts/01_setup_db.sql'
 # create the hypertable with the application user
 psql -U uns_dbuser  -h localhost -d uns_historian -f './sql_scripts/02_setup_hypertable.sql'
 
+# create transactional alert-rule tables (schema console) used by /#/alerts
+psql -U uns_dbuser  -h localhost -d uns_historian -f './sql_scripts/03_setup_alert_rules.sql'
+
 ```
 
 **The key parameters you must update for your environment are :**
