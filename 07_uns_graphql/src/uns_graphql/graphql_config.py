@@ -141,7 +141,7 @@ class KAFKAConfig:
 
 class HistorianConfig:
     """
-    Loads the configurations from '../../conf/settings.yaml' and '../../conf/.secrets.yaml'
+    Loads the configurations from the repository root conf/settings.yaml and conf/.secrets.yaml
     """
 
     hostname: str = settings.get("historian.hostname")

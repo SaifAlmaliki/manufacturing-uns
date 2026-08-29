@@ -10,7 +10,10 @@ pip3 install --upgrade pip uv
 uv python install --default 3.14
 uv sync
 
-# 2. create minimalistic secret files for all the modules.
+# 2. create a single platform secrets file at conf/.secrets.yaml
+SECRETS_FILE="${WORKSPACE_DEFAULT_PATH}/conf/.secrets.yaml"
+SECRETS_SNIPPETS="$(mktemp -d)"
+
 # 2.1 Neo4j
 # trunk-ignore(shellcheck/SC2312)
 if [[ -n $(docker ps -aq -f name=uns_graphdb) ]]; then
@@ -18,11 +21,13 @@ if [[ -n $(docker ps -aq -f name=uns_graphdb) ]]; then
 else
 	UNS_graphdb__username=neo4j
 	UNS_graphdb__password=$(openssl rand -base64 32 | tr -dc '[:alnum:]' || true)
-	echo "graphdb:
-  username: ${UNS_graphdb__username}
-  password: ${UNS_graphdb__password}
+	cat >"${SECRETS_SNIPPETS}/graphdb.yaml" <<EOF
+default:
+  graphdb:
+    username: ${UNS_graphdb__username}
+    password: ${UNS_graphdb__password}
 dynaconf_merge: true
-  " >"${WORKSPACE_DEFAULT_PATH}"/03_uns_graphdb/conf/.secrets.yaml
+EOF
 	# 2.1.1 New instance of Graph DB used by 03_uns_graphdb
 	sudo rm -rf "${HOME}"/neo4j
 
@@ -55,13 +60,15 @@ else
 	UNS_historian__database=uns_historian
 	UNS_historian__table=unifiednamespace
 
-	echo "historian:
-  username: ${UNS_historian__username}
-  password: ${UNS_historian__password}
+	cat >"${SECRETS_SNIPPETS}/historian.yaml" <<EOF
+default:
+  historian:
+    username: ${UNS_historian__username}
+    password: ${UNS_historian__password}
 dynaconf_merge: true
   # This password is for your reference if you ever need to login as postgres user
   # POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-  " >"${WORKSPACE_DEFAULT_PATH}"/04_uns_historian/conf/.secrets.yaml
+EOF
 
 	# 2.2.1 Historian DB used by 04_uns_historian
 	sudo rm -rf "${HOME}"/timescaledb
@@ -246,21 +253,19 @@ else
 		apache/kafka:latest
 fi
 
-# 2.5 Merge the secret configurations of the other modules for graphQL service to successfully integrate with the back ends
-# always created
-INPUT_FILES=$(find "${WORKSPACE_DEFAULT_PATH}" -type f -not -path "${WORKSPACE_DEFAULT_PATH}/07_uns_graphql/*" -name ".secrets.yaml")
-
-# Define the output file
-OUTPUT_FILE=${WORKSPACE_DEFAULT_PATH}/07_uns_graphql/conf/.secrets.yaml
-
-merge_command="docker run --rm -v \"/\":/workdir mikefarah/yq eval-all '. as \$item ireduce ({}; . * \$item )'"
-
-# Iterate over the YAML files in the input directory
-for yaml_file in ${INPUT_FILES}; do
-	merge_command="${merge_command} /workdir${yaml_file}"
-done
-# Execute the merge command and write the output to the file
-eval "${merge_command}" >"${OUTPUT_FILE}"
+# 2.5 Merge generated secrets into the platform conf/.secrets.yaml
+# trunk-ignore(shellcheck/SC2312)
+if [[ -n $(find "${SECRETS_SNIPPETS}" -type f -name "*.yaml" 2>/dev/null) ]]; then
+	merge_command="docker run --rm -v \"/\":/workdir mikefarah/yq eval-all '. as \$item ireduce ({}; . * \$item )'"
+	if [[ -f "${SECRETS_FILE}" ]]; then
+		merge_command="${merge_command} /workdir${SECRETS_FILE}"
+	fi
+	for yaml_file in "${SECRETS_SNIPPETS}"/*.yaml; do
+		merge_command="${merge_command} /workdir${yaml_file}"
+	done
+	eval "${merge_command}" >"${SECRETS_FILE}"
+fi
+rm -rf "${SECRETS_SNIPPETS}"
 
 #install trunk
 # trunk-ignore(shellcheck/SC2312)

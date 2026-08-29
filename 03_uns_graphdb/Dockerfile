@@ -20,11 +20,11 @@
 #       e.g. 
 #       docker build -t uns/graphdb:0.5.0 --build-arg GIT_HASH=local -f ./Dockerfile ..  
 #       docker build -t uns/graphdb:local --build-arg GIT_HASH=local -f ./Dockerfile ..  
-# Run the build command in the folder 03_uns_graphdb
-# To run the docker file remember to mount a conf folder with the configurations. 
+# Run the build command from the repository root (context is `..` from 03_uns_graphdb)
+# Mount the repository-root conf/ folder at /app/conf.
 # Provide network if you are connecting to other services
 #       e.g.
-#       docker run --name uns_mqtt_graphdb -v <full path to conf>/:/app/conf --network=host uns/graphdb:<version> 
+#       docker run --name uns_mqtt_graphdb -v <repo-root>/conf:/app/conf --network=host uns/graphdb:<version> 
 
 # Use the official Python image
 FROM python:3.14-alpine3.22
@@ -34,7 +34,8 @@ FROM python:3.14-alpine3.22
 ENV UNS_MODULE="03_uns_graphdb" \
     PYTHONUNBUFFERED=1 \
     PYTHONFAULTHANDLER=1 \
-    PYTHONDONTWRITEBYTECODE=1 
+    PYTHONDONTWRITEBYTECODE=1 \
+    UNS_CONF_DIR="/app/conf" 
 # spell-checker:enable
 LABEL org.opencontainers.image.source=https://github.com/mkashwin/unifiednamespace/tree/main/03_uns_graphdb
 LABEL org.opencontainers.image.description="Stores MQTT messages to the graph database. Supports both UNS and SparkplugB"

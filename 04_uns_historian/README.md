@@ -73,9 +73,9 @@ docker stop  uns_timescaledb #<container_name>
 
 ## Key Configurations to provide
 
-This application has two configuration file.
+This application reads the shared platform configuration at the repository root. Per-service MQTT topics live under the Dynaconf `historian` environment.
 
-1. [settings.yaml](./conf/settings.yaml): Contain the key configurations need to connect with MQTT brokers as well as timescale db
+1. [settings.yaml](../conf/settings.yaml): Contain the key configurations need to connect with MQTT brokers as well as timescale db
 
    | **key**              | **sub key**           | **description**                                                                                                                                                                                                                                                                                              | **_default value_** |
    | -------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------- |
@@ -96,8 +96,8 @@ This application has two configuration file.
    | **historian**        | **table**\*           | Mandatory. The hypertable where the time-series of messages is stored. See [db script](./sql_scripts/02_setup_hypertable.sql)                                                                                                                                                                                | _None_              |
    | **dynaconf_merge**\* |                       | Mandatory param. Always keep value as true                                                                                                                                                                                                                                                                   |
 
-1. [.secret.yaml](./conf/.secrets_template.yaml) : Contains the username and passwords to connect to the MQTT cluster and the timescaledb
-   This file is not checked into the repository for security purposes. However there is a template file provided **`.secrets_template.yaml`** which should be edited and renamed to **`.secrets.yaml`**
+1. [.secrets.yaml](../conf/.secrets_template.yaml) : Contains the username and passwords to connect to the MQTT cluster and the timescaledb
+   This file is not checked into the repository for security purposes. However there is a template file provided **`.secrets_template.yaml`** which should be copied to **`.secrets.yaml`** in the repository-root `conf/` directory.
 
    | **key**              | **sub key**    | **sub key**       | **description**                                                                                                             | **_default value_** |
    | :------------------- | :------------- | :---------------- | :-------------------------------------------------------------------------------------------------------------------------- | :------------------ |
@@ -124,7 +124,7 @@ This application has two configuration file.
 
 The historian will be persisting all the MQTT messages in the raw format directly after extracting the timestamp from the message
 The message format is expected to be in JSON and should have an attribute `timestamp`
-The attribute key name is configurable in [settings.yaml](./conf/settings.yaml)
+The attribute key name is configurable in [settings.yaml](../conf/settings.yaml)
 If this attribute is missing the application will use the current time
 
 ```python
@@ -160,7 +160,7 @@ uv sync
 ## Running the python script
 
 This function is executed by the following command with the current folder as [`04_uns_historian`](.)
-Ensure that the [configuration files](./conf/) are correctly updated to your MQTT broker and database instance
+Ensure that the [configuration files](../conf/) are correctly updated to your MQTT broker and database instance
 
 ```bash
 # Ensure that the uv shell is activated
@@ -191,7 +191,7 @@ The way to run the container is
 # e.g.
 docker pull ghcr.io/mkashwin/unifiednamespace/uns/historian:latest
 # docker run --name <container name> -d s-v <full path to conf>/:/app/conf uns/historian:<tag>
-docker run --name uns_mqtt_historian -d -v $PWD/conf:/app/conf ghcr.io/mkashwin/unifiednamespace/uns/historian:latest
+docker run --name uns_mqtt_historian -d -v $PWD/../conf:/app/conf -e UNS_CONF_DIR=/app/conf ghcr.io/mkashwin/unifiednamespace/uns/historian:latest
 ```
 
 **Note**: Remember to update the following before executing

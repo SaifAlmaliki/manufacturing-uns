@@ -76,9 +76,9 @@ docker stop  uns_graphdb #<container_name>
 
 ## Key Configurations to provide
 
-This application has two configuration file
+This application reads the shared platform configuration at the repository root. Per-service MQTT topics live under the Dynaconf `graphdb` environment.
 
-1. [settings.yaml](./conf/settings.yaml): Contain the key configurations need to connect with MQTT brokers as well as Neo4j db.
+1. [settings.yaml](../conf/settings.yaml): Contain the key configurations need to connect with MQTT brokers as well as Neo4j db.
 
    | **key**              | **sub key**                | **description**                                                                                                                                                                                                                                                                                              | **_default value_**                                         |
    | -------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
@@ -100,7 +100,7 @@ This application has two configuration file
    | graphdb              | nested_attribute_node_type | Node Type used for nested attributes when they are created as child nodes to one of the topic nodes or another nested attribute node                                                                                                                                                                         | NESTED_ATTRIBUTE                                            |
    | **dynaconf_merge**\* |                            | Mandatory param. Always keep value as true                                                                                                                                                                                                                                                                   |
 
-1. [.secret.yaml](./conf/.secrets_template.yaml) : Contains the credentials to connect to the MQTT cluster and the GraphDB. This file is not checked into the repository for security purposes. However there is a template file provided **`.secrets_template.yaml`** which should be edited and renamed to **`.secrets.yaml`**.
+1. [.secrets.yaml](../conf/.secrets_template.yaml) : Contains the credentials to connect to the MQTT cluster and the GraphDB. This file is not checked into the repository for security purposes. However there is a template file provided **`.secrets_template.yaml`** which should be copied to **`.secrets.yaml`** in the repository-root `conf/` directory.
 
    | **key**              | **sub key**    | **sub key**      | **description**                                                                                                             | **_default value_** |
    | :------------------- | :------------- | :--------------- | :-------------------------------------------------------------------------------------------------------------------------- | :------------------ |
@@ -189,7 +189,7 @@ will result in a node in the GraphDB
 ## Setting up the development environment for this module
 
 This sub module can be independently setup as a dev environment in the folder [`03_uns_graphdb`](.)
-Ensure that the [configuration files](./conf/) are correctly updated to your MQTT broker and database instance
+Ensure that the [configuration files](../conf/) are correctly updated to your MQTT broker and database instance
 This has been tested on **Unix(bash)**, **Windows(powershell)** and **Mac(zsh)**
 
 ```bash
@@ -247,7 +247,7 @@ docker pull ghcr.io/mkashwin/unifiednamespace/uns/graphdb:latest
 
 # docker run --name <container name> -d -v <full path to conf>:/app/conf uns/graphdb:<tag>
 # e.g.
-docker run --name uns_mqtt_graphdb -d -v $PWD/conf:/app/conf uns/graphdb:latest
+docker run --name uns_mqtt_graphdb -d -v $PWD/../conf:/app/conf -e UNS_CONF_DIR=/app/conf uns/graphdb:latest
 
 ```
 

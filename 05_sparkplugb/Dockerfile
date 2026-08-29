@@ -20,11 +20,11 @@
 #       e.g. 
 #       docker build -t uns/spb_mapper:0.5.0 --build-arg GIT_HASH=local -f ./Dockerfile ..  
 #       docker build -t uns/spb_mapper:local --build-arg GIT_HASH=local -f ./Dockerfile ..  
-# Run the build command in the folder 05_sparkplugb
-# To run the docker file remember to mount a conf folder with the configurations
+# Run the build command from the repository root (context is `..` from 05_sparkplugb)
+# Mount the repository-root conf/ folder at /app/conf.
 # Provide network if you are connecting to other services
 #       e.g.
-#       docker run --name uns_spb_mapper -v <full path to conf>/:/app/conf  --network=host uns/spb_mapper:v0.5.0 
+#       docker run --name uns_spb_mapper -v <repo-root>/conf:/app/conf --network=host uns/spb_mapper:v0.5.0 
 # Use the official Python image
 FROM python:3.14-alpine3.22
 
@@ -33,7 +33,8 @@ FROM python:3.14-alpine3.22
 ENV UNS_MODULE="05_sparkplugb"\
     PYTHONUNBUFFERED=1 \
     PYTHONFAULTHANDLER=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    UNS_CONF_DIR="/app/conf"
 # spell-checker:enable
 LABEL org.opencontainers.image.source=https://github.com/mkashwin/unifiednamespace/tree/main/05_sparkplugb
 LABEL org.opencontainers.image.description="Listens to the SparkplugB name space and translates them to UNS messages, then publishes to the UNS Namespace"

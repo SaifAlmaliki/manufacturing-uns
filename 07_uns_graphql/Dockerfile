@@ -20,11 +20,11 @@
 #       e.g. 
 #       docker build -t uns/graphql:0.5.0 --build-arg GIT_HASH=local -f ./Dockerfile ..  
 #       docker build -t uns/graphql:local --build-arg GIT_HASH=local -f ./Dockerfile .. 
-# Run the build command in the folder 07_uns_graphql
-# To run the docker file remember to mount a conf folder with the configurations
+# Run the build command from the repository root (context is `..` from 07_uns_graphql)
+# Mount the repository-root conf/ folder at /app/conf.
 # Provide network if you are connecting to other services
 #       e.g.
-#       docker run --name uns_graphql -v <full path to conf>/:/app/conf  --network=host uns/graphql:v0.5.0 
+#       docker run --name uns_graphql -v <repo-root>/conf:/app/conf --network=host uns/graphql:v0.5.0 
 # Use the official Python image
 FROM python:3.14-alpine3.22
 
@@ -34,7 +34,8 @@ ENV UNS_MODULE="07_uns_graphql"\
     PYTHONUNBUFFERED=1 \
     PYTHONFAULTHANDLER=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    LIBRDKAFKA_VER="2.15.0"
+    LIBRDKAFKA_VER="2.15.0" \
+    UNS_CONF_DIR="/app/conf"
 # spell-checker:enable
 LABEL org.opencontainers.image.source=https://github.com/mkashwin/unifiednamespace/tree/main/07_uns_graphql
 LABEL org.opencontainers.image.description="Provide GraphQL capabilities for the UNS across all data sources"

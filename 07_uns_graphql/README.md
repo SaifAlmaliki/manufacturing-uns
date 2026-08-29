@@ -11,15 +11,16 @@ _TBD_
 
 ## Key Configurations to provide
 
-This application has two configuration file.
-All of these configurations are a combination of the configurations of the other modules with the exception of
+This application reads the shared platform configuration at the repository root. GraphQL-specific MQTT topics and Kafka consumer settings live under the Dynaconf `graphql` environment.
 
-- Not having the `mqtt.ignored_attributes` , `mqtt.topics`, `mqtt.reconnect_on_failure` as these are not relevant for the GraphQL services or the aiomqtt.Client being used.
+All of these configurations are a combination of the other modules with the exception of:
+
+- Not having the `mqtt.ignored_attributes`, `mqtt.topics`, `mqtt.reconnect_on_failure` as these are not relevant for the GraphQL services or the aiomqtt.Client being used.
 - Additional mqtt configuration for `retry_interval` in case of MQTT errors
-- Kafka configuration map should be specific to the the consumer configurations and not producer
+- Kafka configuration map should be specific to the consumer configurations and not producer
 - Additional Kafka configuration for controlling consumer poll timeout
 
-1. [settings.yaml](./conf/settings.yaml): Contain the key configurations need to connect with MQTT brokers
+1. [settings.yaml](../conf/settings.yaml): Contain the key configurations need to connect with MQTT brokers
 
    | **key**              | **sub key**                | **description**                                                                                                                                                         | **_default value_**                                         |
    | -------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
@@ -45,8 +46,8 @@ All of these configurations are a combination of the configurations of the other
    | kafka                | consumer\*timeout          | Maximum time to block waiting for message in Seconds                                                                                                                    | \_1.0\*                                                     |
    | **dynaconf_merge**\* |                            | Mandatory param. Always keep value as true                                                                                                                              |
 
-1. [.secret.yaml](./conf/.secrets_template.yaml) : Contains the username and passwords to connect
-   This file is not checked into the repository for security purposes. However there is a template file provided [**`.secrets_template.yaml`**](./conf/.secrets_template.yaml) which should be edited and renamed to **`.secrets.yaml`**
+1. [.secrets.yaml](../conf/.secrets_template.yaml) : Contains the username and passwords to connect
+   This file is not checked into the repository for security purposes. However there is a template file provided [**`.secrets_template.yaml`**](../conf/.secrets_template.yaml) which should be copied to **`.secrets.yaml`** in the repository-root `conf/` directory.
 
    | **key**              | **sub key**    | **sub key**       | **description**                                                                                                                                     | **_default value_** |
    | :------------------- | :------------- | :---------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------ |
@@ -75,7 +76,7 @@ All of these configurations are a combination of the configurations of the other
 ## Setting up the development environment for this module
 
 This sub module can be independently setup as a dev environment in the folder [`07_uns_graphql`](.)
-Ensure that the [configuration files](./conf/) are correctly updated to your MQTT broker and database instance
+Ensure that the [configuration files](../conf/) are correctly updated to your MQTT broker and database instance
 This has been tested on **Unix(bash)**, **Windows(powershell)** and **Mac(zsh)**
 
 ```bash
@@ -150,7 +151,7 @@ docker pull ghcr.io/mkashwin/unifiednamespace/uns/graphql:latest
 
 # docker run --name <container name> -d -v <full path to conf>:/app/conf uns/graphql:<tag>
 # e.g.
-docker run --name uns_graphql -d -v $PWD/conf:/app/conf uns/graphql:latest
+docker run --name uns_graphql -d -v $PWD/../conf:/app/conf -e UNS_CONF_DIR=/app/conf uns/graphql:latest
 
 ```
 

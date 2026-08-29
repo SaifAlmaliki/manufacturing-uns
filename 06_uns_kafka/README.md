@@ -37,9 +37,9 @@ see [kafka_handler.py.convert_MQTT_KAFKA_topic()](./src/uns_kafka/kafka_handler.
 
 ## Key Configurations to provide
 
-This application has two configuration file.
+This application reads the shared platform configuration at the repository root. Per-service MQTT topics and Kafka client settings live under the Dynaconf `kafka_mapper` environment.
 
-1. [settings.yaml](./conf/settings.yaml): Contain the key configurations need to connect with MQTT brokers as well as the Kafka brokers
+1. [settings.yaml](../conf/settings.yaml): Contain the key configurations need to connect with MQTT brokers as well as the Kafka brokers
 
    | **key**              | **sub key**           | **description**                                                                                                                                                                                                                                                                                              | **_default value_** |
    | -------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------- |
@@ -57,8 +57,8 @@ This application has two configuration file.
    | **kafka**            | **config**\*          | Mandatory Dict. see [Kafka client configuration](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md). All non security configurations                                                                                                                                                   | \_None\_            |
    | **dynaconf_merge**\* |                       | Mandatory param. Always keep value as true                                                                                                                                                                                                                                                                   |
 
-1. [.secret.yaml](./conf/.secrets_template.yaml) : Contains the username and passwords to connect
-   This file is not checked into the repository for security purposes. However there is a template file provided [**`.secrets_template.yaml`**](./conf/.secrets_template.yaml) which should be edited and renamed to **`.secrets.yaml`**
+1. [.secrets.yaml](../conf/.secrets_template.yaml) : Contains the username and passwords to connect
+   This file is not checked into the repository for security purposes. However there is a template file provided [**`.secrets_template.yaml`**](../conf/.secrets_template.yaml) which should be copied to **`.secrets.yaml`** in the repository-root `conf/` directory.
 
    | **key** | **sub key** | **sub key**       | **description**                                                                                                                                     | **_default value_** |
    | :------ | :---------- | :---------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------ |
@@ -135,7 +135,7 @@ uv sync
 ## Running the python script
 
 This function is executed by the following command with the current folder as [`06_uns_kafka`](.)
-Ensure that the [configuration files](./conf/) are correctly updated to your MQTT broker and database instance
+Ensure that the [configuration files](../conf/) are correctly updated to your MQTT broker and database instance
 
 ```bash
 # Ensure that the uv shell is activated
@@ -165,7 +165,7 @@ The way to run the container is
 # e.g.
 docker pull ghcr.io/mkashwin/unifiednamespace/uns/kafka_mapper:latest
 # docker run --name <container name> -d s-v <full path to conf>/:/app/conf uns/kafka_mapper:<tag>
-docker run --name uns_mqtt_2_kafka -d -v $PWD/conf:/app/conf ghcr.io/mkashwin/unifiednamespace/uns/kafka_mapper:latest
+docker run --name uns_mqtt_2_kafka -d -v $PWD/../conf:/app/conf -e UNS_CONF_DIR=/app/conf ghcr.io/mkashwin/unifiednamespace/uns/kafka_mapper:latest
 ```
 
 **Note**: Remember to update the following before executing

@@ -17,8 +17,8 @@ def _is_platform_settings(settings_file: Path) -> bool:
     """
     True for the repo-root conf that uses Dynaconf environments with a `default:` section.
 
-    Leftover per-module conf/settings.yaml files (mqtt:/graphdb: at the top level) must
-    not win when tests or services run from a module directory.
+    Ignore a stray conf/settings.yaml that is not the platform file (mqtt:/graphdb: at the
+    top level) when tests or services run from a module directory.
     """
     try:
         for line in settings_file.read_text(encoding="utf-8").splitlines():

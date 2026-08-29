@@ -20,11 +20,11 @@
 #       e.g. 
 #       docker build -t uns/historian:0.5.0 --build-arg GIT_HASH=local -f ./Dockerfile ..  
 #       docker build -t uns/historian:local --build-arg GIT_HASH=local -f ./Dockerfile ..  
-# Run the build command in the folder 04_uns_historian
-# To run the docker file remember to mount a conf folder with the configurations
+# Run the build command from the repository root (context is `..` from 04_uns_historian)
+# Mount the repository-root conf/ folder at /app/conf.
 # Provide network if you are connecting to other services
 #       e.g.
-#       docker run --name uns_mqtt_historian -v <full path to conf>/:/app/conf  --network=host uns/historian:v0.5.0 
+#       docker run --name uns_mqtt_historian -v <repo-root>/conf:/app/conf --network=host uns/historian:v0.5.0 
 
 # Use the official Python image
 FROM python:3.14-alpine3.22
@@ -34,7 +34,8 @@ FROM python:3.14-alpine3.22
 ENV UNS_MODULE="04_uns_historian"\
     PYTHONUNBUFFERED=1 \
     PYTHONFAULTHANDLER=1 \
-    PYTHONDONTWRITEBYTECODE=1 
+    PYTHONDONTWRITEBYTECODE=1 \
+    UNS_CONF_DIR="/app/conf" 
 # spell-checker:enable
 LABEL org.opencontainers.image.source=https://github.com/mkashwin/unifiednamespace/tree/main/04_uns_historian
 LABEL org.opencontainers.image.description="Stores MQTT messages to the historian database. Supports both UNS and SparkplugB"

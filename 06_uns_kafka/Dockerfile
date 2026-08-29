@@ -20,11 +20,11 @@
 #       e.g. 
 #       docker build -t uns/kafka_mapper:0.5.0 --build-arg GIT_HASH=local -f ./Dockerfile ..  
 #       docker build -t uns/kafka_mapper:local --build-arg GIT_HASH=local -f ./Dockerfile ..  
-# Run the build command in the folder 06_uns_kafka
-# To run the docker file remember to mount a conf folder with the configurations
+# Run the build command from the repository root (context is `..` from 06_uns_kafka)
+# Mount the repository-root conf/ folder at /app/conf.
 # Provide network if you are connecting to other services
 #       e.g.
-#       docker run --name uns_kafka_mapper -v <full path to conf>/:/app/conf  --network=host uns/kafka_mapper:v0.5.0 
+#       docker run --name uns_kafka_mapper -v <repo-root>/conf:/app/conf --network=host uns/kafka_mapper:v0.5.0 
 # Use the official Python image
 FROM python:3.14-alpine3.22
 
@@ -34,7 +34,8 @@ ENV UNS_MODULE="06_uns_kafka"\
     PYTHONUNBUFFERED=1 \
     PYTHONFAULTHANDLER=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    LIBRDKAFKA_VER="2.15.0"
+    LIBRDKAFKA_VER="2.15.0" \
+    UNS_CONF_DIR="/app/conf"
 # spell-checker:enable
 LABEL org.opencontainers.image.source=https://github.com/mkashwin/unifiednamespace/tree/main/06_uns_kafka
 LABEL org.opencontainers.image.description="Listens to the UNS namespace, converts UNS topic to Kafka topic and publishes the message to Kafka"

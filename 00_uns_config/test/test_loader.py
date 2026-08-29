@@ -14,9 +14,18 @@ def test_resolve_conf_dir_points_to_repo_root():
     assert conf_dir == (_REPO_ROOT / "conf").resolve()
 
 
-def test_resolve_conf_dir_skips_legacy_module_conf(monkeypatch):
-    """CI runs pytest from the module directory, which still has leftover conf/settings.yaml."""
+def test_resolve_conf_dir_from_module_directory(monkeypatch):
+    """Services and CI often run pytest from a module directory, not the repo root."""
     monkeypatch.chdir(_REPO_ROOT / "03_uns_graphdb")
+    conf_dir = resolve_conf_dir()
+    assert conf_dir == (_REPO_ROOT / "conf").resolve()
+
+
+def test_resolve_conf_dir_skips_non_platform_settings(monkeypatch, tmp_path: Path):
+    leftover = tmp_path / "conf"
+    leftover.mkdir()
+    (leftover / "settings.yaml").write_text("mqtt:\n  host: leftover-broker\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
     conf_dir = resolve_conf_dir()
     assert conf_dir == (_REPO_ROOT / "conf").resolve()
 

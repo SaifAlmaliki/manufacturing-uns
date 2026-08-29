@@ -5,15 +5,15 @@ A lightweight MQTT device simulator used to generate synthetic device data for t
 Features
 
 - Configurable device templates and randomized metric values
-- Publishes messages to MQTT broker(s) using settings from conf/settings.yaml
+- Publishes messages to MQTT broker(s) using settings from the repository-root [`conf/settings.yaml`](../conf/settings.yaml)
 - Simple CLI entrypoint to run the simulator locally
 - Unit tests under test/
 
 Repository layout
 
-- conf/
-  - settings.yaml — main runtime configuration ([conf/settings.yaml](conf/settings.yaml))
-  - .secrets_template.yaml — template for secrets ([conf/.secrets_template.yaml](conf/.secrets_template.yaml))
+- Platform config lives at the repository root, not in this module:
+  - [`../conf/settings.yaml`](../conf/settings.yaml) — shared settings; simulator overrides are under the Dynaconf `simulator` environment
+  - [`../conf/.secrets_template.yaml`](../conf/.secrets_template.yaml) — template for secrets
 - src/uns_simulator/
   - config.py — configuration loader ([src/uns_simulator/config.py](src/uns_simulator/config.py))
   - devices.py — device template / helper functions ([src/uns_simulator/devices.py](src/uns_simulator/devices.py))
@@ -33,8 +33,8 @@ Quick start (development)
    ```
 
 2. Configure the simulator
-   - Copy conf/.secrets_template.yaml -> conf/.secrets.yaml and fill any secrets required.
-   - Edit [conf/settings.yaml](conf/settings.yaml) to point to your MQTT broker and tune simulator options.
+   - Copy [`../conf/.secrets_template.yaml`](../conf/.secrets_template.yaml) to `../conf/.secrets.yaml` and fill any secrets required.
+   - Edit [`../conf/settings.yaml`](../conf/settings.yaml) to point to your MQTT broker and tune simulator options (the `simulator` environment).
 
 3. Run locally
    - From the module folder (99_simulator) activate the venv and run:
@@ -57,7 +57,7 @@ Core code pointers
 
 Configuration notes
 
-- MQTT settings are loaded from conf/settings.yaml and secrets from conf/.secrets.yaml (based on the provided template).
+- MQTT settings are loaded from the repository-root `conf/settings.yaml` and secrets from `conf/.secrets.yaml` (based on the provided template).
 - Typical keys:
   - mqtt.host (required)
   - mqtt.port (default 1883)
