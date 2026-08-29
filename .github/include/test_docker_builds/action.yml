@@ -88,8 +88,12 @@ runs:
           fi
 
           if [ ! -d "/02_mqtt-cluster" ]; then
-            echo "Error: Folder /02_mqtt-cluster not found in Docker image"
-            exit 1
+            if grep -q "uns_mqtt" /app/pyproject.toml; then
+              echo "Error: Folder /02_mqtt-cluster not found in Docker image"
+              exit 1
+            else
+              echo "Skipped: /02_mqtt-cluster not required (module does not depend on uns_mqtt)"
+            fi
           else
             echo "Success:  Folder /02_mqtt-cluster is present"
           fi

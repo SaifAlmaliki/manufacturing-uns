@@ -64,6 +64,59 @@ The overall architecture and the deployment setup is as follows
 
 ---
 
+## **Local Docker Compose stack**
+
+[`docker-compose.yml`](./docker-compose.yml) starts a **local, non-production** UNS: MQTT, databases, mappers, GraphQL, the console UI, and the device simulator. Do not use this compose file for production.
+
+In Docker Desktop the project is `manufacturing-uns`. Container names look like `manufacturing-uns-<service>-1`.
+
+**How to start** (from the repository root; passwords can also live in `.env`):
+
+```bash
+docker compose up -d --build
+```
+
+That command is the same on Windows, macOS, and Linux. The simulator publishes into the Compose MQTT broker (`uns_mqtt_broker`) automatically.
+
+Start or stop **only** the simulator (the MQTT broker is started too if needed):
+
+```bash
+docker compose up -d uns_simulator
+docker compose stop uns_simulator
+docker compose start uns_simulator
+docker compose logs -f uns_simulator
+```
+
+Do not use a Compose profile for this. Profiles hide a service from default `docker compose up`; the simulator is part of the default stack. Use the service name above instead.
+
+To run the simulator on the host instead of in Docker (optional, needs a local Python venv):
+
+```bash
+cd 99_simulator
+uv run uns_simulator
+```
+
+### What each container does
+
+| Docker Desktop name | Role |
+| --- | --- |
+| `uns_mqtt_broker` | MQTT backbone (EMQX). Devices, the simulator, and all mapper clients publish/subscribe here. Host ports: `1883` (MQTT), `8080` (MQTT over WebSocket). |
+| `uns_neo4j_db` | Graph database that stores the current ISA-95 namespace as a tree of nodes. Host ports: `7474` (browser), `7687` (Bolt). |
+| `uns_timescale_db` | Time-series historian (TimescaleDB / Postgres) that keeps a history of MQTT events. Host port: `5432`. |
+| `tsdb_setup_script` | One-shot job that creates the historian database, user, and table. It **exits after success** — a gray/stopped icon is normal, not a failure. |
+| `uns_kafka_broker` | Kafka broker for streaming UNS messages to other systems. Host port: `9092`. |
+| `graphdb_client` | MQTT subscriber that writes live namespace messages into Neo4j (current state / tree). |
+| `historian_client` | MQTT subscriber that writes the same events into TimescaleDB (history). |
+| `spb_mapper_client` | Sparkplug B translator: listens on Sparkplug topics, decodes protobuf, republishes JSON on the ISA-95 UNS topics. |
+| `kafka_mapper_client` | MQTT-to-Kafka bridge: copies UNS MQTT messages onto Kafka topics. |
+| `uns_simulator` | Synthetic PLC / HMI / SCADA publisher used for local demos. Not for production. |
+| `graphql_server` | GraphQL API over MQTT (live), Neo4j (current tree), TimescaleDB (history), and Kafka. Host port: **`8000`** (`http://localhost:8000/graphql`). |
+| `uns_frontend` | Web console for the namespace tree, payload inspector, live feed, search, and historian. Host port: **`8088`** (`http://localhost:8088`). The browser calls GraphQL on port `8000`. |
+
+Typical flow: **simulator or plant devices → MQTT → mapper clients → Neo4j / Timescale / Kafka → GraphQL → UI**.
+
+---
+
 ## **Technology Choices**
 
 The following section lists the various options and technology choices that I evaluated and the reasoning for choosing them.
@@ -221,6 +274,7 @@ The current project contains the following microservices
 1. [05_sparkplugb](./05_sparkplugb/README.md): Python project for mqtt listener that listens to the SparkplugB namespace and for translates relevant messages to publish to the UNS namespace
 1. [06_uns_kafka](./06_uns_kafka/README.md): Python project for mqtt listener that subscribes to the MQTT broker and publishes to the KAFKA broker
 1. [07_uns_graphql](./07_uns_graphql/README.md): Python project for GraphQL server to query the Unified NameSpace
+1. [10_frontend](./10_frontend/README.md): React console that talks only to GraphQL (tree, live MQTT feed, search, historian)
 1. [99_simulator](./99_simulator/README.md): Python project for simulating data creation to the UNS. _*NOT TO BE USED IN PRODUCTION*_
 
 Each microservice can be independently imported into VSCode by going into the specific microservice folder. Instructions on setting up the python pip & virtual environments are provided in the respective ´README.md´ within that folder

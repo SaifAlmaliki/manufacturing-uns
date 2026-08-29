@@ -33,7 +33,7 @@ dependencies = [
 Repository = "https://github.com/mkashwin/unifiednamespace/tree/main/99_simulator"
 
 [project.scripts]
-uns_simulator = "uns_simulator.main:run_simulator"
+uns_simulator = "uns_simulator.main:main"
 
 [dependency-groups]
 test = [

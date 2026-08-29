@@ -6,7 +6,8 @@ Features
 
 - Configurable device templates and randomized metric values
 - Publishes messages to MQTT broker(s) using settings from the repository-root [`conf/settings.yaml`](../conf/settings.yaml)
-- Simple CLI entrypoint to run the simulator locally
+- Docker Compose service (`uns_simulator`) so it starts the same way on every OS
+- Optional local CLI for development
 - Unit tests under test/
 
 Repository layout
@@ -20,9 +21,41 @@ Repository layout
   - models.py — data models used by the simulator ([src/uns_simulator/models.py](src/uns_simulator/models.py))
   - simulator.py — core simulator implementation ([src/uns_simulator/simulator.py](src/uns_simulator/simulator.py))
   - main.py — CLI / entrypoint ([src/uns_simulator/main.py](src/uns_simulator/main.py))
+- Dockerfile — container image, same pattern as the other Python UNS services
 - test/ — unit tests ([test/](test/))
 
-Quick start (development)
+Quick start (Docker Compose)
+
+The simulator is part of the repository-root [`docker-compose.yml`](../docker-compose.yml). From the repository root:
+
+```bash
+docker compose up -d --build
+```
+
+That starts the MQTT broker **and** the simulator (plus the rest of the local stack). Same command on Windows, macOS, and Linux.
+
+Start or stop **only** the simulator:
+
+```bash
+docker compose up -d uns_simulator
+docker compose stop uns_simulator
+docker compose start uns_simulator
+docker compose logs -f uns_simulator
+```
+
+`docker compose up -d uns_simulator` also starts `uns_mqtt_broker` when it is not already running (`depends_on`). Compose **profiles** are not used: a profile would hide the simulator from default `docker compose up`.
+
+The Compose service sets `UNS_mqtt__host=uns_mqtt_broker` and `UNS_simulation__duration=0` so the container publishes until you stop it. `duration: 0` means run until stopped; a positive value is minutes.
+
+Build the image on its own (from `99_simulator/`, context is the repo root):
+
+```bash
+docker build -t uns/simulator:local --build-arg GIT_HASH=local -f ./Dockerfile ..
+```
+
+Quick start (local Python)
+
+Use this only if you are iterating on the simulator code without Docker.
 
 1. Install and prepare the development venv (the repository uses the uv wrapper like other modules):
 
@@ -45,11 +78,12 @@ Quick start (development)
    uv run uns_simulator
    ```
 
-   - The module entrypoint is provided in `uns_simulator.main`.
+   - Point `mqtt.host` at `localhost` (the default) so the process can reach the Compose broker on host port 1883.
+   - The module entrypoint is `uns_simulator.main:main`.
 
 Core code pointers
 
-- Entrypoint / CLI: `uns_simulator.main`
+- Entrypoint / CLI: `uns_simulator.main:main`
 - Simulator implementation: `uns_simulator.simulator.Simulator`
 - Device templates & helpers: `uns_simulator.devices`
 - Config loader: `uns_simulator.config`
@@ -63,6 +97,7 @@ Configuration notes
   - mqtt.port (default 1883)
   - mqtt.transport ("tcp" or "websockets")
   - simulator.\* — device_count, publish_interval, device templates
+  - simulation.duration — minutes to run; **0** means run until stopped (used by the Compose service)
 
 Running tests
 

@@ -23,7 +23,12 @@ export function useMqttFeed(args: {
         type: 'feed/mqtt',
         topic: msg.topic,
         typename: typename === 'BytesPayload' || typename === 'JSONPayload' ? typename : 'unknown',
-        data: msg.payload && 'data' in msg.payload ? msg.payload.data : undefined,
+        data:
+          msg.payload?.__typename === 'JSONPayload'
+            ? msg.payload.data
+            : msg.payload?.__typename === 'BytesPayload'
+              ? msg.payload.bytesData
+              : undefined,
         timestamp: new Date().toISOString(),
       })
       if (args.pinNewest.current && args.listRef.current) {

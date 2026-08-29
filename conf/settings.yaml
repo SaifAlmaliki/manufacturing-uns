@@ -6,8 +6,8 @@
 default:
   platform:
     instance_name: "Instance01"
-    organization_name: "ManufacturingCo"
-    display_name: "Unified Namespace"
+    organization_name: "CovestroAG"
+    display_name: "Covestro UNS"
 
   applications:
     graphql:
@@ -103,14 +103,14 @@ simulator:
   mqtt:
     client_id: "uns_simulator_client"
   hierarchy:
-    enterprise: "ManufacturingCo"
-    site: "PlantA"
+    enterprise: "CovestroAG"
+    site: "Dormagen"
     area: "Production"
     line: "Line1"
-    cell: "Cell1"
+    cell: "Cell1" 
   plc:
     - id: "001"
-      equipment: "MixerTank"
+      equipment: "G1"
       sensors:
         Temperature:
           base_value: 75.0
@@ -129,7 +129,7 @@ simulator:
           unit: "L/min"
   simulation:
     interval: 5.0
-    duration: 5
+    duration: 5  # minutes; 0 = run until stopped (Compose sets this to 0)
     plc_count: 2
   equipment:
     mixer_tank:

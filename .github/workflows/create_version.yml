@@ -124,6 +124,11 @@ jobs:
               image: uns/graphql,
               container_description: "Provided GraphQL query capabilities to the UNS system",
             }
+          - {
+              module: 99_simulator,
+              image: uns/simulator,
+              container_description: "Publishes synthetic ISA-95 MQTT device data for local UNS testing. Not for production.",
+            }
       max-parallel: 1 # need to have this as 1 if we want to use the cloud build
     env:
       SHA_TAG: ${{ needs.update-version.outputs.sha_tag }}

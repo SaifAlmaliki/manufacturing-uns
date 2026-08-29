@@ -198,6 +198,21 @@ services:
       uns_kafka_broker:
         condition: service_healthy
 
+  uns_simulator:
+    build:
+      context: .
+      dockerfile: ./99_simulator/Dockerfile
+    volumes:
+      - ./conf:/app/conf
+    environment:
+      UNS_CONF_DIR: /app/conf
+      UNS_MODULE: 99_simulator
+      UNS_mqtt__host: uns_mqtt_broker
+      UNS_simulation__duration: "0"
+    depends_on:
+      uns_mqtt_broker:
+        condition: service_healthy
+
   graphql_server:
     build:
       context: .

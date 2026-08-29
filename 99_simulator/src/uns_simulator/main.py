@@ -14,16 +14,21 @@ def configure_asyncio_for_mqtt() -> None:
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
-async def main():
+async def run() -> None:
     """Run the simulator"""
     simulator = UnifiedNamespaceSimulator()
     await simulator.run_simulation(settings.get("simulation.duration", 60))
 
 
-def run_simulator():
+def main() -> None:
     configure_asyncio_for_mqtt()
-    asyncio.run(main())
+    asyncio.run(run())
+
+
+def run_simulator() -> None:
+    """Backward-compatible alias for the console script."""
+    main()
 
 
 if __name__ == "__main__":
-    run_simulator()
+    main()

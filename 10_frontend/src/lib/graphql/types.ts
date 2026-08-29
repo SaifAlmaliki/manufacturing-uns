@@ -18,6 +18,6 @@ export type GraphqlMqttMessage = {
   topic: string
   payload:
     | { __typename: 'JSONPayload'; data: unknown }
-    | { __typename: 'BytesPayload'; data: string }
+    | { __typename: 'BytesPayload'; bytesData: string }
     | null
 }

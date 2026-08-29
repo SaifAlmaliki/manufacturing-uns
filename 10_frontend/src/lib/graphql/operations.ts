@@ -61,7 +61,7 @@ export const MQTT_FEED = gql`
           data
         }
         ... on BytesPayload {
-          data
+          bytesData: data
         }
       }
     }
