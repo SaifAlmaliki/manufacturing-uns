@@ -109,9 +109,9 @@ export const ROLE_CONFIGS: Record<UserRole, RoleConfig> = {
   admin: {
     role: 'admin',
     label: 'System Admin',
-    badgeBg: 'bg-rose-500/10',
-    badgeText: 'text-rose-400',
-    badgeBorder: 'border-rose-500/30',
+    badgeBg: 'bg-rose-50 dark:bg-rose-500/10',
+    badgeText: 'text-rose-700 dark:text-rose-400',
+    badgeBorder: 'border-rose-200 dark:border-rose-500/30',
     description: 'Full unrestricted superuser access. Can manage users, grant feature permissions, and reconfigure system.',
     defaultPermissions: {
       uns_tree: true,
@@ -130,9 +130,9 @@ export const ROLE_CONFIGS: Record<UserRole, RoleConfig> = {
   engineer: {
     role: 'engineer',
     label: 'Plant Engineer',
-    badgeBg: 'bg-[#FFC107]/10',
-    badgeText: 'text-[#FFC107]',
-    badgeBorder: 'border-[#FFC107]/30',
+    badgeBg: 'bg-amber-50 dark:bg-[#FFC107]/10',
+    badgeText: 'text-amber-700 dark:text-[#FFC107]',
+    badgeBorder: 'border-amber-200 dark:border-[#FFC107]/30',
     description: 'Full engineering access to telemetry, historian, Sparkplug B, Kafka streams, alarms, and CSV export.',
     defaultPermissions: {
       uns_tree: true,
@@ -151,9 +151,9 @@ export const ROLE_CONFIGS: Record<UserRole, RoleConfig> = {
   operator: {
     role: 'operator',
     label: 'Control Room Operator',
-    badgeBg: 'bg-emerald-500/10',
-    badgeText: 'text-emerald-400',
-    badgeBorder: 'border-emerald-500/30',
+    badgeBg: 'bg-emerald-50 dark:bg-emerald-500/10',
+    badgeText: 'text-emerald-700 dark:text-emerald-400',
+    badgeBorder: 'border-emerald-200 dark:border-emerald-500/30',
     description: 'Operational view of UNS tree, active alarms, Sparkplug B metrics, and bookmarked telemetry.',
     defaultPermissions: {
       uns_tree: true,
@@ -172,9 +172,9 @@ export const ROLE_CONFIGS: Record<UserRole, RoleConfig> = {
   auditor: {
     role: 'auditor',
     label: 'Compliance Auditor',
-    badgeBg: 'bg-purple-500/10',
-    badgeText: 'text-purple-400',
-    badgeBorder: 'border-purple-500/30',
+    badgeBg: 'bg-purple-50 dark:bg-purple-500/10',
+    badgeText: 'text-purple-700 dark:text-purple-400',
+    badgeBorder: 'border-purple-200 dark:border-purple-500/30',
     description: 'Read-only access to historical event queries, alarm audit logs, Kafka event logs, and CSV exports.',
     defaultPermissions: {
       uns_tree: true,
@@ -193,9 +193,9 @@ export const ROLE_CONFIGS: Record<UserRole, RoleConfig> = {
   viewer: {
     role: 'viewer',
     label: 'Read-Only Viewer',
-    badgeBg: 'bg-slate-500/10',
-    badgeText: 'text-slate-400',
-    badgeBorder: 'border-slate-500/30',
+    badgeBg: 'bg-slate-100 dark:bg-slate-500/10',
+    badgeText: 'text-slate-700 dark:text-slate-400',
+    badgeBorder: 'border-slate-300 dark:border-slate-500/30',
     description: 'Basic view-only access to public UNS tree hierarchy.',
     defaultPermissions: {
       uns_tree: true,

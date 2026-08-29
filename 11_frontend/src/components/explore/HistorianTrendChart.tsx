@@ -1,6 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { TrendingUp } from 'lucide-react';
 import { HistoricEvent } from '../../types/uns';
+import {
+  extractChartableMetrics,
+  formatChartValue,
+  parseMetricNumber,
+  pickDefaultChartMetrics,
+} from '../../lib/uns/telemetry-metrics';
 
 interface HistorianTrendChartProps {
   events: HistoricEvent[];
@@ -12,18 +18,15 @@ export const HistorianTrendChart: React.FC<HistorianTrendChartProps> = ({ events
   const numericKeys = useMemo(() => {
     const keys = new Set<string>();
     for (const ev of events) {
-      if (typeof ev.payload === 'object' && ev.payload !== null) {
-        for (const [k, v] of Object.entries(ev.payload)) {
-          if (typeof v === 'number' || (!isNaN(Number(v)) && typeof v !== 'boolean')) {
-            keys.add(k);
-          }
-        }
+      for (const key of extractChartableMetrics(ev.payload)) {
+        keys.add(key);
       }
     }
     return Array.from(keys);
   }, [events]);
 
   const [activeMetrics, setActiveMetrics] = useState<string[]>([]);
+  const [metricsInitialized, setMetricsInitialized] = useState(false);
   const [hoveredPoint, setHoveredPoint] = useState<{
     time: string;
     values: Record<string, number>;
@@ -33,10 +36,16 @@ export const HistorianTrendChart: React.FC<HistorianTrendChartProps> = ({ events
 
   // Initialize active metrics when keys change
   React.useEffect(() => {
-    if (numericKeys.length > 0 && activeMetrics.length === 0) {
-      setActiveMetrics(numericKeys.slice(0, 3)); // pick first 3 by default
+    setMetricsInitialized(false);
+    setActiveMetrics([]);
+  }, [selectedTopic, events.length]);
+
+  React.useEffect(() => {
+    if (numericKeys.length > 0 && !metricsInitialized) {
+      setActiveMetrics(pickDefaultChartMetrics(numericKeys));
+      setMetricsInitialized(true);
     }
-  }, [numericKeys, activeMetrics.length]);
+  }, [numericKeys, metricsInitialized]);
 
   const toggleMetric = (key: string) => {
     if (activeMetrics.includes(key)) {
@@ -62,13 +71,12 @@ export const HistorianTrendChart: React.FC<HistorianTrendChartProps> = ({ events
   const parsedData = useMemo(() => {
     if (events.length === 0) return [];
 
-    return events.map((ev) => {
+    const rows = events.map((ev) => {
       const vals: Record<string, number> = {};
       if (typeof ev.payload === 'object' && ev.payload !== null) {
         for (const k of numericKeys) {
-          const raw = (ev.payload as Record<string, unknown>)[k];
-          if (typeof raw === 'number') vals[k] = raw;
-          else if (!isNaN(Number(raw))) vals[k] = Number(raw);
+          const parsed = parseMetricNumber((ev.payload as Record<string, unknown>)[k]);
+          if (parsed !== undefined) vals[k] = parsed;
         }
       }
       return {
@@ -77,6 +85,8 @@ export const HistorianTrendChart: React.FC<HistorianTrendChartProps> = ({ events
         values: vals,
       };
     });
+
+    return rows.sort((a, b) => a.timeMs - b.timeMs);
   }, [events, numericKeys]);
 
   // Compute scale boundaries
@@ -230,7 +240,7 @@ export const HistorianTrendChart: React.FC<HistorianTrendChartProps> = ({ events
                   strokeDasharray="3 3"
                 />
                 <text x={margin.left - 8} y={y + 3} textAnchor="end" fill="#64748B" fontSize="9" fontFamily="monospace">
-                  {val.toFixed(1)}
+                  {formatChartValue(val)}
                 </text>
               </g>
             );
@@ -299,10 +309,12 @@ export const HistorianTrendChart: React.FC<HistorianTrendChartProps> = ({ events
             <div className="text-[#64748B] text-[9px]">
               {new Date(hoveredPoint.time).toLocaleTimeString()}
             </div>
-            {Object.entries(hoveredPoint.values).map(([k, v]) => (
+            {Object.entries(hoveredPoint.values)
+              .filter(([k]) => activeMetrics.includes(k))
+              .map(([k, v]) => (
               <div key={k} className="flex items-center justify-between gap-3">
                 <span className="text-[#94A3B8]">{k}:</span>
-                <span className="text-[#FFC107] font-bold">{v}</span>
+                <span className="text-[#FFC107] font-bold">{formatChartValue(v)}</span>
               </div>
             ))}
           </div>
@@ -326,9 +338,9 @@ export const HistorianTrendChart: React.FC<HistorianTrendChartProps> = ({ events
                 <span>{m}</span>
               </div>
               <div className="flex items-center justify-between text-[#64748B] text-[9px] mt-1">
-                <span>Min: <b className="text-[#0F172A] dark:text-[#F8FAFC]">{min.toFixed(1)}</b></span>
-                <span>Avg: <b className="text-[#0F172A] dark:text-[#F8FAFC]">{avg.toFixed(1)}</b></span>
-                <span>Max: <b className="text-[#0F172A] dark:text-[#F8FAFC]">{max.toFixed(1)}</b></span>
+                <span>Min: <b className="text-[#0F172A] dark:text-[#F8FAFC]">{formatChartValue(min)}</b></span>
+                <span>Avg: <b className="text-[#0F172A] dark:text-[#F8FAFC]">{formatChartValue(avg)}</b></span>
+                <span>Max: <b className="text-[#0F172A] dark:text-[#F8FAFC]">{formatChartValue(max)}</b></span>
               </div>
             </div>
           );

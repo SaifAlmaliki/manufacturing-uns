@@ -179,49 +179,49 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-[#111114] border border-[#1E293B] rounded-xl max-w-2xl w-full my-auto overflow-hidden flex flex-col max-h-[92vh] shadow-2xl font-sans text-xs">
+    <div className="fixed inset-0 z-50 bg-black/40 dark:bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+      <div className="bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] rounded-xl max-w-2xl w-full my-auto overflow-hidden flex flex-col max-h-[92vh] shadow-2xl font-sans text-xs">
         {/* Header */}
-        <div className="p-3 sm:p-4 bg-[#111114] border-b border-[#1E293B] flex items-center justify-between shrink-0">
+        <div className="p-3 sm:p-4 bg-white dark:bg-[#111114] border-b border-[#E2E8F0] dark:border-[#1E293B] flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-[#FFC107]/10 border border-[#FFC107]/30 flex items-center justify-center text-[#FFC107]">
+            <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-[#FFC107]/10 border border-amber-200 dark:border-[#FFC107]/30 flex items-center justify-center text-amber-600 dark:text-[#FFC107]">
               <Sliders className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="font-display font-bold text-sm text-[#F8FAFC]">
+              <h2 className="font-display font-bold text-sm text-[#0F172A] dark:text-[#F8FAFC] text-balance">
                 {rule ? 'Edit Alert Rule' : 'Create New Alert Rule'}
               </h2>
-              <p className="text-[10px] text-[#94A3B8]">
+              <p className="text-[10px] text-[#64748B] dark:text-[#94A3B8] text-pretty">
                 Configure real-time threshold conditions, role targeting, and dispatch channels.
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg bg-[#0B0B0C] border border-[#1E293B] text-[#64748B] hover:text-[#F8FAFC] cursor-pointer"
+            className="p-1.5 rounded-lg bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#E2E8F0] dark:border-[#1E293B] text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#F8FAFC] cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Form Body */}
-        <div className="p-4 overflow-y-auto space-y-4 flex-1 scrollbar-thin scrollbar-thumb-[#1E293B]">
+        <div className="p-4 overflow-y-auto space-y-4 flex-1 scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-[#1E293B]">
           {validationError && (
-            <div className="p-2.5 rounded-lg bg-rose-950/40 border border-rose-800 text-rose-300 text-[11px] flex items-center gap-2">
+            <div className="p-2.5 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-[11px] flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0" />
               <span>{validationError}</span>
             </div>
           )}
 
           {/* Section 1: Identity & Classification */}
-          <div className="space-y-3 p-3 rounded-lg bg-[#0B0B0C] border border-[#1E293B]">
-            <div className="text-[11px] font-mono font-bold text-[#FFC107] uppercase tracking-wider flex items-center gap-1.5">
+          <div className="space-y-3 p-3 rounded-lg bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#E2E8F0] dark:border-[#1E293B]">
+            <div className="text-[11px] font-mono font-bold text-amber-700 dark:text-[#FFC107] uppercase tracking-wider flex items-center gap-1.5">
               <span>1. Classification &amp; Identity</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-[11px] text-[#94A3B8] mb-1 font-medium">
+                <label className="block text-[11px] text-[#64748B] dark:text-[#94A3B8] mb-1 font-medium">
                   Rule Name *
                 </label>
                 <input
@@ -229,18 +229,18 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="e.g. Reactor 1 Temperature High-High"
-                  className="w-full bg-[#111114] border border-[#1E293B] rounded-md px-2.5 py-1.5 text-xs text-[#F8FAFC] focus:outline-none focus:border-[#FFC107]"
+                  className="w-full bg-white dark:bg-[#111114] border border-[#CBD5E1] dark:border-[#1E293B] rounded-md px-2.5 py-1.5 text-xs text-[#0F172A] dark:text-[#F8FAFC] focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107]"
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] text-[#94A3B8] mb-1 font-medium">
+                <label className="block text-[11px] text-[#64748B] dark:text-[#94A3B8] mb-1 font-medium">
                   Alarm Category
                 </label>
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value as AlarmCategory)}
-                  className="w-full bg-[#111114] border border-[#1E293B] rounded-md px-2.5 py-1.5 text-xs text-[#F8FAFC] focus:outline-none focus:border-[#FFC107] cursor-pointer"
+                  className="w-full bg-white dark:bg-[#111114] border border-[#CBD5E1] dark:border-[#1E293B] rounded-md px-2.5 py-1.5 text-xs text-[#0F172A] dark:text-[#F8FAFC] focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107] cursor-pointer"
                 >
                   {CATEGORIES.map((cat) => (
                     <option key={cat} value={cat}>
@@ -253,7 +253,7 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-[11px] text-[#94A3B8] mb-1 font-medium">
+                <label className="block text-[11px] text-[#64748B] dark:text-[#94A3B8] mb-1 font-medium">
                   Severity Level
                 </label>
                 <div className="grid grid-cols-4 gap-1">
@@ -271,7 +271,7 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({
                             : sev === 'WARNING'
                             ? 'bg-yellow-400 text-black border-yellow-400'
                             : 'bg-sky-500 text-black border-sky-500'
-                          : 'bg-[#111114] border-[#1E293B] text-[#94A3B8]'
+                          : 'bg-white dark:bg-[#111114] border-[#CBD5E1] dark:border-[#1E293B] text-[#64748B] dark:text-[#94A3B8]'
                       }`}
                     >
                       {sev}
@@ -281,7 +281,7 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-[11px] text-[#94A3B8] mb-1 font-medium">
+                <label className="block text-[11px] text-[#64748B] dark:text-[#94A3B8] mb-1 font-medium">
                   Description / Context
                 </label>
                 <input
@@ -289,21 +289,21 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Operational trigger instructions..."
-                  className="w-full bg-[#111114] border border-[#1E293B] rounded-md px-2.5 py-1.5 text-xs text-[#F8FAFC] focus:outline-none focus:border-[#FFC107]"
+                  className="w-full bg-white dark:bg-[#111114] border border-[#CBD5E1] dark:border-[#1E293B] rounded-md px-2.5 py-1.5 text-xs text-[#0F172A] dark:text-[#F8FAFC] focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107]"
                 />
               </div>
             </div>
           </div>
 
           {/* Section 2: Metric Condition & Thresholds */}
-          <div className="space-y-3 p-3 rounded-lg bg-[#0B0B0C] border border-[#1E293B]">
-            <div className="text-[11px] font-mono font-bold text-[#FFC107] uppercase tracking-wider flex items-center gap-1.5">
+          <div className="space-y-3 p-3 rounded-lg bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#E2E8F0] dark:border-[#1E293B]">
+            <div className="text-[11px] font-mono font-bold text-amber-700 dark:text-[#FFC107] uppercase tracking-wider flex items-center gap-1.5">
               <span>2. Metric Threshold &amp; Conditions</span>
             </div>
 
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="text-[11px] text-[#94A3B8] font-medium">
+                <label className="text-[11px] text-[#64748B] dark:text-[#94A3B8] font-medium">
                   Target Topic (ISA-95 or Sparkplug) *
                 </label>
                 <span className="text-[10px] text-[#64748B] font-mono">Use * for global wildcard</span>
@@ -313,13 +313,13 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
                 placeholder="e.g. CovestroAG/Dormagen/Polyurethane/Reactor_01/temperature"
-                className="w-full bg-[#111114] border border-[#1E293B] rounded-md px-2.5 py-1.5 text-xs text-[#F8FAFC] font-mono focus:outline-none focus:border-[#FFC107]"
+                className="w-full bg-white dark:bg-[#111114] border border-[#CBD5E1] dark:border-[#1E293B] rounded-md px-2.5 py-1.5 text-xs text-[#0F172A] dark:text-[#F8FAFC] font-mono focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107]"
               />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
               <div>
-                <label className="block text-[11px] text-[#94A3B8] mb-1 font-medium">
+                <label className="block text-[11px] text-[#64748B] dark:text-[#94A3B8] mb-1 font-medium">
                   Metric Field / Key *
                 </label>
                 <input
@@ -327,18 +327,18 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({
                   value={metricField}
                   onChange={(e) => setMetricField(e.target.value)}
                   placeholder="e.g. temp_celsius, pressure_bar"
-                  className="w-full bg-[#111114] border border-[#1E293B] rounded-md px-2.5 py-1.5 text-xs text-[#F8FAFC] font-mono focus:outline-none focus:border-[#FFC107]"
+                  className="w-full bg-white dark:bg-[#111114] border border-[#CBD5E1] dark:border-[#1E293B] rounded-md px-2.5 py-1.5 text-xs text-[#0F172A] dark:text-[#F8FAFC] font-mono focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107]"
                 />
               </div>
 
               <div>
-                <label className="block text-[11px] text-[#94A3B8] mb-1 font-medium">
+                <label className="block text-[11px] text-[#64748B] dark:text-[#94A3B8] mb-1 font-medium">
                   Condition Operator
                 </label>
                 <select
                   value={condition}
                   onChange={(e) => setCondition(e.target.value as AlarmConditionType)}
-                  className="w-full bg-[#111114] border border-[#1E293B] rounded-md px-2.5 py-1.5 text-xs text-[#F8FAFC] font-mono focus:outline-none focus:border-[#FFC107] cursor-pointer"
+                  className="w-full bg-white dark:bg-[#111114] border border-[#CBD5E1] dark:border-[#1E293B] rounded-md px-2.5 py-1.5 text-xs text-[#0F172A] dark:text-[#F8FAFC] font-mono focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107] cursor-pointer"
                 >
                   {CONDITIONS.map((cond) => (
                     <option key={cond.value} value={cond.value}>
@@ -349,7 +349,7 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-[11px] text-[#94A3B8] mb-1 font-medium">
+                <label className="block text-[11px] text-[#64748B] dark:text-[#94A3B8] mb-1 font-medium">
                   Threshold Value *
                 </label>
                 <div className="flex items-center gap-1.5">
@@ -358,14 +358,14 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({
                     value={thresholdValue}
                     onChange={(e) => setThresholdValue(e.target.value)}
                     placeholder="e.g. 85.0"
-                    className="flex-1 bg-[#111114] border border-[#1E293B] rounded-md px-2.5 py-1.5 text-xs text-[#F8FAFC] font-mono focus:outline-none focus:border-[#FFC107]"
+                    className="flex-1 bg-white dark:bg-[#111114] border border-[#CBD5E1] dark:border-[#1E293B] rounded-md px-2.5 py-1.5 text-xs text-[#0F172A] dark:text-[#F8FAFC] font-mono focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107]"
                   />
                   <input
                     type="text"
                     value={unit}
                     onChange={(e) => setUnit(e.target.value)}
                     placeholder="Unit"
-                    className="w-14 bg-[#111114] border border-[#1E293B] rounded-md px-2 py-1.5 text-xs text-[#FFC107] font-mono text-center focus:outline-none focus:border-[#FFC107]"
+                    className="w-14 bg-white dark:bg-[#111114] border border-[#CBD5E1] dark:border-[#1E293B] rounded-md px-2 py-1.5 text-xs text-amber-700 dark:text-[#FFC107] font-mono text-center focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107]"
                   />
                 </div>
               </div>
@@ -373,7 +373,7 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({
 
             {condition === 'RANGE_OUTSIDE' && (
               <div>
-                <label className="block text-[11px] text-[#94A3B8] mb-1 font-medium">
+                <label className="block text-[11px] text-[#64748B] dark:text-[#94A3B8] mb-1 font-medium">
                   Upper Threshold Limit
                 </label>
                 <input
@@ -381,22 +381,22 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({
                   value={thresholdUpperValue}
                   onChange={(e) => setThresholdUpperValue(e.target.value)}
                   placeholder="e.g. 120.0"
-                  className="w-full bg-[#111114] border border-[#1E293B] rounded-md px-2.5 py-1.5 text-xs text-[#F8FAFC] font-mono focus:outline-none focus:border-[#FFC107]"
+                  className="w-full bg-white dark:bg-[#111114] border border-[#CBD5E1] dark:border-[#1E293B] rounded-md px-2.5 py-1.5 text-xs text-[#0F172A] dark:text-[#F8FAFC] font-mono focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107]"
                 />
               </div>
             )}
           </div>
 
           {/* Section 3: ROLE-BASED TRIGGERING & ROUTING */}
-          <div className="space-y-3 p-3 rounded-lg bg-[#0B0B0C] border border-[#1E293B]">
-            <div className="text-[11px] font-mono font-bold text-[#FFC107] uppercase tracking-wider flex items-center justify-between">
+          <div className="space-y-3 p-3 rounded-lg bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#E2E8F0] dark:border-[#1E293B]">
+            <div className="text-[11px] font-mono font-bold text-amber-700 dark:text-[#FFC107] uppercase tracking-wider flex items-center justify-between">
               <span>3. Role-Based Notification Triggering</span>
-              <span className="text-[9px] text-[#94A3B8] lowercase font-normal">
+              <span className="text-[9px] text-[#64748B] dark:text-[#94A3B8] lowercase font-normal">
                 {targetRoles.length} roles selected
               </span>
             </div>
 
-            <p className="text-[11px] text-[#94A3B8]">
+            <p className="text-[11px] text-[#64748B] dark:text-[#94A3B8]">
               Select which predefined roles will receive and be triggered by this incident:
             </p>
 
@@ -412,21 +412,21 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({
                     onClick={() => toggleRole(r)}
                     className={`p-2.5 rounded-lg border flex items-center justify-between cursor-pointer transition-all ${
                       isSelected
-                        ? 'bg-[#1E293B] border-[#FFC107] text-[#F8FAFC]'
-                        : 'bg-[#111114] border-[#1E293B] text-[#64748B] hover:border-[#334155]'
+                        ? 'bg-amber-50 dark:bg-[#1E293B] border-amber-500 dark:border-[#FFC107] text-[#0F172A] dark:text-[#F8FAFC]'
+                        : 'bg-white dark:bg-[#111114] border-[#E2E8F0] dark:border-[#1E293B] text-[#64748B] hover:border-[#94A3B8] dark:hover:border-[#334155]'
                     }`}
                   >
                     <div className="flex items-center gap-2">
                       <div
                         className={`w-4 h-4 rounded border flex items-center justify-center ${
-                          isSelected ? 'bg-[#FFC107] border-[#FFC107] text-black' : 'border-[#64748B]'
+                          isSelected ? 'bg-amber-500 dark:bg-[#FFC107] border-amber-500 dark:border-[#FFC107] text-black' : 'border-[#94A3B8] dark:border-[#64748B]'
                         }`}
                       >
                         {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
                       </div>
                       <div>
                         <div className="font-bold text-xs">{roleCfg.label}</div>
-                        <div className="text-[10px] text-[#94A3B8]">{r}</div>
+                        <div className="text-[10px] text-[#64748B] dark:text-[#94A3B8]">{r}</div>
                       </div>
                     </div>
 
@@ -439,15 +439,15 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({
             </div>
 
             {/* Escalation Policy */}
-            <div className="pt-2 border-t border-[#1E293B] grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="pt-2 border-t border-[#E2E8F0] dark:border-[#1E293B] grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-[11px] text-[#94A3B8] mb-1 font-medium">
+                <label className="block text-[11px] text-[#64748B] dark:text-[#94A3B8] mb-1 font-medium">
                   Escalation Target Role (If Unacknowledged)
                 </label>
                 <select
                   value={escalationRole}
                   onChange={(e) => setEscalationRole(e.target.value as UserRole)}
-                  className="w-full bg-[#111114] border border-[#1E293B] rounded-md px-2.5 py-1.5 text-xs text-[#F8FAFC] font-mono focus:outline-none focus:border-[#FFC107] cursor-pointer"
+                  className="w-full bg-white dark:bg-[#111114] border border-[#CBD5E1] dark:border-[#1E293B] rounded-md px-2.5 py-1.5 text-xs text-[#0F172A] dark:text-[#F8FAFC] font-mono focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107] cursor-pointer"
                 >
                   {PREDEFINED_ROLES.map((r) => (
                     <option key={r} value={r}>
@@ -458,7 +458,7 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-[11px] text-[#94A3B8] mb-1 font-medium">
+                <label className="block text-[11px] text-[#64748B] dark:text-[#94A3B8] mb-1 font-medium">
                   Escalation Timeout
                 </label>
                 <div className="flex items-center gap-1.5">
@@ -468,7 +468,7 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({
                     onChange={(e) => setEscalationTimeoutMinutes(Number(e.target.value))}
                     min={1}
                     max={120}
-                    className="flex-1 bg-[#111114] border border-[#1E293B] rounded-md px-2.5 py-1.5 text-xs text-[#F8FAFC] font-mono focus:outline-none focus:border-[#FFC107]"
+                    className="flex-1 bg-white dark:bg-[#111114] border border-[#CBD5E1] dark:border-[#1E293B] rounded-md px-2.5 py-1.5 text-xs text-[#0F172A] dark:text-[#F8FAFC] font-mono focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107]"
                   />
                   <span className="text-[#64748B] font-mono text-[11px]">Minutes</span>
                 </div>
@@ -477,24 +477,24 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({
           </div>
 
           {/* Section 4: Action Outputs */}
-          <div className="space-y-3 p-3 rounded-lg bg-[#0B0B0C] border border-[#1E293B]">
-            <div className="text-[11px] font-mono font-bold text-[#FFC107] uppercase tracking-wider">
+          <div className="space-y-3 p-3 rounded-lg bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#E2E8F0] dark:border-[#1E293B]">
+            <div className="text-[11px] font-mono font-bold text-amber-700 dark:text-[#FFC107] uppercase tracking-wider">
               4. Dispatch Actions &amp; Notifications
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <label className="flex items-center gap-2 p-2 rounded bg-[#111114] border border-[#1E293B] cursor-pointer">
+              <label className="flex items-center gap-2 p-2 rounded bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] cursor-pointer">
                 <input
                   type="checkbox"
                   checked={inAppNotification}
                   onChange={(e) => setInAppNotification(e.target.checked)}
                   className="accent-[#FFC107]"
                 />
-                <Bell className="w-3.5 h-3.5 text-[#FFC107]" />
-                <span className="text-[11px] text-[#F8FAFC]">In-App Incident Banner</span>
+                <Bell className="w-3.5 h-3.5 text-amber-600 dark:text-[#FFC107]" />
+                <span className="text-[11px] text-[#0F172A] dark:text-[#F8FAFC]">In-App Incident Banner</span>
               </label>
 
-              <label className="flex items-center gap-2 p-2 rounded bg-[#111114] border border-[#1E293B] cursor-pointer">
+              <label className="flex items-center gap-2 p-2 rounded bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] cursor-pointer">
                 <input
                   type="checkbox"
                   checked={audioChime}
@@ -502,10 +502,10 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({
                   className="accent-[#FFC107]"
                 />
                 <Volume2 className="w-3.5 h-3.5 text-rose-400" />
-                <span className="text-[11px] text-[#F8FAFC]">Industrial Audio Chime</span>
+                <span className="text-[11px] text-[#0F172A] dark:text-[#F8FAFC]">Industrial Audio Chime</span>
               </label>
 
-              <label className="flex items-center gap-2 p-2 rounded bg-[#111114] border border-[#1E293B] cursor-pointer">
+              <label className="flex items-center gap-2 p-2 rounded bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] cursor-pointer">
                 <input
                   type="checkbox"
                   checked={mqttPublishOnTrigger}
@@ -513,10 +513,10 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({
                   className="accent-[#FFC107]"
                 />
                 <Send className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="text-[11px] text-[#F8FAFC]">Publish to MQTT Alarm Topic</span>
+                <span className="text-[11px] text-[#0F172A] dark:text-[#F8FAFC]">Publish to MQTT Alarm Topic</span>
               </label>
 
-              <label className="flex items-center gap-2 p-2 rounded bg-[#111114] border border-[#1E293B] cursor-pointer">
+              <label className="flex items-center gap-2 p-2 rounded bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] cursor-pointer">
                 <input
                   type="checkbox"
                   checked={autoResolveOnNormal}
@@ -524,13 +524,13 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({
                   className="accent-[#FFC107]"
                 />
                 <Check className="w-3.5 h-3.5 text-sky-400" />
-                <span className="text-[11px] text-[#F8FAFC]">Auto-Resolve on Normal Range</span>
+                <span className="text-[11px] text-[#0F172A] dark:text-[#F8FAFC]">Auto-Resolve on Normal Range</span>
               </label>
             </div>
 
             {mqttPublishOnTrigger && (
               <div>
-                <label className="block text-[11px] text-[#94A3B8] mb-1 font-medium">
+                <label className="block text-[11px] text-[#64748B] dark:text-[#94A3B8] mb-1 font-medium">
                   MQTT Alarm Publication Topic
                 </label>
                 <input
@@ -538,7 +538,7 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({
                   value={mqttAlarmTopic}
                   onChange={(e) => setMqttAlarmTopic(e.target.value)}
                   placeholder="alarms/plant/incident"
-                  className="w-full bg-[#111114] border border-[#1E293B] rounded-md px-2.5 py-1.5 text-xs text-[#F8FAFC] font-mono focus:outline-none focus:border-[#FFC107]"
+                  className="w-full bg-white dark:bg-[#111114] border border-[#CBD5E1] dark:border-[#1E293B] rounded-md px-2.5 py-1.5 text-xs text-[#0F172A] dark:text-[#F8FAFC] font-mono focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107]"
                 />
               </div>
             )}
@@ -546,11 +546,11 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({
         </div>
 
         {/* Footer Actions */}
-        <div className="p-3 sm:p-4 bg-[#111114] border-t border-[#1E293B] flex items-center justify-between shrink-0">
+        <div className="p-3 sm:p-4 bg-white dark:bg-[#111114] border-t border-[#E2E8F0] dark:border-[#1E293B] flex items-center justify-between shrink-0">
           <button
             type="button"
             onClick={onClose}
-            className="px-3.5 py-2 rounded-lg border border-[#1E293B] text-[#94A3B8] hover:text-[#F8FAFC] text-xs font-mono transition-colors cursor-pointer"
+            className="px-3.5 py-2 rounded-lg border border-[#CBD5E1] dark:border-[#1E293B] text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC] text-xs font-mono transition-colors cursor-pointer"
           >
             Cancel
           </button>
@@ -558,7 +558,7 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({
           <button
             type="button"
             onClick={handleSave}
-            className="px-5 py-2 rounded-lg bg-[#FFC107] hover:bg-[#FFB300] text-[#0B0B0C] font-bold text-xs font-mono transition-colors cursor-pointer shadow-sm"
+            className="px-5 py-2 rounded-lg bg-amber-500 dark:bg-[#FFC107] hover:bg-amber-400 dark:hover:bg-[#FFB300] text-[#0B0B0C] font-bold text-xs font-mono transition-colors cursor-pointer shadow-sm"
           >
             {rule ? 'Update Alert Rule' : 'Create Alert Rule'}
           </button>

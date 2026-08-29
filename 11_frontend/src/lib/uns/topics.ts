@@ -18,3 +18,8 @@ export function mqttTopicInput(topic: string): { topic: string } {
 export function mqttTopicInputs(topics: string[]): { topic: string }[] {
   return topics.map(mqttTopicInput)
 }
+
+/** Number of ISA-95 segments in a namespace topic (e.g. CovestroAG/Krefeld/.../G1 → 6). */
+export function topicDepth(topic: string): number {
+  return topic.split('/').filter(Boolean).length
+}

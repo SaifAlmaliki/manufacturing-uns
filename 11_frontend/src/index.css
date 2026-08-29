@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme inline {
   --font-serif: "Instrument Serif", "Libre Baskerville", "Newsreader", "Cormorant Garamond", Georgia, serif;
   --font-instrument-serif: "Instrument Serif", "Libre Baskerville", Georgia, serif;

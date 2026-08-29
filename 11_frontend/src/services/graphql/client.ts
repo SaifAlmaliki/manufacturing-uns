@@ -8,7 +8,7 @@ import {
   graphqlSpbNodeToSparkplugNode,
   graphqlUnsNodeToUnsNode,
 } from '../../lib/uns/map-nodes'
-import { mqttTopicInput, mqttTopicInputs, childrenTopic } from '../../lib/uns/topics'
+import { mqttTopicInput, mqttTopicInputs, childrenTopic, topicDepth } from '../../lib/uns/topics'
 import {
   isParameterGroupTopic,
   probeParameterGroupTopics,
@@ -180,9 +180,13 @@ export class UnsGraphQLClient {
    * queries would OOM Neo4j on deep paths (e.g. G1/+).
    */
   public async getUnsNodeChildren(parentTopic: string): Promise<UnsNode[]> {
-    const direct = await this.getUnsNodes([childrenTopic(parentTopic)])
-    if (direct.length > 0) {
-      return direct
+    // Wildcard "+" queries under equipment (G1/+) OOM Neo4j — use exact ISA-95 probes instead.
+    const useWildcard = topicDepth(parentTopic) < 6
+    if (useWildcard) {
+      const direct = await this.getUnsNodes([childrenTopic(parentTopic)])
+      if (direct.length > 0) {
+        return direct
+      }
     }
 
     const parameterGroups = await this.getUnsNodes(probeParameterGroupTopics(parentTopic))
