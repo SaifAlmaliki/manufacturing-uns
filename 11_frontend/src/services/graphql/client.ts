@@ -42,6 +42,7 @@ export class UnsGraphQLClient {
   private wsUrl: string
   private ws: WebSocket | null = null
   private wsConnected = false
+  private wsProtocolReady = false
   private isLiveBackend = false
   private lastPingMs = 0
   private healthListeners = new Set<(health: SystemHealthInfo) => void>()
@@ -86,14 +87,19 @@ export class UnsGraphQLClient {
 
       this.ws.onopen = () => {
         this.wsConnected = true
+        this.wsProtocolReady = false
         this.ws?.send(JSON.stringify({ type: 'connection_init' }))
-        this.resubscribeMqttMessages()
         this.notifyHealth()
       }
 
       this.ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data)
+          if (msg.type === 'connection_ack') {
+            this.wsProtocolReady = true
+            this.resubscribeMqttMessages()
+            this.notifyHealth()
+          }
           if (msg.type === 'next' && msg.id && this.activeWsSubscriptions.has(msg.id)) {
             this.activeWsSubscriptions.get(msg.id)?.(msg.payload?.data)
           }
@@ -104,11 +110,13 @@ export class UnsGraphQLClient {
 
       this.ws.onerror = () => {
         this.wsConnected = false
+        this.wsProtocolReady = false
         this.notifyHealth()
       }
 
       this.ws.onclose = () => {
         this.wsConnected = false
+        this.wsProtocolReady = false
         this.notifyHealth()
       }
     } catch {
@@ -260,7 +268,7 @@ export class UnsGraphQLClient {
     topics: string[],
     onMessage: (msg: MqttMessage) => void,
   ): string | undefined {
-    if (!this.wsConnected || this.ws?.readyState !== WebSocket.OPEN) {
+    if (!this.wsProtocolReady || !this.wsConnected || this.ws?.readyState !== WebSocket.OPEN) {
       return undefined
     }
 
@@ -365,7 +373,7 @@ export class UnsGraphQLClient {
     return {
       status: this.isLiveBackend ? 'LIVE' : this.wsConnected ? 'DEGRADED' : 'DOWN',
       graphqlHttp: this.isLiveBackend,
-      graphqlWs: this.wsConnected,
+      graphqlWs: this.wsProtocolReady,
       mqttBroker: this.isLiveBackend ? 'ONLINE' : 'OFFLINE',
       neo4jTree: this.isLiveBackend ? 'ONLINE' : 'OFFLINE',
       timescaleHistorian: this.isLiveBackend ? 'ONLINE' : 'OFFLINE',

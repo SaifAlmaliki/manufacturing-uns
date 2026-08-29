@@ -81,7 +81,7 @@ class UnsMqttHistorian:
                     await uns_historian_handler.persist_mqtt_msg(
                         client_id=client._client_id.decode(),
                         topic=msg.topic,
-                        timestamp=float(filtered_message.get(MQTTConfig.timestamp_key, time.time())),
+                        timestamp=float(filtered_message.get(MQTTConfig.timestamp_key, time.time() * 1000)),
                         message=filtered_message,
                     )
 

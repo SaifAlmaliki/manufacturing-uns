@@ -156,8 +156,11 @@ class HistorianHandler:
         if timestamp is None:
             db_timestamp = datetime.now(UTC)
         else:
-            # Timestamp is normally in milliseconds and needs to be converted prior to insertion
-            db_timestamp = datetime.fromtimestamp(timestamp / 1000, UTC)
+            # Accept epoch seconds or milliseconds (simulator may send seconds)
+            ts = float(timestamp)
+            if ts < 1e12:
+                ts *= 1000
+            db_timestamp = datetime.fromtimestamp(ts / 1000, UTC)
         # sometimes when qos is not 2, the mqtt message may be delivered multiple times. in such case avoid duplicate inserts
         sql_cmd = (
             f"INSERT INTO {HistorianConfig.table} ( time, topic, client_id, mqtt_msg ) \n"  # noqa:S608:

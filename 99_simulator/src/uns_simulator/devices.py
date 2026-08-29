@@ -68,7 +68,7 @@ class AsyncMQTTDevice:
             # Enrich data with metadata
             enriched_data = {
                 **data,
-                'timestamp': datetime.timestamp(datetime.now()),
+                'timestamp': datetime.now().timestamp() * 1000,
                 'source': self.device_id,
                 'equipment': equipment
             }
@@ -268,7 +268,7 @@ class PLC(AsyncMQTTDevice):
                     'type': alarm_type,
                     'message': message,
                     'severity': severity,
-                    'timestamp': datetime.timestamp(datetime.now()),
+                    'timestamp': datetime.now().timestamp() * 1000,
                     'acknowledged': False
                 }]
             }
@@ -466,7 +466,7 @@ class HMI(AsyncMQTTDevice):
                 'description': description,
                 'operator': self.operator,
                 'screen': self.current_screen,
-                'timestamp': datetime.timestamp(datetime.now()),
+                'timestamp': datetime.now().timestamp() * 1000,
                 'session_duration_minutes': round(
                     (datetime.now() - self.session_start).total_seconds() / 60, 1
                 )
