@@ -2,9 +2,16 @@
 """Main entry point for the simulator"""
 
 import asyncio
+import sys
 
 from uns_simulator.config import settings
 from uns_simulator.simulator import UnifiedNamespaceSimulator
+
+
+def configure_asyncio_for_mqtt() -> None:
+    """aiomqtt/paho need add_reader/add_writer, which Windows ProactorEventLoop lacks."""
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 async def main():
@@ -14,8 +21,9 @@ async def main():
 
 
 def run_simulator():
+    configure_asyncio_for_mqtt()
     asyncio.run(main())
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    run_simulator()

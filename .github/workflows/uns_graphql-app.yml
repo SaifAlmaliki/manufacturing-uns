@@ -108,11 +108,11 @@ jobs:
           apoc.import.file.use_neo4j_config: true
           NEO4J_PLUGINS: '["apoc"]'
         options: >
-          --health-cmd="wget http://localhost:7474 || exit 1"
-          --health-interval=1s
+          --health-cmd="wget -q --spider http://127.0.0.1:7474 || exit 1"
+          --health-interval=10s
           --health-timeout=10s
-          --health-retries=20
-          --health-start-period=3s
+          --health-retries=12
+          --health-start-period=120s
 
       uns_timescaledb:
         image: "timescale/timescaledb:latest-pg16"
