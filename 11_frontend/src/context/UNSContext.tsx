@@ -14,7 +14,7 @@ import { unsGraphQLClient } from '../services/graphql/client';
 import { DEFAULT_APP_SETTINGS, STORAGE_KEYS } from '../config/branding';
 import { childrenTopic } from '../lib/uns/topics';
 import { isSyntheticUnsNode } from '../lib/uns/isa95-probe';
-import { isStaleCandidate, isNodeStale } from '../lib/uns/node-meta';
+import { getNodeRole, isStaleCandidate, isNodeStale } from '../lib/uns/node-meta';
 import { isSparkplugTopic } from '../lib/uns/sparkplug';
 
 function httpToWs(httpUrl: string): string {
@@ -126,18 +126,41 @@ export const UNSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [nodeChildrenMap, setNodeChildrenMap] = useState<Map<string, UnsNode[]>>(new Map());
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [selectedNode, setSelectedNode] = useState<UnsNode | null>(null);
+  const applyNodePatch = useCallback((topic: string, patch: Partial<UnsNode>) => {
+    setSelectedNode((prev) => (prev?.topic === topic ? { ...prev, ...patch } : prev));
+    setRootNodes((prev) => prev.map((n) => (n.topic === topic ? { ...n, ...patch } : n)));
+    setNodeChildrenMap((prev) => patchNodeInMap(prev, topic, patch));
+  }, []);
+
   const selectNode = useCallback((node: UnsNode | null) => {
     setSelectedNode(node);
-    if (!node || isSyntheticUnsNode(node)) return;
+    if (!node) return;
+
+    if (isSyntheticUnsNode(node) && getNodeRole(node.nodeType) === 'sensor') {
+      const end = new Date().toISOString();
+      const start = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      void unsGraphQLClient.getHistoricEvents(node.topic, start, end).then((events) => {
+        if (events.length === 0) return;
+        const latest = events.reduce((newest, event) =>
+          new Date(event.timestamp).getTime() >= new Date(newest.timestamp).getTime() ? event : newest,
+        );
+        applyNodePatch(node.topic, {
+          payload: latest.payload,
+          lastUpdated: latest.timestamp,
+          publisher: latest.publisher,
+        });
+      });
+      return;
+    }
+
+    if (isSyntheticUnsNode(node)) return;
 
     void unsGraphQLClient.getUnsNodes([node.topic]).then((nodes) => {
       if (!nodes[0]) return;
       const hydrated = nodes[0];
-      setSelectedNode((prev) => (prev?.topic === hydrated.topic ? hydrated : prev));
-      setRootNodes((prev) => prev.map((n) => (n.topic === hydrated.topic ? hydrated : n)));
-      setNodeChildrenMap((prev) => patchNodeInMap(prev, hydrated.topic, hydrated));
+      applyNodePatch(hydrated.topic, hydrated);
     });
-  }, []);
+  }, [applyNodePatch]);
   const [treeLoading, setTreeLoading] = useState<boolean>(false);
 
   const [mqttFeed, setMqttFeed] = useState<MqttMessage[]>([]);

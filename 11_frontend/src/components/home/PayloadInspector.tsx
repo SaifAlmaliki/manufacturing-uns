@@ -18,6 +18,7 @@ import {
 import { useUNS } from '../../context/UNSContext';
 import { JsonViewer } from '../common/JsonViewer';
 import { getNodeRole, getNodeRoleLabel, hasLiveTelemetry, isNodeStale, isStaleCandidate } from '../../lib/uns/node-meta';
+import { parseMetricNumber } from '../../lib/uns/telemetry-metrics';
 
 export const PayloadInspector: React.FC = () => {
   const {
@@ -65,15 +66,26 @@ export const PayloadInspector: React.FC = () => {
   // Extract key numeric telemetry properties for top parameter cards
   const numericMetrics: { key: string; value: number | string; unit?: string }[] = [];
   if (typeof selectedNode.payload === 'object' && selectedNode.payload !== null) {
-    for (const [k, v] of Object.entries(selectedNode.payload)) {
-      if (typeof v === 'number') {
-        let unit = '';
-        if (k.toLowerCase().includes('temp')) unit = '°C';
-        else if (k.toLowerCase().includes('press')) unit = 'bar';
-        else if (k.toLowerCase().includes('speed') || k.toLowerCase().includes('vel')) unit = 'RPM';
-        else if (k.toLowerCase().includes('rate') || k.toLowerCase().includes('flow')) unit = 'kg/h';
-        else if (k.toLowerCase().includes('pct') || k.toLowerCase().includes('percent')) unit = '%';
-        numericMetrics.push({ key: k, value: v, unit });
+    const payloadObj = selectedNode.payload as Record<string, unknown>;
+    const value = parseMetricNumber(payloadObj.value);
+    if (value !== undefined) {
+      const unit =
+        typeof payloadObj.unit === 'string'
+          ? payloadObj.unit
+          : selectedNode.name.toLowerCase().includes('temp')
+            ? '°C'
+            : selectedNode.name.toLowerCase().includes('press')
+              ? 'psi'
+              : selectedNode.name.toLowerCase().includes('flow')
+                ? 'L/min'
+                : '';
+      numericMetrics.push({ key: 'value', value, unit });
+    }
+    for (const [k, v] of Object.entries(payloadObj)) {
+      if (k === 'value' || k === 'unit') continue;
+      const num = parseMetricNumber(v);
+      if (num !== undefined) {
+        numericMetrics.push({ key: k, value: num });
       }
     }
   }
