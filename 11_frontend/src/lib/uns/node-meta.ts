@@ -4,7 +4,8 @@ export type NodeRole = 'structural' | 'equipment' | 'parameter-group' | 'sensor'
 
 const STRUCTURAL_NODE_TYPES = new Set(['ENTERPRISE', 'FACILITY', 'AREA', 'LINE', 'DEVICE'])
 
-export function getNodeRole(nodeType: string): NodeRole {
+export function getNodeRole(nodeType: string | undefined): NodeRole {
+  if (!nodeType) return 'other'
   if (STRUCTURAL_NODE_TYPES.has(nodeType)) return 'structural'
   if (nodeType === 'DEVICE_depth_1') return 'equipment'
   if (nodeType === 'DEVICE_depth_2') return 'parameter-group'

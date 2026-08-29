@@ -61,12 +61,6 @@ export const PayloadInspector: React.FC = () => {
   const stale =
     isStaleCandidate(selectedNode) &&
     isNodeStale(selectedNode.lastUpdated, settings.staleThresholdMinutes || 5);
-  const payloadEmpty =
-    selectedNode.payload === null ||
-    (typeof selectedNode.payload === 'object' &&
-      !Array.isArray(selectedNode.payload) &&
-      Object.keys(selectedNode.payload).length === 0);
-  const isStructuralNode = role === 'structural' || role === 'equipment' || role === 'parameter-group';
 
   // Extract key numeric telemetry properties for top parameter cards
   const numericMetrics: { key: string; value: number | string; unit?: string }[] = [];
@@ -220,20 +214,6 @@ export const PayloadInspector: React.FC = () => {
                 <div className="w-3 h-1.5 rounded-sm bg-slate-300 dark:bg-[#1E293B]" />
               </div>
             </div>
-          </div>
-        )}
-
-        {/* Current Payload Viewer */}
-        {payloadEmpty && isStructuralNode && (
-          <div className="rounded-lg border border-amber-300 dark:border-[#FFC107]/30 bg-amber-50 dark:bg-[#FFC107]/5 p-3 text-[11px] font-mono text-amber-900 dark:text-[#FFC107]">
-            <p className="font-semibold">Structural node — telemetry lives deeper in the tree</p>
-            <p className="mt-1 text-[#64748B] dark:text-[#94A3B8]">
-              Expand children to equipment (e.g. <span className="text-[#0F172A] dark:text-[#F8FAFC]">G1</span>,{' '}
-              <span className="text-[#0F172A] dark:text-[#F8FAFC]">FillingMachine</span>) → parameter type → sensor
-              (e.g. <span className="text-[#0F172A] dark:text-[#F8FAFC]">Temperature</span>,{' '}
-              <span className="text-[#0F172A] dark:text-[#F8FAFC]">FlowRate</span>). Or use the Live MQTT Feed on the
-              right, or Historian Explorer for trends.
-            </p>
           </div>
         )}
 

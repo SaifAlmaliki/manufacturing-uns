@@ -125,6 +125,18 @@ export const UNSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [nodeChildrenMap, setNodeChildrenMap] = useState<Map<string, UnsNode[]>>(new Map());
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [selectedNode, setSelectedNode] = useState<UnsNode | null>(null);
+  const selectNode = useCallback((node: UnsNode | null) => {
+    setSelectedNode(node);
+    if (!node) return;
+
+    void unsGraphQLClient.getUnsNodes([node.topic]).then((nodes) => {
+      if (!nodes[0]) return;
+      const hydrated = nodes[0];
+      setSelectedNode((prev) => (prev?.topic === hydrated.topic ? hydrated : prev));
+      setRootNodes((prev) => prev.map((n) => (n.topic === hydrated.topic ? hydrated : n)));
+      setNodeChildrenMap((prev) => patchNodeInMap(prev, hydrated.topic, hydrated));
+    });
+  }, []);
   const [treeLoading, setTreeLoading] = useState<boolean>(false);
 
   const [mqttFeed, setMqttFeed] = useState<MqttMessage[]>([]);
@@ -364,7 +376,7 @@ export const UNSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         expandedNodes,
         toggleNodeExpanded,
         selectedNode,
-        selectNode: setSelectedNode,
+        selectNode,
         treeLoading,
         refreshTree: fetchRoots,
         staleNodesCount,
