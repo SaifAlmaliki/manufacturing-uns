@@ -47,6 +47,17 @@ def test_platform_config_exposes_cors_origins():
     assert PlatformConfig.frontend_dev_origin() in PlatformConfig.cors_origins
 
 
+def test_get_settings_does_not_crash_when_conf_dir_is_missing(monkeypatch, tmp_path: Path):
+    """Docker smoke tests import the app with no /app/conf mount; Dynaconf must not OSError."""
+    missing = tmp_path / "no-such-conf"
+    assert not missing.exists()
+    monkeypatch.setattr("uns_config.loader.resolve_conf_dir", lambda: missing)
+    get_settings.cache_clear()
+    settings = get_settings("graphdb")
+    assert settings.get("mqtt.topics", ["#"]) is not None
+    get_settings.cache_clear()
+
+
 def test_conf_dir_override_via_env_var(monkeypatch, tmp_path: Path):
     custom_conf = tmp_path / "custom-conf"
     custom_conf.mkdir()

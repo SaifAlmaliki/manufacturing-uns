@@ -51,6 +51,7 @@ COPY ./02_mqtt-cluster/pyproject.toml /02_mqtt-cluster/uv.lock ./02_mqtt-cluster
 
 COPY ./02_mqtt-cluster/src /02_mqtt-cluster/src
 COPY ./${UNS_MODULE}/src ./src/
+COPY ./conf/settings.yaml /app/conf/settings.yaml
 
 # install minimalistic missing packages & security fixes
 RUN apk update && \ 

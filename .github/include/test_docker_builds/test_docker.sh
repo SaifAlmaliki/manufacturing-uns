@@ -80,6 +80,12 @@ docker run --entrypoint "sh" -e python_module="${python_module}" -e function="${
   else
     echo "Success:  pyproject.toml file found"
   fi
+  if [ ! -f "/app/conf/settings.yaml" ]; then
+    echo "Error: settings.yaml file not found in folder /app/conf"
+    exit 1
+  else
+    echo "Success:  /app/conf/settings.yaml is present"
+  fi
   if [ -d "/app/test" ]; then
     echo "Error: test folder not found in folder /app"
     exit 1

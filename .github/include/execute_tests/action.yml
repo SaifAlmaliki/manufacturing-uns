@@ -19,7 +19,8 @@ inputs:
     default: ""
   SAFETY_API_KEY:
     description: "API Key to invoke safety scanner. see https://safetycli.com/"
-    required: True
+    required: False
+    default: ""
 
 runs:
   using: "composite"
@@ -73,7 +74,13 @@ runs:
           fi
         fi
 
+    - name: Skip Safety CLI when API key is not configured
+      if: ${{ inputs.SAFETY_API_KEY == '' }}
+      shell: bash
+      run: echo "Skipping Safety CLI because SAFETY_API_KEY is not set."
+
     - name: Run Safety CLI to check for vulnerabilities
+      if: ${{ inputs.SAFETY_API_KEY != '' }}
       uses: pyupio/safety-action@v1
       with:
         api-key: ${{ inputs.SAFETY_API_KEY }}
