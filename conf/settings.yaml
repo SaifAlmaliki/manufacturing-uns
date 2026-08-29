@@ -41,7 +41,8 @@ default:
   mqtt:
     host: "localhost"
     port: 1883
-    topics: ["#"]
+    # Topics are per-environment. Dynaconf merges lists, so a default ["#"]
+    # would be prepended to every module override.
     qos: 1
     keep_alive: 60
     reconnect_on_failure: true

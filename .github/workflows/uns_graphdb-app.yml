@@ -8,6 +8,8 @@ on:
     branches:
       - "**"
     paths:
+      - "00_uns_config/**/*.py"
+      - "00_uns_config/pyproject.toml"
       - "02_mqtt-cluster/**/*.py*"
       - "02_mqtt-cluster/pyproject.toml"
       - "02_mqtt-cluster/uv.lock"
@@ -22,6 +24,8 @@ on:
     branches:
       - "**"
     paths:
+      - "00_uns_config/**/*.py"
+      - "00_uns_config/pyproject.toml"
       - "02_mqtt-cluster/**/*.py*"
       - "02_mqtt-cluster/pyproject.toml"
       - "02_mqtt-cluster/uv.lock"

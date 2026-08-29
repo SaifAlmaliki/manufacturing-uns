@@ -45,6 +45,8 @@ WORKDIR /app
 
 # Copy the contents of the project into the container
 COPY ./${UNS_MODULE}/pyproject.toml ./${UNS_MODULE}/uv.lock ./${UNS_MODULE}/README.md ./LICENSE* ./
+COPY ./00_uns_config/pyproject.toml ./00_uns_config/README.md /00_uns_config/
+COPY ./00_uns_config/src /00_uns_config/src
 COPY ./02_mqtt-cluster/pyproject.toml /02_mqtt-cluster/uv.lock ./02_mqtt-cluster/uv.lock ./02_mqtt-cluster/README.md /02_mqtt-cluster/
 
 COPY ./02_mqtt-cluster/src /02_mqtt-cluster/src

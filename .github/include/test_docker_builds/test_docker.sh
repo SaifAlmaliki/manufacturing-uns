@@ -56,6 +56,12 @@ docker build -t "${image_name}:${SHA_TAG}" --build-arg GIT_HASH="${SHA_TAG::7}" 
 # Run the Docker tests
 echo "Running tests for Docker image: ${image_name}:${SHA_TAG}"
 docker run --entrypoint "sh" -e python_module="${python_module}" -e function="${function}" -e class="${class}" "${image_name}:${SHA_TAG}" -c '
+  if [ ! -d "/00_uns_config" ]; then
+    echo "Error: Folder /00_uns_config not found in Docker image"
+    exit 1
+  else
+    echo "Success:  Folder /00_uns_config is present"
+  fi
   if [ ! -d "/02_mqtt-cluster" ]; then
     echo "Error: Folder /02_mqtt-cluster not found in Docker image"
     exit 1

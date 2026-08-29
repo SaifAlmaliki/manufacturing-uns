@@ -95,7 +95,7 @@ def test_mqtt_config():
     ), f"Unable to find certificate at: {MQTTConfig.tls.get('ca_certs')}"
 
     assert len(
-        MQTTConfig.topics) > 1, f"configuration 'mqtt.topics':{MQTTConfig.topics} must have at least 1 topic"
+        MQTTConfig.topics) >= 1, f"configuration 'mqtt.topics':{MQTTConfig.topics} must have at least 1 topic"
 
     for topic in MQTTConfig.topics:
         assert bool(

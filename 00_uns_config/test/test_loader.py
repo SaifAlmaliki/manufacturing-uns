@@ -4,11 +4,21 @@ from pathlib import Path
 
 from uns_config import PlatformConfig, get_settings, resolve_conf_dir
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
 
 def test_resolve_conf_dir_points_to_repo_root():
     conf_dir = resolve_conf_dir()
     assert conf_dir.name == "conf"
     assert (conf_dir / "settings.yaml").is_file()
+    assert conf_dir == (_REPO_ROOT / "conf").resolve()
+
+
+def test_resolve_conf_dir_skips_legacy_module_conf(monkeypatch):
+    """CI runs pytest from the module directory, which still has leftover conf/settings.yaml."""
+    monkeypatch.chdir(_REPO_ROOT / "03_uns_graphdb")
+    conf_dir = resolve_conf_dir()
+    assert conf_dir == (_REPO_ROOT / "conf").resolve()
 
 
 def test_default_settings_include_platform_and_mqtt():
@@ -22,6 +32,14 @@ def test_graphql_environment_merges_module_overrides():
     assert settings.get("mqtt.topics") == ["#"]
     kafka_config = settings.get("kafka.config")
     assert kafka_config["client.id"] == "uns_graphql_server"
+
+
+def test_graphdb_environment_merges_module_overrides(monkeypatch):
+    monkeypatch.chdir(_REPO_ROOT / "03_uns_graphdb")
+    get_settings.cache_clear()
+    settings = get_settings("graphdb")
+    assert settings.get("mqtt.topics") == ["test/uns/#", "ManufacturingCo/#", "spBv1.0/uns_group/#"]
+    get_settings.cache_clear()
 
 
 def test_platform_config_exposes_cors_origins():
