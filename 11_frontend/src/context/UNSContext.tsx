@@ -324,7 +324,7 @@ export const UNSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     return unsubscribe;
-  }, [feedTopicFilter, followSelection]);
+  }, [feedTopicFilter, followSelection, health.graphqlWs]);
 
   const clearMqttFeed = () => {
     setMqttFeed([]);

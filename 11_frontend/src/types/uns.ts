@@ -35,6 +35,7 @@ export interface UnsNode {
   payload?: Record<string, unknown> | string | number | boolean | null;
   lastUpdated: string; // ISO 8601 string
   publisher?: string;
+  properties?: Record<string, string>;
   isLeaf: boolean;
   children?: UnsNode[];
   isStale?: boolean;

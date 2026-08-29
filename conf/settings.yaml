@@ -53,7 +53,18 @@ default:
 
   graphdb:
     url: "bolt://localhost:7687"
-    uns_node_types: ["ENTERPRISE", "FACILITY", "AREA", "LINE", "DEVICE"]
+    # ISA-95 hierarchy (0–4) plus equipment / parameter-type / parameter leaf levels (5–7).
+    # Depths beyond index 4 are stored as DEVICE_depth_N in Neo4j; listing them here exposes
+    # G1 / ProcessValue / Temperature (etc.) in GraphQL getUnsNodes tree queries.
+    uns_node_types:
+      - "ENTERPRISE"
+      - "FACILITY"
+      - "AREA"
+      - "LINE"
+      - "DEVICE"
+      - "DEVICE_depth_1"
+      - "DEVICE_depth_2"
+      - "DEVICE_depth_3"
     spB_node_types: ["spBv1_0", "GROUP", "MESSAGE_TYPE", "EDGE_NODE", "DEVICE"]
     nested_attribute_node_type: "NESTED_ATTRIBUTE"
 

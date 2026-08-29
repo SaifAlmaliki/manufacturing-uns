@@ -24,7 +24,12 @@ function asPayloadValue(value: unknown): PayloadValue {
   return String(value)
 }
 
-const LEAF_NODE_TYPES = new Set(['DEVICE', 'NESTED_ATTRIBUTE'])
+const LEAF_NODE_TYPES = new Set([
+  'DEVICE',
+  'NESTED_ATTRIBUTE',
+  'DEVICE_depth_2',
+  'DEVICE_depth_3',
+])
 
 export function graphqlUnsNodeToUnsNode(node: GraphqlUnsNode): UnsNode {
   const parsed = node.payload ? parseJsonPayload(node.payload.data) : { ok: false as const }

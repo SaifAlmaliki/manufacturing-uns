@@ -46,6 +46,10 @@ export class UnsGraphQLClient {
   private lastPingMs = 0
   private healthListeners = new Set<(health: SystemHealthInfo) => void>()
   private activeWsSubscriptions = new Map<string, (data: unknown) => void>()
+  private mqttMessageSubs = new Map<
+    string,
+    { topics: string[]; onMessage: (msg: MqttMessage) => void; wsSubId?: string }
+  >()
 
   constructor(httpUrl = '/graphql', wsUrl?: string) {
     this.httpUrl = httpUrl
@@ -83,6 +87,7 @@ export class UnsGraphQLClient {
       this.ws.onopen = () => {
         this.wsConnected = true
         this.ws?.send(JSON.stringify({ type: 'connection_init' }))
+        this.resubscribeMqttMessages()
         this.notifyHealth()
       }
 
@@ -250,36 +255,67 @@ export class UnsGraphQLClient {
     return []
   }
 
-  public subscribeMqttMessages(topics: string[], onMessage: (msg: MqttMessage) => void): () => void {
-    if (this.wsConnected && this.ws?.readyState === WebSocket.OPEN) {
-      const subId = `sub_mqtt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-      this.activeWsSubscriptions.set(subId, (data: unknown) => {
-        const payload = data as { getMqttMessages?: GraphqlMqttMessage }
-        if (payload?.getMqttMessages) {
-          onMessage(graphqlMqttMessageToMqttMessage(payload.getMqttMessages))
-        }
-      })
-
-      this.ws.send(
-        JSON.stringify({
-          id: subId,
-          type: 'subscribe',
-          payload: {
-            query: SUBSCRIBE_MQTT_MESSAGES,
-            variables: { topics: mqttTopicInputs(topics) },
-          },
-        }),
-      )
-
-      return () => {
-        this.activeWsSubscriptions.delete(subId)
-        if (this.ws?.readyState === WebSocket.OPEN) {
-          this.ws.send(JSON.stringify({ id: subId, type: 'complete' }))
-        }
-      }
+  private sendMqttSubscription(
+    registryId: string,
+    topics: string[],
+    onMessage: (msg: MqttMessage) => void,
+  ): string | undefined {
+    if (!this.wsConnected || this.ws?.readyState !== WebSocket.OPEN) {
+      return undefined
     }
 
-    return () => undefined
+    const wsSubId = `sub_mqtt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    this.activeWsSubscriptions.set(wsSubId, (data: unknown) => {
+      const payload = data as { getMqttMessages?: GraphqlMqttMessage }
+      if (payload?.getMqttMessages) {
+        onMessage(graphqlMqttMessageToMqttMessage(payload.getMqttMessages))
+      }
+    })
+
+    this.ws.send(
+      JSON.stringify({
+        id: wsSubId,
+        type: 'subscribe',
+        payload: {
+          query: SUBSCRIBE_MQTT_MESSAGES,
+          variables: { topics: mqttTopicInputs(topics) },
+        },
+      }),
+    )
+
+    const entry = this.mqttMessageSubs.get(registryId)
+    if (entry) {
+      entry.wsSubId = wsSubId
+    }
+
+    return wsSubId
+  }
+
+  private resubscribeMqttMessages() {
+    for (const [registryId, entry] of this.mqttMessageSubs.entries()) {
+      if (entry.wsSubId) {
+        this.activeWsSubscriptions.delete(entry.wsSubId)
+        entry.wsSubId = undefined
+      }
+      this.sendMqttSubscription(registryId, entry.topics, entry.onMessage)
+    }
+  }
+
+  public subscribeMqttMessages(topics: string[], onMessage: (msg: MqttMessage) => void): () => void {
+    const registryId = `reg_mqtt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    this.mqttMessageSubs.set(registryId, { topics, onMessage })
+    this.sendMqttSubscription(registryId, topics, onMessage)
+
+    return () => {
+      const entry = this.mqttMessageSubs.get(registryId)
+      if (entry?.wsSubId) {
+        this.activeWsSubscriptions.delete(entry.wsSubId)
+        if (this.ws?.readyState === WebSocket.OPEN) {
+          this.ws.send(JSON.stringify({ id: entry.wsSubId, type: 'complete' }))
+        }
+      }
+      this.mqttMessageSubs.delete(registryId)
+    }
   }
 
   public subscribeKafkaMessages(topics: string[], onMessage: (msg: KafkaMessage) => void): () => void {
