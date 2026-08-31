@@ -122,6 +122,8 @@ jobs:
           SELECT create_hypertable('$UNS_historian__table', 'time');
           " | PGPASSWORD=${UNS_historian__password} psql -h ${UNS_historian__hostname} -U $UNS_historian__username -d $UNS_historian__database  -p 5432
 
+          PGPASSWORD=${UNS_historian__password} psql -h ${UNS_historian__hostname} -U $UNS_historian__username -d $UNS_historian__database -p 5432 -v ON_ERROR_STOP=1 -f 04_uns_historian/sql_scripts/04_setup_metrics_hypertable.sql
+
       - name: Run all type of tests
         uses: ./.github/include/execute_tests/
         with:

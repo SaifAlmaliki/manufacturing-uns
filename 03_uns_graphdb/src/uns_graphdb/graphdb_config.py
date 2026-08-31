@@ -93,6 +93,7 @@ class GraphDBConfig:
     )
     nested_attributes_node_type: str = settings.get(
         "graphdb.nested_attribute_node_type", "NESTED_ATTRIBUTE")
+    metrics_port: int = settings.get("graphdb.metrics_port", 9092)
 
     if db_url is None:
         LOGGER.error(

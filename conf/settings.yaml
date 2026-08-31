@@ -67,11 +67,14 @@ default:
       - "DEVICE_depth_3"
     spB_node_types: ["spBv1_0", "GROUP", "MESSAGE_TYPE", "EDGE_NODE", "DEVICE"]
     nested_attribute_node_type: "NESTED_ATTRIBUTE"
+    metrics_port: 9092
 
   historian:
     hostname: "localhost"
     database: "uns_historian"
     table: "unifiednamespace"
+    metrics_table: "uns_metrics"
+    metrics_port: 9091
 
   kafka:
     bootstrap_servers: "localhost:9092"

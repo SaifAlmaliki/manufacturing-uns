@@ -27,6 +27,7 @@ from asyncpg import Pool
 from asyncpg.connection import Connection
 
 from uns_historian.historian_config import HistorianConfig
+from uns_historian.metric_flattener import flatten_payload_to_metrics
 
 LOGGER = logging.getLogger(__name__)
 
@@ -155,6 +156,17 @@ class HistorianHandler:
             ts *= 1000
         return datetime.fromtimestamp(ts / 1000, UTC)
 
+    @staticmethod
+    def _metrics_insert_rows(
+        db_timestamp: datetime,
+        topic: str,
+        message: dict,
+    ) -> list[tuple[datetime, str, str, float | None, str | None]]:
+        rows: list[tuple[datetime, str, str, float | None, str | None]] = []
+        for metric_name, value_double, value_text in flatten_payload_to_metrics(message):
+            rows.append((db_timestamp, topic, metric_name, value_double, value_text))
+        return rows
+
     async def persist_mqtt_msg(self, client_id: str, topic: str, timestamp: float | None, message: dict):
         """
         Persists all mqtt message in the historian
@@ -169,12 +181,33 @@ class HistorianHandler:
             The MQTT message. String is expected to be JSON formatted
         """
         db_timestamp = self.to_utc_datetime(timestamp)
+        metric_rows = self._metrics_insert_rows(db_timestamp, topic, message)
+
         # sometimes when qos is not 2, the mqtt message may be delivered multiple times. in such case avoid duplicate inserts
-        sql_cmd = (
+        raw_sql = (
             f"INSERT INTO {HistorianConfig.table} ( time, topic, client_id, mqtt_msg ) \n"  # noqa:S608:
             + "VALUES ($1,$2,$3,$4) \n"
             + "ON CONFLICT DO NOTHING \n"
             + "RETURNING *;"
-        )  # This is a prepared statement and the values are sanitized
-        params = [db_timestamp, topic, client_id, json.dumps(message)]
-        return await self.execute_prepared(sql_cmd, *params)
+        )
+        metrics_sql = (
+            f"INSERT INTO {HistorianConfig.metrics_table} "  # noqa:S608:
+            + "( time, topic, metric_name, value_double, value_text ) \n"
+            + "VALUES ($1,$2,$3,$4,$5);"
+        )
+
+        try:
+            async with self._conn.transaction():
+                raw_result = await self._conn.fetch(
+                    raw_sql,
+                    db_timestamp,
+                    topic,
+                    client_id,
+                    json.dumps(message),
+                )
+                if raw_result and metric_rows:
+                    await self._conn.executemany(metrics_sql, metric_rows)
+                return raw_result
+        except asyncpg.PostgresError as ex:
+            LOGGER.error(f"Error persisting message in transaction: {ex}")
+            raise

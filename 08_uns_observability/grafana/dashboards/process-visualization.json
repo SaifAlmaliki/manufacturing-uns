@@ -1,0 +1,61 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "single" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+          "format": "time_series",
+          "rawSql": "SELECT bucket AS time, avg_value_double AS value, topic || '/' || metric_name AS metric FROM uns_metrics_1m WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name LIKE '%$metric%' ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Process Metrics (1m aggregate)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["process-visualization"],
+  "templating": {
+    "list": [
+      {
+        "current": { "text": "CovestroAG", "value": "CovestroAG" },
+        "label": "Topic contains",
+        "name": "topic",
+        "options": [{ "selected": true, "text": "CovestroAG", "value": "CovestroAG" }],
+        "type": "textbox"
+      },
+      {
+        "current": { "text": "Temperature", "value": "Temperature" },
+        "label": "Metric contains",
+        "name": "metric",
+        "options": [{ "selected": true, "text": "Temperature", "value": "Temperature" }],
+        "type": "textbox"
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "Process Visualization",
+  "uid": "uns-process-visualization",
+  "version": 1
+}

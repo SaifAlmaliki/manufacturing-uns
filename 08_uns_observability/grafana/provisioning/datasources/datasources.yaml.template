@@ -1,0 +1,31 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://uns_prometheus:9090
+    isDefault: true
+    editable: false
+
+  - name: TimescaleDB
+    type: grafana-postgresql-datasource
+    access: proxy
+    url: uns_timescale_db:5432
+    user: uns_dbuser
+    database: uns_historian
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: true
+    secureJsonData:
+      password: ${UNS_HISTORIAN_PASSWORD}
+
+  - name: MQTT
+    type: grafana-mqtt-datasource
+    access: proxy
+    url: tcp://uns_mqtt_broker:1883
+    jsonData:
+      tlsAuth: false
+      tlsAuthWithCACert: false
+    editable: false

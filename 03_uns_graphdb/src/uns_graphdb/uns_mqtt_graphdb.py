@@ -26,6 +26,13 @@ from uns_mqtt.mqtt_listener import UnsMQTTClient
 
 from uns_graphdb.graphdb_config import GraphDBConfig, MQTTConfig
 from uns_graphdb.graphdb_handler import GraphDBHandler
+from uns_graphdb.prometheus_metrics import (
+    MESSAGES_RECEIVED,
+    PERSIST_DURATION,
+    PERSIST_FAILURE,
+    PERSIST_SUCCESS,
+    start_metrics_server,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -86,16 +93,20 @@ class UnsMqttGraphDb:
                 topic=msg.topic, payload=msg.payload, mqtt_ignored_attributes=MQTTConfig.ignored_attributes
             )
 
-            # save message
-            self.graph_db_handler.persist_mqtt_msg(
-                topic=msg.topic,
-                message=filtered_message,
-                timestamp=filtered_message.get(
-                    MQTTConfig.timestamp_key, time.time()),
-                node_types=node_types,
-                attr_node_type=GraphDBConfig.nested_attributes_node_type,
-            )
+            MESSAGES_RECEIVED.inc()
+            with PERSIST_DURATION.time():
+                # save message
+                self.graph_db_handler.persist_mqtt_msg(
+                    topic=msg.topic,
+                    message=filtered_message,
+                    timestamp=filtered_message.get(
+                        MQTTConfig.timestamp_key, time.time()),
+                    node_types=node_types,
+                    attr_node_type=GraphDBConfig.nested_attributes_node_type,
+                )
+            PERSIST_SUCCESS.inc()
         except SystemError as system_error:
+            PERSIST_FAILURE.labels(reason=type(system_error).__name__).inc()
             LOGGER.error(
                 "Fatal Error while parsing Message: %s\nTopic: %s \nMessage:%s\nExiting.........",
                 system_error,
@@ -107,6 +118,7 @@ class UnsMqttGraphDb:
 
         except Exception as ex:
             # pylint: disable=broad-exception-caught
+            PERSIST_FAILURE.labels(reason=type(ex).__name__).inc()
             LOGGER.error(
                 "Error persisting the message to the Graph DB: %s \nTopic: %s \nMessage:%s",
                 ex,
@@ -143,6 +155,7 @@ def main():
     """
     uns_mqtt_graphdb = None
     try:
+        start_metrics_server(GraphDBConfig.metrics_port)
         uns_mqtt_graphdb = UnsMqttGraphDb()
         uns_mqtt_graphdb.uns_client.loop_forever(retry_first_connection=True)
     finally:

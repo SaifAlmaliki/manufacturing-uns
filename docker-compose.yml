@@ -128,6 +128,7 @@ services:
         PGPASSWORD=$${UNS_historian__password} psql -h $${UNS_historian__hostname} -U $${UNS_historian__username} -d $${UNS_historian__database} -p 5432 -c "CREATE TABLE $${UNS_historian__table} (time TIMESTAMPTZ NOT NULL, topic TEXT NOT NULL, client_id TEXT, mqtt_msg JSONB, CONSTRAINT unique_event UNIQUE (time, topic, client_id, mqtt_msg));"
         PGPASSWORD=$${UNS_historian__password} psql -h $${UNS_historian__hostname} -U $${UNS_historian__username} -d $${UNS_historian__database} -p 5432 -c "SELECT create_hypertable('$${UNS_historian__table}', 'time');"
         PGPASSWORD=$${UNS_historian__password} psql -h $${UNS_historian__hostname} -U $${UNS_historian__username} -d $${UNS_historian__database} -p 5432 -v ON_ERROR_STOP=1 -f /sql/03_setup_alert_rules.sql
+        PGPASSWORD=$${UNS_historian__password} psql -h $${UNS_historian__hostname} -U $${UNS_historian__username} -d $${UNS_historian__database} -p 5432 -v ON_ERROR_STOP=1 -f /sql/04_setup_metrics_hypertable.sql
         echo "Successfully created & configured timescaledb for the UNS"
 
   graphdb_client:
@@ -136,6 +137,8 @@ services:
       dockerfile: ./03_uns_graphdb/Dockerfile
     volumes:
       - ./conf:/app/conf
+    ports:
+      - "9092:9092"
     environment:
       UNS_CONF_DIR: /app/conf
       UNS_MODULE: 03_uns_graphdb
@@ -143,6 +146,7 @@ services:
       UNS_graphdb__url: "bolt://uns_neo4j_db:7687"
       UNS_graphdb__username: neo4j
       UNS_graphdb__password: ${UNS_graphdb__password}
+      UNS_graphdb__metrics_port: 9092
     depends_on:
       uns_mqtt_broker:
         condition: service_healthy
@@ -155,6 +159,8 @@ services:
       dockerfile: ./04_uns_historian/Dockerfile
     volumes:
       - ./conf:/app/conf
+    ports:
+      - "9091:9091"
     environment:
       UNS_CONF_DIR: /app/conf
       UNS_MODULE: 04_uns_historian
@@ -162,6 +168,8 @@ services:
       UNS_historian__hostname: uns_timescale_db
       UNS_historian__database: "uns_historian"
       UNS_historian__table: "unifiednamespace"
+      UNS_historian__metrics_table: "uns_metrics"
+      UNS_historian__metrics_port: 9091
       UNS_historian__username: uns_dbuser
       UNS_historian__password: ${UNS_historian__password}
     depends_on:
@@ -263,3 +271,39 @@ services:
       - "8088:80"
     depends_on:
       - graphql_server
+
+  uns_prometheus:
+    image: "prom/prometheus:latest"
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./08_uns_observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - historian_client
+      - graphdb_client
+
+  uns_grafana:
+    image: "grafana/grafana:latest"
+    ports:
+      - "3000:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_INSTALL_PLUGINS: grafana-mqtt-datasource
+      UNS_HISTORIAN_PASSWORD: ${UNS_historian__password}
+    volumes:
+      - ./08_uns_observability/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./08_uns_observability/grafana/provisioning/datasources/datasources.yaml.template:/etc/grafana/provisioning/datasources/datasources.yaml.template:ro
+      - ./08_uns_observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./08_uns_observability/grafana/entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    depends_on:
+      uns_mqtt_broker:
+        condition: service_healthy
+      uns_timescale_db:
+        condition: service_healthy
+      tsdb_setup_script:
+        condition: service_completed_successfully
+      uns_prometheus:
+        condition: service_started

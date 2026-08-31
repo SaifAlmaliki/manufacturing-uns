@@ -91,6 +91,8 @@ class HistorianConfig:
     database: str = settings.get("historian.database")
 
     table: str = settings.get("historian.table")
+    metrics_table: str = settings.get("historian.metrics_table", "uns_metrics")
+    metrics_port: int = settings.get("historian.metrics_port", 9091)
 
     if hostname is None:
         LOGGER.error(

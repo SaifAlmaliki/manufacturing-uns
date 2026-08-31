@@ -139,13 +139,58 @@ async def test_persist_mqtt_msg(
     finally:
         if not is_error:  # clean up only in the insert was successful
             async with HistorianHandler() as uns_historian_handler_cleaner:
+                delete_metrics_sql = f""" DELETE FROM {HistorianConfig.metrics_table} WHERE
+                                        topic = $1
+                                        RETURNING *;"""  # noqa: S608
                 delete_sql_cmd = f""" DELETE FROM {HistorianConfig.table} WHERE
                                         topic = $1 AND
                                         client_id = $2 AND
                                         mqtt_msg = $3
                                         RETURNING *;"""  # noqa: S608
-                # dont compare timestamps as when the timestamp is None, current time is inserted.
-                await uns_historian_handler_cleaner.execute_prepared(delete_sql_cmd, *[topic, publisher, json.dumps(message)])
+                await uns_historian_handler_cleaner.execute_prepared(delete_metrics_sql, *[topic])
+                await uns_historian_handler_cleaner.execute_prepared(
+                    delete_sql_cmd, *[topic, publisher, json.dumps(message)]
+                )
+
+
+@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.integrationtest
+@pytest.mark.xdist_group(name="uns_historian")
+async def test_persist_mqtt_msg_dual_writes_metrics():
+    topic = "test/metrics/dual-write"
+    publisher = "metrics_test_client"
+    message = {"Temperature": 42.5, "status": "ok", "nested": {"Pressure": 100}}
+
+    try:
+        async with HistorianHandler() as writer:
+            await writer.persist_mqtt_msg(
+                client_id=publisher,
+                topic=topic,
+                timestamp=1701235000,
+                message=message,
+            )
+
+        async with HistorianHandler() as reader:
+            metrics = await reader.execute_prepared(
+                f"SELECT metric_name, value_double, value_text FROM {HistorianConfig.metrics_table} WHERE topic = $1 ORDER BY metric_name",  # noqa: S608
+                topic,
+            )
+
+        metric_names = {row["metric_name"] for row in metrics}
+        assert "Temperature" in metric_names
+        assert "status" in metric_names
+        assert "nested.Pressure" in metric_names
+    finally:
+        async with HistorianHandler() as cleaner:
+            await cleaner.execute_prepared(
+                f"DELETE FROM {HistorianConfig.metrics_table} WHERE topic = $1",  # noqa: S608
+                topic,
+            )
+            await cleaner.execute_prepared(
+                f"DELETE FROM {HistorianConfig.table} WHERE topic = $1 AND client_id = $2",  # noqa: S608
+                topic,
+                publisher,
+            )
 
 
 @pytest.mark.asyncio(loop_scope="session")

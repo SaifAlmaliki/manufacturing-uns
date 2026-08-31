@@ -25,8 +25,15 @@ import time
 
 from uns_mqtt.mqtt_listener import UnsMQTTClient
 
-from uns_historian.historian_config import MQTTConfig
+from uns_historian.historian_config import HistorianConfig, MQTTConfig
 from uns_historian.historian_handler import HistorianHandler
+from uns_historian.prometheus_metrics import (
+    MESSAGES_RECEIVED,
+    PERSIST_DURATION,
+    PERSIST_FAILURE,
+    PERSIST_SUCCESS,
+    start_metrics_server,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -75,17 +82,22 @@ class UnsMqttHistorian:
                 topic=msg.topic, payload=msg.payload, mqtt_ignored_attributes=MQTTConfig.ignored_attributes
             )
 
-            # Async Historian persistence method
-            async def run_async_handler():
-                async with HistorianHandler() as uns_historian_handler:
-                    await uns_historian_handler.persist_mqtt_msg(
-                        client_id=client._client_id.decode(),
-                        topic=msg.topic,
-                        timestamp=float(filtered_message.get(MQTTConfig.timestamp_key, time.time() * 1000)),
-                        message=filtered_message,
-                    )
+            MESSAGES_RECEIVED.inc()
 
-            asyncio.run_coroutine_threadsafe(run_async_handler(), self.loop)
+            # Async Historian persistence method — result is inspected via callback.
+            async def run_async_handler():
+                with PERSIST_DURATION.time():
+                    async with HistorianHandler() as uns_historian_handler:
+                        await uns_historian_handler.persist_mqtt_msg(
+                            client_id=client._client_id.decode(),
+                            topic=msg.topic,
+                            timestamp=float(filtered_message.get(MQTTConfig.timestamp_key, time.time() * 1000)),
+                            message=filtered_message,
+                        )
+                PERSIST_SUCCESS.inc()
+
+            future = asyncio.run_coroutine_threadsafe(run_async_handler(), self.loop)
+            future.add_done_callback(self._on_persist_done)
 
         except SystemError as system_error:
             LOGGER.error(
@@ -102,6 +114,20 @@ class UnsMqttHistorian:
                 ex,
                 msg.topic,
                 msg.payload,
+                stack_info=True,
+                exc_info=True,
+            )
+
+    @staticmethod
+    def _on_persist_done(future: asyncio.Future) -> None:
+        """Log and count failures from the awaited persist coroutine."""
+        try:
+            future.result()
+        except Exception as ex:
+            PERSIST_FAILURE.labels(reason=type(ex).__name__).inc()
+            LOGGER.error(
+                "Error persisting the message to the Historian DB: %s",
+                ex,
                 stack_info=True,
                 exc_info=True,
             )
@@ -132,6 +158,7 @@ def main():
     uns_mqtt_historian = None
 
     try:
+        start_metrics_server(HistorianConfig.metrics_port)
         uns_mqtt_historian = UnsMqttHistorian(loop)
         uns_mqtt_historian.uns_client.loop_start()
         loop.run_forever()
