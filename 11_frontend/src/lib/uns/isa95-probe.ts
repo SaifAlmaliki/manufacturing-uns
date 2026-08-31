@@ -1,6 +1,12 @@
-/** Known ISA-95 topic segments used by 99_simulator — avoids Neo4j OOM from deep wildcards. */
-
-import type { UnsNode } from '../../types/uns'
+/**
+ * Guessed ISA-95 topic segments, for a platform with an empty Asset Model.
+ *
+ * These are the segments 99_simulator happens to publish. They are a last resort:
+ * `lib/uns/map-assets.ts` derives the same part of the tree from authored Metric
+ * Definitions, which is right for any plant rather than for one demo. Still here
+ * because an install with nothing modelled would otherwise show a tree that stops at
+ * the machine, and because deep wildcard queries can exhaust Neo4j.
+ */
 
 export const ISA95_PARAMETER_GROUPS = [
   'ProcessValue',
@@ -30,10 +36,6 @@ export function probeSensorTopics(parentTopic: string): string[] {
 export function isParameterGroupTopic(topic: string): boolean {
   const tail = topic.split('/').pop() ?? ''
   return (ISA95_PARAMETER_GROUPS as readonly string[]).includes(tail)
-}
-
-export function isSyntheticUnsNode(node: Pick<UnsNode, 'lastUpdated'>): boolean {
-  return new Date(node.lastUpdated).getTime() <= 0
 }
 
 function segmentName(topic: string): string {

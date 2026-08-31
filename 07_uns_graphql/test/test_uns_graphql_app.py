@@ -23,13 +23,12 @@ import pytest
 import uvicorn
 from fastapi import FastAPI
 from fastapi.concurrency import asynccontextmanager
-
 from uns_graphql.backend.graphdb import GraphDB
-from uns_graphql.backend.historian import HistorianDBPool
 from uns_graphql.queries import graph, historian
 from uns_graphql.subscriptions.kafka import KAFKASubscription
 from uns_graphql.subscriptions.mqtt import MQTTSubscription
 from uns_graphql.uns_graphql_app import UNSGraphql
+from uns_model.engine import Database
 
 
 def test_uns_graphql_app_attributes():
@@ -64,8 +63,8 @@ async def test_uns_graphql_app_test_cleanup_on_shutdown():
         # Simulate the startup and shutdown sequence
         async with lifespan_context(app):
             pass
-    # Check if HistorianDBPool.close_pool was called
-    # mock_close_pool.assert_called_once()
+    # Every query/subscription class gets its on_shutdown called, including the ones
+    # whose on_shutdown is now a no-op: the app must not have to know which is which.
     mock_historic_cleanup.assert_called_once()
     mock_uns_cleanup.assert_called_once()
     mock_mqtt_cleanup.assert_called_once()
@@ -75,10 +74,15 @@ async def test_uns_graphql_app_test_cleanup_on_shutdown():
 @pytest.mark.asyncio(loop_scope="function")
 async def test_uns_graphql_app_db_pool_cleanup():
     """
-    Test to validate that eventually the HistorianDBPool#close_pool() and GraphDB#release_graphdb_driver() were called
+    Every database this service holds open is released on shutdown.
+
+    One Postgres engine for the historian, the Asset Model and the Alert Rules
+    (ADR-0004), and one driver for the graph database. Both must be disposed exactly
+    once: a lifespan that leaves either open is how a redeployed container is refused
+    connections by its own database.
     """
     # patch the classes
-    with patch.object(HistorianDBPool, "close_pool", new_callable=AsyncMock) as mock_hist_close_pool, patch.object(
+    with patch.object(Database, "close_shared", new_callable=AsyncMock) as mock_engine_dispose, patch.object(
         GraphDB,
         "release_graphdb_driver",
         new_callable=AsyncMock,
@@ -96,9 +100,9 @@ async def test_uns_graphql_app_db_pool_cleanup():
         # Simulate the startup and shutdown sequence
         async with lifespan_context(app):
             pass
-    # Check if HistorianDBPool.close_pool was called
-    # mock_close_pool.assert_called_once()
-    mock_hist_close_pool.assert_called_once()
+    # Once, by the Asset Model query: the historian and Alert Rule queries share that
+    # engine and deliberately leave the disposing to it.
+    mock_engine_dispose.assert_awaited_once()
     mock_graphdb_close_pool.assert_called_once()
 
 

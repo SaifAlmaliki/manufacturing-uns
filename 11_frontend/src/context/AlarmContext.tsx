@@ -1,6 +1,12 @@
 /**
  * Alarm & Alert Rule Management Context
  * Real-time threshold evaluation, role-targeted triggers, audio alerts, and audit logging.
+ *
+ * Alert Rules are plant configuration and live in Postgres, reached over GraphQL
+ * (ADR-0005). localStorage is only a cache now, so that a console whose backend is
+ * unreachable still renders the rules it last saw instead of an empty alarm list.
+ * The active alarms and the audit trail are still browser-local — evaluation happens
+ * here, and moving it to a service is a separate piece of work.
  */
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
@@ -13,6 +19,7 @@ import {
   AlarmConditionType,
 } from '../types/alarm';
 import { UserRole } from '../types/rbac';
+import { unsGraphQLClient } from '../services/graphql/client';
 import { useAuth } from './AuthContext';
 import { useUNS } from './UNSContext';
 
@@ -22,6 +29,15 @@ const STORAGE_KEYS = {
   ALARM_AUDIT: 'uns_alarm_audit_v1',
   AUDIO_MUTED: 'uns_alarm_audio_muted',
 };
+
+/**
+ * Where the rules on screen came from.
+ *
+ * `SERVER` means everyone at this site sees them. `BROWSER` means this tab is on its
+ * own — the operator needs to know that, because a rule that only exists here will
+ * not warn the next shift.
+ */
+export type AlertRuleOrigin = 'SERVER' | 'BROWSER';
 
 const INITIAL_RULES: AlertRule[] = [
   {
@@ -289,7 +305,12 @@ interface AlarmContextType {
   activeAlarms: ActiveAlarm[];
   auditLog: AlarmAuditEntry[];
   isMuted: boolean;
-  
+
+  // Where the rules came from, and what went wrong reaching the server
+  rulesOrigin: AlertRuleOrigin;
+  rulesError: string | null;
+  refreshRules: () => Promise<void>;
+
   // Computed role-specific counts & filters
   myRoleAlarms: ActiveAlarm[];
   myUnacknowledgedCount: number;
@@ -319,6 +340,8 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const { currentUser } = useAuth();
   const { mqttFeed } = useUNS();
 
+  // The cached rules render first so the alarm list is never briefly empty; the
+  // server's answer replaces them as soon as it arrives.
   const [rules, setRules] = useState<AlertRule[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.RULES);
@@ -331,6 +354,15 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
     return INITIAL_RULES;
   });
+
+  const [rulesOrigin, setRulesOrigin] = useState<AlertRuleOrigin>('BROWSER');
+  const [rulesError, setRulesError] = useState<string | null>(null);
+
+  // Read by the loader without making it depend on every keystroke in the rule editor.
+  const rulesRef = useRef(rules);
+  useEffect(() => {
+    rulesRef.current = rules;
+  }, [rules]);
 
   const [activeAlarms, setActiveAlarms] = useState<ActiveAlarm[]>(() => {
     try {
@@ -366,7 +398,46 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   });
 
-  // Persistent storage effects
+  /**
+   * Load the rules the platform holds, and hand over this browser's rules if it holds none.
+   *
+   * The import is the migration path off localStorage: rules authored before the
+   * server could store them would otherwise stay invisible to everybody else. It
+   * only runs when the server has no rules at all, so it cannot resurrect a rule
+   * somebody deliberately deleted elsewhere.
+   */
+  const refreshRules = useCallback(async () => {
+    const stored = await unsGraphQLClient.getAlertRules();
+
+    if (stored === null) {
+      setRulesOrigin('BROWSER');
+      setRulesError('Alert Rules could not be read from the platform. Showing this browser\'s cached copy.');
+      return;
+    }
+
+    if (stored.length > 0) {
+      setRules(stored);
+      setRulesOrigin('SERVER');
+      setRulesError(null);
+      return;
+    }
+
+    try {
+      const imported = await unsGraphQLClient.saveAlertRules(rulesRef.current);
+      setRules(imported);
+      setRulesOrigin('SERVER');
+      setRulesError(null);
+    } catch (error) {
+      setRulesOrigin('BROWSER');
+      setRulesError(error instanceof Error ? error.message : 'Alert Rules could not be stored');
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshRules();
+  }, [refreshRules]);
+
+  // Persistent storage effects. The rules are cached rather than owned here: see refreshRules.
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEYS.RULES, JSON.stringify(rules));
@@ -480,6 +551,29 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setAuditLog((prev) => [newEntry, ...prev.slice(0, 199)]);
   }, [currentUser]);
 
+  // When each rule last had a quiet evaluation reported, so that the reporting below
+  // stays rare. Not state: nothing renders from it.
+  const lastQuietReportRef = useRef<Map<string, number>>(new Map());
+
+  /**
+   * Tell the platform a rule was evaluated.
+   *
+   * Breaches are always reported — they move a counter operators read. Quiet
+   * evaluations are reported at most once a minute per rule, because a rule matching
+   * a 1 Hz topic would otherwise turn every reading into an HTTP round trip to write
+   * a timestamp nobody watches that closely. What the timestamp is for is answering
+   * "is this rule still being evaluated at all", and a minute is enough for that.
+   */
+  const reportEvaluation = useCallback((ruleId: string, triggered: boolean) => {
+    if (!triggered) {
+      const previous = lastQuietReportRef.current.get(ruleId) ?? 0;
+      const now = Date.now();
+      if (now - previous < 60_000) return;
+      lastQuietReportRef.current.set(ruleId, now);
+    }
+    void unsGraphQLClient.recordAlertRuleEvaluation(ruleId, triggered);
+  }, []);
+
   // Evaluate Rule Condition Helper
   const evaluateCondition = (
     rule: AlertRule,
@@ -568,6 +662,10 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       const evalResult = evaluateCondition(rule, rawVal);
 
+      if (!evalResult.breached) {
+        reportEvaluation(rule.id, false);
+      }
+
       if (evalResult.breached) {
         // Check if alarm already exists for this rule and is active
         setActiveAlarms((prev) => {
@@ -603,7 +701,9 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             playAlarmChime(rule.severity);
           }
 
-          // Increment rule trigger stats
+          // Increment rule trigger stats, here and on the platform. The counter is the
+          // server's — every console that watches this rule adds to the same total —
+          // but it is incremented locally too so the number moves without a round trip.
           setRules((rPrev) =>
             rPrev.map((r) =>
               r.id === rule.id
@@ -611,6 +711,7 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 : r
             )
           );
+          reportEvaluation(rule.id, true);
 
           // Log to audit
           logAlarmAudit(
@@ -647,7 +748,7 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         });
       }
     });
-  }, [mqttFeed, rules, playAlarmChime, logAlarmAudit]);
+  }, [mqttFeed, rules, playAlarmChime, logAlarmAudit, reportEvaluation]);
 
   // Filter alarms relevant to the current user's role
   const myRoleAlarms = useMemo(() => {
@@ -670,6 +771,32 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return activeAlarms.filter((a) => a.severity === 'CRITICAL' && a.status === 'ACTIVE_UNACK').length;
   }, [activeAlarms]);
 
+  /**
+   * Persist a whole rule, and adopt the row the server stored.
+   *
+   * The UI has already changed by the time this runs — an alarm form that waits for a
+   * round trip feels broken — so a failure surfaces as `rulesError` rather than by
+   * reverting under the operator's cursor. `refreshRules` is how they get back to
+   * whatever the platform actually holds.
+   */
+  const persistRule = useCallback((rule: AlertRule) => {
+    unsGraphQLClient
+      .saveAlertRule(rule)
+      .then((saved) => {
+        setRules((prev) => prev.map((r) => (r.id === saved.id ? saved : r)));
+        setRulesOrigin('SERVER');
+        setRulesError(null);
+      })
+      .catch((error: unknown) => {
+        setRulesOrigin('BROWSER');
+        setRulesError(
+          `'${rule.name}' is only stored in this browser: ${
+            error instanceof Error ? error.message : 'the platform rejected it'
+          }`
+        );
+      });
+  }, []);
+
   // Operations
   const createRule = useCallback((
     ruleData: Omit<AlertRule, 'id' | 'createdAt' | 'updatedAt' | 'triggerCount'>
@@ -683,6 +810,7 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
 
     setRules((prev) => [newRule, ...prev]);
+    persistRule(newRule);
     logAlarmAudit(
       newRule.id,
       newRule.name,
@@ -692,27 +820,26 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       `Created new alert rule targeted to roles: ${newRule.targetRoles.join(', ')}`
     );
     return newRule;
-  }, [logAlarmAudit]);
+  }, [logAlarmAudit, persistRule]);
 
   const updateRule = useCallback((ruleId: string, updates: Partial<AlertRule>) => {
-    setRules((prev) =>
-      prev.map((r) => {
-        if (r.id === ruleId) {
-          const updated = { ...r, ...updates, updatedAt: new Date().toISOString() };
-          logAlarmAudit(
-            r.id,
-            updated.name,
-            updated.topic,
-            updated.severity,
-            'RULE_UPDATED',
-            `Updated alert rule configuration (Target Roles: ${updated.targetRoles.join(', ')})`
-          );
-          return updated;
-        }
-        return r;
-      })
+    // Merged here rather than sent as a patch: the server stores whole rules, because
+    // there is no safe meaning for "change the threshold of an alarm I have not read".
+    const current = rulesRef.current.find((r) => r.id === ruleId);
+    if (!current) return;
+
+    const updated: AlertRule = { ...current, ...updates, updatedAt: new Date().toISOString() };
+    setRules((prev) => prev.map((r) => (r.id === ruleId ? updated : r)));
+    persistRule(updated);
+    logAlarmAudit(
+      updated.id,
+      updated.name,
+      updated.topic,
+      updated.severity,
+      'RULE_UPDATED',
+      `Updated alert rule configuration (Target Roles: ${updated.targetRoles.join(', ')})`
     );
-  }, [logAlarmAudit]);
+  }, [logAlarmAudit, persistRule]);
 
   const deleteRule = useCallback((ruleId: string) => {
     const target = rules.find((r) => r.id === ruleId);
@@ -727,12 +854,35 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       );
     }
     setRules((prev) => prev.filter((r) => r.id !== ruleId));
+    unsGraphQLClient.deleteAlertRule(ruleId).catch((error: unknown) => {
+      setRulesError(
+        `'${target?.name ?? ruleId}' is still stored on the platform: ${
+          error instanceof Error ? error.message : 'the delete did not reach it'
+        }`
+      );
+    });
   }, [rules, logAlarmAudit]);
 
   const toggleRuleEnabled = useCallback((ruleId: string, enabled: boolean) => {
     setRules((prev) =>
       prev.map((r) => (r.id === ruleId ? { ...r, enabled, updatedAt: new Date().toISOString() } : r))
     );
+    // Its own mutation rather than a full save: muting an alarm must be one click, and
+    // it must not be able to rewrite a threshold on the way.
+    unsGraphQLClient
+      .setAlertRuleEnabled(ruleId, enabled)
+      .then((saved) => {
+        if (saved) {
+          setRules((prev) => prev.map((r) => (r.id === saved.id ? saved : r)));
+        }
+      })
+      .catch((error: unknown) => {
+        setRulesError(
+          `${enabled ? 'Arming' : 'Muting'} that rule did not reach the platform: ${
+            error instanceof Error ? error.message : 'unknown error'
+          }`
+        );
+      });
   }, []);
 
   const testTriggerRule = useCallback((ruleId: string) => {
@@ -767,10 +917,10 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       playAlarmChime(rule.severity);
     }
 
-    setRules((prev) =>
-      prev.map((r) => (r.id === rule.id ? { ...r, triggerCount: r.triggerCount + 1 } : r))
-    );
-
+    // Deliberately not counted, and not reported to the platform: `triggerCount` and
+    // `lastTriggeredAt` now say how often the plant tripped this rule, shared with
+    // everybody. A diagnostic run by one engineer must not read as a real trip to the
+    // next shift. The test alarm and its audit entry are what the test is for.
     setActiveAlarms((prev) => [testAlarm, ...prev]);
 
     logAlarmAudit(
@@ -866,17 +1016,43 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setActiveAlarms((prev) => prev.filter((a) => a.status !== 'RESOLVED'));
   }, []);
 
+  /**
+   * Put the demonstration rules back, on the platform as well as on screen.
+   *
+   * The rules are shared now, so this is not a local reset: anything authored on top of
+   * the defaults is removed for everyone. The alarms and the audit trail stay browser-
+   * local, so those really are just cleared here.
+   */
   const restoreDefaultRules = useCallback(() => {
+    const defaultIds = new Set(INITIAL_RULES.map((r) => r.id));
+    const strays = rulesRef.current.filter((r) => !defaultIds.has(r.id)).map((r) => r.id);
+
     setRules(INITIAL_RULES);
     setActiveAlarms(INITIAL_ACTIVE_ALARMS);
     setAuditLog(INITIAL_ALARM_AUDIT);
     try {
-      localStorage.removeItem(STORAGE_KEYS.RULES);
       localStorage.removeItem(STORAGE_KEYS.ACTIVE_ALARMS);
       localStorage.removeItem(STORAGE_KEYS.ALARM_AUDIT);
     } catch {
       // ignore
     }
+
+    void (async () => {
+      try {
+        await Promise.all(strays.map((id) => unsGraphQLClient.deleteAlertRule(id)));
+        const restored = await unsGraphQLClient.saveAlertRules(INITIAL_RULES);
+        setRules(restored);
+        setRulesOrigin('SERVER');
+        setRulesError(null);
+      } catch (error) {
+        setRulesOrigin('BROWSER');
+        setRulesError(
+          `The defaults were restored in this browser only: ${
+            error instanceof Error ? error.message : 'the platform could not be reached'
+          }`
+        );
+      }
+    })();
   }, []);
 
   return (
@@ -886,6 +1062,9 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         activeAlarms,
         auditLog,
         isMuted,
+        rulesOrigin,
+        rulesError,
+        refreshRules,
         myRoleAlarms,
         myUnacknowledgedCount,
         totalUnacknowledgedCount,

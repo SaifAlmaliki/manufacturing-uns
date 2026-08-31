@@ -19,7 +19,6 @@ Configuration reader for mqtt server, kafka, historian and Neo4J DB server detai
 """
 
 import logging
-import ssl
 from pathlib import Path
 from typing import Literal
 
@@ -142,6 +141,11 @@ class KAFKAConfig:
 class HistorianConfig:
     """
     Loads the configurations from the repository root conf/settings.yaml and conf/.secrets.yaml
+
+    Read for the hypertable name and by the health check. The connection itself is no
+    longer made here: `uns_model.model_config.ModelConfig` reads the same `historian.*`
+    keys and builds the one engine this service uses (ADR-0004). Kept as the record of
+    what those keys must contain.
     """
 
     hostname: str = settings.get("historian.hostname")
@@ -189,34 +193,11 @@ class HistorianConfig:
             cls.hostname is None or cls.database is None or cls.table is None or cls.db_user is None or cls.db_password is None
         )
 
-    @classmethod
-    def get_ssl_context(cls) -> ssl.SSLContext | None:
-        """
-        Creates the SSL Context needed for DB connect based on the SSL Params
-        See https://github.com/MagicStack/asyncpg/issues/737
-        """
-        if cls.db_sslmode:
-            ssl_context: ssl.SSLContext = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-            ssl_context.options |= {
-                "disable": ssl.OP_NO_SSLv2,
-                "allow": ssl.OP_NO_SSLv3,
-                "prefer": ssl.OP_NO_TLSv1,
-                "require": ssl.OP_NO_TLSv1_1,
-                "verify-ca": ssl.OP_NO_TLSv1_2,
-                "verify-full": ssl.OP_NO_TLSv1_3,
-            }.get(cls.db_sslmode.lower(), 0)
-
-            if cls.db_sslcert:
-                ssl_context.load_cert_chain(certfile=cls.db_sslcert, keyfile=cls.db_sslkey)
-
-            if cls.db_sslrootcert:
-                ssl_context.load_verify_locations(cafile=cls.db_sslrootcert)
-
-            if cls.db_sslcrl:
-                ssl_context.load_verify_locations(cafile=cls.db_sslcrl)
-
-            return ssl_context
-        return None
+    # There is deliberately no get_ssl_context() here any more. The Postgres
+    # connection is built by ModelConfig, which reads the same `historian.ssl*` keys;
+    # a second implementation of the same TLS decision is a second chance to get it
+    # wrong, and the one that used to live here mapped sslmode onto OP_NO_TLSv1_*
+    # rather than onto certificate verification.
 
 
 # The regex matches any of the following patterns:

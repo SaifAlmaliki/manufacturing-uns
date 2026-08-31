@@ -17,6 +17,94 @@ export const GET_UNS_NODES_QUERY = `
   }
 `
 
+/**
+ * The Asset Model in Postgres is where the plant hierarchy is authored, so the tree
+ * asks it before it asks the graph database (ADR-0003).
+ */
+const ASSET_FIELDS = `
+  path
+  segment
+  level
+  name
+  description
+  manufacturer
+  modelNumber
+  serialNumber
+  criticality
+  isActive
+  attributes {
+    data
+  }
+`
+
+const METRIC_DEFINITION_FIELDS = `
+  metricKey
+  displayName
+  unitOfMeasure
+  minValue
+  maxValue
+`
+
+export const GET_ASSET_CHILDREN_QUERY = `
+  query GetAssetChildren($path: String) {
+    getAssetChildren(path: $path) {
+      ${ASSET_FIELDS}
+    }
+  }
+`
+
+/**
+ * One request, both halves of an expansion: the Assets declared under this topic and,
+ * for the branch below the deepest Asset, the Metric Definitions that describe it.
+ * Two round trips per node expansion would be felt on a tree; one is not.
+ */
+export const GET_UNS_TREE_CHILDREN_QUERY = `
+  query GetUnsTreeChildren($topic: String!) {
+    getAssetChildren(path: $topic) {
+      ${ASSET_FIELDS}
+    }
+    getTopicContext(topic: $topic) {
+      topic
+      metricPath
+      metricDefinitions {
+        ${METRIC_DEFINITION_FIELDS}
+      }
+      asset {
+        ${ASSET_FIELDS}
+      }
+      enterprise
+      site
+      area
+      productionUnit
+      line
+      workCell
+      machine
+    }
+  }
+`
+
+export const GET_TOPIC_CONTEXT_QUERY = `
+  query GetTopicContext($topic: String!) {
+    getTopicContext(topic: $topic) {
+      topic
+      metricPath
+      metricDefinitions {
+        ${METRIC_DEFINITION_FIELDS}
+      }
+      asset {
+        ${ASSET_FIELDS}
+      }
+      enterprise
+      site
+      area
+      productionUnit
+      line
+      workCell
+      machine
+    }
+  }
+`
+
 export const GET_HISTORIC_EVENTS_IN_TIME_RANGE_QUERY = `
   query GetHistoricEventsInTimeRange(
     $topics: [MQTTTopicInput!]!

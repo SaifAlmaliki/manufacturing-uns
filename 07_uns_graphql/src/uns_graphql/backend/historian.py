@@ -15,142 +15,56 @@
 *    -
 *******************************************************************************
 
-Encapsulates integration with the historian database
+Reads of the historian hypertable.
+
+The historian and the Asset Model share one Postgres/Timescale database, so they now
+share one engine as well: `uns_model.engine.Database` (ADR-0004). This module used to
+own an asyncpg pool of its own, which meant two pools, two sets of connection
+settings, and two things to close on shutdown.
+
+The SQL stays hand-written. The hypertable is not part of the authored model — the
+historian writes it, this service only reads it — and the queries here do things the
+ORM has no vocabulary for: MQTT wildcards turned into regex, and `jsonb_path_exists`
+over an arbitrary payload.
 """
+
+from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
-import asyncpg
-from asyncpg import Pool
-from asyncpg.connection import Connection
-from asyncpg.prepared_stmt import PreparedStatement
+from sqlalchemy import ARRAY, TIMESTAMP, Text, bindparam, text
 from uns_mqtt.mqtt_listener import UnsMQTTClient
 
 from uns_graphql.graphql_config import HistorianConfig
 from uns_graphql.type.basetype import JSONPayload
 from uns_graphql.type.historical_event import HistoricalUNSEvent
 
+if TYPE_CHECKING:
+    from sqlalchemy import TextClause
+    from uns_model.engine import Database
+
 LOGGER = logging.getLogger(__name__)
 
+BINARY_OPERATORS = frozenset({"AND", "OR", "NOT"})
 
-class HistorianDBPool:
+
+class HistorianRepository:
     """
-    Encapsulates the connection and queries to the historian database
+    Historic UNS events, read from the historian hypertable.
+
+    Two questions, one per method: "what was published on these topics, by these
+    publishers, in this window", and "which events carry these keys anywhere in
+    their payload". Everything else — the wildcard translation, the parameter
+    binding, the column-name-to-field mapping — is deliberately inside.
+
+    Takes its `Database` rather than reaching for the shared one, so a test can hand
+    in an engine pointed at anything.
     """
 
-    # Class variable to hold the shared pool
-    _shared_pool: Pool = None
-
-    @classmethod
-    async def get_shared_pool(cls) -> Pool:
-        """
-        Retrieves the shared connection pool.
-        Creates a new pool if it doesn't exist.
-
-        Returns:
-            Pool: The shared connection pool.
-        """
-        LOGGER.debug("DB Shared connection pool requested")
-        if cls._shared_pool is None:
-            cls._shared_pool = await cls.create_pool()
-        return cls._shared_pool
-
-    @classmethod
-    async def create_pool(cls) -> Pool:
-        """
-        Creates a connection pool.
-        Returns:
-            Pool: The created connection pool.
-        Raises:
-            asyncpg.PostgresError: If there's an error creating the pool.
-        """
-        try:
-            pool: Pool = await asyncpg.create_pool(
-                host=HistorianConfig.hostname,
-                user=HistorianConfig.db_user,
-                password=HistorianConfig.db_password,
-                database=HistorianConfig.database,
-                port=HistorianConfig.port,
-                ssl=HistorianConfig.get_ssl_context(),
-            )
-            LOGGER.info("Connection pool created successfully")
-            return pool
-        except asyncpg.PostgresError as e:
-            LOGGER.error(f"Error creating connection pool: {e}")
-            raise
-
-    @classmethod
-    async def close_pool(cls):
-        """
-        Close the connection pool
-        """
-        if not cls._shared_pool.is_closing():
-            await cls._shared_pool.close()
-            LOGGER.info("Connection pool closed successfully")
-        else:
-            LOGGER.warning("Connection pool was already closed ")
-
-    async def __aenter__(self):
-        self._pool: Pool = await self.get_shared_pool()  # Acquire the shared pool directly
-        self._conn: Connection = await self._pool.acquire()  # Acquire a connection from the pool
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb):
-        await self._pool.release(self._conn)  # Release the acquired connection
-
-    async def __aiter__(self):
-        """
-        Allow usage in asynchronous for loops.
-        """
-        self._conn: Connection = await self.get_shared_pool().acquire()
-        return self
-
-    async def __anext__(self) -> Connection:
-        """
-        Use with asynchronous for loops.
-        """
-        return self._conn
-
-    async def execute_prepared(self, query: str, *args) -> list[HistoricalUNSEvent]:
-        """
-        Executes a prepared query to fetch historical events.
-
-        Args:
-            query (str): The SQL query to execute.
-            *args: Query parameters.
-
-        Returns:
-            list[HistoricalUNSEvent]: list of historical events.
-
-        Raises:
-            asyncpg.PostgresError: If there's an error executing the prepared statement.
-        """
-        try:
-            if self._conn is None or self._conn.is_closed():
-                self._conn = await self.get_shared_pool().acquire()
-            stmt: PreparedStatement = await self._conn.prepare(query)
-            results = await stmt.fetch(*args)
-            # Mapping logic
-            # time TIMESTAMPTZ -> HistoricalUNSEvent.timestamp
-            # topic text  -> HistoricalUNSEvent.topic
-            # client_id text -> HistoricalUNSEvent.publisher
-            # mqtt_msg JSONB -> HistoricalUNSEvent.payload
-            # important to obscure the database details like column name in the output from a security perspective
-            return [
-                HistoricalUNSEvent(
-                    timestamp=row["time"], topic=row["topic"], publisher=row["client_id"], payload=JSONPayload(row["mqtt_msg"])
-                )
-                for row in results
-            ]
-        except asyncpg.PostgresError as ex:
-            LOGGER.error(f"Error executing prepared statement: {ex}")
-            raise
-        finally:
-            # Ensure that the connection is released back to the pool
-            if self._conn and not self._conn.is_closed():
-                await self._shared_pool.release(self._conn)
+    def __init__(self, database: Database) -> None:
+        self._database = database
 
     async def get_historic_events(
         self,
@@ -160,59 +74,43 @@ class HistorianDBPool:
         to_datetime: datetime | None,
     ) -> list[HistoricalUNSEvent]:
         """
-        Retrieves historical events based on specified criteria.
+        Historic events matching any combination of topics, publishers and a time window.
 
-        Args:
-            topics (list[str]): list of topics.
-            publishers (list[str]): list of publishers.
-            from_datetime (datetime): Start date/time.
-            to_datetime (datetime): End date/time.
-
-        Returns:
-            list[HistoricalUNSEvent]: list of historical events.
+        Topics may contain MQTT wildcards. At least one criterion is required: an
+        unfiltered read of a hypertable is not a query, it is an outage.
 
         Raises:
-            asyncpg.PostgresError: If there's an error fetching historical events.
+            ValueError: if no criteria were provided.
         """
-        # check that at least one criteria is provided
         if topics is None and publishers is None and from_datetime is None and to_datetime is None:
             raise ValueError("At least one criteria for fetching historic events needs to be provided")
 
-        # create the query
-        # no risk of SQL injection because the input parameters have either been validated
-        # or directly computed in this function, and we are using a prepared statement
-
-        base_query: str = f"SELECT time, topic, client_id, mqtt_msg FROM {HistorianConfig.table} WHERE"  # noqa: S608
         conditions: list[str] = []
-        query_params: list[list[str] | datetime] = []
-        param_index = 1
-        if topics:
-            # if topics is not null we need to convert all MQTT wild cards to postgres wildcards
-            query_params.append([UnsMQTTClient.get_regex_for_topic_with_wildcard(topic) for topic in topics])
+        params: dict[str, object] = {}
+        types: list = []
 
-            # convert the topics wild cards into regex to be used with SIMILAR instead of LIKE
-            conditions.append(f"( topic ~  ANY (  ${param_index}  ) ) ")
-            param_index = param_index + 1
+        if topics:
+            # MQTT wildcards have no meaning to Postgres; the regex does.
+            conditions.append("( topic ~ ANY (:topics) )")
+            params["topics"] = [UnsMQTTClient.get_regex_for_topic_with_wildcard(topic) for topic in topics]
+            types.append(bindparam("topics", type_=ARRAY(Text)))
 
         if publishers:
-            conditions.append(f"( client_id ~ ANY ( ${param_index} ) )")
-            query_params.append(publishers)
-            param_index = param_index + 1
+            conditions.append("( client_id ~ ANY (:publishers) )")
+            params["publishers"] = list(publishers)
+            types.append(bindparam("publishers", type_=ARRAY(Text)))
 
         if from_datetime:
-            conditions.append(f"( time >= ${param_index} ) ")
-            query_params.append(from_datetime)
-            param_index = param_index + 1
+            conditions.append("( time >= :from_datetime )")
+            params["from_datetime"] = from_datetime
+            types.append(bindparam("from_datetime", type_=TIMESTAMP(timezone=True)))
 
         if to_datetime:
-            conditions.append(f"( time <= ${param_index} )  ")
-            query_params.append(to_datetime)
-            param_index = param_index + 1
+            conditions.append("( time <= :to_datetime )")
+            params["to_datetime"] = to_datetime
+            types.append(bindparam("to_datetime", type_=TIMESTAMP(timezone=True)))
 
-        full_query: str = f"{base_query} {' AND '.join(conditions)}"
-        LOGGER.debug(f"Query: {full_query} \n Params; {query_params}")
-
-        return await self.execute_prepared(full_query, *query_params)
+        return await self._fetch(conditions, params, types)
 
     async def get_historic_events_for_property_keys(
         self,
@@ -223,66 +121,88 @@ class HistorianDBPool:
         to_datetime: datetime | None,
     ) -> list[HistoricalUNSEvent]:
         """
-        Retrieves historical events based on specified criteria.
+        Historic events whose payload contains the given keys at any depth.
 
-        Args:
-            property_keys (list[str]): list of property key to search for in the JSON msg.
-            binary_operator (OR| AND | NOT): binary operator applied on the property_keys. OR if None provided
-            topics (list[str]): list of topics.
-            from_datetime (datetime): Start date/time.
-            to_datetime (datetime): End date/time.
-
-        Returns:
-            list[HistoricalUNSEvent]: list of historical events.
+        `binary_operator` chains the keys and defaults to OR. The other criteria are
+        always ANDed onto the result.
 
         Raises:
-            asyncpg.PostgresError: If there's an error fetching historical events.
+            ValueError: if no property keys were given, or the operator is not one of
+                AND / OR / NOT.
         """
-        # check that at least mandatory criteria is provided
-        if property_keys is None or len(property_keys) == 0:
+        if not property_keys:
             raise ValueError("Mandatory criteria for fetching historic events by property_keys needs to be provided")
-        if binary_operator is not None and binary_operator not in {"AND", "OR", "NOT"}:
+        if binary_operator is not None and binary_operator not in BINARY_OPERATORS:
             raise ValueError(f"Should be on of ['AND', 'OR', 'NOT']. Got: {binary_operator}")
-        base_query: str = f"SELECT time, topic, client_id, mqtt_msg FROM {HistorianConfig.table} WHERE"  # noqa: S608
-        conditions: list[str] = []
-        query_params: list[list[str] | datetime] = []
-        param_index: int = 1
         if binary_operator is None:
             binary_operator = "OR"
 
-        if topics:
-            # if topics is not null we need to convert all MQTT wild cards to postgres wildcards
-            query_params.append([UnsMQTTClient.get_regex_for_topic_with_wildcard(topic) for topic in topics])
+        conditions: list[str] = []
+        params: dict[str, object] = {}
+        types: list = []
 
-            # convert the topics wild cards into regex to be used with SIMILAR instead of LIKE
-            # conditions.append(f"( topic SIMILAR TO ANY (SELECT * FROM UNNEST( ${param_index}::text[]) ) ")
-            conditions.append(f"( topic ~  ANY (  ${param_index}  ) ) ")
-            param_index = param_index + 1
+        if topics:
+            conditions.append("( topic ~ ANY (:topics) )")
+            params["topics"] = [UnsMQTTClient.get_regex_for_topic_with_wildcard(topic) for topic in topics]
+            types.append(bindparam("topics", type_=ARRAY(Text)))
 
         if from_datetime:
-            conditions.append(f"( time >= ${param_index} ) ")
-            query_params.append(from_datetime)
-            param_index = param_index + 1
+            conditions.append("( time >= :from_datetime )")
+            params["from_datetime"] = from_datetime
+            types.append(bindparam("from_datetime", type_=TIMESTAMP(timezone=True)))
 
         if to_datetime:
-            conditions.append(f"( time <= ${param_index} )  ")
-            query_params.append(to_datetime)
-            param_index = param_index + 1
+            conditions.append("( time <= :to_datetime )")
+            params["to_datetime"] = to_datetime
+            types.append(bindparam("to_datetime", type_=TIMESTAMP(timezone=True)))
 
-        property_sub_query: list[str] = []
-        for property_key in property_keys:
-            property_sub_query.append(f"( jsonb_path_exists( mqtt_msg, ${param_index} ) )")
-            query_params.append('$.**."' + property_key + '"')  # handle attribute names with spaces
-            param_index = param_index + 1
+        key_conditions: list[str] = []
+        for index, property_key in enumerate(property_keys):
+            name = f"property_{index}"
+            # CAST because a plain text() bind is sent as text, and jsonb_path_exists
+            # wants a jsonpath.
+            key_conditions.append(f"( jsonb_path_exists( mqtt_msg, CAST(:{name} AS jsonpath) ) )")
+            # Quoted so that a key containing a space is still one path step.
+            params[name] = '$.**."' + property_key + '"'
+            types.append(bindparam(name, type_=Text))
 
         if binary_operator == "NOT":
-            # handle NOT operator
-            conditions.append(binary_operator + " ( " + " OR ".join(property_sub_query) + ") ")
+            conditions.append("NOT ( " + " OR ".join(key_conditions) + " )")
         else:
-            # handle AND  / OR operator
-            conditions.append(" ( " + binary_operator.join(property_sub_query) + ") ")
+            conditions.append(" ( " + f" {binary_operator} ".join(key_conditions) + " ) ")
 
-        full_query: str = f"{base_query} {' AND '.join(conditions)}"
-        LOGGER.debug(f"Query: {full_query} \n Params; {query_params}")
+        return await self._fetch(conditions, params, types)
 
-        return await self.execute_prepared(full_query, *query_params)
+    async def _fetch(
+        self,
+        conditions: list[str],
+        params: dict[str, object],
+        types: list,
+    ) -> list[HistoricalUNSEvent]:
+        """
+        Run the assembled WHERE clause and map rows to the GraphQL type.
+
+        No SQL injection risk: every value travels as a bound parameter, and the only
+        interpolated strings are condition fragments written in this module.
+        """
+        where = " AND ".join(conditions)
+        query = f"SELECT time, topic, client_id, mqtt_msg FROM {HistorianConfig.table} WHERE {where}"  # noqa: S608
+        statement: TextClause = text(query).bindparams(*types)
+        LOGGER.debug("Historian query: %s\nParams: %s", query, params)
+
+        async with self._database.begin() as connection:
+            rows = (await connection.execute(statement, params)).all()
+
+        # The database column names are deliberately not exposed: `time` becomes
+        # timestamp, `client_id` becomes publisher, `mqtt_msg` becomes payload.
+        # `mqtt_msg` arrives as the raw JSON text; JSONPayload takes either that or a
+        # dict, so there is no deserialise-then-reserialise in between.
+        return [
+            HistoricalUNSEvent(
+                timestamp=row.time,
+                topic=row.topic,
+                publisher=row.client_id,
+                payload=JSONPayload(row.mqtt_msg),
+            )
+            for row in rows
+        ]

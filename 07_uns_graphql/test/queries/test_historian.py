@@ -24,8 +24,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import strawberry
-
-from uns_graphql.backend.historian import HistorianDBPool
+from uns_graphql.backend.historian import HistorianRepository
 from uns_graphql.input.mqtt import MQTTTopic, MQTTTopicInput
 from uns_graphql.queries.historian import Query as HistorianQuery
 from uns_graphql.type.basetype import JSONPayload
@@ -49,19 +48,14 @@ test_data_set: list[DatabaseRow] = [
         json.dumps({"a": "value1", "b": [10, 23, 23, 34], "c": {"k1": "v1", "k2": 100}, "k3": "outer_v1"}),
     ),
 ]
-# Mock the datahandler
-mocked_db_pool = MagicMock(spec=HistorianDBPool, autospec=True)
-
-# mocked_db_pool.__aiter__.return_value = mocked_db_pool
-mocked_db_pool.__aenter__.return_value = mocked_db_pool
-# Mocking all the query functions to give the same result
-mocked_db_pool.get_historic_events.return_value = [
+# The repository stands in for the database. Specced against the real class so that a
+# renamed or removed method fails here instead of at runtime.
+mocked_repository = MagicMock(spec=HistorianRepository, autospec=True)
+# Both reads answer the same, since what is under test is the query layer above them.
+mocked_repository.get_historic_events.return_value = [
     HistoricalUNSEvent(timestamp=x[0], topic=x[1], publisher=x[2], payload=JSONPayload(data=x[3])) for x in test_data_set
 ]
-mocked_db_pool.get_historic_events_for_property_keys.return_value = [
-    HistoricalUNSEvent(timestamp=x[0], topic=x[1], publisher=x[2], payload=JSONPayload(data=x[3])) for x in test_data_set
-]
-mocked_db_pool.execute_prepared.return_value = [
+mocked_repository.get_historic_events_for_property_keys.return_value = [
     HistoricalUNSEvent(timestamp=x[0], topic=x[1], publisher=x[2], payload=JSONPayload(data=x[3])) for x in test_data_set
 ]
 
@@ -85,7 +79,7 @@ async def test_get_historic_events_in_time_range(
     has_result_errors: bool,
 ):
     mqtt_topic_list = [MQTTTopicInput.from_pydantic(MQTTTopic(topic=topic)) for topic in topics]
-    with patch("uns_graphql.queries.historian.HistorianDBPool", return_value=mocked_db_pool):
+    with patch("uns_graphql.queries.historian._repository", return_value=mocked_repository):
         historian_query = HistorianQuery()
         try:
             result = await historian_query.get_historic_events_in_time_range(mqtt_topic_list, from_date, to_date)
@@ -133,7 +127,7 @@ async def test_strawberry_get_historic_events_in_time_range(
     mqtt_topics: list[dict[str, str]] = [{"topic": x} for x in topics]
     schema = strawberry.Schema(query=HistorianQuery)
 
-    with patch("uns_graphql.queries.historian.HistorianDBPool", return_value=mocked_db_pool):
+    with patch("uns_graphql.queries.historian._repository", return_value=mocked_repository):
         result = await schema.execute(
             query=query, variable_values={"mqtt_topics": mqtt_topics, "from_date": from_date, "to_date": to_date}
         )
@@ -187,7 +181,7 @@ async def test_strawberry_get_historic_events_by_property(
     mqtt_topics: list[dict[str, str]] = [{"topic": x} for x in topics] if topics is not None else None
     schema = strawberry.Schema(query=HistorianQuery)
 
-    with patch("uns_graphql.queries.historian.HistorianDBPool", return_value=mocked_db_pool):
+    with patch("uns_graphql.queries.historian._repository", return_value=mocked_repository):
         result = await schema.execute(
             query=query,
             variable_values={
@@ -245,7 +239,7 @@ async def test_strawberry_get_historic_events_by_publishers(publishers, topics, 
         mqtt_topics: list[dict[str, str]] = [{"topic": x} for x in topics]
     schema = strawberry.Schema(query=HistorianQuery)
 
-    with patch("uns_graphql.queries.historian.HistorianDBPool", return_value=mocked_db_pool):
+    with patch("uns_graphql.queries.historian._repository", return_value=mocked_repository):
         result = await schema.execute(
             query=query,
             variable_values={"publishers": publishers, "mqtt_topics": mqtt_topics, "from_date": from_date, "to_date": to_date},

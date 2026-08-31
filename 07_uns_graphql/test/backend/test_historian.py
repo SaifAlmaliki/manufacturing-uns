@@ -24,9 +24,10 @@ from typing import Literal
 
 import pytest
 import pytest_asyncio
-
-from uns_graphql.backend.historian import HistorianDBPool
+from sqlalchemy import text
+from uns_graphql.backend.historian import HistorianRepository
 from uns_graphql.graphql_config import HistorianConfig
+from uns_model.engine import Database
 
 # model for db entry
 DatabaseRow = tuple[datetime, str, str, dict]
@@ -56,48 +57,52 @@ test_data_set: list[DatabaseRow] = [
 ]
 
 
-@pytest_asyncio.fixture(scope="session", loop_scope="session")
-async def historian_pool():
-    """
-    Initialize a shared connection pool based on the pytest marker integrationtest
-    """
-    yield await HistorianDBPool.get_shared_pool()
-    # Close the connection pool after all tests are completed
-    await HistorianDBPool.close_pool()
+INSERT_SQL = f"""INSERT INTO {HistorianConfig.table} ( time, topic, client_id, mqtt_msg )
+                 VALUES (:time, :topic, :client_id, CAST(:mqtt_msg AS jsonb));"""  # noqa: S608
+DELETE_SQL = f"""DELETE FROM {HistorianConfig.table}
+                 WHERE time = :time AND topic = :topic AND client_id = :client_id;"""  # noqa: S608
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
-async def prepare_database(historian_pool):  # noqa: ARG001
+async def historian_database():
     """
-    Prepare the database with test data based on the pytest marker integrationtest
+    The one engine this service uses, pointed at the configured historian.
+
+    Only reached when the integrationtest marker is selected, because nothing here
+    connects until a fixture is requested.
     """
-    # time: datetime, topic: str, client_id: str, mqtt_msg: dict
-    insert_sql_cmd = f"""INSERT INTO {HistorianConfig.table} ( time, topic, client_id, mqtt_msg )
-                        VALUES ($1,$2,$3,$4)
-                        RETURNING *;"""  # noqa: S608
-    delete_sql_cmd = f""" DELETE FROM {HistorianConfig.table} WHERE
-                               time =  $1  AND
-                               topic = $2 AND
-                               client_id = $3;"""  # noqa: S608
+    yield Database.shared("graphql")
+    await Database.close_shared()
 
-    # clean up database before inserting to avoid UniqueViolationError if previous run crashed
-    for row in test_data_set:
-        # row is (time, topic, client_id, mqtt_msg)
-        # we only need the first 3 for delete
-        delete_params = list(row)[:3]
-        async with HistorianDBPool() as historian:
-            await historian.execute_prepared(delete_sql_cmd, *delete_params)
 
-    # insert testdata into database
-    for row in test_data_set:
-        async with HistorianDBPool() as historian:
-            await historian.execute_prepared(insert_sql_cmd, *list(row))
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def prepare_database(historian_database: Database):
+    """
+    Put the test rows in the hypertable, and take them out again afterwards.
+
+    Written with the engine directly rather than through HistorianRepository: the
+    repository only reads, and giving it a write method for the sake of its own tests
+    would widen the interface the service depends on.
+    """
+    rows = [{"time": row[0], "topic": row[1], "client_id": row[2], "mqtt_msg": row[3]} for row in test_data_set]
+
+    async with historian_database.begin() as connection:
+        # Delete first: a previous run that crashed would otherwise leave duplicates.
+        for row in rows:
+            await connection.execute(text(DELETE_SQL), row)
+        for row in rows:
+            await connection.execute(text(INSERT_SQL), row)
+
     yield
-    # clean up database
-    for row in test_data_set:
-        delete_params = list(row)[:3]
-        async with HistorianDBPool() as historian:
-            await historian.execute_prepared(delete_sql_cmd, *delete_params)
+
+    async with historian_database.begin() as connection:
+        for row in rows:
+            await connection.execute(text(DELETE_SQL), row)
+
+
+@pytest.fixture
+def historian(historian_database: Database) -> HistorianRepository:
+    return HistorianRepository(historian_database)
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -130,17 +135,17 @@ async def prepare_database(historian_pool):  # noqa: ARG001
 )
 async def test_get_historic_events(
     prepare_database,  # noqa: ARG001
+    historian: HistorianRepository,
     topic_list: list[str],
     publisher_list: list[str],
     from_date: datetime,
     to_date: datetime,
     count_of_return: int,
 ):
-    async with HistorianDBPool() as historian:
-        result = await historian.get_historic_events(
-            topics=topic_list, publishers=publisher_list, from_datetime=from_date, to_datetime=to_date
-        )
-        assert len(result) == count_of_return
+    result = await historian.get_historic_events(
+        topics=topic_list, publishers=publisher_list, from_datetime=from_date, to_datetime=to_date
+    )
+    assert len(result) == count_of_return
 
 
 @pytest.mark.integrationtest
@@ -177,6 +182,7 @@ async def test_get_historic_events(
 )
 async def test_get_historic_events_for_property_keys(
     prepare_database,  # noqa: ARG001
+    historian: HistorianRepository,
     property_keys: list[str],
     binary_operator: Literal["AND", "OR", "NOT"],
     topics: list[str],
@@ -184,12 +190,11 @@ async def test_get_historic_events_for_property_keys(
     to_timestamp,
     count_of_return: int,
 ):
-    async with HistorianDBPool() as historian:
-        result = await historian.get_historic_events_for_property_keys(
-            property_keys=property_keys,
-            binary_operator=binary_operator,
-            topics=topics,
-            from_datetime=from_timestamp,
-            to_datetime=to_timestamp,
-        )
-        assert len(result) == count_of_return
+    result = await historian.get_historic_events_for_property_keys(
+        property_keys=property_keys,
+        binary_operator=binary_operator,
+        topics=topics,
+        from_datetime=from_timestamp,
+        to_datetime=to_timestamp,
+    )
+    assert len(result) == count_of_return

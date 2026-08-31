@@ -22,13 +22,18 @@ import logging
 from datetime import datetime
 
 import strawberry
+from uns_model.engine import Database
 
-from uns_graphql.backend.historian import HistorianDBPool
+from uns_graphql.backend.historian import HistorianRepository
 from uns_graphql.input.mqtt import MQTTTopicInput
 from uns_graphql.type.basetype import BinaryOperator
 from uns_graphql.type.historical_event import HistoricalUNSEvent
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _repository() -> HistorianRepository:
+    return HistorianRepository(Database.shared("graphql"))
 
 
 @strawberry.type(description="Query Historic Events")
@@ -55,14 +60,12 @@ class Query:
         if not topics:
             raise ValueError("topics list cannot be empty")
 
-        async with HistorianDBPool() as historian:
-            result: list[HistoricalUNSEvent] = await historian.get_historic_events(
-                topics=(x.topic for x in topics),  # extract string from input object
-                publishers=None,
-                from_datetime=from_datetime,
-                to_datetime=to_datetime,
-            )
-            return result
+        return await _repository().get_historic_events(
+            topics=[x.topic for x in topics],  # extract string from input object
+            publishers=None,
+            from_datetime=from_datetime,
+            to_datetime=to_datetime,
+        )
 
     @strawberry.field(description="Get all historical events published by specified clients.")
     async def get_historic_events_by_publishers(
@@ -79,14 +82,12 @@ class Query:
         if not publishers:
             raise ValueError("publishers list cannot be empty")
 
-        async with HistorianDBPool() as historian:
-            result: list[HistoricalUNSEvent] = await historian.get_historic_events(
-                topics=[x.topic for x in topics] if topics else None,  # extract string from input object
-                publishers=publishers,
-                from_datetime=from_datetime,
-                to_datetime=to_datetime,
-            )
-            return result
+        return await _repository().get_historic_events(
+            topics=[x.topic for x in topics] if topics else None,  # extract string from input object
+            publishers=publishers,
+            from_datetime=from_datetime,
+            to_datetime=to_datetime,
+        )
 
     @strawberry.field(
         description="Get all historical events published which have specific attributes."
@@ -112,19 +113,20 @@ class Query:
         if not property_keys:
             raise ValueError("property_keys list cannot be empty")
 
-        async with HistorianDBPool() as historian:
-            result: list[HistoricalUNSEvent] = await historian.get_historic_events_for_property_keys(
-                property_keys=property_keys,
-                binary_operator=binary_operator.value if binary_operator else BinaryOperator.OR.value,
-                topics=[x.topic for x in topics] if topics else None,
-                from_datetime=from_datetime,
-                to_datetime=to_datetime,
-            )
-            return result
+        return await _repository().get_historic_events_for_property_keys(
+            property_keys=property_keys,
+            binary_operator=binary_operator.value if binary_operator else BinaryOperator.OR.value,
+            topics=[x.topic for x in topics] if topics else None,
+            from_datetime=from_datetime,
+            to_datetime=to_datetime,
+        )
 
     @classmethod
     async def on_shutdown(cls):
         """
-        Clean up Db connection pool
+        Nothing to close here any more.
+
+        The engine is shared with every other Postgres-backed query in this service
+        and is disposed once, by the Asset Model query (ADR-0004). Kept so the app's
+        shutdown sequence stays uniform across query classes.
         """
-        await HistorianDBPool.close_pool()

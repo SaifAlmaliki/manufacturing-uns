@@ -2,15 +2,42 @@ import type { UnsNode } from '../../types/uns'
 
 export type NodeRole = 'structural' | 'equipment' | 'parameter-group' | 'sensor' | 'other'
 
-const STRUCTURAL_NODE_TYPES = new Set(['ENTERPRISE', 'FACILITY', 'AREA', 'LINE', 'DEVICE'])
+/**
+ * Node types from two sources land here: the graph database labels topics by depth
+ * ('DEVICE_depth_2'), while the Asset Model labels Assets by Asset Level ('WORK_CELL')
+ * and the segments below them as Metrics. Both have to answer the same question —
+ * what is this row in the tree — so both are mapped onto one role.
+ */
+const STRUCTURAL_NODE_TYPES = new Set([
+  'ENTERPRISE',
+  'FACILITY',
+  'AREA',
+  'LINE',
+  'DEVICE',
+  // Asset Levels the graph database has no equivalent for.
+  'SITE',
+  'PRODUCTION_UNIT',
+  'WORK_CELL',
+])
+
+const EQUIPMENT_NODE_TYPES = new Set(['DEVICE_depth_1', 'MACHINE'])
 
 export function getNodeRole(nodeType: string | undefined): NodeRole {
   if (!nodeType) return 'other'
   if (STRUCTURAL_NODE_TYPES.has(nodeType)) return 'structural'
-  if (nodeType === 'DEVICE_depth_1') return 'equipment'
-  if (nodeType === 'DEVICE_depth_2') return 'parameter-group'
-  if (nodeType === 'DEVICE_depth_3') return 'sensor'
+  if (EQUIPMENT_NODE_TYPES.has(nodeType)) return 'equipment'
+  if (nodeType === 'DEVICE_depth_2' || nodeType === 'METRIC_GROUP') return 'parameter-group'
+  if (nodeType === 'DEVICE_depth_3' || nodeType === 'METRIC') return 'sensor'
   return 'other'
+}
+
+/**
+ * True when a node has never carried telemetry: an Asset or a Metric the Asset Model
+ * declares, or a placeholder the tree probed for. Its payload has to be fetched before
+ * it can be shown, and it must not be counted as a stale sensor in the meantime.
+ */
+export function hasNoTelemetryClock(node: Pick<UnsNode, 'lastUpdated'>): boolean {
+  return new Date(node.lastUpdated).getTime() <= 0
 }
 
 export function getNodeRoleLabel(role: NodeRole): string {

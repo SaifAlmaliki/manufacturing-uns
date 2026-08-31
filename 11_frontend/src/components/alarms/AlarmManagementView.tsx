@@ -19,6 +19,8 @@ import {
   Sparkles,
   UserCheck,
   ExternalLink,
+  Database,
+  MonitorSmartphone,
 } from 'lucide-react';
 import { useAlarms } from '../../context/AlarmContext';
 import { useAuth } from '../../context/AuthContext';
@@ -48,6 +50,9 @@ export const AlarmManagementView: React.FC = () => {
     toggleRuleEnabled,
     deleteRule,
     clearResolvedAlarms,
+    rulesOrigin,
+    rulesError,
+    refreshRules,
   } = useAlarms();
 
   const { currentUser, isAdmin } = useAuth();
@@ -569,14 +574,48 @@ export const AlarmManagementView: React.FC = () => {
                   Define telemetry thresholds, evaluation conditions, and the predefined roles that receive alerts.
                 </p>
               </div>
-              <button
-                onClick={handleOpenCreateRule}
-                className="px-3 py-1.5 bg-amber-500 dark:bg-[#FFC107] hover:bg-amber-400 dark:hover:bg-[#FFB300] text-[#0B0B0C] font-bold rounded-lg text-xs font-mono transition-colors cursor-pointer flex items-center gap-1.5"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Add Rule</span>
-              </button>
+              <div className="flex items-center gap-2">
+                {/* Whether these rules reach the next shift, or stop at this browser. */}
+                {rulesOrigin === 'SERVER' ? (
+                  <span
+                    title="Stored in the platform database — every console at this site sees these rules"
+                    className="px-2 py-1 rounded-md bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 font-mono text-[10px] uppercase flex items-center gap-1"
+                  >
+                    <Database className="w-3 h-3" />
+                    Platform
+                  </span>
+                ) : (
+                  <span
+                    title="These rules exist only in this browser. Other consoles will not evaluate them."
+                    className="px-2 py-1 rounded-md bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30 font-mono text-[10px] uppercase flex items-center gap-1"
+                  >
+                    <MonitorSmartphone className="w-3 h-3" />
+                    This Browser
+                  </span>
+                )}
+                <button
+                  onClick={() => void refreshRules()}
+                  title="Reload the rules the platform holds"
+                  className="p-1.5 rounded-lg border border-[#E2E8F0] dark:border-[#1E293B] text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC] transition-colors cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={handleOpenCreateRule}
+                  className="px-3 py-1.5 bg-amber-500 dark:bg-[#FFC107] hover:bg-amber-400 dark:hover:bg-[#FFB300] text-[#0B0B0C] font-bold rounded-lg text-xs font-mono transition-colors cursor-pointer flex items-center gap-1.5"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Add Rule</span>
+                </button>
+              </div>
             </div>
+
+            {rulesError && (
+              <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg p-3 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <p className="text-[11px] text-amber-800 dark:text-amber-300 text-pretty font-mono">{rulesError}</p>
+              </div>
+            )}
 
             {/* Rules Table */}
             <div className="bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] rounded-xl overflow-hidden">

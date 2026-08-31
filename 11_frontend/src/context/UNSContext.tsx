@@ -12,9 +12,7 @@ import {
 } from '../types/uns';
 import { unsGraphQLClient } from '../services/graphql/client';
 import { DEFAULT_APP_SETTINGS, STORAGE_KEYS } from '../config/branding';
-import { childrenTopic } from '../lib/uns/topics';
-import { isSyntheticUnsNode } from '../lib/uns/isa95-probe';
-import { getNodeRole, isStaleCandidate, isNodeStale } from '../lib/uns/node-meta';
+import { getNodeRole, hasNoTelemetryClock, isStaleCandidate, isNodeStale } from '../lib/uns/node-meta';
 import { isSparkplugTopic } from '../lib/uns/sparkplug';
 
 function httpToWs(httpUrl: string): string {
