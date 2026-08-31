@@ -21,11 +21,17 @@ consumes it.
 Established by reading the code, not assumed:
 
 1. **`11_frontend` talks only to GraphQL.** `App.tsx:4` states it as an invariant.
-2. **`07_uns_graphql` has no mutations.** `uns_graphql_app.py:83` builds
-   `strawberry.Schema(query=Query, subscription=Subscription)`. The query surface is
-   read-only platform-wide.
-3. **The frontend cannot publish.** `payload_publish` exists as a `FeatureKey`
-   (`rbac.ts:80`) with no implementation behind it.
+2. **`07_uns_graphql` has exactly five mutations, all of them Alert Rules.**
+   `uns_graphql_app.py:109` builds `strawberry.Schema(query=Query, mutation=Mutation,
+   subscription=Subscription, ...)`, and every mutation lives in
+   `mutations/alert_rule.py`. Accepted ADR 0005 records the decision and states the
+   boundary in its own words: "The mutation surface is deliberately narrow, and stays
+   narrow. Process data is written by publishing to the broker." So a write path exists,
+   it is one page's configuration, and the ADR that created it already says a test
+   fixture's run control does not belong in it.
+3. **The frontend cannot publish to MQTT.** `payload_publish` exists as a `FeatureKey`
+   (`rbac.ts:17`, `:79`) with role defaults assigned (`:126`–`:210`) and no publish
+   implementation behind it anywhere in `src/`.
 4. **`nginx.conf` proxies `/graphql` only.**
 5. **`client.ts:349` already exposes `subscribeMqttMessages(topics, onMessage)`**, and the
    `getMqttMessages` subscription takes topics as an argument. Live status therefore needs
@@ -38,10 +44,24 @@ Established by reading the code, not assumed:
 8. **Each module exposes a Prometheus port**: `graphdb.metrics_port: 9092`,
    `historian.metrics_port: 9091`. ADR 0001 already chose Grafana for observability.
 
-Consequence of (1)–(4): **no write path to anything exists in this platform.** It has to be
-created. The decision taken is to give the simulator its own control API rather than make
-the platform's read-only GraphQL surface writable in order to drive a test fixture — the
-simulator's own Docker label reads "Not for production", and that precedent is hard to undo.
+Consequence of (1)–(4): **the platform's only write path is five Alert Rule mutations, and
+nothing can drive a process.** Run control has to be created either way. The decision taken
+is to give the simulator its own control API rather than widen the GraphQL surface, and
+finding (2) is now the argument for it rather than against it: ADR 0005 opened that surface
+for one thing — plant configuration with nowhere else to live — and committed it to staying
+narrow. Start/stop/pause of a container labelled "Not for production" is the opposite of that:
+it is not plant configuration, it does not survive a restart by design (§5.2), and it would
+put a test fixture's lifecycle into the schema every real consumer reads.
+
+Two further consequences follow, and both are cheaper because ADR 0005 exists. `client.ts`
+already has five write methods (`saveAlertRule`, `saveAlertRules`, `deleteAlertRule`,
+`setAlertRuleEnabled`, `recordAlertRuleEvaluation`), each checking `res.error` and throwing,
+so §7.3's `fetch` wrapper has a house style to match rather than to invent — and the ADR's
+own consequence, "Anyone who can reach `/graphql` can now change alarm configuration.
+There is no authorization in this service", is the same unauthenticated-write posture §10
+records for port 8099. §10 is therefore consistent with the platform's current stance rather
+than introducing a new one; it is not thereby made good, and the simulator's mitigation (no
+host port mapping) is stricter than `/graphql`'s.
 
 Consequence of (5)+(6): status and diagnostics are close to free, and routing simulator
 health through `uns/platform/` keeps Platform Observability out of the UNS graph and the
@@ -55,15 +75,15 @@ The console covers what Grafana structurally cannot — the simulator's *interna
 - Start, stop, pause and reconfigure the simulator from the console without editing YAML.
 - Show, live, what the simulator is publishing and the plant state that explains it.
 - Diagnose a wrong-looking value down to the signal, its shape, and its inputs.
-- Keep `07_uns_graphql` read-only and keep simulator health out of the UNS.
+- Keep `07_uns_graphql`'s mutation surface at ADR 0005's five, and keep simulator health out of the UNS.
 
 ## 4. Non-goals
 
-- No mutations added to `07_uns_graphql`.
+- No mutations added to `07_uns_graphql`. Its surface stays at ADR 0005's five Alert Rule mutations.
 - No editing of signal definitions, ranges, limits or expressions from the browser. Those
   stay in `conf/simulator/*.yaml`. The console shows them read-only.
 - No authentication system. See §10 — the API is unauthenticated by design and constrained
-  by deployment instead.
+  by deployment instead, which is the posture ADR 0005 already records for `/graphql`.
 - No test runner introduced into `11_frontend`.
 - No Grafana dashboards in this spec. The `/metrics` endpoint makes them possible; building
   them is separate work.
@@ -299,16 +319,18 @@ SimulatorConfigPanel, PlantStateInspector, SignalInspector, SimulatorDiagnostics
 **New tests**: `test_api.py`, `test_self_telemetry.py`, `test_metrics.py`.
 **Docs**: `99_simulator/README.md` (control API, endpoints, security caveat),
 `11_frontend/README.md` (the new route and its proxy), and
-`docs/adr/0006-simulator-control-api-outside-graphql.md` recording why the simulator got its
-own write surface instead of the platform's first GraphQL mutations. (`docs/adr/` currently
-ends at `0004`; sub-project A's spec claims `0005`, so this one takes `0006`.)
+`docs/adr/0007-simulator-control-api-outside-graphql.md` recording why the simulator got its
+own write surface instead of a sixth GraphQL mutation, and why ADR 0005's "stays narrow" is
+the reason rather than an obstacle. (`docs/adr/0005-graphql-mutations-for-console-configuration.md`
+already exists, accepted and committed; sub-project A's spec claims `0005` and has been
+corrected to `0006` in its implementation plan, so this one takes `0007`.)
 
 ## 12. Risks
 
 | Risk | Mitigation |
 |---|---|
 | Unauthenticated write API | §10: no host port mapping, optional shared-secret header, scope limited to a tool labelled not-for-production |
-| The `/simulator` proxy erodes the single-client architecture | Confined to one nginx location and one Vite proxy entry; `07_uns_graphql` stays read-only; ADR 0006 records the boundary so the next module does not repeat it |
+| The `/simulator` proxy erodes the single-client architecture | Confined to one nginx location and one Vite proxy entry; `07_uns_graphql`'s mutation surface stays at ADR 0005's five; ADR 0007 records the boundary so the next module does not repeat it |
 | Self-telemetry leaks into the UNS if a mapper subscription widens | `test_self_telemetry.py` asserts against the live topic lists in `conf/settings.yaml`, so the widening breaks a test |
 | Prometheus cardinality from ~400 signals | `uns_simulator_signal_value` limited to signals flagged `export_metric: true`, asserted by `test_metrics.py` |
 | Runtime overrides mistaken for persisted config | `overrides_active` in the status body, surfaced as a notice in `SimulatorConfigPanel` |
