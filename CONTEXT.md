@@ -107,3 +107,11 @@ _Avoid_: monitoring, health, telemetry
 One deployment of the platform, either at a single facility or centrally for the
 whole enterprise. Determines which stores a dashboard can reach.
 _Avoid_: environment, site, tenant, cluster
+
+**Alert Rule**:
+A condition somebody wants to be told about, and who to tell: a topic, a field of
+its payload, a comparison, a severity and the roles notified. Configuration of the
+plant, not part of the Asset Model — the model says what exists, an Alert Rule says
+what matters about it. Distinct from the alarm it raises, which is one occurrence of
+the rule being true.
+_Avoid_: alarm, alert, threshold, notification rule

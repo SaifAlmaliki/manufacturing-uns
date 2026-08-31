@@ -1,12 +1,17 @@
 # Asset Model & Enrichment (`uns_model`)
 
 The authored side of Postgres: the **Asset Model** that describes what the plant
-*is*, and the **Enrichment** that attaches those facts to observed data when it
-is read.
+*is*, the **Enrichment** that attaches those facts to observed data when it is
+read, and the **Alert Rules** the console authors.
+
+Two schemas, one engine. `model` holds the Asset Model, `console` holds the Alert
+Rules; they share a database and nothing else, which is why
+`AlertRuleRepository` is a separate seam from `AssetModelRepository`.
 
 See [`CONTEXT.md`](../CONTEXT.md) for the vocabulary, and
-[ADR-0003](../docs/adr/0003-postgres-asset-model-and-read-time-enrichment.md) and
-[ADR-0004](../docs/adr/0004-sqlalchemy-orm-for-the-model-core-for-ingest.md) for
+[ADR-0003](../docs/adr/0003-postgres-asset-model-and-read-time-enrichment.md),
+[ADR-0004](../docs/adr/0004-sqlalchemy-orm-for-the-model-core-for-ingest.md) and
+[ADR-0005](../docs/adr/0005-graphql-mutations-for-console-configuration.md) for
 why it is shaped this way.
 
 ## What this is not
@@ -65,6 +70,28 @@ context.enrich("value")           # flat dict: site, line, machine, unit_of_meas
 `resolve` is cached in memory with a TTL and returns `None` for an Unmodelled
 Topic. Call `refresh()` after editing the Asset Model in the same process.
 
+Alert Rules go through their own repository. Every write is an upsert by id, so the
+console saves a rule it has just edited without knowing whether the server has seen
+it before, and the notified roles are replaced wholesale rather than merged:
+
+```python
+from uns_model import AlertRuleRepository, AlertRuleSpec
+
+rules = AlertRuleRepository(Database.shared("graphql"))
+await rules.save_rule(AlertRuleSpec(
+    id="oven-overtemp", name="Oven over temperature",
+    severity="CRITICAL", category="TEMPERATURE",
+    topic="ManufacturingCo/PlantA/Production/Line1/Cell1/Oven/ProcessValue/Temperature",
+    metric_field="value", condition="GREATER_THAN", threshold_value=180.0,
+    roles=["operator", "engineer"],
+))
+```
+
+`AlertRuleSpec.validate()` rejects a value outside the allowed vocabulary before
+Postgres does, so a caller gets `severity must be one of [...]` instead of a
+constraint violation with a generated name in it. The CHECK constraints are still
+the real guard.
+
 On the ingest side, the historian calls a `TopicBinder` instead, which resolves
 each *distinct* topic once and never raises — Enrichment is not worth a lost
 measurement:
@@ -82,11 +109,12 @@ await binder.observe(topic)   # a no-op for a topic already bound
 | --- | --- |
 | `04_uns_historian` | `TopicBinder.observe()` after each successful persist, so every topic gets a Topic Binding |
 | `07_uns_graphql` | `getAssets`, `getAssetChildren`, `getAsset`, `getTopicContext`, `getUnmodelledTopics`, `getAssetModelSummary` |
+| `07_uns_graphql` | `getAlertRules`, `getAlertRule`, `getAlertRuleSummary`, and the `console` mutations |
 | Grafana / SQL | `public.uns_metrics_enriched` and `public.uns_metrics_1m_enriched` |
 
 ## Commands
 
-Alembic owns the `model` schema and the enrichment views. The legacy
+Alembic owns the `model` and `console` schemas and the enrichment views. The legacy
 `04_uns_historian/sql_scripts/*.sql` still bootstrap the hypertables; see ADR-0004
 for why Timescale DDL stays as raw SQL inside migrations. The enrichment views are
 created only if their hypertable already exists, so `upgrade` works on a fresh
@@ -117,7 +145,7 @@ Asset Model is updated after `conf/settings.yaml` changes.
 
 ## Tests
 
-`test/test_topic_path.py`, `test/test_asset_context.py`, `test/test_seed.py` and
-`test/test_topic_binder.py` are pure unit tests and need no database — the
-repository seam is where the fakes go. Tests marked `integrationtest` need Postgres
-from `docker-compose.yml`.
+`test/test_topic_path.py`, `test/test_asset_context.py`, `test/test_seed.py`,
+`test/test_topic_binder.py` and `test/test_alert_rules.py` are pure unit tests and
+need no database — the repository seam is where the fakes go. Tests marked
+`integrationtest` need Postgres from `docker-compose.yml`.

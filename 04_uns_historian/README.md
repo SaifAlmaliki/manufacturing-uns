@@ -55,8 +55,13 @@ psql -U postgres -h localhost -f './sql_scripts/01_setup_db.sql'
 # create the hypertable with the application user
 psql -U uns_dbuser  -h localhost -d uns_historian -f './sql_scripts/02_setup_hypertable.sql'
 
-# create transactional alert-rule tables (schema console) used by /#/alerts
-psql -U uns_dbuser  -h localhost -d uns_historian -f './sql_scripts/03_setup_alert_rules.sql'
+# create the narrow metrics hypertable read by Grafana and the enrichment views
+psql -U uns_dbuser  -h localhost -d uns_historian -f './sql_scripts/04_setup_metrics_hypertable.sql'
+
+# The transactional tables (schema `model` for the Asset Model, schema `console` for
+# the Alert Rules behind /#/alerts) are not created here. Alembic owns them:
+#   cd ../09_uns_model && uv run uns_model_setup
+# or `docker compose up asset_model_setup`. See ADR-0004.
 
 ```
 

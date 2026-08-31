@@ -1,10 +1,166 @@
+"""What kind of condition the rule watches, used for grouping and icons."""
+enum AlertCategory {
+  TEMPERATURE
+  PRESSURE
+  VIBRATION
+  FLOW_RATE
+  STALE_TIMEOUT
+  NODE_OFFLINE
+  COMMUNICATION
+  THRESHOLD
+  SAFETY
+  CUSTOM
+}
+
+"""How the metric is compared against the threshold."""
+enum AlertCondition {
+  GREATER_THAN
+  LESS_THAN
+  EQUALS
+  NOT_EQUALS
+  RANGE_OUTSIDE
+  STALE_TIMEOUT
+  CONTAINS
+}
+
+"""An Alert Rule to create or replace. The id is supplied by the console."""
+input AlertRuleInput {
+  id: String!
+  name: String!
+  severity: AlertSeverity!
+  category: AlertCategory!
+  topic: String!
+  metricField: String!
+  condition: AlertCondition!
+
+  """A JSON scalar: a number, a string or a boolean"""
+  thresholdValue: JSON!
+  description: String! = ""
+  enabled: Boolean! = true
+  thresholdUpperValue: Float = null
+  unit: String = null
+  delaySeconds: Int64! = 0
+  escalationRole: ConsoleRole = null
+  escalationTimeoutMinutes: Int64 = null
+  notifyRoles: [ConsoleRole!]! = []
+  autoResolveOnNormal: Boolean! = true
+  inAppNotification: Boolean! = true
+  audioChime: Boolean! = true
+  mqttPublishOnTrigger: Boolean! = false
+  mqttAlarmTopic: String = null
+  emailWebhook: Boolean! = false
+  webhookUrl: String = null
+}
+
+"""How many Alert Rules exist and how many are armed."""
+type AlertRuleSummary {
+  rules: Int64!
+  enabledRules: Int64!
+
+  """When any rule was last edited, so a console can skip a refetch"""
+  lastChangedAt: DateTime
+}
+
+"""
+An ISA-18.2 Alert Rule as authored in the console and stored in Postgres.
+"""
+type AlertRuleType {
+  id: String!
+  name: String!
+  description: String!
+  enabled: Boolean!
+  severity: AlertSeverity!
+  category: AlertCategory!
+
+  """The topic the rule watches. May contain MQTT wildcards."""
+  topic: String!
+
+  """Which field of the payload is compared, e.g. 'value'"""
+  metricField: String!
+  condition: AlertCondition!
+
+  """
+  The threshold as a JSON scalar, so a rule can compare numbers, text or flags
+  """
+  thresholdValue: JSON!
+
+  """Upper bound for RANGE_OUTSIDE"""
+  thresholdUpperValue: Float
+
+  """
+  Unit as typed by the engineer. Not a Metric Definition unit_of_measure.
+  """
+  unit: String
+  delaySeconds: Int64!
+  escalationRole: ConsoleRole
+  escalationTimeoutMinutes: Int64
+  notifyRoles: [ConsoleRole!]!
+  autoResolveOnNormal: Boolean!
+  inAppNotification: Boolean!
+  audioChime: Boolean!
+  mqttPublishOnTrigger: Boolean!
+  mqttAlarmTopic: String
+  emailWebhook: Boolean!
+  webhookUrl: String
+  triggerCount: Int64!
+  lastTriggeredAt: DateTime
+  lastEvaluatedAt: DateTime
+  createdAt: DateTime
+  updatedAt: DateTime
+}
+
+"""How badly an operator needs to care, per ISA-18.2 priority."""
+enum AlertSeverity {
+  CRITICAL
+  HIGH
+  WARNING
+  INFO
+}
+
+"""How complete the Asset Model is."""
+type AssetModelSummary {
+  assets: Int64!
+  metricDefinitions: Int64!
+  boundTopics: Int64!
+
+  """
+  Topics that have published data but match no Asset. Non-zero means the model is incomplete.
+  """
+  unmodelledTopics: Int64!
+}
+
+"""A declared thing in the plant: a Site, a Line, a Machine."""
+type AssetNode {
+  """
+  Topic prefix this Asset publishes under, e.g. 'Ent/Site/Area/Line1/Cell1/G1'
+  """
+  path: String!
+
+  """The single topic segment naming this Asset, e.g. 'G1'"""
+  segment: String!
+
+  """
+  Asset Level, e.g. SITE, LINE, WORK_CELL, MACHINE. Levels may be skipped.
+  """
+  level: String!
+
+  """Display name if one was authored, otherwise the segment"""
+  name: String!
+  description: String
+  manufacturer: String
+  modelNumber: String
+  serialNumber: String
+  criticality: String
+  isActive: Boolean!
+
+  """Site-specific facts that do not deserve a column"""
+  attributes: JSONPayload
+}
+
 """
 Represents binary data as Base64-encoded strings, using the standard alphabet.
 """
-scalar Base64
-  @specifiedBy(
-    url: "https://datatracker.ietf.org/doc/html/rfc4648.html#section-4"
-  )
+scalar Base64 @specifiedBy(url: "https://datatracker.ietf.org/doc/html/rfc4648.html#section-4")
 
 enum BinaryOperator {
   OR
@@ -16,9 +172,16 @@ type BytesPayload {
   data: Base64!
 }
 
-"""
-Date with time (isoformat)
-"""
+"""A console role that can be notified when a rule fires."""
+enum ConsoleRole {
+  ADMIN
+  ENGINEER
+  OPERATOR
+  AUDITOR
+  VIEWER
+}
+
+"""Date with time (isoformat)"""
 scalar DateTime
 
 type HistoricalUNSEvent {
@@ -28,18 +191,13 @@ type HistoricalUNSEvent {
   payload: JSONPayload!
 }
 
-"""
-Int 64 field since GraphQL doesn't support int64, only int 32
-"""
+"""Int 64 field since GraphQL doesn't support int64, only int 32"""
 scalar Int64
 
 """
 The `JSON` scalar type represents JSON values as specified by [ECMA-404](https://ecma-international.org/wp-content/uploads/ECMA-404_2nd_edition_december_2017.pdf).
 """
-scalar JSON
-  @specifiedBy(
-    url: "https://ecma-international.org/wp-content/uploads/ECMA-404_2nd_edition_december_2017.pdf"
-  )
+scalar JSON @specifiedBy(url: "https://ecma-international.org/wp-content/uploads/ECMA-404_2nd_edition_december_2017.pdf")
 
 type JSONPayload {
   data: JSON!
@@ -47,70 +205,85 @@ type JSONPayload {
 
 union JSONPayloadBytesPayload = JSONPayload | BytesPayload
 
-"""
-Valid Kafka Topic to subscribe to. Does not accept wildcards or RegEx
-"""
+"""Valid Kafka Topic to subscribe to. Does not accept wildcards or RegEx"""
 input KAFKATopicInput {
   topic: String!
 }
 
-"""
-MQTT message which published in the UNS platform
-"""
+"""MQTT message which published in the UNS platform"""
 type MQTTMessage {
-  """
-  Fully qualified path of the namespace. i.e. the MQTT Topic
-  """
+  """Fully qualified path of the namespace. i.e. the MQTT Topic"""
   topic: String!
 
   """
   the payload of the MQTT message
-   -JSON for UNS
+   -JSON for UNS 
    -bytes for sparkplugB
   """
   payload: JSONPayloadBytesPayload
 }
 
-"""
-Valid MQTT Topic to subscribe to. Accepts wild cards
-"""
+"""Valid MQTT Topic to subscribe to. Accepts wild cards"""
 input MQTTTopicInput {
   topic: String!
 }
 
-"""
-Query the UNS for current or historic Nodes/Events
-"""
+"""What the Asset Model says about one Metric Key."""
+type MetricDefinitionType {
+  """
+  Topic below the Asset plus the payload leaf, e.g. 'ProcessValue/Temperature/value'
+  """
+  metricKey: String!
+  displayName: String
+
+  """The physical unit, e.g. '°C'"""
+  unitOfMeasure: String
+  decimals: Int64
+  minValue: Float
+  maxValue: Float
+  deadband: Float
+}
+
+"""Write configuration to the UNS platform"""
+type Mutation {
+  """
+  Create or replace one Alert Rule and return it as stored. Fails with a readable message when a value is outside the allowed vocabulary.
+  """
+  saveAlertRule(rule: AlertRuleInput!): AlertRuleType!
+
+  """
+  Create or replace several Alert Rules at once. Used by a console importing the rules it had kept in browser storage.
+  """
+  saveAlertRules(rules: [AlertRuleInput!]!): [AlertRuleType!]!
+
+  """Delete an Alert Rule. False when there was no such rule."""
+  deleteAlertRule(id: String!): Boolean!
+
+  """
+  Arm or mute an Alert Rule without resending it. Null when there is no such rule.
+  """
+  setAlertRuleEnabled(id: String!, enabled: Boolean!): AlertRuleType
+
+  """
+  Record that a rule was evaluated, and whether it fired. The timestamps are the database's, so a browser with a wrong clock cannot reorder the alarm history.
+  """
+  recordAlertRuleEvaluation(id: String!, triggered: Boolean!): AlertRuleType
+}
+
+"""Query the UNS for current or historic Nodes/Events """
 type Query {
   """
   Get all historical published on the given array of topics and between the time slots.
   """
-  getHistoricEventsInTimeRange(
-    topics: [MQTTTopicInput!]!
-    fromDatetime: DateTime
-    toDatetime: DateTime
-  ): [HistoricalUNSEvent!]!
+  getHistoricEventsInTimeRange(topics: [MQTTTopicInput!]!, fromDatetime: DateTime, toDatetime: DateTime): [HistoricalUNSEvent!]!
 
-  """
-  Get all historical events published by specified clients.
-  """
-  getHistoricEventsByPublishers(
-    publishers: [String!]!
-    topics: [MQTTTopicInput!]
-    fromDatetime: DateTime
-    toDatetime: DateTime
-  ): [HistoricalUNSEvent!]!
+  """Get all historical events published by specified clients."""
+  getHistoricEventsByPublishers(publishers: [String!]!, topics: [MQTTTopicInput!], fromDatetime: DateTime, toDatetime: DateTime): [HistoricalUNSEvent!]!
 
   """
   Get all historical events published which have specific attributes.Option binary_operator input allows chaining the list of property_keys. If NULL, property_keys will be ORed- OR: Either of the property_keys must exist in the same event.. If only one property_keys provided will be ignored- AND:  All property_keys must exist in same event. If only one property_keys provided will be ignored- NOT: None of the provided property_keys should exist in the same eventOther criteria - topics, from_datetime & to_datetime will always be ANDed to the query filter
   """
-  getHistoricEventsByProperty(
-    propertyKeys: [String!]!
-    binaryOperator: BinaryOperator
-    topics: [MQTTTopicInput!]
-    fromDatetime: DateTime
-    toDatetime: DateTime
-  ): [HistoricalUNSEvent!]!
+  getHistoricEventsByProperty(propertyKeys: [String!]!, binaryOperator: BinaryOperator, topics: [MQTTTopicInput!], fromDatetime: DateTime, toDatetime: DateTime): [HistoricalUNSEvent!]!
 
   """
   Get consolidation of nodes for given array of topics. MQTT wildcards are supported
@@ -118,16 +291,49 @@ type Query {
   getUnsNodes(topics: [MQTTTopicInput!]!): [UNSNode!]!
 
   "Get all UNSNodes published which have specific attribute name as 'propertyKeys'. \n Optionally Filter results with list of  topics. \nIf topics are provided then optional boolean value 'excludeTopics' attribute can be set to true .\nto exclude the nodes which match the topics.\n"
-  getUnsNodesByProperty(
-    propertyKeys: [String!]!
-    topics: [MQTTTopicInput!]
-    excludeTopics: Boolean = false
-  ): [UNSNode!]!
+  getUnsNodesByProperty(propertyKeys: [String!]!, topics: [MQTTTopicInput!], excludeTopics: Boolean = false): [UNSNode!]!
+
+  """Get all the SPBNode by the provided metric name"""
+  getSpbNodesByMetric(metricNames: [String!]!): [SPBNode!]!
 
   """
-  Get all the SPBNode by the provided metric name
+  The Asset Model as a flat list ordered by path, which nests trivially in a client. Optionally restricted to one branch and/or a set of Asset Levels.
   """
-  getSpbNodesByMetric(metricNames: [String!]!): [SPBNode!]!
+  getAssets(under: String, levels: [String!], includeInactive: Boolean! = false): [AssetNode!]!
+
+  """
+  Direct children of an Asset, or the roots of the Asset Model when path is omitted.
+  """
+  getAssetChildren(path: String): [AssetNode!]!
+
+  """One Asset by its path, or null when nothing is modelled at that path."""
+  getAsset(path: String!): AssetNode
+
+  """
+  Enrichment for one topic: the Asset that publishes it, its name at every Asset Level, and the Metric Definitions for its payload. Null for an Unmodelled Topic.
+  """
+  getTopicContext(topic: String!): TopicContextType
+
+  """
+  Topics that have published data but match no Asset. Empty means the model is complete.
+  """
+  getUnmodelledTopics(limit: Int64! = 100): [String!]!
+
+  """Counts of what the Asset Model holds, for a completeness check."""
+  getAssetModelSummary: AssetModelSummary!
+
+  """
+  Every Alert Rule, oldest first. Optionally only the armed ones, or one topic's.
+  """
+  getAlertRules(enabledOnly: Boolean! = false, topic: String): [AlertRuleType!]!
+
+  """One Alert Rule by id, or null when no such rule is stored."""
+  getAlertRule(id: String!): AlertRuleType
+
+  """
+  Counts and the last edit time, so a console can decide whether to refetch the rules.
+  """
+  getAlertRuleSummary: AlertRuleSummary!
 }
 
 type SPBDataSet {
@@ -182,22 +388,15 @@ type SPBNode {
 Wrapper for primitive types in Sparkplug.: int, float, str, bool, list
                  Needed because GraphQL does not support str for unions.
                  Data is converted to its String representation for convenience.
-                 Use the datatype to convert to actual type if needed
+                 Use the datatype to convert to actual type if needed 
 """
 type SPBPrimitive {
   data: String!
 }
 
-union SPBPrimitiveBytesPayloadSPBDataSetSPBTemplate =
-  | SPBPrimitive
-  | BytesPayload
-  | SPBDataSet
-  | SPBTemplate
+union SPBPrimitiveBytesPayloadSPBDataSetSPBTemplate = SPBPrimitive | BytesPayload | SPBDataSet | SPBTemplate
 
-union SPBPrimitiveSPBPropertySetSPBPropertySetList =
-  | SPBPrimitive
-  | SPBPropertySet
-  | SPBPropertySetList
+union SPBPrimitiveSPBPropertySetSPBPropertySetList = SPBPrimitive | SPBPropertySet | SPBPropertySetList
 
 type SPBPropertySet {
   keys: [String!]!
@@ -233,12 +432,9 @@ type StreamingMessage {
   payload: JSONPayload!
 }
 
-"""
-Subscribe to UNS Events or Streams
-"""
+"""Subscribe to UNS Events or Streams"""
 type Subscription {
-  """
-  Subscribe to MQTT messages based on provided list of topics. MQTT wildcards are supported
+  """ Subscribe to MQTT messages based on provided list of topics. MQTT wildcards are supported 
   """
   getMqttMessages(topics: [MQTTTopicInput!]!): MQTTMessage!
 
@@ -246,6 +442,30 @@ type Subscription {
   Subscribe to Kafka messages based on provided topics. Wildcards/Regex not supported
   """
   getKafkaMessages(topics: [KAFKATopicInput!]!): StreamingMessage!
+}
+
+"""
+Enrichment for one topic: which Asset publishes it, what it is named at every Asset Level, and the Metric Definitions that apply to its payload.
+"""
+type TopicContextType {
+  topic: String!
+  asset: AssetNode!
+
+  """Topic segments below the Asset, e.g. 'ProcessValue/Temperature'"""
+  metricPath: String!
+  enterprise: String
+  site: String
+  area: String
+
+  """The ISA-95 Production Unit, not a unit of measure"""
+  productionUnit: String
+  line: String
+  workCell: String
+  machine: String
+
+  """Asset Level to display name, for levels this branch actually uses"""
+  levelNames: JSONPayload
+  metricDefinitions: [MetricDefinitionType!]!
 }
 
 type UNSNode {

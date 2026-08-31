@@ -9,6 +9,28 @@ _TBD_
 
 ## Queries supported
 
+The full contract is the exported
+[schema](./schema/uns_schema.graphql). Broadly:
+
+| Source | Fields |
+| --- | --- |
+| Neo4j (observed) | `getUnsNodes`, `getUnsNodesByProperty`, `getSpbNodesByMetric`, … |
+| TimescaleDB (historic) | `getHistoricEvents…` |
+| Postgres `model` (authored) | `getAssets`, `getAssetChildren`, `getAsset`, `getTopicContext`, `getUnmodelledTopics`, `getAssetModelSummary` |
+| Postgres `console` | `getAlertRules`, `getAlertRule`, `getAlertRuleSummary` |
+| MQTT / Kafka | the `Subscription` fields |
+
+Everything above is read-only. The **only** mutations are the console's Alert
+Rules — `saveAlertRule`, `saveAlertRules`, `deleteAlertRule`,
+`setAlertRuleEnabled`, `recordAlertRuleEvaluation` — because the console is a
+static bundle with nowhere else to keep its configuration. See
+[ADR-0005](../docs/adr/0005-graphql-mutations-for-console-configuration.md) for why
+process data and the Asset Model deliberately stay unwritable here.
+
+Both Postgres-backed groups need the `09_uns_model` migrations applied
+(`docker compose up asset_model_setup`), and the database role needs write access to
+schema `console`.
+
 ## Key Configurations to provide
 
 This application reads the shared platform configuration at the repository root. GraphQL-specific MQTT topics and Kafka consumer settings live under the Dynaconf `graphql` environment.
@@ -172,7 +194,10 @@ docker run --name uns_graphql -d -v $PWD/../conf:/app/conf -e UNS_CONF_DIR=/app/
 
 1. [] customize docker image to allow all possible [uvicorn deployment](https://www.uvicorn.org/deployment/) options
 1. [] Document Guidelines for securing deployment ( Reverse Proxy | CDN ) etc.
-1. [] Implement authorization / RBAC for the API queries & subscriptions
+1. [] Implement authorization / RBAC for the API queries & subscriptions. Now urgent
+   rather than theoretical: anyone who can reach `/graphql` can change alarm
+   configuration through the Alert Rule mutations, so the endpoint has to stay off
+   untrusted networks until this exists
 1. [] Implement Caching, Pagination support.
 1. [] Explore if using ´gunicorn -k uvicorn.workers.UvicornWorker´ adds any value given [this thread on stack overflow](https://stackoverflow.com/questions/66362199/what-is-the-difference-between-uvicorn-and-gunicornuvicorn)
 1. [] Stronger authentication and authorization, passing user principle to backend database to ensure RBAC / consistent fine grained security

@@ -1564,6 +1564,7 @@ dependencies = [
     { name = "psutil" },
     { name = "strawberry-graphql", extra = ["cli", "fastapi"] },
     { name = "uns-config" },
+    { name = "uns-model" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -1579,6 +1580,7 @@ requires-dist = [
     { name = "psutil", specifier = ">=7.2.2,<8" },
     { name = "strawberry-graphql", extras = ["fastapi", "cli"], specifier = ">=0.314.3" },
     { name = "uns-config", editable = "00_uns_config" },
+    { name = "uns-model", editable = "09_uns_model" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34,<0.53" },
 ]
 

@@ -32,6 +32,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import text
 
+from uns_model.alert_rules import AlertRuleRepository, AlertRuleSpec
 from uns_model.asset_context import TopicContextResolver
 from uns_model.engine import Database
 from uns_model.model_config import ModelConfig
@@ -41,6 +42,7 @@ from uns_model.repositories import AssetModelRepository, AssetSpec
 # runnable against a seeded database.
 TEST_ROOT = "PyTestUNS"
 TEST_METRIC_PREFIX = "PyTest/"
+TEST_RULE_PREFIX = "pytest-"
 
 METRICS_TABLE = "public.uns_metrics"
 METRICS_1M_VIEW = "public.uns_metrics_1m"
@@ -98,6 +100,23 @@ async def repository(database: Database):
     await _clean(database)
     yield AssetModelRepository(database)
     await _clean(database)
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def alert_rules(database: Database):
+    """An AlertRuleRepository with no test rules in it, before and after."""
+
+    async def clean() -> None:
+        async with database.begin() as connection:
+            # Cascades to console.alert_rule_roles.
+            await connection.execute(
+                text("DELETE FROM console.alert_rules WHERE starts_with(id, :prefix)"),
+                {"prefix": TEST_RULE_PREFIX},
+            )
+
+    await clean()
+    yield AlertRuleRepository(database)
+    await clean()
 
 
 @pytest_asyncio.fixture(loop_scope="session")
@@ -438,6 +457,155 @@ async def test_the_aggregate_enriched_view_exists_and_is_queryable(database: Dat
         await connection.execute(text("SELECT * FROM public.uns_metrics_1m_enriched LIMIT 1"))
 
     assert {"bucket", "avg_value_double", "site", "machine", "unit_of_measure", "metric_key"} <= names
+
+
+def _rule(rule_id: str = f"{TEST_RULE_PREFIX}mixer-temp", **overrides) -> AlertRuleSpec:
+    defaults = {
+        "id": rule_id,
+        "name": "Mixer over temperature",
+        "severity": "HIGH",
+        "category": "TEMPERATURE",
+        "topic": f"{MIXER_PATH}/ProcessValue/Temperature",
+        "metric_field": "value",
+        "condition": "GREATER_THAN",
+        "threshold_value": 85.0,
+    }
+    return AlertRuleSpec(**(defaults | overrides))
+
+
+@pytest.mark.integrationtest
+@pytest.mark.asyncio(loop_scope="session")
+async def test_a_saved_alert_rule_comes_back_whole(alert_rules: AlertRuleRepository):
+    await alert_rules.save_rule(
+        _rule(
+            description="Cooling loop check",
+            unit="°C",
+            delay_seconds=30,
+            escalation_role="engineer",
+            escalation_timeout_minutes=15,
+            mqtt_publish_on_trigger=True,
+            mqtt_alarm_topic="Enterprise/Plant1/Alarm",
+            roles=["operator", "engineer"],
+        )
+    )
+
+    rule = await alert_rules.get_rule(f"{TEST_RULE_PREFIX}mixer-temp")
+
+    assert rule is not None
+    assert rule.name == "Mixer over temperature"
+    assert rule.severity == "HIGH"
+    assert rule.threshold_value == pytest.approx(85.0)
+    assert rule.unit == "°C"
+    assert rule.delay_seconds == 30
+    assert rule.escalation_role == "engineer"
+    assert rule.mqtt_publish_on_trigger is True
+    assert rule.roles == ["engineer", "operator"]
+    # Defaults come from the table, not from the console.
+    assert rule.enabled is True
+    assert rule.trigger_count == 0
+    assert rule.last_triggered_at is None
+
+
+@pytest.mark.integrationtest
+@pytest.mark.asyncio(loop_scope="session")
+async def test_saving_the_same_rule_id_edits_it_rather_than_duplicating_it(alert_rules: AlertRuleRepository):
+    await alert_rules.save_rule(_rule(threshold_value=85.0))
+    await alert_rules.save_rule(_rule(threshold_value=90.0, name="Mixer over temperature (revised)"))
+
+    rules = [rule for rule in await alert_rules.list_rules() if rule.id.startswith(TEST_RULE_PREFIX)]
+
+    assert len(rules) == 1
+    assert rules[0].threshold_value == pytest.approx(90.0)
+    assert rules[0].name == "Mixer over temperature (revised)"
+
+
+@pytest.mark.integrationtest
+@pytest.mark.asyncio(loop_scope="session")
+async def test_removing_a_role_from_a_rule_actually_unsubscribes_it(alert_rules: AlertRuleRepository):
+    """A role surviving a removal is how somebody gets paged after unsubscribing."""
+    await alert_rules.save_rule(_rule(roles=["operator", "engineer"]))
+
+    rule = await alert_rules.save_rule(_rule(roles=["operator"]))
+
+    assert rule.roles == ["operator"]
+    assert (await alert_rules.get_rule(rule.id)).roles == ["operator"]
+
+
+@pytest.mark.integrationtest
+@pytest.mark.asyncio(loop_scope="session")
+async def test_a_rule_outside_the_vocabulary_never_reaches_the_database(alert_rules: AlertRuleRepository):
+    with pytest.raises(ValueError, match="severity must be one of"):
+        await alert_rules.save_rule(_rule(severity="CATASTROPHIC"))
+
+    assert await alert_rules.get_rule(f"{TEST_RULE_PREFIX}mixer-temp") is None
+
+
+@pytest.mark.integrationtest
+@pytest.mark.asyncio(loop_scope="session")
+async def test_disabling_a_rule_leaves_its_threshold_alone(alert_rules: AlertRuleRepository):
+    saved = await alert_rules.save_rule(_rule())
+
+    disabled = await alert_rules.set_enabled(saved.id, enabled=False)
+
+    assert disabled.enabled is False
+    assert disabled.threshold_value == pytest.approx(85.0)
+    assert [rule.id for rule in await alert_rules.list_rules(enabled_only=True) if rule.id == saved.id] == []
+
+
+@pytest.mark.integrationtest
+@pytest.mark.asyncio(loop_scope="session")
+async def test_enabling_a_rule_that_does_not_exist_returns_nothing(alert_rules: AlertRuleRepository):
+    assert await alert_rules.set_enabled(f"{TEST_RULE_PREFIX}ghost", enabled=True) is None
+
+
+@pytest.mark.integrationtest
+@pytest.mark.asyncio(loop_scope="session")
+async def test_an_evaluation_that_fires_counts_and_is_timestamped_by_the_server(alert_rules: AlertRuleRepository):
+    saved = await alert_rules.save_rule(_rule())
+
+    quiet = await alert_rules.record_evaluation(saved.id, triggered=False)
+    assert quiet.last_evaluated_at is not None
+    assert quiet.trigger_count == 0
+    assert quiet.last_triggered_at is None
+
+    fired = await alert_rules.record_evaluation(saved.id, triggered=True)
+    fired_again = await alert_rules.record_evaluation(saved.id, triggered=True)
+
+    assert fired.trigger_count == 1
+    assert fired_again.trigger_count == 2
+    assert fired_again.last_triggered_at >= fired.last_triggered_at
+
+
+@pytest.mark.integrationtest
+@pytest.mark.asyncio(loop_scope="session")
+async def test_deleting_a_rule_takes_its_roles_with_it(alert_rules: AlertRuleRepository, database: Database):
+    saved = await alert_rules.save_rule(_rule(roles=["operator"]))
+
+    assert await alert_rules.delete_rule(saved.id) is True
+    assert await alert_rules.get_rule(saved.id) is None
+    async with database.begin() as connection:
+        orphans = (
+            await connection.execute(
+                text("SELECT count(*) FROM console.alert_rule_roles WHERE rule_id = :id"), {"id": saved.id}
+            )
+        ).scalar()
+    assert orphans == 0
+    assert await alert_rules.delete_rule(saved.id) is False
+
+
+@pytest.mark.integrationtest
+@pytest.mark.asyncio(loop_scope="session")
+async def test_the_console_can_ask_what_changed_and_how_much_is_armed(alert_rules: AlertRuleRepository):
+    before = await alert_rules.counts()
+
+    await alert_rules.save_rule(_rule())
+    await alert_rules.save_rule(_rule(f"{TEST_RULE_PREFIX}pressure", category="PRESSURE", enabled=False))
+
+    after = await alert_rules.counts()
+    assert after["rules"] == before["rules"] + 2
+    assert after["enabled_rules"] == before["enabled_rules"] + 1
+    # A console polls this to decide whether to refetch the rules at all.
+    assert await alert_rules.last_changed_at() is not None
 
 
 @pytest.mark.integrationtest

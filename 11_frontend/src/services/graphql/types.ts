@@ -41,6 +41,38 @@ export type GraphqlSpbMetric = {
   } | null
 }
 
+/** `AlertRuleType` in the schema. The roles are the enum spellings: ADMIN, OPERATOR, … */
+export type GraphqlAlertRule = {
+  id: string
+  name: string
+  description: string
+  enabled: boolean
+  severity: string
+  category: string
+  topic: string
+  metricField: string
+  condition: string
+  thresholdValue: number | string | boolean
+  thresholdUpperValue?: number | null
+  unit?: string | null
+  delaySeconds: number
+  escalationRole?: string | null
+  escalationTimeoutMinutes?: number | null
+  notifyRoles: string[]
+  autoResolveOnNormal: boolean
+  inAppNotification: boolean
+  audioChime: boolean
+  mqttPublishOnTrigger: boolean
+  mqttAlarmTopic?: string | null
+  emailWebhook: boolean
+  webhookUrl?: string | null
+  triggerCount: number
+  lastTriggeredAt?: string | null
+  lastEvaluatedAt?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
 export type GraphqlSpbNode = {
   topic: string
   timestamp: string

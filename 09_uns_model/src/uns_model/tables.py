@@ -15,7 +15,8 @@
 *    -
 *******************************************************************************
 
-Declarative models for the authored Asset Model in schema `model`.
+Declarative models for the authored Asset Model in schema `model`, and for the
+console configuration in schema `console`.
 
 These tables are low-volume, relational and human-edited, which is what the ORM
 is for. Nothing time-series is defined here: the hypertables and their continuous
@@ -38,6 +39,7 @@ from sqlalchemy import (
     ForeignKey,
     Identity,
     Index,
+    Integer,
     SmallInteger,
     Text,
     UniqueConstraint,
@@ -47,7 +49,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from uns_model.model_config import MODEL_SCHEMA
+from uns_model.model_config import CONSOLE_SCHEMA, MODEL_SCHEMA
 
 # The canonical Asset Levels, coarsest first. A branch may skip any of them —
 # the simulator publishes ENTERPRISE/SITE/AREA/LINE/WORK_CELL/MACHINE with no
@@ -250,3 +252,154 @@ class TopicBinding(Base):
 
     def __repr__(self) -> str:
         return f"TopicBinding(topic={self.topic!r}, asset_id={self.asset_id!r})"
+
+
+# The vocabularies the console writes. Declared once here so the CHECK
+# constraints, the migration and the GraphQL enums cannot drift apart.
+ALERT_SEVERITIES: tuple[str, ...] = ("CRITICAL", "HIGH", "WARNING", "INFO")
+
+ALERT_CATEGORIES: tuple[str, ...] = (
+    "TEMPERATURE",
+    "PRESSURE",
+    "VIBRATION",
+    "FLOW_RATE",
+    "STALE_TIMEOUT",
+    "NODE_OFFLINE",
+    "COMMUNICATION",
+    "THRESHOLD",
+    "SAFETY",
+    "CUSTOM",
+)
+
+ALERT_CONDITIONS: tuple[str, ...] = (
+    "GREATER_THAN",
+    "LESS_THAN",
+    "EQUALS",
+    "NOT_EQUALS",
+    "RANGE_OUTSIDE",
+    "STALE_TIMEOUT",
+    "CONTAINS",
+)
+
+CONSOLE_ROLES: tuple[str, ...] = ("admin", "engineer", "operator", "auditor", "viewer")
+
+
+def _one_of(column: str, allowed: tuple[str, ...], *, nullable: bool = False) -> str:
+    """A CHECK body restricting a column to a vocabulary."""
+    values = ", ".join(f"'{value}'" for value in allowed)
+    prefix = f"{column} IS NULL OR " if nullable else ""
+    return f"{prefix}{column} IN ({values})"
+
+
+class AlertRule(Base):
+    """
+    An ISA-18.2 alert rule as authored in the console.
+
+    Config, not time-series: a handful of rows an engineer edits, which is why it
+    is here rather than in a hypertable. It lives in Postgres rather than in the
+    browser so that a rule is a property of the plant and not of whoever's laptop
+    happened to define it.
+
+    `id` is text and supplied by the caller: the console generates it, and keeping
+    it means a rule can be exported and re-imported without changing identity.
+    """
+
+    __tablename__ = "alert_rules"
+    __table_args__ = (
+        CheckConstraint(_one_of("severity", ALERT_SEVERITIES), name="alert_rules_severity_check"),
+        CheckConstraint(_one_of("category", ALERT_CATEGORIES), name="alert_rules_category_check"),
+        CheckConstraint(_one_of("condition", ALERT_CONDITIONS), name="alert_rules_condition_check"),
+        CheckConstraint(
+            _one_of("escalation_role", CONSOLE_ROLES, nullable=True),
+            name="alert_rules_escalation_role_check",
+        ),
+        CheckConstraint("delay_seconds >= 0", name="alert_rules_delay_seconds_check"),
+        CheckConstraint(
+            "escalation_timeout_minutes IS NULL OR escalation_timeout_minutes >= 1",
+            name="alert_rules_escalation_timeout_minutes_check",
+        ),
+        CheckConstraint("trigger_count >= 0", name="alert_rules_trigger_count_check"),
+        Index("idx_alert_rules_enabled", "enabled"),
+        Index("idx_alert_rules_topic", "topic"),
+        Index("idx_alert_rules_severity", "severity"),
+        {"schema": CONSOLE_SCHEMA},
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    severity: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(Text, nullable=False)
+
+    topic: Mapped[str] = mapped_column(Text, nullable=False)
+    """The topic the rule watches. May be an MQTT pattern; not resolved to an Asset here."""
+
+    metric_field: Mapped[str] = mapped_column(Text, nullable=False)
+    condition: Mapped[str] = mapped_column(Text, nullable=False)
+
+    threshold_value: Mapped[Any] = mapped_column(JSONB, nullable=False)
+    """A JSON scalar: the console compares numbers, strings and booleans alike."""
+
+    threshold_upper_value: Mapped[float | None] = mapped_column(Double, nullable=True)
+    unit: Mapped[str | None] = mapped_column(Text, nullable=True)
+    """As typed by the engineer. Not a Metric Definition's unit_of_measure (see CONTEXT.md)."""
+
+    delay_seconds: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    escalation_role: Mapped[str | None] = mapped_column(Text, nullable=True)
+    escalation_timeout_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    auto_resolve_on_normal: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    in_app_notification: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    audio_chime: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
+    mqtt_publish_on_trigger: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    mqtt_alarm_topic: Mapped[str | None] = mapped_column(Text, nullable=True)
+    email_webhook: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    webhook_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    trigger_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    last_triggered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_evaluated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    notify_roles: Mapped[list[AlertRuleRole]] = relationship(
+        back_populates="rule",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        lazy="selectin",
+    )
+
+    @property
+    def roles(self) -> list[str]:
+        """The roles notified when this rule fires, as plain strings."""
+        return sorted(link.role for link in self.notify_roles)
+
+    def __repr__(self) -> str:
+        return f"AlertRule(id={self.id!r}, topic={self.topic!r}, severity={self.severity!r})"
+
+
+class AlertRuleRole(Base):
+    """A role that is notified when an Alert Rule fires."""
+
+    __tablename__ = "alert_rule_roles"
+    __table_args__ = (
+        CheckConstraint(_one_of("role", CONSOLE_ROLES), name="alert_rule_roles_role_check"),
+        Index("idx_alert_rule_roles_role", "role"),
+        {"schema": CONSOLE_SCHEMA},
+    )
+
+    rule_id: Mapped[str] = mapped_column(
+        Text,
+        ForeignKey(f"{CONSOLE_SCHEMA}.alert_rules.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    role: Mapped[str] = mapped_column(Text, primary_key=True)
+
+    rule: Mapped[AlertRule] = relationship(back_populates="notify_roles")
+
+    def __repr__(self) -> str:
+        return f"AlertRuleRole(rule_id={self.rule_id!r}, role={self.role!r})"

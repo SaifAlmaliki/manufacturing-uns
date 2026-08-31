@@ -127,13 +127,12 @@ services:
         PGPASSWORD=$${PGPASSWORD} psql -h $${UNS_historian__hostname} -U postgres -p 5432 -c "ALTER DATABASE $${UNS_historian__database} OWNER TO $${UNS_historian__username};"
         PGPASSWORD=$${UNS_historian__password} psql -h $${UNS_historian__hostname} -U $${UNS_historian__username} -d $${UNS_historian__database} -p 5432 -c "CREATE TABLE $${UNS_historian__table} (time TIMESTAMPTZ NOT NULL, topic TEXT NOT NULL, client_id TEXT, mqtt_msg JSONB, CONSTRAINT unique_event UNIQUE (time, topic, client_id, mqtt_msg));"
         PGPASSWORD=$${UNS_historian__password} psql -h $${UNS_historian__hostname} -U $${UNS_historian__username} -d $${UNS_historian__database} -p 5432 -c "SELECT create_hypertable('$${UNS_historian__table}', 'time');"
-        PGPASSWORD=$${UNS_historian__password} psql -h $${UNS_historian__hostname} -U $${UNS_historian__username} -d $${UNS_historian__database} -p 5432 -v ON_ERROR_STOP=1 -f /sql/03_setup_alert_rules.sql
         PGPASSWORD=$${UNS_historian__password} psql -h $${UNS_historian__hostname} -U $${UNS_historian__username} -d $${UNS_historian__database} -p 5432 -v ON_ERROR_STOP=1 -f /sql/04_setup_metrics_hypertable.sql
         echo "Successfully created & configured timescaledb for the UNS"
 
-  # Creates the `model` schema and the enrichment views, then imports the configured
-  # plant hierarchy as Assets. Runs after tsdb_setup_script because the enrichment
-  # views are only created once their hypertables exist. Exits when done, so
+  # Creates the `model` and `console` schemas and the enrichment views, then imports
+  # the configured plant hierarchy as Assets. Runs after tsdb_setup_script because the
+  # enrichment views are only created once their hypertables exist. Exits when done, so
   # dependents wait on service_completed_successfully rather than a healthcheck.
   asset_model_setup:
     build:

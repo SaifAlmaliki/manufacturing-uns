@@ -139,6 +139,91 @@ export const GET_SPB_NODES_BY_METRIC_QUERY = `
   }
 `
 
+/**
+ * Alert Rules live in Postgres schema `console`, not in this browser. Every document
+ * below asks for the same field set, because a rule that renders with half its
+ * settings is worse than one that fails to load.
+ */
+const ALERT_RULE_FIELDS = `
+  id
+  name
+  description
+  enabled
+  severity
+  category
+  topic
+  metricField
+  condition
+  thresholdValue
+  thresholdUpperValue
+  unit
+  delaySeconds
+  escalationRole
+  escalationTimeoutMinutes
+  notifyRoles
+  autoResolveOnNormal
+  inAppNotification
+  audioChime
+  mqttPublishOnTrigger
+  mqttAlarmTopic
+  emailWebhook
+  webhookUrl
+  triggerCount
+  lastTriggeredAt
+  lastEvaluatedAt
+  createdAt
+  updatedAt
+`
+
+export const GET_ALERT_RULES_QUERY = `
+  query GetAlertRules {
+    getAlertRules {
+      ${ALERT_RULE_FIELDS}
+    }
+  }
+`
+
+export const SAVE_ALERT_RULE_MUTATION = `
+  mutation SaveAlertRule($rule: AlertRuleInput!) {
+    saveAlertRule(rule: $rule) {
+      ${ALERT_RULE_FIELDS}
+    }
+  }
+`
+
+export const SAVE_ALERT_RULES_MUTATION = `
+  mutation SaveAlertRules($rules: [AlertRuleInput!]!) {
+    saveAlertRules(rules: $rules) {
+      ${ALERT_RULE_FIELDS}
+    }
+  }
+`
+
+export const DELETE_ALERT_RULE_MUTATION = `
+  mutation DeleteAlertRule($id: String!) {
+    deleteAlertRule(id: $id)
+  }
+`
+
+export const SET_ALERT_RULE_ENABLED_MUTATION = `
+  mutation SetAlertRuleEnabled($id: String!, $enabled: Boolean!) {
+    setAlertRuleEnabled(id: $id, enabled: $enabled) {
+      ${ALERT_RULE_FIELDS}
+    }
+  }
+`
+
+export const RECORD_ALERT_RULE_EVALUATION_MUTATION = `
+  mutation RecordAlertRuleEvaluation($id: String!, $triggered: Boolean!) {
+    recordAlertRuleEvaluation(id: $id, triggered: $triggered) {
+      id
+      triggerCount
+      lastTriggeredAt
+      lastEvaluatedAt
+    }
+  }
+`
+
 export const SUBSCRIBE_MQTT_MESSAGES = `
   subscription GetMqttMessages($topics: [MQTTTopicInput!]!) {
     getMqttMessages(topics: $topics) {
