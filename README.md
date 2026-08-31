@@ -59,8 +59,12 @@ The overall architecture and the deployment setup is as follows
    - UNS graphdb client to persist messages to the Graph DB instance
    - UNS historian client to persist messages to the Graph DB instance
    - UNS Kafka listener to stream/convert MQTT messages to the Kafka instance
+   - Prometheus scraping mapper metrics, and Grafana for dashboards
 
 ![Logical Architecture for implementing UNS](./images/UNS-Architecture.png)
+
+The project vocabulary is defined in **[CONTEXT.md](./CONTEXT.md)**, and architectural
+decisions that would otherwise be surprising are recorded in **[docs/adr](./docs/adr)**.
 
 ---
 
@@ -103,7 +107,7 @@ uv run uns_simulator
 | `uns_mqtt_broker` | MQTT backbone (EMQX). Devices, the simulator, and all mapper clients publish/subscribe here. Host ports: `1883` (MQTT), `8080` (MQTT over WebSocket). |
 | `uns_neo4j_db` | Graph database that stores the current ISA-95 namespace as a tree of nodes. Host ports: `7474` (browser), `7687` (Bolt). |
 | `uns_timescale_db` | Time-series historian (TimescaleDB / Postgres) that keeps a history of MQTT events. Host port: `5432`. |
-| `tsdb_setup_script` | One-shot job that creates the historian database, user, and table. It **exits after success** — a gray/stopped icon is normal, not a failure. |
+| `tsdb_setup_script` | One-shot job that creates the historian database, user, tables (`unifiednamespace` + `uns_metrics`), continuous aggregates, and the compression / retention policies. It **exits after success** — a gray/stopped icon is normal, not a failure. |
 | `uns_kafka_broker` | Kafka broker for streaming UNS messages to other systems. Host port: `9092`. |
 | `graphdb_client` | MQTT subscriber that writes live namespace messages into Neo4j (current state / tree). |
 | `historian_client` | MQTT subscriber that writes the same events into TimescaleDB (history). |
@@ -112,8 +116,11 @@ uv run uns_simulator
 | `uns_simulator` | Synthetic PLC / HMI / SCADA publisher used for local demos. Not for production. |
 | `graphql_server` | GraphQL API over MQTT (live), Neo4j (current tree), TimescaleDB (history), and Kafka. Host port: **`8000`** (`http://localhost:8000/graphql`). |
 | `uns_frontend` | Web console for the namespace tree, payload inspector, live feed, search, and historian. Host port: **`8088`** (`http://localhost:8088`). The browser calls GraphQL on port `8000`. |
+| `uns_prometheus` | Scrapes the `/metrics` endpoints exposed by the mapper clients. Host port: `9090`. |
+| `uns_grafana` | Dashboards for Process Visualization (plant measurements) and Platform Observability (platform health). Host port: **`3000`** (`http://localhost:3000`). Anonymous access is enabled — see [Known Limitations](#known-limitations--workarounds). |
 
-Typical flow: **simulator or plant devices → MQTT → mapper clients → Neo4j / Timescale / Kafka → GraphQL → UI**.
+Typical flow: **simulator or plant devices → MQTT → mapper clients → Neo4j / Timescale / Kafka → GraphQL → UI**,
+with **mapper clients → Prometheus → Grafana** alongside it for platform health.
 
 ---
 
@@ -226,6 +233,26 @@ Both of these are excellent options and have significant user adoption. InfluxDb
 
 For production systems you might want to consider the cloud versions of the historians ([InfluxDB Cloud](https://www.influxdata.com/products/influxdb-cloud/) or [TimescaleDB](https://www.timescale.com/products#timescale-cloud)) for lower maintenance and higher scalability
 
+#### Historian schema
+
+The historian writes two tables in the same transaction:
+
+| Table | Contents |
+| --- | --- |
+| `unifiednamespace` | The Historic Event exactly as published — full JSONB payload. The immutable record. |
+| `uns_metrics` | A projection of that payload: every scalar leaf as one row, keyed by its dotted path (`Motor.Winding.Temperature`). Rebuildable from `unifiednamespace`. |
+
+Storing the payload whole is right for fidelity but useless for time-series queries — the
+measurement is buried in JSONB and there is no index that helps. `uns_metrics` exists so that
+`time_bucket()` / `avg()` queries are possible at all, and Grafana reads the
+`uns_metrics_1m` / `uns_metrics_1h` continuous aggregates rather than either raw table.
+
+Retention drops raw data earliest and coarse aggregates last: raw events 90 days,
+`uns_metrics` 1 year, 1-minute aggregates 1 year, 1-hour aggregates 5 years, compression after
+7 days. These are **engineering defaults, not a compliance judgement** — revisit them if
+regulated retention applies to your process data. The reasoning is recorded in
+[ADR 0002](./docs/adr/0002-uns-metrics-hypertable.md).
+
 ### **Plugin / MQTT Client to subscribe and write to the above databases**
 
 Since I did not have the enterprise version of the MQTT brokers, I decided to develop a broker agnostic solution. Hence the MQTT client seems to be a the best option ( even if it may not be as performant as the Broker plugin/module).
@@ -235,6 +262,7 @@ Since I did not have the enterprise version of the MQTT brokers, I decided to de
 - The MQTT listener to read SPB messages, translate and transform them to the UNS can be found at [05_sparkplugb](./05_sparkplugb/README.md)
 - The MQTT listener to publish UNS messages, to a kafka topic [06_uns_kafka](./06_uns_kafka/README.md)
 - A module which connects with all the data sources; Neo4j, TimescaleDB, Kafka and MQTT to provide GraphQL apis to query the UNS [07_uns_graphql](./07_uns_graphql/README.md)
+- Prometheus and Grafana configuration for Process Visualization and Platform Observability [08_uns_observability](./08_uns_observability/README.md)
 - A simulator for test purposes [99_simulator](./99_simulator/README.md)
 
 I choose to write the client in Python even thought Python is not as performant as Go, C or Rust primarily because
@@ -263,6 +291,33 @@ Some key benefits of adding this support to the UNS are:
 1. **Service/Node Discovery**:Given the contextual and hierarchical nature of the UNS, the ability to search for specific Nodes and/or Properties will significantly simplify data discovery and facilitate easier consumption by providing a coherent interface to access the combined data in the Unified Namespace
 1. **Dynamic Data Retrieval**: GraphQL's nature allows for dynamic data retrieval, enabling clients to specify the exact fields, relationships, and data they need. This flexibility aligns well with the diverse nature of data sources within a Unified Namespace, allowing clients to fetch the required information efficiently.
 
+### **Observability & Visualization**
+
+**[Grafana](https://grafana.com/)** and **[Prometheus](https://prometheus.io/)** are part of the
+stack, serving two jobs that are deliberately kept separate:
+
+- **Process Visualization** — the plant's own measurements (temperature, flow rate). Reads the
+  `uns_metrics_1m` continuous aggregate over the TimescaleDB data source.
+- **Platform Observability** — the platform's own behaviour (throughput, persist failures,
+  latency). Reads Prometheus.
+
+Confusing the two is how a green health indicator ends up meaning nothing, so they never share a
+data source. Details are in **[08_uns_observability](./08_uns_observability/README.md)**, and the
+decision — including why this reverses an earlier choice to keep Grafana out of the architecture —
+is recorded in [ADR 0001](./docs/adr/0001-grafana-for-visualization-and-observability.md).
+
+Two constraints are worth knowing before you extend this:
+
+- **Neo4j Community Edition has no metrics export at all** — Prometheus, JMX, CSV and Graphite are
+  Enterprise-only. Every graph signal therefore has to come from the `03_uns_graphdb` mapper
+  instrumenting itself. This is why the mappers expose their own `/metrics` endpoints
+  (`historian_client:9091`, `graphdb_client:9092`) instead of relying on exporters alone.
+  Exporters also cannot see failures that a mapper swallows internally.
+- **There is no Neo4j data source for Grafana** in the plugin catalog. The Unified Namespace tree
+  stays in the React console; Grafana is not where you browse the namespace. Of the three plugins
+  in the abandoned `99_simulator/notes` sketch, only `grafana-mqtt-datasource` exists — which is
+  why that sketch never started.
+
 ## **Setting up the development environment**
 
 The current project contains the following microservices
@@ -274,6 +329,7 @@ The current project contains the following microservices
 1. [05_sparkplugb](./05_sparkplugb/README.md): Python project for mqtt listener that listens to the SparkplugB namespace and for translates relevant messages to publish to the UNS namespace
 1. [06_uns_kafka](./06_uns_kafka/README.md): Python project for mqtt listener that subscribes to the MQTT broker and publishes to the KAFKA broker
 1. [07_uns_graphql](./07_uns_graphql/README.md): Python project for GraphQL server to query the Unified NameSpace
+1. [08_uns_observability](./08_uns_observability/README.md): Prometheus scrape configuration and Grafana provisioning (data sources + dashboards). Configuration only — no Python package, so it is not part of the `uv` workspace and has no tests
 1. [11_frontend](./11_frontend/README.md): React console that talks only to GraphQL (tree, live MQTT feed, search, historian)
 1. [99_simulator](./99_simulator/README.md): Python project for simulating data creation to the UNS. _*NOT TO BE USED IN PRODUCTION*_
 
@@ -351,5 +407,39 @@ uv run pytest -m "not integrationtest" ./07_uns_graphql
 
 1. **pytest-asyncio & Integration Testing**:
    Similar to `pytest-xdist` I have also enabled `pytest-asyncio` for the project. While this has significantly decreased the execution time, for some integration tests ( marked by `@pytest.mark.integrationtest`) sometimes fail (_flaky tests_) if there is too much CPU / IO load. Executing them again normally works. Need to investigate how to make those more robust/race proof. The issue is not in the code but in the test case where the validation starts before the test data has completely been setup in the data store.
+
+1. **Grafana / Prometheus is incomplete.** The observability stack is wired into
+   `docker-compose.yml` but is **not yet working end to end**. Known issues:
+
+   - `08_uns_observability/grafana/entrypoint.sh` calls `envsubst`, which is **not present in the
+     `grafana/grafana` image**, so the container exits on start. Grafana interpolates `$VAR` in
+     provisioning files natively, so this indirection can be removed entirely.
+   - The dashboards reference data sources by `uid` (`prometheus`, `timescaledb`), but the
+     provisioning file does not declare `uid:` fields, so panels will not bind to a data source.
+   - Enabling compression on `unifiednamespace` conflicts with the surviving
+     `unique_event UNIQUE (time, topic, client_id, mqtt_msg)` constraint: TimescaleDB requires every
+     column of a unique constraint to be in `segmentby` or `orderby`. Recent versions warn, older
+     versions error — and `ON_ERROR_STOP=1` means an error fails the whole DB setup. The constraint
+     should be narrowed to `(time, topic, client_id)`, which also removes a btree index over entire
+     payloads.
+   - Only `03_uns_graphdb` and `04_uns_historian` are instrumented. `05_sparkplugb`,
+     `06_uns_kafka` and `07_uns_graphql` expose no metrics, so Kafka mapper failures and Sparkplug
+     alias-cache resets are still invisible.
+   - No EMQX, `postgres_exporter` or Kafka JMX scrape targets are configured, so broker, database
+     and Kafka metrics are absent and the community dashboards for them cannot be used.
+   - Prometheus `remote_write` from edge to enterprise is not configured; the current setup is
+     enterprise-only.
+
+1. **The console's System Health panel is not real.** `11_frontend` derives all five component
+   indicators from a single boolean — "did a GraphQL query return data" — so Neo4j or Kafka can be
+   down while the panel reads `ONLINE`. It is intended to be replaced by an embedded Grafana
+   dashboard (`GF_SECURITY_ALLOW_EMBEDDING` is already set) but that is not implemented yet.
+   Until then, do not treat that panel as a health signal.
+
+1. **Grafana runs with anonymous access.** `GF_AUTH_ANONYMOUS_ENABLED=true` with the `Admin` role,
+   matching the rest of this stack, which has no authentication anywhere. This is a deliberate but
+   real security gap: anyone who can reach port `3000` can read plant process data. See
+   [ADR 0001](./docs/adr/0001-grafana-for-visualization-and-observability.md). Do not expose these
+   ports outside a trusted network.
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/mkashwin/unifiednamespace)
