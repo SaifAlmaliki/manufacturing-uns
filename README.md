@@ -108,6 +108,7 @@ uv run uns_simulator
 | `uns_neo4j_db` | Graph database that stores the current ISA-95 namespace as a tree of nodes. Host ports: `7474` (browser), `7687` (Bolt). |
 | `uns_timescale_db` | Time-series historian (TimescaleDB / Postgres) that keeps a history of MQTT events. Host port: `5432`. |
 | `tsdb_setup_script` | One-shot job that creates the historian database, user, tables (`unifiednamespace` + `uns_metrics`), continuous aggregates, and the compression / retention policies. It **exits after success** — a gray/stopped icon is normal, not a failure. |
+| `asset_model_setup` | One-shot job that creates the `model` schema (the authored Asset Model) and the enrichment views, then imports the configured plant hierarchy. Also **exits after success**. Restart it (`docker compose up asset_model_setup`) after changing the hierarchy in `conf/settings.yaml`. |
 | `uns_kafka_broker` | Kafka broker for streaming UNS messages to other systems. Host port: `9092`. |
 | `graphdb_client` | MQTT subscriber that writes live namespace messages into Neo4j (current state / tree). |
 | `historian_client` | MQTT subscriber that writes the same events into TimescaleDB (history). |
@@ -263,6 +264,7 @@ Since I did not have the enterprise version of the MQTT brokers, I decided to de
 - The MQTT listener to publish UNS messages, to a kafka topic [06_uns_kafka](./06_uns_kafka/README.md)
 - A module which connects with all the data sources; Neo4j, TimescaleDB, Kafka and MQTT to provide GraphQL apis to query the UNS [07_uns_graphql](./07_uns_graphql/README.md)
 - Prometheus and Grafana configuration for Process Visualization and Platform Observability [08_uns_observability](./08_uns_observability/README.md)
+- The authored Asset Model in Postgres, which contextualizes and enriches everything the historian stores [09_uns_model](./09_uns_model/README.md)
 - A simulator for test purposes [99_simulator](./99_simulator/README.md)
 
 I choose to write the client in Python even thought Python is not as performant as Go, C or Rust primarily because
@@ -330,6 +332,7 @@ The current project contains the following microservices
 1. [06_uns_kafka](./06_uns_kafka/README.md): Python project for mqtt listener that subscribes to the MQTT broker and publishes to the KAFKA broker
 1. [07_uns_graphql](./07_uns_graphql/README.md): Python project for GraphQL server to query the Unified NameSpace
 1. [08_uns_observability](./08_uns_observability/README.md): Prometheus scrape configuration and Grafana provisioning (data sources + dashboards). Configuration only — no Python package, so it is not part of the `uv` workspace and has no tests
+1. [09_uns_model](./09_uns_model/README.md): Python project holding the authored Asset Model (the ISA-95 hierarchy, equipment facts and units of measure) in Postgres via SQLAlchemy and Alembic, plus the views that enrich time-series rows with it at read time
 1. [11_frontend](./11_frontend/README.md): React console that talks only to GraphQL (tree, live MQTT feed, search, historian)
 1. [99_simulator](./99_simulator/README.md): Python project for simulating data creation to the UNS. _*NOT TO BE USED IN PRODUCTION*_
 
@@ -377,6 +380,7 @@ uv run pytest  ./04_uns_historian
 uv run pytest  ./05_sparkplugb
 uv run pytest  ./06_uns_kafka
 uv run pytest  ./07_uns_graphql
+uv run pytest  ./09_uns_model
 uv run pytest  ./99_simulator
 ```
 
@@ -388,6 +392,7 @@ uv run pytest -m "not integrationtest" ./04_uns_historian
 uv run pytest -m "not integrationtest" ./05_sparkplugb
 uv run pytest -m "not integrationtest" ./06_uns_kafka
 uv run pytest -m "not integrationtest" ./07_uns_graphql
+uv run pytest -m "not integrationtest" ./09_uns_model
 # 99_simulator has no integration tests hence the normal call will suffice
 ```
 

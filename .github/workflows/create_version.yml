@@ -125,6 +125,11 @@ jobs:
               container_description: "Provided GraphQL query capabilities to the UNS system",
             }
           - {
+              module: 09_uns_model,
+              image: uns/model,
+              container_description: "Creates and seeds the authored Asset Model used to enrich UNS data",
+            }
+          - {
               module: 99_simulator,
               image: uns/simulator,
               container_description: "Publishes synthetic ISA-95 MQTT device data for local UNS testing. Not for production.",

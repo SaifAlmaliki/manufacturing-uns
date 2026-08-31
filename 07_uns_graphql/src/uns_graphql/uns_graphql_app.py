@@ -29,7 +29,7 @@ from strawberry.schema.config import StrawberryConfig
 from strawberry.subscriptions import GRAPHQL_TRANSPORT_WS_PROTOCOL, GRAPHQL_WS_PROTOCOL
 
 from uns_graphql.graphql_config import PlatformConfig
-from uns_graphql.queries import graph, historian
+from uns_graphql.queries import asset, graph, historian
 from uns_graphql.subscriptions.kafka import KAFKASubscription
 from uns_graphql.subscriptions.mqtt import MQTTSubscription
 from uns_graphql.type.basetype import Int64
@@ -38,7 +38,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 @strawberry.type(description="Query the UNS for current or historic Nodes/Events ")
-class Query(historian.Query, graph.Query):
+class Query(historian.Query, graph.Query, asset.Query):
     @classmethod
     async def on_shutdown(cls):
         """
@@ -47,7 +47,10 @@ class Query(historian.Query, graph.Query):
         try:
             await historian.Query.on_shutdown()
         finally:
-            await graph.Query.on_shutdown()
+            try:
+                await graph.Query.on_shutdown()
+            finally:
+                await asset.Query.on_shutdown()
 
 
 @strawberry.type(description="Subscribe to UNS Events or Streams")

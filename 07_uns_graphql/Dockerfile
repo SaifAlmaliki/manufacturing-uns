@@ -51,6 +51,12 @@ COPY ./00_uns_config/src /00_uns_config/src
 COPY ./02_mqtt-cluster/pyproject.toml /02_mqtt-cluster/uv.lock ./02_mqtt-cluster/uv.lock ./02_mqtt-cluster/README.md /02_mqtt-cluster/
 
 COPY ./02_mqtt-cluster/src /02_mqtt-cluster/src
+# The Asset Model, which answers the hierarchy and enrichment queries (ADR-0003).
+# alembic.ini and migrations/ are part of its build config, so they are copied even
+# though this image never migrates - the Asset Model image does that.
+COPY ./09_uns_model/pyproject.toml ./09_uns_model/uv.lock ./09_uns_model/README.md ./09_uns_model/alembic.ini /09_uns_model/
+COPY ./09_uns_model/migrations /09_uns_model/migrations
+COPY ./09_uns_model/src /09_uns_model/src
 COPY ./${UNS_MODULE}/src ./src/
 COPY ./conf/settings.yaml /app/conf/settings.yaml
 

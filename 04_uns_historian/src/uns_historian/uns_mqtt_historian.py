@@ -23,6 +23,9 @@ import logging
 import random
 import time
 
+from uns_model.engine import Database
+from uns_model.repositories import AssetModelRepository
+from uns_model.topic_binder import TopicBinder
 from uns_mqtt.mqtt_listener import UnsMQTTClient
 
 from uns_historian.historian_config import HistorianConfig, MQTTConfig
@@ -59,6 +62,9 @@ class UnsMqttHistorian:
         self.uns_client.on_disconnect = self.on_disconnect
         self.loop = loop or asyncio.get_event_loop()
         self.loop.run_until_complete(HistorianHandler.get_shared_pool())
+        # Resolves each new topic to its Asset once, so that the enriched views can
+        # join on equality instead of matching prefixes per row (ADR-0003).
+        self.topic_binder = TopicBinder(AssetModelRepository(Database.shared("historian")))
         self.uns_client.run(
             host=MQTTConfig.host,
             port=MQTTConfig.port,
@@ -95,6 +101,9 @@ class UnsMqttHistorian:
                             message=filtered_message,
                         )
                 PERSIST_SUCCESS.inc()
+                # After the measurement is safely stored: binding is for context,
+                # and TopicBinder swallows its own failures for that reason.
+                await self.topic_binder.observe(msg.topic)
 
             future = asyncio.run_coroutine_threadsafe(run_async_handler(), self.loop)
             future.add_done_callback(self._on_persist_done)
@@ -169,6 +178,7 @@ def main():
             uns_mqtt_historian.uns_client.loop_stop()
             uns_mqtt_historian.uns_client.disconnect()
         loop.run_until_complete(HistorianHandler.close_pool())
+        loop.run_until_complete(Database.close_shared())
         loop.close()
 
 

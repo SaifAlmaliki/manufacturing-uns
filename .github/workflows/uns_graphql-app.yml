@@ -17,6 +17,9 @@ on:
       - "07_uns_graphql/pyproject.toml"
       - "07_uns_graphql/uv.lock"
       - "07_uns_graphql/Dockerfile"
+      - "09_uns_model/**/*.py"
+      - "09_uns_model/pyproject.toml"
+      - "09_uns_model/uv.lock"
       - ".github/workflows/uns_graphql-app.yml"
       - ".github/include/**"
 
@@ -33,6 +36,9 @@ on:
       - "07_uns_graphql/pyproject.toml"
       - "07_uns_graphql/uv.lock"
       - "07_uns_graphql/Dockerfile"
+      - "09_uns_model/**/*.py"
+      - "09_uns_model/pyproject.toml"
+      - "09_uns_model/uv.lock"
       - ".github/workflows/uns_graphql-app.yml"
       - ".github/include/**"
 

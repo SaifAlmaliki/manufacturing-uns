@@ -39,6 +39,7 @@ jobs:
           - { module: 05_sparkplugb, image: uns/spb_mapper }
           - { module: 06_uns_kafka, image: uns/kafka_mapper }
           - { module: 07_uns_graphql, image: uns/graphql }
+          - { module: 09_uns_model, image: uns/model }
           - { module: 99_simulator, image: uns/simulator }
     steps:
       - name: Checkout code

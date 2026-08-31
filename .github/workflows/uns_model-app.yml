@@ -1,7 +1,7 @@
 # This workflow will install Python dependencies, run tests and lint with a single version of Python
 # For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
 
-name: UNS Historian MQTT Client
+name: UNS Asset Model
 
 on:
   push:
@@ -10,17 +10,12 @@ on:
     paths:
       - "00_uns_config/**/*.py"
       - "00_uns_config/pyproject.toml"
-      - "02_mqtt-cluster/**/*.py*"
-      - "02_mqtt-cluster/pyproject.toml"
-      - "02_mqtt-cluster/uv.lock"
-      - "04_uns_historian/**/*.py"
-      - "04_uns_historian/pyproject.toml"
-      - "04_uns_historian/uv.lock"
-      - "04_uns_historian/Dockerfile"
       - "09_uns_model/**/*.py"
       - "09_uns_model/pyproject.toml"
       - "09_uns_model/uv.lock"
-      - ".github/workflows/uns_historian-app.yml"
+      - "09_uns_model/alembic.ini"
+      - "09_uns_model/Dockerfile"
+      - ".github/workflows/uns_model-app.yml"
       - ".github/include/**"
 
   pull_request:
@@ -29,22 +24,17 @@ on:
     paths:
       - "00_uns_config/**/*.py"
       - "00_uns_config/pyproject.toml"
-      - "02_mqtt-cluster/**/*.py*"
-      - "02_mqtt-cluster/pyproject.toml"
-      - "02_mqtt-cluster/uv.lock"
-      - "04_uns_historian/**/*.py"
-      - "04_uns_historian/pyproject.toml"
-      - "04_uns_historian/uv.lock"
-      - "04_uns_historian/Dockerfile"
       - "09_uns_model/**/*.py"
       - "09_uns_model/pyproject.toml"
       - "09_uns_model/uv.lock"
-      - ".github/workflows/uns_historian-app.yml"
+      - "09_uns_model/alembic.ini"
+      - "09_uns_model/Dockerfile"
+      - ".github/workflows/uns_model-app.yml"
       - ".github/include/**"
 
   workflow_dispatch:
     inputs:
-      pytest_add_opts: # trunk-ignore(checkov/CKV_GHA_7) # trunk-ignore(checkov/CKV_GHA_7)
+      pytest_add_opts: # trunk-ignore(checkov/CKV_GHA_7)
         description: "additional pytest options"
         type: string
 
@@ -68,43 +58,30 @@ jobs:
     needs: generate_random_password
     environment: dev
     env:
-      UNS_mqtt__host: "localhost"
-      UNS_mqtt__port: 1883
+      # The Asset Model shares the historian's database, so it reads the same keys.
       UNS_historian__hostname: "localhost"
       UNS_historian__database: "uns_historian"
       UNS_historian__table: "unifiednamespace"
+      UNS_historian__metrics_table: "uns_metrics"
       UNS_historian__username: "uns_dbuser"
       UNS_historian__password: ${{ needs.generate_random_password.outputs.uns_historian_pwd }}
       POSTGRES_PASSWORD: ${{ needs.generate_random_password.outputs.postgres_pwd }}
     services:
-      uns_mqtt:
-        image: "emqx/emqx:latest"
-        ports:
-          # MQTT Ports
-          - "1883:1883" # MQTT, unencrypted, unauthenticated
-          - "1884:1884" # MQTT, unencrypted, authenticated
-          # WebSocket Ports
-          - "8080:8080" # MQTT over WebSockets, unencrypted, unauthenticated
-          - "8090:8090" # MQTT over WebSockets, unencrypted, authenticated
-
       uns_timescaledb:
         image: "timescale/timescaledb:latest-pg16"
         ports:
           - "5432:5432"
         env:
-          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+          POSTGRES_PASSWORD: ${{ needs.generate_random_password.outputs.postgres_pwd }}
     steps:
       - uses: actions/checkout@v7
 
       - name: Setup with python environment
         uses: ./.github/include/setup_python/
         with:
-          module: 04_uns_historian
+          module: 09_uns_model
 
       - name: Create Database for Integration Testing
-        env:
-          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
-          UNS_historian__password: ${{ env.UNS_historian__password }}
         run: |
           echo "CREATE database $UNS_historian__database;
           \c $UNS_historian__database;
@@ -128,12 +105,28 @@ jobs:
           SELECT create_hypertable('$UNS_historian__table', 'time');
           " | PGPASSWORD=${UNS_historian__password} psql -h ${UNS_historian__hostname} -U $UNS_historian__username -d $UNS_historian__database  -p 5432
 
+          # The enrichment views are built on these hypertables, so they must exist first.
           PGPASSWORD=${UNS_historian__password} psql -h ${UNS_historian__hostname} -U $UNS_historian__username -d $UNS_historian__database -p 5432 -v ON_ERROR_STOP=1 -f 04_uns_historian/sql_scripts/04_setup_metrics_hypertable.sql
+
+      - name: Verify the migration applies and reverses
+        # A downgrade that leaves objects behind would make the next upgrade fail, and
+        # nobody finds that out until they need to roll back.
+        run: |
+          cd ./09_uns_model
+          uv run uns_model_migrate -v
+          uv run uns_model_migrate --downgrade base -v
+
+      - name: Apply the Asset Model migrations and seed
+        # The container entrypoint, run against a real Postgres. Leaves the schema
+        # migrated and seeded for the integration tests that follow.
+        run: |
+          cd ./09_uns_model
+          uv run uns_model_setup -v
 
       - name: Run all type of tests
         uses: ./.github/include/execute_tests/
         with:
-          module: 04_uns_historian
+          module: 09_uns_model
           integration_tests: true
           SAFETY_API_KEY: ${{ secrets.SAFETY_API_KEY }}
           pytest_flags: ${{ inputs.pytest_add_opts }}
@@ -146,5 +139,5 @@ jobs:
       - name: Compile and Test Dockerfile
         uses: ./.github/include/test_docker_builds/
         with:
-          module: 04_uns_historian
-          image_name: uns/historian
+          module: 09_uns_model
+          image_name: uns/model

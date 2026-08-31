@@ -8,7 +8,10 @@ then read back through a single query surface.
 
 **Unified Namespace**:
 The single MQTT topic tree that every producer publishes into and every consumer
-reads from, structured as `<enterprise>/<facility>/<area>/<line>/<device>`.
+reads from. Depth is not fixed: the first five levels are named
+`<enterprise>/<facility>/<area>/<line>/<device>` by convention, and publishers go
+deeper — the simulator publishes eight levels, ending in a parameter group and a
+sensor name.
 _Avoid_: UNS tree, namespace, topic hierarchy
 
 **UNS Node**:
@@ -31,6 +34,60 @@ One scalar value extracted from a Historic Event's payload, identified by the
 dotted path to it within that payload. A single event yields as many Metrics as
 it has scalar leaves. Distinct from the payload itself, which stays intact.
 _Avoid_: tag, signal, measurement, field, series
+
+### Asset model
+
+**Asset**:
+A thing the plant model declares exists — a site, an area, a production unit, a
+line, a work cell, a machine. Authored by engineers, and exists whether or not it
+has ever published anything.
+_Avoid_: node, equipment, entity, tag
+
+**Asset Model**:
+The whole authored tree of Assets, and the source of truth for plant structure
+and naming. Distinct from the graph of UNS Nodes, which is discovered from
+traffic and can only ever contain what has already published.
+_Avoid_: hierarchy, plant model, topology, asset registry
+
+**Asset Level**:
+The name for an Asset's rank in the Asset Model — Enterprise, Site, Area,
+Production Unit, Line, Work Cell, Machine. Carried by the Asset itself rather
+than implied by its depth, because a branch may skip levels.
+_Avoid_: depth, tier, node type
+
+**Metric Key**:
+A Metric's identity relative to its Asset: the topic segments below the Asset's
+path followed by the dotted path within the payload, joined by `/` — for example
+`ProcessValue/Temperature/value`.
+_Avoid_: tag name, metric name, path
+
+**Metric Definition**:
+The authored description of a Metric — its Unit of Measure, display name,
+precision and engineering range — keyed by Metric Key and optionally narrowed to
+a single Asset. Describes a Metric; is never a Metric.
+_Avoid_: tag config, metric metadata
+
+**Unit of Measure**:
+The physical unit a Metric's value is expressed in, such as `°C`, `bar` or
+`L/min`. Always written in full: bare "unit" collides with the Production Unit
+Asset Level.
+_Avoid_: unit, UoM, engineering unit
+
+**Enrichment**:
+Attaching Asset Model and Metric Definition facts to observed data when it is
+read. Never written onto the observed row, so correcting the model corrects all
+history.
+_Avoid_: contextualization, decoration, annotation
+
+**Topic Binding**:
+The resolved link from one observed topic to its Asset and Metric Key.
+Recomputed whenever the Asset Model changes.
+_Avoid_: mapping, lookup, topic resolution
+
+**Unmodelled Topic**:
+A topic that has published data but matches no Asset. Counting them is how you
+tell an incomplete Asset Model from a complete one.
+_Avoid_: orphan, unknown topic
 
 ### Presentation
 
