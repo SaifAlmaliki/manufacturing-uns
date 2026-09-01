@@ -32,7 +32,7 @@
 
 | File | Responsibility |
 | --- | --- |
-| `12_uns_oee/pyproject.toml` | Module packaging, workspace-relative editable deps on `00_uns_config`, `09_uns_model`, `02_mqtt-cluster`. |
+| `12_uns_oee/pyproject.toml` | Module packaging, workspace-relative editable deps on `00_uns_config` and `09_uns_model`. Not on `02_mqtt-cluster`: this module publishes with `aiomqtt` directly and never subscribes, so it needs none of the listener machinery. |
 | `12_uns_oee/Dockerfile` | Runtime image, non-root `uns_user`, `UNS_MODULE="12_uns_oee"`. |
 | `12_uns_oee/src/uns_oee/oee_config.py` | Frozen `OeeConfig` read from the `oee` Dynaconf environment. No other file reads settings. |
 | `12_uns_oee/src/uns_oee/shift_calendar.py` | Pure: pattern + UTC range → list of `ShiftWindow`. Owns all timezone/DST arithmetic. |
@@ -10164,6 +10164,3352 @@ Expected: PASS. `test_metrics.py` builds its own `SignalSpec` objects rather tha
 git add conf/simulator/production.yaml 99_simulator/src/uns_simulator/models.py \
         99_simulator/test/test_conf_files.py
 git commit -m "refactor(simulator): retire fabricated OEE signals and declare the KPI parameter type"
+```
+
+---
+
+### Task 18: `OeeResultRepository` — the reads GraphQL needs, and the one write
+
+**Files:**
+- Create: `09_uns_model/src/uns_model/oee_results.py`
+- Test: `09_uns_model/test/test_oee_results.py`
+
+**Interfaces:**
+- Consumes: `uns_model.oee_tables` from Task 2 — `DowntimeEvent`, `DowntimeReason`, `OeeUnit`, `RecomputeRequest`, `REASON_SOURCES`, `ShiftResult`, `ShiftResultProduct`; `uns_model.tables.Asset`; `Database` from `uns_model.engine`.
+- Produces:
+  - `MANUAL_REASON_SOURCE: str`, `SINGLE_SHIFT_MARGIN: timedelta`
+  - `ParetoBucket(reason_code: str, display_name: str, category: str, is_planned: bool, event_count: int, total_seconds: float, share: float)`
+  - `ShiftResultRow(result: ShiftResult, asset_path: str, products: tuple[ShiftResultProduct, ...])`
+  - `DowntimeEventRow(event: DowntimeEvent, asset_path: str, display_name: str, category: str, is_planned: bool)`
+  - `pareto_from_rows(rows: Sequence[tuple[str, str, str, bool, int, float]]) -> list[ParetoBucket]`
+  - `OeeResultRepository(database: Database)` with
+    `shift_results(asset_path: str, range_start: datetime, range_end: datetime) -> list[ShiftResultRow]`,
+    `downtime_events(asset_path: str, range_start: datetime, range_end: datetime) -> list[DowntimeEventRow]`,
+    `downtime_pareto(asset_path: str, range_start: datetime, range_end: datetime) -> list[ParetoBucket]`,
+    `assign_reason(event_id: int, reason_code: str, *, note: str | None = None, assigned_by: str | None = None) -> DowntimeEventRow | None`
+
+**Why this lives in `09_uns_model` and not in `12_uns_oee`.** The GraphQL service must not depend on the engine's package: `07_uns_graphql` already depends on `09_uns_model`, and importing `uns_oee` would put an aiomqtt publisher and a scheduler into the API container for the sake of three SELECTs. `09_uns_model` is the shared seam both processes already have — which is where `AlertRuleRepository` sits, for the same reason.
+
+**Why it is a separate file from `oee_master_data.py`.** Master data is authored in `conf/oee/*.yaml` and applied by a container; a downtime reason is corrected by an operator looking at last night's shift. They share a database and nothing else — the same split `uns_model/alert_rules.py` already makes against `AssetModelRepository`.
+
+**Why every join is spelled out.** `uns_model` declares no `relationship()` anywhere. Under asyncio a lazy load on an unloaded attribute raises `MissingGreenlet`, and the failure then surfaces in the resolver rather than in the query — so the joins are written explicitly and the rows are grouped in Python.
+
+**Why the ranges are half-open on the start column.** `shift_windows` in Task 4 already bounds by `[from, to)` on the shift's start. A console asking for two adjacent days must neither drop a shift nor count one twice, and matching the calendar's own convention is what guarantees it. `downtime_events` and `downtime_pareto` filter on the same column with the same predicate — `started_at` — so an events table and a Pareto chart on one dashboard can never disagree about which stops are in the window.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `09_uns_model/test/test_oee_results.py`:
+
+```python
+"""*******************************************************************************
+* Copyright (c) 2021 Ashwin Krishnan
+*
+* All rights reserved. This program and the accompanying materials
+* are made available under the terms of MIT and  is provided "as is",
+* without warranty of any kind, express or implied, including but
+* not limited to the warranties of merchantability, fitness for a
+* particular purpose and noninfringement. In no event shall the
+* authors, contributors or copyright holders be liable for any claim,
+* damages or other liability, whether in an action of contract,
+* tort or otherwise, arising from, out of or in connection with the software
+* or the use or other dealings in the software.
+*
+* Contributors:
+*    -
+*******************************************************************************
+
+What the OEE result reads return, and what a reason assignment writes.
+
+The Pareto arithmetic is tested as a pure function, because that is the one piece of
+this file that decides a number rather than a row. The repository methods are tested
+against a scripted session: what matters here is that the right statements are built in
+the right order and that their rows land on the right dataclass fields. Whether the SQL
+is valid against a real TimescaleDB is `test_integration.py`'s job.
+"""
+
+from __future__ import annotations
+
+from collections import namedtuple
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
+
+import pytest
+
+from uns_model.oee_results import (
+    MANUAL_REASON_SOURCE,
+    SINGLE_SHIFT_MARGIN,
+    DowntimeEventRow,
+    OeeResultRepository,
+    ParetoBucket,
+    pareto_from_rows,
+)
+from uns_model.oee_tables import REASON_SOURCES, DowntimeEvent, ShiftResult, ShiftResultProduct
+
+LINE = "CovestroAG/Dormagen/Production/Line1"
+SHIFT_START = datetime(2026, 8, 31, 6, 0, tzinfo=UTC)
+SHIFT_END = datetime(2026, 8, 31, 14, 0, tzinfo=UTC)
+
+
+def row(**fields):
+    """A stand-in for a SQLAlchemy `Row`: attribute access and tuple unpacking both work."""
+    return namedtuple("Row", fields)(**fields)
+
+
+class FakeResult:
+    """One scripted result. `all`, `first` and `one_or_none` read the same rows."""
+
+    def __init__(self, rows=()):
+        self._rows = list(rows)
+
+    def all(self):
+        return list(self._rows)
+
+    def first(self):
+        return self._rows[0] if self._rows else None
+
+    def one_or_none(self):
+        if len(self._rows) > 1:
+            raise AssertionError("one_or_none over more than one row")
+        return self._rows[0] if self._rows else None
+
+
+class FakeSession:
+    """Hands back scripted results in order and keeps every statement it was given."""
+
+    def __init__(self, results):
+        self.results = list(results)
+        self.statements = []
+
+    async def execute(self, statement):
+        self.statements.append(statement)
+        return self.results.pop(0)
+
+    async def scalars(self, statement):
+        self.statements.append(statement)
+        return self.results.pop(0)
+
+
+class FakeDatabase:
+    def __init__(self, results=()):
+        self.session_obj = FakeSession(results)
+
+    @asynccontextmanager
+    async def session(self):
+        yield self.session_obj
+
+
+def sql(statement) -> str:
+    return str(statement)
+
+
+def bound(statement) -> dict:
+    """The literal values a statement carries, so an INSERT can be asserted on."""
+    return statement.compile().params
+
+
+def _result(result_id: int = 1, **overrides) -> ShiftResult:
+    values = {
+        "id": result_id,
+        "oee_unit_id": 7,
+        "shift_start": SHIFT_START,
+        "shift_end": SHIFT_END,
+        "shift_label": "Morning",
+        "loading_time_s": 27000.0,
+        "run_time_s": 24300.0,
+        "planned_down_s": 1800.0,
+        "unplanned_down_s": 2700.0,
+        "good_count": 4800.0,
+        "reject_count": 200.0,
+        "total_count": 5000.0,
+        "availability": 0.9,
+        "performance": 0.85,
+        "performance_raw": 0.85,
+        "quality": 0.96,
+        "oee": 0.7344,
+        "status": "OK",
+        "revision": 1,
+        "input_fingerprint": "1200:2026-08-31T14:00:00+00:00",
+        "computed_at": datetime(2026, 8, 31, 14, 20, tzinfo=UTC),
+        "published_at": datetime(2026, 8, 31, 14, 20, 1, tzinfo=UTC),
+    }
+    values.update(overrides)
+    return ShiftResult(**values)
+
+
+def _event(event_id: int = 11, **overrides) -> DowntimeEvent:
+    values = {
+        "id": event_id,
+        "oee_unit_id": 7,
+        "shift_start": SHIFT_START,
+        "started_at": datetime(2026, 8, 31, 9, 0, tzinfo=UTC),
+        "ended_at": datetime(2026, 8, 31, 9, 45, tzinfo=UTC),
+        "duration_s": 2700.0,
+        "state_value": "ABORTED",
+        "reason_code": "UNCLASSIFIED",
+        "reason_source": "auto",
+        "assigned_by": None,
+        "assigned_at": None,
+        "note": "",
+    }
+    values.update(overrides)
+    return DowntimeEvent(**values)
+
+
+# --------------------------------------------------------------------- the Pareto
+
+
+def test_manual_reason_source_is_in_the_database_vocabulary():
+    """A constant the CHECK constraint rejects would fail on every assignment, at runtime."""
+    assert MANUAL_REASON_SOURCE in REASON_SOURCES
+
+
+def test_pareto_orders_by_lost_time_descending():
+    """A Pareto chart *is* the ordering. Unsorted buckets are just a table."""
+    buckets = pareto_from_rows(
+        [
+            ("CHANGEOVER", "Changeover", "PLANNED", True, 2, 1800.0),
+            ("MECH_FAULT", "Mechanical fault", "FAILURE", False, 5, 5400.0),
+            ("NO_FEED", "No feedstock", "SUPPLY", False, 1, 3600.0),
+        ]
+    )
+
+    assert [bucket.reason_code for bucket in buckets] == ["MECH_FAULT", "NO_FEED", "CHANGEOVER"]
+    assert buckets[0].event_count == 5
+    assert buckets[0].total_seconds == pytest.approx(5400.0)
+
+
+def test_pareto_breaks_ties_on_the_reason_code():
+    """Two reasons with the same lost time must not swap places between refreshes."""
+    buckets = pareto_from_rows(
+        [
+            ("NO_FEED", "No feedstock", "SUPPLY", False, 1, 600.0),
+            ("CHANGEOVER", "Changeover", "PLANNED", True, 1, 600.0),
+        ]
+    )
+
+    assert [bucket.reason_code for bucket in buckets] == ["CHANGEOVER", "NO_FEED"]
+
+
+def test_pareto_shares_sum_to_one():
+    """Spec section 10: a Pareto must always account for all of the downtime."""
+    buckets = pareto_from_rows(
+        [
+            ("MECH_FAULT", "Mechanical fault", "FAILURE", False, 3, 3000.0),
+            ("NO_FEED", "No feedstock", "SUPPLY", False, 2, 1000.0),
+        ]
+    )
+
+    assert buckets[0].share == pytest.approx(0.75)
+    assert buckets[1].share == pytest.approx(0.25)
+    assert sum(bucket.share for bucket in buckets) == pytest.approx(1.0)
+
+
+def test_pareto_of_zero_total_downtime_reports_zero_shares():
+    """Stops of no measurable length are not a division by zero."""
+    buckets = pareto_from_rows([("CHANGEOVER", "Changeover", "PLANNED", True, 1, 0.0)])
+
+    assert buckets[0].share == 0.0
+
+
+def test_pareto_of_an_empty_window_is_empty():
+    assert pareto_from_rows([]) == []
+
+
+def test_pareto_falls_back_to_the_code_when_a_reason_has_no_display_name():
+    """`display_name` defaults to '' in the table, and a nameless bar is unreadable."""
+    buckets = pareto_from_rows([("MECH_FAULT", "", "FAILURE", False, 1, 60.0)])
+
+    assert buckets[0].display_name == "MECH_FAULT"
+
+
+def test_pareto_buckets_compare_by_value():
+    """A frozen dataclass, so a test can assert on a whole bucket."""
+    bucket = ParetoBucket(
+        reason_code="NO_FEED",
+        display_name="No feedstock",
+        category="SUPPLY",
+        is_planned=False,
+        event_count=1,
+        total_seconds=60.0,
+        share=1.0,
+    )
+
+    assert bucket == ParetoBucket("NO_FEED", "No feedstock", "SUPPLY", False, 1, 60.0, 1.0)
+
+
+# ---------------------------------------------------------------------- the reads
+
+
+@pytest.mark.asyncio
+async def test_shift_results_maps_rows_and_groups_products():
+    database = FakeDatabase(
+        [
+            FakeResult(
+                [
+                    row(ShiftResult=_result(1), path=LINE),
+                    row(ShiftResult=_result(2, shift_start=SHIFT_END), path=LINE),
+                ]
+            ),
+            FakeResult(
+                [
+                    ShiftResultProduct(id=1, shift_result_id=1, product_code="MDI-01", total_count=3000.0),
+                    ShiftResultProduct(id=2, shift_result_id=1, product_code="MDI-02", total_count=2000.0),
+                    ShiftResultProduct(id=3, shift_result_id=2, product_code="MDI-01", total_count=1000.0),
+                ]
+            ),
+        ]
+    )
+
+    rows = await OeeResultRepository(database).shift_results(LINE, SHIFT_START, SHIFT_END + timedelta(hours=8))
+
+    assert [item.result.id for item in rows] == [1, 2]
+    assert [item.asset_path for item in rows] == [LINE, LINE]
+    assert [product.product_code for product in rows[0].products] == ["MDI-01", "MDI-02"]
+    assert [product.product_code for product in rows[1].products] == ["MDI-01"]
+
+
+@pytest.mark.asyncio
+async def test_a_shift_result_with_no_products_gets_an_empty_tuple():
+    """A single-product line publishes no recipe, so `shift_result_product` stays empty."""
+    database = FakeDatabase([FakeResult([row(ShiftResult=_result(1), path=LINE)]), FakeResult([])])
+
+    rows = await OeeResultRepository(database).shift_results(LINE, SHIFT_START, SHIFT_END)
+
+    assert rows[0].products == ()
+
+
+@pytest.mark.asyncio
+async def test_shift_results_filters_on_a_half_open_range():
+    database = FakeDatabase([FakeResult([]), FakeResult([])])
+
+    await OeeResultRepository(database).shift_results(LINE, SHIFT_START, SHIFT_END)
+
+    statement = sql(database.session_obj.statements[0])
+    assert "shift_result.shift_start >= " in statement
+    assert "shift_result.shift_start < " in statement
+    assert "asset.path = " in statement
+
+
+@pytest.mark.asyncio
+async def test_shift_results_does_not_query_products_when_there_are_no_results():
+    """One round trip, not two, for the common case of a line with no shifts in range."""
+    database = FakeDatabase([FakeResult([])])
+
+    rows = await OeeResultRepository(database).shift_results(LINE, SHIFT_START, SHIFT_END)
+
+    assert rows == []
+    assert len(database.session_obj.statements) == 1
+
+
+@pytest.mark.asyncio
+async def test_downtime_events_carry_the_joined_reason():
+    """The console needs `isPlanned` to explain why a reassignment moved the OEE."""
+    database = FakeDatabase(
+        [
+            FakeResult(
+                [
+                    row(
+                        DowntimeEvent=_event(11),
+                        path=LINE,
+                        display_name="Mechanical fault",
+                        category="FAILURE",
+                        is_planned=False,
+                    )
+                ]
+            )
+        ]
+    )
+
+    rows = await OeeResultRepository(database).downtime_events(LINE, SHIFT_START, SHIFT_END)
+
+    assert len(rows) == 1
+    assert rows[0] == DowntimeEventRow(
+        event=rows[0].event,
+        asset_path=LINE,
+        display_name="Mechanical fault",
+        category="FAILURE",
+        is_planned=False,
+    )
+    assert rows[0].event.id == 11
+    assert "downtime_event.started_at >= " in sql(database.session_obj.statements[0])
+
+
+@pytest.mark.asyncio
+async def test_downtime_pareto_aggregates_in_the_database():
+    """Grouped in SQL: a year of stops is thousands of rows and the console wants nine."""
+    database = FakeDatabase(
+        [
+            FakeResult(
+                [
+                    row(
+                        reason_code="NO_FEED",
+                        display_name="No feedstock",
+                        category="SUPPLY",
+                        is_planned=False,
+                        event_count=2,
+                        total_seconds=1200.0,
+                    )
+                ]
+            )
+        ]
+    )
+
+    buckets = await OeeResultRepository(database).downtime_pareto(LINE, SHIFT_START, SHIFT_END)
+
+    assert buckets == [ParetoBucket("NO_FEED", "No feedstock", "SUPPLY", False, 2, 1200.0, 1.0)]
+    statement = sql(database.session_obj.statements[0]).upper()
+    assert "GROUP BY" in statement
+    assert "COUNT(" in statement
+    assert "SUM(" in statement
+
+
+# ---------------------------------------------------------------------- the write
+
+
+def _assignment_database(existing_note: str = "") -> FakeDatabase:
+    """The four results `assign_reason` consumes: reason check, update, insert, re-read."""
+    return FakeDatabase(
+        [
+            FakeResult(["MECH_FAULT"]),
+            FakeResult([row(oee_unit_id=7, shift_start=SHIFT_START)]),
+            FakeResult([]),
+            FakeResult(
+                [
+                    row(
+                        DowntimeEvent=_event(
+                            11,
+                            reason_code="MECH_FAULT",
+                            reason_source="manual",
+                            assigned_by="a.operator",
+                            assigned_at=datetime(2026, 8, 31, 15, 0, tzinfo=UTC),
+                            note=existing_note,
+                        ),
+                        path=LINE,
+                        display_name="Mechanical fault",
+                        category="FAILURE",
+                        is_planned=False,
+                    )
+                ]
+            ),
+        ]
+    )
+
+
+@pytest.mark.asyncio
+async def test_assign_reason_marks_the_row_manual():
+    database = _assignment_database()
+
+    assigned = await OeeResultRepository(database).assign_reason(
+        11, "MECH_FAULT", note="Gearbox seized", assigned_by="a.operator"
+    )
+
+    assert assigned is not None
+    assert assigned.event.reason_source == MANUAL_REASON_SOURCE
+    assert assigned.display_name == "Mechanical fault"
+    changed = bound(database.session_obj.statements[1])
+    assert changed["reason_code"] == "MECH_FAULT"
+    assert changed["reason_source"] == MANUAL_REASON_SOURCE
+    assert changed["assigned_by"] == "a.operator"
+    assert changed["note"] == "Gearbox seized"
+
+
+@pytest.mark.asyncio
+async def test_assign_reason_enqueues_a_recompute_for_that_one_shift():
+    """
+    Spec section 10: a reason's `is_planned` flag moves the interval between Unplanned Down
+    and excluded time, so the number changes. The range is one second wide because
+    `shift_windows` selects on `[from, to)` over the shift's *start*.
+    """
+    database = _assignment_database()
+
+    await OeeResultRepository(database).assign_reason(11, "MECH_FAULT", assigned_by="a.operator")
+
+    enqueued = bound(database.session_obj.statements[2])
+    assert enqueued["oee_unit_id"] == 7
+    assert enqueued["range_start"] == SHIFT_START
+    assert enqueued["range_end"] == SHIFT_START + SINGLE_SHIFT_MARGIN
+    assert enqueued["requested_by"] == "a.operator"
+    assert "11" in enqueued["reason"]
+
+
+@pytest.mark.asyncio
+async def test_assign_reason_without_a_note_leaves_the_stored_note_alone():
+    """An operator correcting only the code must not erase what somebody else typed."""
+    database = _assignment_database(existing_note="Called maintenance at 09:05")
+
+    assigned = await OeeResultRepository(database).assign_reason(11, "MECH_FAULT", assigned_by="a.operator")
+
+    assert "note" not in bound(database.session_obj.statements[1])
+    assert assigned.event.note == "Called maintenance at 09:05"
+
+
+@pytest.mark.asyncio
+async def test_assign_reason_is_null_for_an_unknown_event():
+    """Null, not an error: acting on a list a recomputation has since replaced is normal."""
+    database = FakeDatabase([FakeResult(["MECH_FAULT"]), FakeResult([])])
+
+    assert await OeeResultRepository(database).assign_reason(999, "MECH_FAULT") is None
+    assert len(database.session_obj.statements) == 2
+
+
+@pytest.mark.asyncio
+async def test_assign_reason_rejects_a_reason_code_nobody_authored():
+    """
+    A readable sentence instead of a driver-level foreign key violation naming a generated
+    constraint - the same reason `AlertRuleSpec.validate` duplicates its CHECK constraints.
+    """
+    database = FakeDatabase([FakeResult([])])
+
+    with pytest.raises(ValueError, match="NOT_A_REASON"):
+        await OeeResultRepository(database).assign_reason(11, "NOT_A_REASON")
+
+    assert len(database.session_obj.statements) == 1
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `uv run pytest 09_uns_model/test/test_oee_results.py -v -n 0`
+Expected: FAIL — collection error, `ModuleNotFoundError: No module named 'uns_model.oee_results'`.
+
+- [ ] **Step 3: Write the implementation**
+
+Create `09_uns_model/src/uns_model/oee_results.py`:
+
+```python
+"""*******************************************************************************
+* Copyright (c) 2021 Ashwin Krishnan
+*
+* All rights reserved. This program and the accompanying materials
+* are made available under the terms of MIT and  is provided "as is",
+* without warranty of any kind, express or implied, including but
+* not limited to the warranties of merchantability, fitness for a
+* particular purpose and noninfringement. In no event shall the
+* authors, contributors or copyright holders be liable for any claim,
+* damages or other liability, whether in an action of contract,
+* tort or otherwise, arising from, out of or in connection with the software
+* or the use or other dealings in the software.
+*
+* Contributors:
+*    -
+*******************************************************************************
+
+Reading OEE results, and the one write a human is allowed to make to them.
+
+The seam for schema `oee`, kept apart from `OeeMasterDataRepository` because a shift
+result is not master data: the model says how the line is rostered and rated, a result
+says what actually happened. They share a database and nothing else.
+
+It lives here rather than in `12_uns_oee` so the GraphQL service can read results
+without depending on the engine's package. `07_uns_graphql` already depends on
+`09_uns_model`; importing `uns_oee` would put an aiomqtt publisher and a scheduler into
+the API container for the sake of three SELECTs.
+
+Every join is spelled out and every grouping happens in Python. There is no
+`relationship()` anywhere in `uns_model`, because under asyncio a lazy load on an
+unloaded attribute raises `MissingGreenlet` in the resolver rather than in the query.
+"""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+
+from sqlalchemy import func, insert, select, update
+
+from uns_model.engine import Database
+from uns_model.oee_tables import (
+    DowntimeEvent,
+    DowntimeReason,
+    OeeUnit,
+    RecomputeRequest,
+    ShiftResult,
+    ShiftResultProduct,
+)
+from uns_model.tables import Asset
+
+LOGGER = logging.getLogger(__name__)
+
+MANUAL_REASON_SOURCE = "manual"
+"""One of `REASON_SOURCES`. `test_oee_results.py` fails if it stops being."""
+
+SINGLE_SHIFT_MARGIN = timedelta(seconds=1)
+"""How wide a recompute range has to be to name exactly one shift.
+
+`shift_windows` selects windows whose *start* lies in `[range_start, range_end)`, so a
+range of one second beginning at a shift's start picks out that shift and no other -
+including the one that begins the moment it ends.
+"""
+
+
+@dataclass(frozen=True, slots=True)
+class ParetoBucket:
+    """One reason code's share of the downtime in a window."""
+
+    reason_code: str
+    display_name: str
+    category: str
+    is_planned: bool
+    event_count: int
+    total_seconds: float
+    share: float
+
+
+@dataclass(frozen=True, slots=True)
+class ShiftResultRow:
+    """One `oee.shift_result` with its Asset path and its per-product terms."""
+
+    result: ShiftResult
+    asset_path: str
+    products: tuple[ShiftResultProduct, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class DowntimeEventRow:
+    """One `oee.downtime_event` with the reason it is attributed to already resolved.
+
+    `is_planned` travels with the event because it is what explains a changed OEE: it is
+    the flag that moves an interval between Unplanned Down and excluded time.
+    """
+
+    event: DowntimeEvent
+    asset_path: str
+    display_name: str
+    category: str
+    is_planned: bool
+
+
+def pareto_from_rows(rows: Sequence[tuple[str, str, str, bool, int, float]]) -> list[ParetoBucket]:
+    """Grouped rows, ordered as a Pareto and given their share of the total.
+
+    A pure function, so the one piece of this file that decides a number can be tested
+    without a database. `share` is 0.0 rather than None when nothing was lost: a Pareto of
+    zero downtime has no bars, and a null would make the console's percentage formatter the
+    place that decides what to draw.
+
+    Ties break on the reason code, so two reasons with the same lost time do not swap
+    places between two refreshes of the same dashboard.
+    """
+    total = sum(float(seconds) for *_, seconds in rows)
+    buckets = [
+        ParetoBucket(
+            reason_code=code,
+            # The column defaults to '', and a nameless bar is unreadable.
+            display_name=display_name or code,
+            category=category,
+            is_planned=bool(is_planned),
+            event_count=int(event_count),
+            total_seconds=float(seconds),
+            share=float(seconds) / total if total > 0 else 0.0,
+        )
+        for code, display_name, category, is_planned, event_count, seconds in rows
+    ]
+    buckets.sort(key=lambda bucket: (-bucket.total_seconds, bucket.reason_code))
+    return buckets
+
+
+class OeeResultRepository:
+    """Everything the GraphQL service does with schema `oee`.
+
+    Callers get whole rows and never a `Session`. The engine remains the only writer of
+    results: the one write here corrects a reason code and *queues* a recomputation, which
+    is why `assign_reason` touches `oee.recompute_request` and never `oee.shift_result`.
+    """
+
+    def __init__(self, database: Database) -> None:
+        self._database = database
+
+    # ------------------------------------------------------------------- reads
+
+    async def shift_results(
+        self, asset_path: str, range_start: datetime, range_end: datetime
+    ) -> list[ShiftResultRow]:
+        """The results for one Asset whose shift began in `[range_start, range_end)`.
+
+        Two statements rather than one outer join: a shift with four products would repeat
+        the result's twenty-odd columns four times, and the products would still have to be
+        grouped in Python afterwards either way.
+        """
+        statement = (
+            select(ShiftResult, Asset.path)
+            .join(OeeUnit, ShiftResult.oee_unit_id == OeeUnit.id)
+            .join(Asset, OeeUnit.asset_id == Asset.id)
+            .where(
+                Asset.path == asset_path,
+                ShiftResult.shift_start >= range_start,
+                ShiftResult.shift_start < range_end,
+            )
+            .order_by(ShiftResult.shift_start)
+        )
+        async with self._database.session() as session:
+            found = (await session.execute(statement)).all()
+            if not found:
+                return []
+            products = (
+                await session.scalars(
+                    select(ShiftResultProduct)
+                    .where(ShiftResultProduct.shift_result_id.in_([result.id for result, _ in found]))
+                    .order_by(ShiftResultProduct.shift_result_id, ShiftResultProduct.product_code)
+                )
+            ).all()
+
+        by_result: dict[int, list[ShiftResultProduct]] = {}
+        for product in products:
+            by_result.setdefault(product.shift_result_id, []).append(product)
+        return [
+            ShiftResultRow(result=result, asset_path=path, products=tuple(by_result.get(result.id, ())))
+            for result, path in found
+        ]
+
+    async def downtime_events(
+        self, asset_path: str, range_start: datetime, range_end: datetime
+    ) -> list[DowntimeEventRow]:
+        """The stops for one Asset that began in `[range_start, range_end)`, oldest first.
+
+        Filtered on `started_at` and not on `shift_start` - the same column and the same
+        predicate `downtime_pareto` uses - so an events table and a Pareto chart on one
+        dashboard can never disagree about which stops are in the window.
+
+        An inner join to `downtime_reason` is safe: `reason_code` is NOT NULL behind a
+        RESTRICT foreign key, so an event with no reason cannot exist.
+        """
+        async with self._database.session() as session:
+            rows = (
+                await session.execute(
+                    _event_projection().where(
+                        Asset.path == asset_path,
+                        DowntimeEvent.started_at >= range_start,
+                        DowntimeEvent.started_at < range_end,
+                    )
+                    .order_by(DowntimeEvent.started_at)
+                )
+            ).all()
+        return _event_rows(rows)
+
+    async def downtime_pareto(
+        self, asset_path: str, range_start: datetime, range_end: datetime
+    ) -> list[ParetoBucket]:
+        """Lost time per reason code over a window, largest first.
+
+        Aggregated in the database rather than by summing `downtime_events` in Python: a
+        year of stops on a busy line is tens of thousands of rows, and the console wants the
+        nine reason codes.
+        """
+        statement = (
+            select(
+                DowntimeEvent.reason_code,
+                DowntimeReason.display_name,
+                DowntimeReason.category,
+                DowntimeReason.is_planned,
+                func.count().label("event_count"),
+                func.coalesce(func.sum(DowntimeEvent.duration_s), 0.0).label("total_seconds"),
+            )
+            .join(OeeUnit, DowntimeEvent.oee_unit_id == OeeUnit.id)
+            .join(Asset, OeeUnit.asset_id == Asset.id)
+            .join(DowntimeReason, DowntimeEvent.reason_code == DowntimeReason.code)
+            .where(
+                Asset.path == asset_path,
+                DowntimeEvent.started_at >= range_start,
+                DowntimeEvent.started_at < range_end,
+            )
+            .group_by(
+                DowntimeEvent.reason_code,
+                DowntimeReason.display_name,
+                DowntimeReason.category,
+                DowntimeReason.is_planned,
+            )
+        )
+        async with self._database.session() as session:
+            rows = (await session.execute(statement)).all()
+        return pareto_from_rows([tuple(row) for row in rows])
+
+    # ------------------------------------------------------------------- write
+
+    async def assign_reason(
+        self,
+        event_id: int,
+        reason_code: str,
+        *,
+        note: str | None = None,
+        assigned_by: str | None = None,
+    ) -> DowntimeEventRow | None:
+        """Attribute a stop to a reason by hand, and queue that shift for recomputation.
+
+        One transaction for both, because a corrected reason that never reached the queue
+        would leave a downtime breakdown disagreeing with the OEE above it until somebody
+        noticed and ran the CLI.
+
+        `assigned_at` is `func.now()` and not a caller's timestamp: the console runs in a
+        browser, and a wrong laptop clock must not be able to reorder who corrected what.
+
+        Returns None when there is no such event. A console acting on a list of stops that a
+        recomputation has since replaced is normal, not an error.
+        """
+        values: dict = {
+            "reason_code": reason_code,
+            "reason_source": MANUAL_REASON_SOURCE,
+            "assigned_by": assigned_by,
+            "assigned_at": func.now(),
+        }
+        if note is not None:
+            # Omitted rather than defaulted to '': an operator correcting only the code must
+            # not erase a note somebody else typed.
+            values["note"] = note
+
+        async with self._database.session() as session:
+            known = (
+                await session.scalars(select(DowntimeReason.code).where(DowntimeReason.code == reason_code))
+            ).first()
+            if known is None:
+                # Checked here so the caller gets a sentence rather than a foreign key
+                # violation naming a generated constraint.
+                raise ValueError(f"{reason_code!r} is not an authored downtime reason code")
+
+            changed = (
+                await session.execute(
+                    update(DowntimeEvent)
+                    .where(DowntimeEvent.id == event_id)
+                    .values(**values)
+                    .returning(DowntimeEvent.oee_unit_id, DowntimeEvent.shift_start)
+                )
+            ).one_or_none()
+            if changed is None:
+                LOGGER.warning("No downtime event %s to assign reason %s to", event_id, reason_code)
+                return None
+
+            await session.execute(
+                insert(RecomputeRequest).values(
+                    oee_unit_id=changed.oee_unit_id,
+                    range_start=changed.shift_start,
+                    range_end=changed.shift_start + SINGLE_SHIFT_MARGIN,
+                    reason=f"reason {reason_code} assigned to downtime event {event_id}",
+                    requested_by=assigned_by,
+                )
+            )
+            LOGGER.info(
+                "Downtime event %s reassigned to %s by %s; shift %s queued for recompute",
+                event_id,
+                reason_code,
+                assigned_by or "unknown",
+                changed.shift_start.isoformat(),
+            )
+            rows = _event_rows(
+                (await session.execute(_event_projection().where(DowntimeEvent.id == event_id))).all()
+            )
+        return rows[0] if rows else None
+
+
+def _event_projection():
+    """The five-column event select, shared by the read and the write-then-read.
+
+    One definition, so the row the mutation returns has exactly the shape the query
+    returns - a console must not get a different object depending on how it got there.
+    """
+    return (
+        select(
+            DowntimeEvent,
+            Asset.path,
+            DowntimeReason.display_name,
+            DowntimeReason.category,
+            DowntimeReason.is_planned,
+        )
+        .join(OeeUnit, DowntimeEvent.oee_unit_id == OeeUnit.id)
+        .join(Asset, OeeUnit.asset_id == Asset.id)
+        .join(DowntimeReason, DowntimeEvent.reason_code == DowntimeReason.code)
+    )
+
+
+def _event_rows(rows: Sequence) -> list[DowntimeEventRow]:
+    """The five-column event projection as dataclasses. One shape, one mapping."""
+    return [
+        DowntimeEventRow(
+            event=event,
+            asset_path=asset_path,
+            display_name=display_name or event.reason_code,
+            category=category,
+            is_planned=bool(is_planned),
+        )
+        for event, asset_path, display_name, category, is_planned in rows
+    ]
+
+
+__all__ = [
+    "MANUAL_REASON_SOURCE",
+    "SINGLE_SHIFT_MARGIN",
+    "DowntimeEventRow",
+    "OeeResultRepository",
+    "ParetoBucket",
+    "ShiftResultRow",
+    "pareto_from_rows",
+]
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `uv run pytest 09_uns_model/test/test_oee_results.py -v -n 0`
+Expected: PASS (18 passed).
+
+- [ ] **Step 5: Run the whole model suite and the linter**
+
+Run: `uv run pytest 09_uns_model/test -q -m "not integrationtest"`
+Expected: PASS. Nothing else imports `oee_results` yet, so this is a check that the new module does not break collection.
+
+Run: `uv run ruff check 09_uns_model/src/uns_model/oee_results.py 09_uns_model/test/test_oee_results.py`
+Expected: no findings.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add 09_uns_model/src/uns_model/oee_results.py 09_uns_model/test/test_oee_results.py
+git commit -m "feat(model): read OEE results and assign downtime reasons by hand"
+```
+
+---
+
+### Task 19: The GraphQL surface — three reads and `assignDowntimeReason`
+
+**Files:**
+- Create: `07_uns_graphql/src/uns_graphql/type/oee.py`
+- Create: `07_uns_graphql/src/uns_graphql/queries/oee.py`
+- Create: `07_uns_graphql/src/uns_graphql/mutations/oee.py`
+- Modify: `07_uns_graphql/src/uns_graphql/uns_graphql_app.py:32-33`, `:42`, `:53-62`, `:66`, `:76-81`
+- Test: `07_uns_graphql/test/type/test_oee.py`
+- Test: `07_uns_graphql/test/queries/test_oee.py`
+- Test: `07_uns_graphql/test/mutations/test_oee.py`
+
+**Interfaces:**
+- Consumes: `OeeResultRepository`, `ShiftResultRow`, `DowntimeEventRow`, `ParetoBucket` from Task 18; `OEE_STATUSES`, `REASON_SOURCES`, `ShiftResultProduct` from Task 2; `Database.shared("graphql")`.
+- Produces: the schema this feature publishes —
+  ```graphql
+  oeeShiftResults(assetPath: String!, from: DateTime!, to: DateTime!): [OeeShiftResult!]!
+  downtimeEvents(assetPath: String!, from: DateTime!, to: DateTime!): [DowntimeEvent!]!
+  downtimePareto(assetPath: String!, from: DateTime!, to: DateTime!): [DowntimeParetoBucket!]!
+  assignDowntimeReason(eventId: ID!, reasonCode: String!, note: String, assignedBy: String): DowntimeEvent!
+  ```
+
+**Why the enums are written out by hand.** `type/alert_rule.py` already establishes this: a GraphQL schema is a published contract, and an enum generated from `uns_model` would change shape because somebody edited a CHECK constraint. `test/type/test_oee.py` compares each enum against its vocabulary tuple in both directions, so the two copies cannot drift.
+
+**Why the Python class is `DowntimeEventType` but the GraphQL type is `DowntimeEvent`.** Spec §10 names the return type `DowntimeEvent!`, and `uns_model.oee_tables.DowntimeEvent` is the ORM class the same module has to import. `@strawberry.type(name="DowntimeEvent")` publishes the spec's name from a Python class that does not collide — the same problem `AlertRule`/`AlertRuleType` already has, solved the same way except that here the published name is pinned.
+
+**How `from` and `to` are spelled.** `from` is a Python keyword, so the resolver parameters are `range_start` and `range_end` and each carries `Annotated[datetime, strawberry.argument(name="from")]`. The existing historian queries dodged this by calling theirs `fromDatetime`/`toDatetime`; that is not done here, because spec §10 writes the signature down and a published argument name is not a detail to improvise. `test_the_range_arguments_are_named_from_and_to` asserts it through introspection rather than against printed SDL, so a Strawberry upgrade that reformats the schema cannot break it.
+
+**One deliberate addition to the spec's signature: `assignedBy: String`.** Spec §10 gives the signature as three arguments but also requires the mutation to set `assigned_by`. Those cannot both hold: this platform has no authentication anywhere, so there is no request identity to read. The argument is added as an optional fourth, which leaves the spec's three-argument call valid, and its description says plainly that the value is attested by the caller and not authenticated. Recording an unverified name is still worth more than recording nothing — "who says they changed this" is what an auditor asks first.
+
+**Why an unknown event is an error here and `None` in the repository.** The return type is `DowntimeEvent!`, so null is not expressible. It is also the right answer: an operator who has just clicked a reason onto a stop must be told the click did nothing, whereas a repository has callers that legitimately treat a missing row as an empty result.
+
+- [ ] **Step 1: Write the failing type test**
+
+Create `07_uns_graphql/test/type/test_oee.py`:
+
+```python
+"""*******************************************************************************
+* Copyright (c) 2021 Ashwin Krishnan
+*
+* All rights reserved. This program and the accompanying materials
+* are made available under the terms of MIT and  is provided "as is",
+* without warranty of any kind, express or implied, including but
+* not limited to the warranties of merchantability, fitness for a
+* particular purpose and noninfringement. In no event shall the
+* authors, contributors or copyright holders be liable for any claim,
+* damages or other liability, whether in an action of contract,
+* tort or otherwise, arising from, out of or in connection with the software
+* or the use or other dealings in the software.
+*
+* Contributors:
+*    -
+*******************************************************************************
+
+The OEE vocabularies are written down twice: once as CHECK constraints in
+`uns_model.oee_tables` and once as GraphQL enums. That is deliberate - a published
+schema should not change shape because somebody edited a database constraint - and
+these tests are what keeps the two copies honest.
+"""
+
+from datetime import UTC, datetime
+from enum import Enum
+
+import pytest
+from uns_model.oee_results import DowntimeEventRow, ParetoBucket, ShiftResultRow
+from uns_model.oee_tables import (
+    OEE_STATUSES,
+    REASON_SOURCES,
+    DowntimeEvent,
+    ShiftResult,
+    ShiftResultProduct,
+)
+
+from uns_graphql.type.oee import (
+    DowntimeEventType,
+    DowntimeParetoBucket,
+    OeeShiftResult,
+    OeeStatus,
+    ReasonSource,
+)
+
+LINE = "CovestroAG/Dormagen/Production/Line1"
+SHIFT_START = datetime(2026, 8, 31, 6, 0, tzinfo=UTC)
+SHIFT_END = datetime(2026, 8, 31, 14, 0, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    "graphql_enum, vocabulary",
+    [
+        (OeeStatus, OEE_STATUSES),
+        (ReasonSource, REASON_SOURCES),
+    ],
+)
+def test_enums_match_the_database_vocabulary(graphql_enum: type[Enum], vocabulary: tuple[str, ...]):
+    """
+    A value the database accepts must be expressible in the schema, and vice versa.
+
+    Fails both ways round on purpose: an enum member the CHECK constraint rejects is a
+    query that can never match, and a stored status with no enum member is a shift
+    result the console cannot read back at all.
+    """
+    assert {member.value for member in graphql_enum} == set(vocabulary)
+
+
+@pytest.mark.parametrize("vocabulary", [OEE_STATUSES, REASON_SOURCES])
+def test_vocabularies_have_no_duplicates(vocabulary: tuple[str, ...]):
+    """A duplicate would make the set comparison above pass while the CHECK body repeats itself."""
+    assert len(vocabulary) == len(set(vocabulary))
+
+
+def _result(**overrides) -> ShiftResult:
+    values = {
+        "id": 1,
+        "oee_unit_id": 7,
+        "shift_start": SHIFT_START,
+        "shift_end": SHIFT_END,
+        "shift_label": "Morning",
+        "loading_time_s": 27000.0,
+        "run_time_s": 24300.0,
+        "planned_down_s": 1800.0,
+        "unplanned_down_s": 2700.0,
+        "good_count": 4800.0,
+        "reject_count": 200.0,
+        "total_count": 5000.0,
+        "availability": 0.9,
+        "performance": 0.85,
+        "performance_raw": 1.04,
+        "quality": 0.96,
+        "oee": 0.7344,
+        "status": "OK",
+        "revision": 2,
+        "input_fingerprint": "1200:2026-08-31T14:00:00+00:00",
+        "computed_at": datetime(2026, 8, 31, 14, 20, tzinfo=UTC),
+        "published_at": datetime(2026, 8, 31, 14, 20, 1, tzinfo=UTC),
+    }
+    values.update(overrides)
+    return ShiftResult(**values)
+
+
+def _event(**overrides) -> DowntimeEvent:
+    values = {
+        "id": 11,
+        "oee_unit_id": 7,
+        "shift_start": SHIFT_START,
+        "started_at": datetime(2026, 8, 31, 9, 0, tzinfo=UTC),
+        "ended_at": datetime(2026, 8, 31, 9, 45, tzinfo=UTC),
+        "duration_s": 2700.0,
+        "state_value": "ABORTED",
+        "reason_code": "MECH_FAULT",
+        "reason_source": "manual",
+        "assigned_by": "a.operator",
+        "assigned_at": datetime(2026, 8, 31, 15, 0, tzinfo=UTC),
+        "note": "Gearbox seized",
+    }
+    values.update(overrides)
+    return DowntimeEvent(**values)
+
+
+def test_from_row_maps_every_shift_result_field():
+    row = ShiftResultRow(result=_result(), asset_path=LINE, products=())
+
+    result = OeeShiftResult.from_row(row)
+
+    assert result.asset_path == LINE
+    assert result.shift_start == SHIFT_START
+    assert result.shift_end == SHIFT_END
+    assert result.shift_label == "Morning"
+    assert result.loading_time_s == pytest.approx(27000.0)
+    assert result.run_time_s == pytest.approx(24300.0)
+    assert result.planned_down_s == pytest.approx(1800.0)
+    assert result.unplanned_down_s == pytest.approx(2700.0)
+    assert result.good_count == pytest.approx(4800.0)
+    assert result.reject_count == pytest.approx(200.0)
+    assert result.total_count == pytest.approx(5000.0)
+    assert result.availability == pytest.approx(0.9)
+    assert result.performance == pytest.approx(0.85)
+    assert result.performance_raw == pytest.approx(1.04)
+    assert result.quality == pytest.approx(0.96)
+    assert result.oee == pytest.approx(0.7344)
+    assert result.status is OeeStatus.OK
+    assert result.revision == 2
+    assert result.computed_at == row.result.computed_at
+    assert result.published_at == row.result.published_at
+
+
+def test_a_null_factor_stays_null():
+    """
+    Spec section 8.1: a shift with no Loading Time has no Availability. Rendering it as
+    0.0 would put a catastrophic shift on the trend that never happened.
+    """
+    row = ShiftResultRow(
+        result=_result(status="NO_LOADING_TIME", availability=None, performance=None, quality=None, oee=None),
+        asset_path=LINE,
+    )
+
+    result = OeeShiftResult.from_row(row)
+
+    assert (result.availability, result.performance, result.quality, result.oee) == (None, None, None, None)
+    assert result.status is OeeStatus.NO_LOADING_TIME
+
+
+def test_the_per_product_terms_are_carried_through():
+    """Performance is a sum over products, so a mixed shift's terms have to be readable."""
+    row = ShiftResultRow(
+        result=_result(),
+        asset_path=LINE,
+        products=(
+            ShiftResultProduct(
+                id=1,
+                shift_result_id=1,
+                product_code="MDI-01",
+                good_count=2900.0,
+                reject_count=100.0,
+                total_count=3000.0,
+                ideal_cycle_time_s=4.0,
+            ),
+            ShiftResultProduct(
+                id=2,
+                shift_result_id=1,
+                product_code="MDI-02",
+                good_count=1900.0,
+                reject_count=100.0,
+                total_count=2000.0,
+                ideal_cycle_time_s=None,
+            ),
+        ),
+    )
+
+    products = OeeShiftResult.from_row(row).products
+
+    assert [product.product_code for product in products] == ["MDI-01", "MDI-02"]
+    assert products[0].ideal_cycle_time_s == pytest.approx(4.0)
+    assert products[1].ideal_cycle_time_s is None
+
+
+def test_a_single_product_line_has_an_empty_product_list():
+    """Not null: the console iterates it, and a null list is an extra branch for no reason."""
+    assert OeeShiftResult.from_row(ShiftResultRow(result=_result(), asset_path=LINE)).products == []
+
+
+def test_downtime_event_from_row_carries_the_resolved_reason():
+    row = DowntimeEventRow(
+        event=_event(),
+        asset_path=LINE,
+        display_name="Mechanical fault",
+        category="FAILURE",
+        is_planned=False,
+    )
+
+    event = DowntimeEventType.from_row(row)
+
+    assert event.id == "11"
+    assert event.asset_path == LINE
+    assert event.shift_start == SHIFT_START
+    assert event.started_at == row.event.started_at
+    assert event.ended_at == row.event.ended_at
+    assert event.duration_s == pytest.approx(2700.0)
+    assert event.state_value == "ABORTED"
+    assert event.reason_code == "MECH_FAULT"
+    assert event.reason_display_name == "Mechanical fault"
+    assert event.reason_category == "FAILURE"
+    assert event.is_planned is False
+    assert event.reason_source is ReasonSource.MANUAL
+    assert event.assigned_by == "a.operator"
+    assert event.assigned_at == row.event.assigned_at
+    assert event.note == "Gearbox seized"
+
+
+def test_an_auto_classified_event_has_no_assignee():
+    row = DowntimeEventRow(
+        event=_event(reason_code="UNCLASSIFIED", reason_source="auto", assigned_by=None, assigned_at=None, note=""),
+        asset_path=LINE,
+        display_name="Unclassified",
+        category="",
+        is_planned=False,
+    )
+
+    event = DowntimeEventType.from_row(row)
+
+    assert event.reason_source is ReasonSource.AUTO
+    assert event.assigned_by is None
+    assert event.assigned_at is None
+
+
+def test_pareto_bucket_from_bucket():
+    bucket = ParetoBucket("MECH_FAULT", "Mechanical fault", "FAILURE", False, 5, 5400.0, 0.6)
+
+    published = DowntimeParetoBucket.from_bucket(bucket)
+
+    assert published.reason_code == "MECH_FAULT"
+    assert published.display_name == "Mechanical fault"
+    assert published.category == "FAILURE"
+    assert published.is_planned is False
+    assert published.event_count == 5
+    assert published.total_seconds == pytest.approx(5400.0)
+    assert published.share == pytest.approx(0.6)
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+Run: `uv run pytest 07_uns_graphql/test/type/test_oee.py -v -n 0`
+Expected: FAIL — collection error, `ModuleNotFoundError: No module named 'uns_graphql.type.oee'`.
+
+- [ ] **Step 3: Write the types**
+
+Create `07_uns_graphql/src/uns_graphql/type/oee.py`:
+
+```python
+"""*******************************************************************************
+* Copyright (c) 2021 Ashwin Krishnan
+*
+* All rights reserved. This program and the accompanying materials
+* are made available under the terms of MIT and  is provided "as is",
+* without warranty of any kind, express or implied, including but
+* not limited to the warranties of merchantability, fitness for a
+* particular purpose and noninfringement. In no event shall the
+* authors, contributors or copyright holders be liable for any claim,
+* damages or other liability, whether in an action of contract,
+* tort or otherwise, arising from, out of or in connection with the software
+* or the use or other dealings in the software.
+*
+* Contributors:
+*    -
+*******************************************************************************
+
+GraphQL types for computed OEE, held in schema `oee`.
+
+The enums are spelled out rather than generated from `uns_model.oee_tables`, because a
+GraphQL schema is a published contract and a generated enum changes shape without
+anybody reviewing it. `test/type/test_oee.py` fails if the two drift.
+
+Every ratio is nullable. Spec section 8.1: a shift with no Loading Time has no
+Availability - it did not achieve 0% - and a schema that could not say so would force
+the console to invent a number.
+"""
+
+import logging
+from datetime import datetime
+from enum import Enum
+
+import strawberry
+from uns_model.oee_results import DowntimeEventRow, ParetoBucket, ShiftResultRow
+from uns_model.oee_tables import ShiftResultProduct
+
+LOGGER = logging.getLogger(__name__)
+
+
+@strawberry.enum(description="Whether the shift's numbers are usable, and why not when they are not.")
+class OeeStatus(Enum):
+    OK = "OK"
+    NO_LOADING_TIME = "NO_LOADING_TIME"
+    NO_PRODUCTION = "NO_PRODUCTION"
+    MISSING_IDEAL_CYCLE_TIME = "MISSING_IDEAL_CYCLE_TIME"
+    NO_INPUT_DATA = "NO_INPUT_DATA"
+
+
+@strawberry.enum(description="Whether a stop was classified by the engine or corrected by a person.")
+class ReasonSource(Enum):
+    AUTO = "auto"
+    MANUAL = "manual"
+
+
+@strawberry.type(description="One product's counts and rated cycle time within a shift.")
+class OeeShiftProduct:
+    """
+    Stored per product because Performance is a sum over products.
+
+    A mixed shift's number cannot be re-derived from the totals once the product mix is
+    gone, so the terms are published rather than only the result.
+    """
+
+    product_code: str = strawberry.field(description="The value the line published, e.g. a recipe id.")
+    good_count: float
+    reject_count: float
+    total_count: float
+    ideal_cycle_time_s: float | None = strawberry.field(
+        description="Seconds per unit at the designed rate. Null when none was authored, "
+        "which sets MISSING_IDEAL_CYCLE_TIME on the shift."
+    )
+
+    @classmethod
+    def from_row(cls, product: ShiftResultProduct) -> "OeeShiftProduct":
+        return cls(
+            product_code=product.product_code,
+            good_count=product.good_count,
+            reject_count=product.reject_count,
+            total_count=product.total_count,
+            ideal_cycle_time_s=product.ideal_cycle_time_s,
+        )
+
+
+@strawberry.type(description="Availability x Performance x Quality for one closed shift on one Asset.")
+class OeeShiftResult:
+    """
+    The current result for a shift. Superseded numbers are kept in
+    `oee.shift_result_revision` and are deliberately not published: a dashboard reads
+    one row per shift, and `revision` is what tells it the number has been restated.
+    """
+
+    asset_path: str = strawberry.field(description="The Line the number is reported for.")
+    shift_start: datetime
+    shift_end: datetime
+    shift_label: str
+
+    loading_time_s: float = strawberry.field(description="Scheduled time less planned stops and exceptions.")
+    run_time_s: float = strawberry.field(description="Time in a producing state, measured over the interval union.")
+    planned_down_s: float
+    unplanned_down_s: float
+
+    good_count: float
+    reject_count: float
+    total_count: float
+
+    availability: float | None = strawberry.field(description="Run Time / Loading Time. Null when undefined.")
+    performance: float | None = strawberry.field(description="Clamped at 1.0. Null when undefined.")
+    performance_raw: float | None = strawberry.field(
+        description="Performance before the clamp. Above 1 means the ideal cycle time is wrong "
+        "or a stop was missed, and this is the only evidence of that."
+    )
+    quality: float | None = strawberry.field(description="Good Count / Total Count. Null when undefined.")
+    oee: float | None
+
+    status: OeeStatus
+    revision: int = strawberry.field(description="Increments when late data restated the shift.")
+    computed_at: datetime | None = None
+    published_at: datetime | None = strawberry.field(
+        default=None, description="When the result reached MQTT. Null means it has not yet."
+    )
+    products: list[OeeShiftProduct] = strawberry.field(
+        default_factory=list, description="Empty on a line that publishes no recipe."
+    )
+
+    @classmethod
+    def from_row(cls, row: ShiftResultRow) -> "OeeShiftResult":
+        result = row.result
+        return cls(
+            asset_path=row.asset_path,
+            shift_start=result.shift_start,
+            shift_end=result.shift_end,
+            shift_label=result.shift_label,
+            loading_time_s=result.loading_time_s,
+            run_time_s=result.run_time_s,
+            planned_down_s=result.planned_down_s,
+            unplanned_down_s=result.unplanned_down_s,
+            good_count=result.good_count,
+            reject_count=result.reject_count,
+            total_count=result.total_count,
+            # Passed straight through, never coalesced: see the module docstring.
+            availability=result.availability,
+            performance=result.performance,
+            performance_raw=result.performance_raw,
+            quality=result.quality,
+            oee=result.oee,
+            status=OeeStatus(result.status),
+            revision=result.revision,
+            computed_at=result.computed_at,
+            published_at=result.published_at,
+            products=[OeeShiftProduct.from_row(product) for product in row.products],
+        )
+
+
+@strawberry.type(name="DowntimeEvent", description="One stop, with the reason it is attributed to.")
+class DowntimeEventType:
+    """
+    Published as `DowntimeEvent` (spec section 10) from a Python class that does not
+    collide with the ORM class of the same name, which this module's dependencies import.
+
+    `isPlanned` travels with the event because it is what explains a changed OEE: it is
+    the flag that moves the interval between Unplanned Down and excluded time.
+    """
+
+    id: strawberry.ID
+    asset_path: str
+    shift_start: datetime = strawberry.field(description="The shift this stop is counted against.")
+    started_at: datetime
+    ended_at: datetime
+    duration_s: float
+    state_value: str = strawberry.field(description="The published state that held for the whole stop, e.g. 'ABORTED'.")
+
+    reason_code: str
+    reason_display_name: str
+    reason_category: str
+    is_planned: bool
+    reason_source: ReasonSource
+    assigned_by: str | None = None
+    assigned_at: datetime | None = None
+    note: str = ""
+
+    @classmethod
+    def from_row(cls, row: DowntimeEventRow) -> "DowntimeEventType":
+        event = row.event
+        return cls(
+            id=strawberry.ID(str(event.id)),
+            asset_path=row.asset_path,
+            shift_start=event.shift_start,
+            started_at=event.started_at,
+            ended_at=event.ended_at,
+            duration_s=event.duration_s,
+            state_value=event.state_value,
+            reason_code=event.reason_code,
+            reason_display_name=row.display_name,
+            reason_category=row.category,
+            is_planned=row.is_planned,
+            reason_source=ReasonSource(event.reason_source),
+            assigned_by=event.assigned_by,
+            assigned_at=event.assigned_at,
+            note=event.note,
+        )
+
+
+@strawberry.type(description="One reason code's share of the downtime in a window, largest first.")
+class DowntimeParetoBucket:
+    reason_code: str
+    display_name: str
+    category: str
+    is_planned: bool
+    event_count: int
+    total_seconds: float
+    share: float = strawberry.field(
+        description="Fraction of the window's total downtime, 0..1. Zero when nothing was lost."
+    )
+
+    @classmethod
+    def from_bucket(cls, bucket: ParetoBucket) -> "DowntimeParetoBucket":
+        return cls(
+            reason_code=bucket.reason_code,
+            display_name=bucket.display_name,
+            category=bucket.category,
+            is_planned=bucket.is_planned,
+            event_count=bucket.event_count,
+            total_seconds=bucket.total_seconds,
+            share=bucket.share,
+        )
+```
+
+- [ ] **Step 4: Run the type test to verify it passes**
+
+Run: `uv run pytest 07_uns_graphql/test/type/test_oee.py -v -n 0`
+Expected: PASS (11 passed).
+
+- [ ] **Step 5: Write the failing query test**
+
+Create `07_uns_graphql/test/queries/test_oee.py`:
+
+```python
+"""*******************************************************************************
+* Copyright (c) 2021 Ashwin Krishnan
+*
+* All rights reserved. This program and the accompanying materials
+* are made available under the terms of MIT and  is provided "as is",
+* without warranty of any kind, express or implied, including but
+* not limited to the warranties of merchantability, fitness for a
+* particular purpose and noninfringement. In no event shall the
+* authors, contributors or copyright holders be liable for any claim,
+* damages or other liability, whether in an action of contract,
+* tort or otherwise, arising from, out of or in connection with the software
+* or the use or other dealings in the software.
+*
+* Contributors:
+*    -
+*******************************************************************************
+
+Reading OEE results through the schema, with the repository replaced.
+
+Executed against the real schema rather than by calling the resolvers, because the
+schema is what a dashboard talks to: an argument renamed here is a broken dashboard
+even though every resolver still passes its own test. What the repository does with a
+live Postgres is `09_uns_model`'s integration test's job.
+"""
+
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, patch
+
+import pytest
+from uns_model.oee_results import DowntimeEventRow, ParetoBucket, ShiftResultRow
+from uns_model.oee_tables import DowntimeEvent, ShiftResult
+
+from uns_graphql.uns_graphql_app import UNSGraphql
+
+REPOSITORY = "uns_graphql.queries.oee._repository"
+
+LINE = "CovestroAG/Dormagen/Production/Line1"
+SHIFT_START = datetime(2026, 8, 31, 6, 0, tzinfo=UTC)
+SHIFT_END = datetime(2026, 8, 31, 14, 0, tzinfo=UTC)
+
+
+def _result_row(**overrides) -> ShiftResultRow:
+    values = {
+        "id": 1,
+        "oee_unit_id": 7,
+        "shift_start": SHIFT_START,
+        "shift_end": SHIFT_END,
+        "shift_label": "Morning",
+        "loading_time_s": 27000.0,
+        "run_time_s": 24300.0,
+        "planned_down_s": 1800.0,
+        "unplanned_down_s": 2700.0,
+        "good_count": 4800.0,
+        "reject_count": 200.0,
+        "total_count": 5000.0,
+        "availability": 0.9,
+        "performance": 0.85,
+        "performance_raw": 0.85,
+        "quality": 0.96,
+        "oee": 0.7344,
+        "status": "OK",
+        "revision": 1,
+        "input_fingerprint": "",
+        "computed_at": datetime(2026, 8, 31, 14, 20, tzinfo=UTC),
+        "published_at": None,
+    }
+    values.update(overrides)
+    return ShiftResultRow(result=ShiftResult(**values), asset_path=LINE)
+
+
+def _event_row(**overrides) -> DowntimeEventRow:
+    values = {
+        "id": 11,
+        "oee_unit_id": 7,
+        "shift_start": SHIFT_START,
+        "started_at": datetime(2026, 8, 31, 9, 0, tzinfo=UTC),
+        "ended_at": datetime(2026, 8, 31, 9, 45, tzinfo=UTC),
+        "duration_s": 2700.0,
+        "state_value": "ABORTED",
+        "reason_code": "MECH_FAULT",
+        "reason_source": "auto",
+        "assigned_by": None,
+        "assigned_at": None,
+        "note": "",
+    }
+    values.update(overrides)
+    return DowntimeEventRow(
+        event=DowntimeEvent(**values),
+        asset_path=LINE,
+        display_name="Mechanical fault",
+        category="FAILURE",
+        is_planned=False,
+    )
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_the_range_arguments_are_named_from_and_to():
+    """
+    Spec section 10 writes the signature down. Asserted by introspection rather than
+    against printed SDL, so a Strawberry upgrade that reformats the schema cannot
+    break a test that is about the contract.
+    """
+    result = await UNSGraphql.schema.execute("""{ __type(name: "Query") { fields { name args { name } } } }""")
+
+    assert result.errors is None
+    arguments = {field["name"]: [arg["name"] for arg in field["args"]] for field in result.data["__type"]["fields"]}
+    assert arguments["oeeShiftResults"] == ["assetPath", "from", "to"]
+    assert arguments["downtimeEvents"] == ["assetPath", "from", "to"]
+    assert arguments["downtimePareto"] == ["assetPath", "from", "to"]
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_oee_shift_results_returns_what_the_repository_holds():
+    repository = AsyncMock()
+    repository.shift_results.return_value = [_result_row()]
+
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            """
+            {
+              oeeShiftResults(assetPath: "%s", from: "2026-08-31T06:00:00+00:00", to: "2026-09-01T06:00:00+00:00") {
+                assetPath shiftLabel availability performance quality oee status revision publishedAt
+              }
+            }
+            """
+            % LINE
+        )
+
+    assert result.errors is None
+    assert result.data["oeeShiftResults"] == [
+        {
+            "assetPath": LINE,
+            "shiftLabel": "Morning",
+            "availability": pytest.approx(0.9),
+            "performance": pytest.approx(0.85),
+            "quality": pytest.approx(0.96),
+            "oee": pytest.approx(0.7344),
+            "status": "OK",
+            "revision": 1,
+            "publishedAt": None,
+        }
+    ]
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_oee_shift_results_passes_the_parsed_range_through():
+    repository = AsyncMock()
+    repository.shift_results.return_value = []
+
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            """
+            {
+              oeeShiftResults(assetPath: "%s", from: "2026-08-31T06:00:00+00:00", to: "2026-09-01T06:00:00+00:00") {
+                shiftLabel
+              }
+            }
+            """
+            % LINE
+        )
+
+    assert result.errors is None
+    repository.shift_results.assert_awaited_once_with(
+        LINE, SHIFT_START, datetime(2026, 9, 1, 6, 0, tzinfo=UTC)
+    )
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_a_null_factor_is_null_in_the_response():
+    """A shift with no Loading Time must not arrive at the dashboard as 0%."""
+    repository = AsyncMock()
+    repository.shift_results.return_value = [
+        _result_row(status="NO_LOADING_TIME", availability=None, performance=None, quality=None, oee=None)
+    ]
+
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            """
+            {
+              oeeShiftResults(assetPath: "%s", from: "2026-08-31T06:00:00+00:00", to: "2026-09-01T06:00:00+00:00") {
+                status availability oee
+              }
+            }
+            """
+            % LINE
+        )
+
+    assert result.errors is None
+    assert result.data["oeeShiftResults"][0] == {
+        "status": "NO_LOADING_TIME",
+        "availability": None,
+        "oee": None,
+    }
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_an_asset_with_no_results_is_an_empty_list():
+    """Not an error: a line whose first shift has not closed yet is normal."""
+    repository = AsyncMock()
+    repository.shift_results.return_value = []
+
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            """
+            {
+              oeeShiftResults(assetPath: "nope", from: "2026-08-31T06:00:00+00:00", to: "2026-09-01T06:00:00+00:00") {
+                oee
+              }
+            }
+            """
+        )
+
+    assert result.errors is None
+    assert result.data["oeeShiftResults"] == []
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_downtime_events_expose_the_resolved_reason():
+    repository = AsyncMock()
+    repository.downtime_events.return_value = [_event_row()]
+
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            """
+            {
+              downtimeEvents(assetPath: "%s", from: "2026-08-31T06:00:00+00:00", to: "2026-08-31T14:00:00+00:00") {
+                id durationS stateValue reasonCode reasonDisplayName reasonCategory isPlanned reasonSource note
+              }
+            }
+            """
+            % LINE
+        )
+
+    assert result.errors is None
+    assert result.data["downtimeEvents"] == [
+        {
+            "id": "11",
+            "durationS": pytest.approx(2700.0),
+            "stateValue": "ABORTED",
+            "reasonCode": "MECH_FAULT",
+            "reasonDisplayName": "Mechanical fault",
+            "reasonCategory": "FAILURE",
+            "isPlanned": False,
+            "reasonSource": "AUTO",
+            "note": "",
+        }
+    ]
+    repository.downtime_events.assert_awaited_once_with(LINE, SHIFT_START, SHIFT_END)
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_downtime_pareto_returns_the_buckets_in_order():
+    repository = AsyncMock()
+    repository.downtime_pareto.return_value = [
+        ParetoBucket("MECH_FAULT", "Mechanical fault", "FAILURE", False, 5, 5400.0, 0.6),
+        ParetoBucket("CHANGEOVER", "Changeover", "PLANNED", True, 2, 3600.0, 0.4),
+    ]
+
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            """
+            {
+              downtimePareto(assetPath: "%s", from: "2026-08-31T06:00:00+00:00", to: "2026-08-31T14:00:00+00:00") {
+                reasonCode displayName isPlanned eventCount totalSeconds share
+              }
+            }
+            """
+            % LINE
+        )
+
+    assert result.errors is None
+    assert [bucket["reasonCode"] for bucket in result.data["downtimePareto"]] == ["MECH_FAULT", "CHANGEOVER"]
+    assert result.data["downtimePareto"][0]["eventCount"] == 5
+    assert result.data["downtimePareto"][0]["share"] == pytest.approx(0.6)
+    assert result.data["downtimePareto"][1]["isPlanned"] is True
+```
+
+- [ ] **Step 6: Run it to verify it fails**
+
+Run: `uv run pytest 07_uns_graphql/test/queries/test_oee.py -v -n 0`
+Expected: FAIL — collection error, `ModuleNotFoundError: No module named 'uns_graphql.queries.oee'`.
+
+- [ ] **Step 7: Write the queries**
+
+Create `07_uns_graphql/src/uns_graphql/queries/oee.py`:
+
+```python
+"""*******************************************************************************
+* Copyright (c) 2021 Ashwin Krishnan
+*
+* All rights reserved. This program and the accompanying materials
+* are made available under the terms of MIT and  is provided "as is",
+* without warranty of any kind, express or implied, including but
+* not limited to the warranties of merchantability, fitness for a
+* particular purpose and noninfringement. In no event shall the
+* authors, contributors or copyright holders be liable for any claim,
+* damages or other liability, whether in an action of contract,
+* tort or otherwise, arising from, out of or in connection with the software
+* or the use or other dealings in the software.
+*
+* Contributors:
+*    -
+*******************************************************************************
+
+GraphQL queries for computed OEE (spec section 10).
+
+Read from `oee.shift_result` and `oee.downtime_event`, never from `uns_metrics`. The
+engine has already resolved the shift calendar, the interval union, the counter resets
+and the product mix; a dashboard that recomputed any of that from raw samples would be
+a second implementation of the arithmetic, free to disagree with the first.
+
+The publishing side is `12_uns_oee`, which puts the same numbers on
+`<line>/KPI/ShiftOee`. This is the query path for a range of shifts, which MQTT cannot
+answer.
+"""
+
+import logging
+from datetime import datetime
+from typing import Annotated
+
+import strawberry
+from uns_model.engine import Database
+from uns_model.oee_results import OeeResultRepository
+
+from uns_graphql.type.oee import DowntimeEventType, DowntimeParetoBucket, OeeShiftResult
+
+LOGGER = logging.getLogger(__name__)
+
+# `from` is a Python keyword, so the resolver parameters are named for what they are and
+# the published argument names are set explicitly. Spec section 10 fixes them as
+# `from`/`to`; test/queries/test_oee.py pins them by introspection.
+FromArgument = Annotated[datetime, strawberry.argument(name="from")]
+ToArgument = Annotated[datetime, strawberry.argument(name="to")]
+
+
+def _repository() -> OeeResultRepository:
+    return OeeResultRepository(Database.shared("graphql"))
+
+
+@strawberry.type(description="Query computed OEE results and their downtime breakdown")
+class Query:
+    """All read access to schema `oee`."""
+
+    @strawberry.field(
+        description="Shift results for one Asset whose shift began in [from, to), oldest first. "
+        "Ratios are null when undefined - a shift with no Loading Time has no Availability."
+    )
+    async def oee_shift_results(
+        self, asset_path: str, range_start: FromArgument, range_end: ToArgument
+    ) -> list[OeeShiftResult]:
+        rows = await _repository().shift_results(asset_path, range_start, range_end)
+        return [OeeShiftResult.from_row(row) for row in rows]
+
+    @strawberry.field(
+        description="Stops for one Asset that began in [from, to), oldest first, each with its "
+        "reason code resolved. Bounded the same way downtimePareto is, so the two agree."
+    )
+    async def downtime_events(
+        self, asset_path: str, range_start: FromArgument, range_end: ToArgument
+    ) -> list[DowntimeEventType]:
+        rows = await _repository().downtime_events(asset_path, range_start, range_end)
+        return [DowntimeEventType.from_row(row) for row in rows]
+
+    @strawberry.field(
+        description="Lost time per reason code over [from, to), largest first. Always sums to the "
+        "window's total downtime: an unmapped state is UNCLASSIFIED, never null."
+    )
+    async def downtime_pareto(
+        self, asset_path: str, range_start: FromArgument, range_end: ToArgument
+    ) -> list[DowntimeParetoBucket]:
+        buckets = await _repository().downtime_pareto(asset_path, range_start, range_end)
+        return [DowntimeParetoBucket.from_bucket(bucket) for bucket in buckets]
+
+    @classmethod
+    async def on_shutdown(cls):
+        """
+        Nothing to do: the engine is shared with the Asset Model queries, which dispose
+        it. Kept so every Query mixin has the same shape.
+        """
+```
+
+- [ ] **Step 8: Wire the queries into the schema**
+
+In `07_uns_graphql/src/uns_graphql/uns_graphql_app.py`, change the import at line 33 from
+
+```python
+from uns_graphql.queries import alert_rule, asset, graph, historian
+```
+
+to
+
+```python
+from uns_graphql.queries import alert_rule, asset, graph, historian, oee
+```
+
+Change the `Query` declaration at line 42 from
+
+```python
+class Query(historian.Query, graph.Query, asset.Query, alert_rule.Query):
+```
+
+to
+
+```python
+class Query(historian.Query, graph.Query, asset.Query, alert_rule.Query, oee.Query):
+```
+
+and add the OEE shutdown call inside the existing `finally`, so the block reads:
+
+```python
+    @classmethod
+    async def on_shutdown(cls):
+        """
+        Clean up connections, db pools etc.
+        """
+        try:
+            await historian.Query.on_shutdown()
+        finally:
+            try:
+                await graph.Query.on_shutdown()
+            finally:
+                # Last: this disposes the engine that the Asset Model, the Alert Rules
+                # and the OEE results share.
+                await alert_rule.Query.on_shutdown()
+                await oee.Query.on_shutdown()
+                await asset.Query.on_shutdown()
+```
+
+- [ ] **Step 9: Run the query test to verify it passes**
+
+Run: `uv run pytest 07_uns_graphql/test/queries/test_oee.py -v -n 0`
+Expected: PASS (7 passed).
+
+- [ ] **Step 10: Write the failing mutation test**
+
+Create `07_uns_graphql/test/mutations/test_oee.py`:
+
+```python
+"""*******************************************************************************
+* Copyright (c) 2021 Ashwin Krishnan
+*
+* All rights reserved. This program and the accompanying materials
+* are made available under the terms of MIT and  is provided "as is",
+* without warranty of any kind, express or implied, including but
+* not limited to the warranties of merchantability, fitness for a
+* particular purpose and noninfringement. In no event shall the
+* authors, contributors or copyright holders be liable for any claim,
+* damages or other liability, whether in an action of contract,
+* tort or otherwise, arising from, out of or in connection with the software
+* or the use or other dealings in the software.
+*
+* Contributors:
+*    -
+*******************************************************************************
+
+Correcting a downtime reason through the schema, with the repository replaced.
+
+This is the second write this service has ever exposed, and the only one that touches
+plant data. The tests pin down what it is allowed to be: it corrects an attribution and
+queues a recomputation. It must never become a way to edit an OEE number directly.
+"""
+
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, patch
+
+import pytest
+from uns_model.oee_results import DowntimeEventRow
+from uns_model.oee_tables import DowntimeEvent
+
+from uns_graphql.uns_graphql_app import UNSGraphql
+
+REPOSITORY = "uns_graphql.mutations.oee._repository"
+
+LINE = "CovestroAG/Dormagen/Production/Line1"
+SHIFT_START = datetime(2026, 8, 31, 6, 0, tzinfo=UTC)
+
+ASSIGN = """
+    mutation Assign($eventId: ID!, $reasonCode: String!, $note: String, $assignedBy: String) {
+        assignDowntimeReason(eventId: $eventId, reasonCode: $reasonCode, note: $note, assignedBy: $assignedBy) {
+            id reasonCode reasonSource isPlanned assignedBy note
+        }
+    }
+"""
+
+
+def _assigned(**overrides) -> DowntimeEventRow:
+    values = {
+        "id": 11,
+        "oee_unit_id": 7,
+        "shift_start": SHIFT_START,
+        "started_at": datetime(2026, 8, 31, 9, 0, tzinfo=UTC),
+        "ended_at": datetime(2026, 8, 31, 9, 45, tzinfo=UTC),
+        "duration_s": 2700.0,
+        "state_value": "ABORTED",
+        "reason_code": "CHANGEOVER",
+        "reason_source": "manual",
+        "assigned_by": "a.operator",
+        "assigned_at": datetime(2026, 8, 31, 15, 0, tzinfo=UTC),
+        "note": "Product change to MDI-02",
+    }
+    values.update(overrides)
+    return DowntimeEventRow(
+        event=DowntimeEvent(**values),
+        asset_path=LINE,
+        display_name="Changeover",
+        category="PLANNED",
+        is_planned=True,
+    )
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_assign_downtime_reason_returns_the_event_as_stored():
+    repository = AsyncMock()
+    repository.assign_reason.return_value = _assigned()
+
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            ASSIGN,
+            variable_values={
+                "eventId": "11",
+                "reasonCode": "CHANGEOVER",
+                "note": "Product change to MDI-02",
+                "assignedBy": "a.operator",
+            },
+        )
+
+    assert result.errors is None
+    assert result.data["assignDowntimeReason"] == {
+        "id": "11",
+        "reasonCode": "CHANGEOVER",
+        "reasonSource": "MANUAL",
+        "isPlanned": True,
+        "assignedBy": "a.operator",
+        "note": "Product change to MDI-02",
+    }
+    repository.assign_reason.assert_awaited_once_with(
+        11, "CHANGEOVER", note="Product change to MDI-02", assigned_by="a.operator"
+    )
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_the_event_id_reaches_the_repository_as_a_number():
+    """The schema publishes ID, which is a string. The primary key is a BIGINT."""
+    repository = AsyncMock()
+    repository.assign_reason.return_value = _assigned()
+
+    with patch(REPOSITORY, return_value=repository):
+        await UNSGraphql.schema.execute(
+            ASSIGN, variable_values={"eventId": "11", "reasonCode": "CHANGEOVER"}
+        )
+
+    assert repository.assign_reason.await_args.args == (11, "CHANGEOVER")
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_omitting_the_note_leaves_the_stored_note_alone():
+    """
+    None rather than '': the repository omits the column entirely when the note is
+    None, so an operator correcting only the code cannot erase somebody else's note.
+    """
+    repository = AsyncMock()
+    repository.assign_reason.return_value = _assigned(note="Called maintenance at 09:05")
+
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            ASSIGN, variable_values={"eventId": "11", "reasonCode": "CHANGEOVER"}
+        )
+
+    assert result.errors is None
+    assert repository.assign_reason.await_args.kwargs == {"note": None, "assigned_by": None}
+    assert result.data["assignDowntimeReason"]["note"] == "Called maintenance at 09:05"
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_an_unknown_event_is_an_error_and_not_a_null():
+    """The return type is non-null, and an operator whose click did nothing must be told."""
+    repository = AsyncMock()
+    repository.assign_reason.return_value = None
+
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            ASSIGN, variable_values={"eventId": "999", "reasonCode": "CHANGEOVER"}
+        )
+
+    assert result.errors
+    assert "999" in result.errors[0].message
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_an_unauthored_reason_code_reaches_the_caller_as_a_message():
+    """The repository's ValueError, not a driver-level foreign key violation."""
+    repository = AsyncMock()
+    repository.assign_reason.side_effect = ValueError("'NOT_A_REASON' is not an authored downtime reason code")
+
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            ASSIGN, variable_values={"eventId": "11", "reasonCode": "NOT_A_REASON"}
+        )
+
+    assert result.errors
+    assert "NOT_A_REASON" in result.errors[0].message
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_an_event_id_that_is_not_a_number_is_rejected_before_the_database():
+    repository = AsyncMock()
+
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            ASSIGN, variable_values={"eventId": "eleven", "reasonCode": "CHANGEOVER"}
+        )
+
+    assert result.errors
+    assert "eleven" in result.errors[0].message
+    repository.assign_reason.assert_not_awaited()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_the_schema_exposes_no_other_way_to_write_to_the_oee_schema():
+    """
+    A shift result is computed, never edited. If a second OEE mutation ever appears,
+    this test is the place that argues about it.
+    """
+    result = await UNSGraphql.schema.execute("""{ __type(name: "Mutation") { fields { name } } }""")
+
+    assert result.errors is None
+    names = [field["name"] for field in result.data["__type"]["fields"]]
+    assert [name for name in names if "owntime" in name or "Oee" in name or "oee" in name] == [
+        "assignDowntimeReason"
+    ]
+```
+
+- [ ] **Step 11: Run it to verify it fails**
+
+Run: `uv run pytest 07_uns_graphql/test/mutations/test_oee.py -v -n 0`
+Expected: FAIL — collection error, `ModuleNotFoundError: No module named 'uns_graphql.mutations.oee'`.
+
+- [ ] **Step 12: Write the mutation**
+
+Create `07_uns_graphql/src/uns_graphql/mutations/oee.py`:
+
+```python
+"""*******************************************************************************
+* Copyright (c) 2021 Ashwin Krishnan
+*
+* All rights reserved. This program and the accompanying materials
+* are made available under the terms of MIT and  is provided "as is",
+* without warranty of any kind, express or implied, including but
+* not limited to the warranties of merchantability, fitness for a
+* particular purpose and noninfringement. In no event shall the
+* authors, contributors or copyright holders be liable for any claim,
+* damages or other liability, whether in an action of contract,
+* tort or otherwise, arising from, out of or in connection with the software
+* or the use or other dealings in the software.
+*
+* Contributors:
+*    -
+*******************************************************************************
+
+The one write this service makes to plant data: which reason a stop is attributed to.
+
+An OEE number is computed, never edited. What a human legitimately knows better than
+the engine is *why* a machine stopped - the engine only ever saw a state code. So this
+mutation corrects the attribution and queues a recomputation, and the engine remains
+the only writer of `oee.shift_result` (ADR-0005 for why the write lives in GraphQL at
+all: the console is a static bundle with no backend of its own).
+
+Reassignment can change the OEE, because a reason's `is_planned` flag moves the
+interval between Unplanned Down and excluded time. That is correct behaviour, and it is
+why this enqueues rather than merely editing a label.
+"""
+
+import logging
+from typing import Annotated
+
+import strawberry
+from uns_model.engine import Database
+from uns_model.oee_results import OeeResultRepository
+
+from uns_graphql.type.oee import DowntimeEventType
+
+LOGGER = logging.getLogger(__name__)
+
+
+def _repository() -> OeeResultRepository:
+    return OeeResultRepository(Database.shared("graphql"))
+
+
+@strawberry.type(description="Correct which reason a stop is attributed to")
+class Mutation:
+    """All write access to schema `oee`. One field, deliberately."""
+
+    @strawberry.mutation(
+        description="Attribute a stop to a reason code by hand and queue that shift for "
+        "recomputation. The stored reason becomes MANUAL, which the engine never overwrites. "
+        "Errors when there is no such event or the reason code is not authored."
+    )
+    async def assign_downtime_reason(
+        self,
+        event_id: strawberry.ID,
+        reason_code: str,
+        note: str | None = None,
+        # `strawberry.argument`, not `strawberry.field`: this is a resolver argument, and
+        # `field` as a default value would be published as a String with a broken default.
+        assigned_by: Annotated[
+            str | None,
+            strawberry.argument(
+                description="Who says they made the correction. Attested by the caller, not "
+                "authenticated: this platform has no authentication anywhere."
+            ),
+        ] = None,
+    ) -> DowntimeEventType:
+        try:
+            numeric_id = int(event_id)
+        except (TypeError, ValueError) as ex:
+            # Rejected before the database, so a typo does not arrive as a driver error.
+            raise ValueError(f"{event_id!r} is not a downtime event id") from ex
+
+        assigned = await _repository().assign_reason(
+            numeric_id, reason_code, note=note, assigned_by=assigned_by
+        )
+        if assigned is None:
+            # Non-null return type, and the right answer: an operator whose click did
+            # nothing has to be told, not handed an empty object.
+            raise ValueError(f"There is no downtime event {event_id}")
+
+        LOGGER.info(
+            "Downtime event %s attributed to %s by %s", event_id, reason_code, assigned_by or "unknown"
+        )
+        return DowntimeEventType.from_row(assigned)
+
+    @classmethod
+    async def on_shutdown(cls):
+        """The engine is shared with the queries, which dispose it."""
+```
+
+- [ ] **Step 13: Wire the mutation into the schema**
+
+In `07_uns_graphql/src/uns_graphql/uns_graphql_app.py`, add the import after line 32:
+
+```python
+from uns_graphql.mutations.alert_rule import Mutation as AlertRuleMutation
+from uns_graphql.mutations.oee import Mutation as OeeMutation
+```
+
+and change the `Mutation` class so it reads:
+
+```python
+@strawberry.type(description="Write configuration to the UNS platform")
+class Mutation(AlertRuleMutation, OeeMutation):
+    """
+    The only mutations this service exposes.
+
+    Deliberately narrow: process data is written by publishing to the broker, and the
+    Asset Model is authored in `conf/settings.yaml`. What is left is the console's own
+    configuration, which has nowhere else to live because the console is a static
+    bundle (ADR-0005), and one correction to plant data that no machine can make - which
+    reason a stop is attributed to.
+    """
+
+    @classmethod
+    async def on_shutdown(cls):
+        """
+        Clean up connections, db pools etc.
+        """
+        await AlertRuleMutation.on_shutdown()
+        await OeeMutation.on_shutdown()
+```
+
+- [ ] **Step 14: Run the mutation test to verify it passes**
+
+Run: `uv run pytest 07_uns_graphql/test/mutations/test_oee.py -v -n 0`
+Expected: PASS (7 passed).
+
+- [ ] **Step 15: Run the whole GraphQL suite and the linter**
+
+Run: `uv run pytest 07_uns_graphql/test -q -m "not integrationtest"`
+Expected: PASS. `test_uns_graphql_app.py::test_uns_graphql_app_db_pool_cleanup` still asserts `Database.close_shared` is awaited exactly once — `oee.Query.on_shutdown` is a no-op for the same reason `alert_rule.Query.on_shutdown` is, so that count does not change.
+
+Run: `uv run ruff check 07_uns_graphql/src/uns_graphql/type/oee.py 07_uns_graphql/src/uns_graphql/queries/oee.py 07_uns_graphql/src/uns_graphql/mutations/oee.py 07_uns_graphql/test/type/test_oee.py 07_uns_graphql/test/queries/test_oee.py 07_uns_graphql/test/mutations/test_oee.py 07_uns_graphql/src/uns_graphql/uns_graphql_app.py`
+Expected: no findings.
+
+- [ ] **Step 16: Commit**
+
+```bash
+git add 07_uns_graphql/src/uns_graphql/type/oee.py \
+        07_uns_graphql/src/uns_graphql/queries/oee.py \
+        07_uns_graphql/src/uns_graphql/mutations/oee.py \
+        07_uns_graphql/src/uns_graphql/uns_graphql_app.py \
+        07_uns_graphql/test/type/test_oee.py \
+        07_uns_graphql/test/queries/test_oee.py \
+        07_uns_graphql/test/mutations/test_oee.py
+git commit -m "feat(graphql): expose OEE results, downtime events and the reason-assignment mutation"
+```
+
+---
+
+### Task 20: Packaging, deployment and the ADR
+
+**Files:**
+- Create: `12_uns_oee/Dockerfile`
+- Create: `12_uns_oee/README.md`
+- Create: `12_uns_oee/test/test_deployment.py`
+- Create: `docs/adr/0008-oee-computed-from-history-not-streamed.md`
+- Modify: `12_uns_oee/pyproject.toml` (add `pyyaml` to the `test` group)
+- Modify: `09_uns_model/Dockerfile:49` (copy `conf/oee/`)
+- Modify: `docker-compose.yml:317-327` (add `oee_client`, add it to `uns_prometheus`'s `depends_on`)
+- Modify: `08_uns_observability/prometheus/prometheus.yml:18-21` (fifth scrape job)
+- Modify: `README.md:117`, `:269`, `:339`, `:386`, `:398`
+
+**Interfaces:**
+- Consumes: `uns_oee.oee_config.OeeConfig` (Task 1) for the port the test asserts against; the `uns_oee` and `uns_oee_health` entry points (Tasks 15, 1).
+- Produces: the `oee_client` compose service and the `uns_oee` Prometheus job. Task 21's Grafana dashboard and Task 22's integration test both assume the compose stack described here.
+
+**Why this task has real tests and not only `docker compose config`.** Three numbers have to agree that live in three files nobody edits together: `OeeConfig.metrics_port`, `UNS_oee__metrics_port` in `docker-compose.yml`, and the target in `prometheus.yml`. When they disagree nothing fails — the container starts, the engine computes, and the dashboard's platform-health row is simply empty, which reads as "no OEE has run" rather than "the scrape target is wrong". `99_simulator/test/test_self_telemetry.py` already sets the precedent of a unit test that reads the real deployment files; this follows it.
+
+**Why the container waits on `asset_model_setup` and not on `historian_client`.** The engine needs its tables and its authored master data, which `asset_model_setup` creates (Task 3 chains `oee_import` into `uns_model_setup`). It does not need the historian *process*: it reads the `uns_metrics` table, and a shift with no samples in it is a `NO_INPUT_DATA` result, not an error. Depending on `historian_client` would only mean the engine cannot start while the mapper is unhealthy, for no benefit.
+
+**Why 9095 is not published to the host.** Same reason 9091, 9092 and 9093 are not: Prometheus scrapes it from inside the compose network. The engine has no HTTP surface a person needs.
+
+- [ ] **Step 1: Write the failing deployment test**
+
+Create `12_uns_oee/test/test_deployment.py`:
+
+```python
+"""The three files that have to agree about port 9095, and the one that has to agree about
+the startup order.
+
+None of this fails loudly when it drifts: a wrong scrape target produces an empty panel,
+not an error, and a missing `depends_on` produces a container that crash-loops for a
+minute and then works. Both are the kind of thing that gets found in a demo.
+
+Reads the real deployment files, in the spirit of `99_simulator/test/test_self_telemetry.py`.
+"""
+
+from pathlib import Path
+
+import pytest
+import yaml
+from uns_oee.oee_config import OeeConfig
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+COMPOSE_FILE = REPO_ROOT / "docker-compose.yml"
+PROMETHEUS_FILE = REPO_ROOT / "08_uns_observability" / "prometheus" / "prometheus.yml"
+
+SERVICE = "oee_client"
+JOB = "uns_oee"
+
+
+@pytest.fixture(scope="module")
+def compose() -> dict:
+    return yaml.safe_load(COMPOSE_FILE.read_text(encoding="utf-8"))
+
+
+@pytest.fixture(scope="module")
+def prometheus() -> dict:
+    return yaml.safe_load(PROMETHEUS_FILE.read_text(encoding="utf-8"))
+
+
+def test_the_scrape_target_is_the_port_the_engine_binds(compose: dict, prometheus: dict):
+    """
+    The one assertion that earns this file. `OeeConfig`'s default is the source of truth;
+    the compose override and the scrape target both have to name it.
+    """
+    port = OeeConfig(mqtt_host="localhost").metrics_port
+
+    jobs = {job["job_name"]: job for job in prometheus["scrape_configs"]}
+    assert JOB in jobs, f"prometheus.yml has no {JOB} job"
+    assert jobs[JOB]["static_configs"][0]["targets"] == [f"{SERVICE}:{port}"]
+    assert str(compose["services"][SERVICE]["environment"]["UNS_oee__metrics_port"]) == str(port)
+
+
+def test_the_metrics_port_is_not_shared_with_another_service(prometheus: dict):
+    """9091 historian, 9092 graph database, 9093 simulator, 9094 the OPC UA connector."""
+    targets = [job["static_configs"][0]["targets"][0] for job in prometheus["scrape_configs"]]
+    ports = [target.rsplit(":", 1)[1] for target in targets]
+    assert len(ports) == len(set(ports)), f"two Prometheus jobs scrape the same port: {ports}"
+
+
+def test_the_metrics_port_is_not_published_to_the_host(compose: dict):
+    """Prometheus scrapes from inside the network. Nothing outside needs to reach 9095."""
+    assert "ports" not in compose["services"][SERVICE]
+
+
+def test_the_engine_waits_for_its_tables_and_its_master_data(compose: dict):
+    """
+    `asset_model_setup` runs the `0003` migration and imports `conf/oee/*.yaml`. Starting
+    before it means a first pass with no OeeUnit rows, which is silent by design.
+    """
+    depends_on = compose["services"][SERVICE]["depends_on"]
+    assert depends_on["asset_model_setup"]["condition"] == "service_completed_successfully"
+    assert depends_on["tsdb_setup_script"]["condition"] == "service_completed_successfully"
+    assert depends_on["uns_timescale_db"]["condition"] == "service_healthy"
+    assert depends_on["uns_mqtt_broker"]["condition"] == "service_healthy"
+
+
+def test_the_engine_does_not_wait_for_the_historian_process(compose: dict):
+    """
+    It reads the `uns_metrics` table, not the mapper. A shift with no samples is a
+    NO_INPUT_DATA result, so the mapper being unhealthy must not stop the engine.
+    """
+    assert "historian_client" not in compose["services"][SERVICE]["depends_on"]
+
+
+def test_prometheus_scrapes_the_engine(compose: dict):
+    """Without this, the job resolves to nothing until the engine happens to be up first."""
+    assert SERVICE in compose["services"]["uns_prometheus"]["depends_on"]
+
+
+def test_the_engine_gets_the_database_credentials_it_needs(compose: dict):
+    """
+    Reads `uns_metrics` and writes `oee.*` as the same role the historian uses. The
+    password comes from the environment, never from the compose file.
+    """
+    environment = compose["services"][SERVICE]["environment"]
+    assert environment["UNS_historian__hostname"] == "uns_timescale_db"
+    assert environment["UNS_historian__metrics_table"] == "uns_metrics"
+    assert environment["UNS_historian__password"] == "${UNS_historian__password}"
+    assert environment["UNS_mqtt__host"] == "uns_mqtt_broker"
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+Run: `uv run pytest 12_uns_oee/test/test_deployment.py -v -n 0`
+Expected: FAIL — `ModuleNotFoundError: No module named 'yaml'` on collection, or once that is installed, `KeyError: 'oee_client'`.
+
+- [ ] **Step 3: Add `pyyaml` to the test group**
+
+In `12_uns_oee/pyproject.toml`, `[dependency-groups] test`, add:
+
+```toml
+    "pyyaml>=6.0.2,<7",
+```
+
+The test group, not `dependencies`: the engine reads no YAML of its own — `conf/oee/*.yaml` is `09_uns_model`'s importer's business — and only this test needs a parser.
+
+- [ ] **Step 4: Add the Prometheus job**
+
+`08_uns_observability/prometheus/prometheus.yml`, after the `uns_simulator` job:
+
+```yaml
+  - job_name: uns_oee
+    static_configs:
+      - targets: ["oee_client:9095"]
+```
+
+- [ ] **Step 5: Add the compose service**
+
+In `docker-compose.yml`, insert before `uns_prometheus`:
+
+```yaml
+  # Computes OEE for closed shifts and publishes each result to `<line>/KPI/ShiftOee`.
+  # Reads the `uns_metrics` hypertable and writes the `oee` schema; it never publishes
+  # process data and never writes to a control system (ADR-0008).
+  oee_client:
+    build:
+      context: .
+      dockerfile: ./12_uns_oee/Dockerfile
+    volumes:
+      - ./conf:/app/conf
+    # 9095 stays unpublished: Prometheus scrapes it from inside the network, exactly as it
+    # does the historian's 9091, the graph database's 9092 and the simulator's 9093.
+    environment:
+      UNS_CONF_DIR: /app/conf
+      UNS_MODULE: 12_uns_oee
+      UNS_mqtt__host: uns_mqtt_broker
+      UNS_historian__hostname: uns_timescale_db
+      UNS_historian__database: "uns_historian"
+      UNS_historian__metrics_table: "uns_metrics"
+      UNS_historian__username: uns_dbuser
+      UNS_historian__password: ${UNS_historian__password}
+      UNS_oee__metrics_port: 9095
+    depends_on:
+      uns_mqtt_broker:
+        condition: service_healthy
+      uns_timescale_db:
+        condition: service_healthy
+      tsdb_setup_script:
+        condition: service_completed_successfully
+      # Creates the `oee` schema and imports conf/oee/*.yaml. Without it the first pass
+      # finds no OeeUnit rows and does nothing, which is silent.
+      asset_model_setup:
+        condition: service_completed_successfully
+```
+
+and add `oee_client` to `uns_prometheus`:
+
+```yaml
+  uns_prometheus:
+    image: "prom/prometheus:latest"
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./08_uns_observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - historian_client
+      - graphdb_client
+      - uns_simulator
+      - oee_client
+```
+
+- [ ] **Step 6: Write the Dockerfile**
+
+Create `12_uns_oee/Dockerfile`:
+
+```dockerfile
+###############################################################################
+# Copyright (c) 2021 Ashwin Krishnan
+#
+# All rights reserved. This program and the accompanying materials
+# are made available under the terms of MIT and  is provided "as is",
+# without warranty of any kind, express or implied, including but
+# not limited to the warranties of merchantability, fitness for a
+# particular purpose and noninfringement. In no event shall the
+# authors, contributors or copyright holders be liable for any claim,
+# damages or other liability, whether in an action of contract,
+# tort or otherwise, arising from, out of or in connection with the software
+# or the use or other dealings in the software.
+#
+# Contributors:
+#    -
+###############################################################################
+
+# The command for building this image is
+#       docker build -t uns/oee:<version> --build-arg GIT_HASH=<git hash or local> -f ./Dockerfile ..
+#       e.g.
+#       docker build -t uns/oee:0.9.38 --build-arg GIT_HASH=local -f ./Dockerfile ..
+# Run the build command from the repository root (context is `..` from 12_uns_oee)
+# Mount the repository-root conf/ folder at /app/conf.
+#       e.g.
+#       docker run --name uns_oee -v <repo-root>/conf:/app/conf --network=host uns/oee:0.9.38
+
+# Use the official Python image
+FROM python:3.14-alpine3.22
+
+# Set the environment variable for the entrypoint command
+# spell-checker:disable
+ENV UNS_MODULE="12_uns_oee"\
+    PYTHONUNBUFFERED=1 \
+    PYTHONFAULTHANDLER=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    UNS_CONF_DIR="/app/conf"
+# spell-checker:enable
+LABEL org.opencontainers.image.source=https://github.com/mkashwin/unifiednamespace/tree/main/12_uns_oee
+LABEL org.opencontainers.image.description="Computes shift OEE from historised UNS data and publishes it back to MQTT"
+LABEL org.opencontainers.image.licenses=MIT
+
+# Set the working directory in the container to /
+WORKDIR /app
+
+# Copy the contents of the project into the container
+COPY ./${UNS_MODULE}/pyproject.toml ./${UNS_MODULE}/uv.lock ./${UNS_MODULE}/README.md ./LICENSE* ./
+COPY ./00_uns_config/pyproject.toml ./00_uns_config/README.md /00_uns_config/
+COPY ./00_uns_config/src /00_uns_config/src
+# The Asset Model: this module's ORM tables, its engine and its result repository all live
+# there. alembic.ini and migrations/ are part of its build config, so they are copied even
+# though the engine never migrates - the Asset Model image does that.
+COPY ./09_uns_model/pyproject.toml ./09_uns_model/uv.lock ./09_uns_model/README.md ./09_uns_model/alembic.ini /09_uns_model/
+COPY ./09_uns_model/migrations /09_uns_model/migrations
+COPY ./09_uns_model/src /09_uns_model/src
+COPY ./${UNS_MODULE}/src ./src/
+COPY ./conf/settings.yaml /app/conf/settings.yaml
+
+# install minimalistic missing packages & security fixes
+RUN apk update && \
+    apk add --no-cache libffi-dev libc-dev gcc && \
+    apk upgrade --no-cache libexpat libcrypto3 libssl3 busybox ssl_client && \
+    rm -rf /var/cache/apk/*
+
+# Install pip & uv
+RUN  pip install  --no-cache-dir --upgrade pip uv && \
+    # create application user
+    adduser --no-create-home --home /app --disabled-password uns_user && \
+    chown -R uns_user /app && \
+    # Install the required dependencies for the project using uv as that user
+    su uns_user -c "uv lock && uv sync --group main --compile-bytecode"
+
+USER uns_user
+
+ARG GIT_HASH
+ENV GIT_HASH=${GIT_HASH:-dev}
+
+# Mount the volume /conf
+VOLUME /app/conf
+# Set the Entrypoint script to run the uns_oee module
+ENTRYPOINT ["uv", "run", "uns_oee"]
+HEALTHCHECK --interval=60s --timeout=10s CMD ["uv", "run", "uns_oee_health"]
+```
+
+Note what is *not* in it: no `02_mqtt-cluster`. The engine publishes with `aiomqtt` directly and never subscribes, so the listener base class would be dead weight. `tzdata` is not installed by `apk` either — it comes in as a Python dependency (Task 4), which is what makes the same wheel work on Windows and Alpine.
+
+- [ ] **Step 7: Ship `conf/oee/` in the Asset Model image**
+
+In `09_uns_model/Dockerfile`, after the `COPY ./conf/settings.yaml` line, add:
+
+```dockerfile
+# The authored OEE master data, imported by `uns_model_oee_import`. Compose mounts the
+# whole conf/ over this, so it only matters when the image is run without a mount - which
+# is exactly the case where a missing shift pattern would be hardest to diagnose.
+COPY ./conf/oee /app/conf/oee
+```
+
+- [ ] **Step 8: Run the deployment test to verify it passes**
+
+Run: `uv sync && uv run pytest 12_uns_oee/test/test_deployment.py -v -n 0`
+Expected: PASS (7 passed).
+
+Run: `docker compose config > /dev/null`
+Expected: no output and exit status 0. This is what catches a YAML indentation slip in Step 5, which the Python test cannot see because `yaml.safe_load` would have failed first — if the test errored on parsing, fix the indentation before reading further.
+
+- [ ] **Step 9: Write the module README**
+
+Create `12_uns_oee/README.md`:
+
+```markdown
+# UNS OEE Engine
+
+Computes **Overall Equipment Effectiveness** for closed shifts from data already in the
+historian, and publishes each result back into the Unified Namespace.
+
+    OEE = Availability x Performance x Quality
+
+Definitions follow Nakajima / SEMI E79 as spelled out in
+[the design](../docs/superpowers/specs/2026-09-01-oee-engine-design.md), and the reasoning
+behind computing rather than streaming is [ADR-0008](../docs/adr/0008-oee-computed-from-history-not-streamed.md).
+
+## What it does
+
+For each Asset listed in `conf/oee/units.yaml`, once a shift has closed and settled:
+
+| Term | From |
+| --- | --- |
+| Loading Time | the shift window, less planned stops and calendar exceptions |
+| Run Time | the union of the intervals the Asset spent in a producing state |
+| Good / Reject counts | monotonic counters, differenced with rollover and reset detection |
+| Ideal Cycle Time | authored per Asset x Product in `conf/oee/products.yaml` and `units.yaml` |
+
+The result is written to `oee.shift_result` and published once to
+`<asset path>/KPI/ShiftOee`. Stops are stored individually in `oee.downtime_event` with a
+reason code, so the number can always be explained.
+
+## What it does not do
+
+- **No live OEE.** A partial shift has no Availability, because its Loading Time is not
+  known until it closes. The console shows closed shifts.
+- **No write-back to any control system.** This module reads the historian and publishes
+  to MQTT. It never writes to OPC UA, a PLC, or any process interface.
+- **No editing of a result.** A shift result is computed. What a human can correct is
+  *why* a machine stopped, through `assignDowntimeReason`; that queues a recomputation.
+
+## Configuration
+
+| Where | What |
+| --- | --- |
+| `conf/settings.yaml`, `oee:` environment | scan interval, settle time, late window, backfill days, metrics port |
+| `conf/oee/shifts.yaml` | weekly shift patterns and calendar exceptions, in a named IANA timezone |
+| `conf/oee/units.yaml` | which Assets OEE is reported for, and the metric keys its inputs come from |
+| `conf/oee/products.yaml` | product codes and their ideal cycle times |
+| `conf/oee/reasons.yaml` | the downtime reason vocabulary and the state-to-reason rules |
+
+Override any setting with an environment variable: `UNS_oee__backfill_days=7`. The database
+password comes from `conf/.secrets.yaml` or `UNS_historian__password` and must never be put
+in `settings.yaml`.
+
+After editing anything under `conf/oee/`, re-run the importer:
+
+```bash
+docker compose up asset_model_setup
+```
+
+## Running it
+
+```bash
+# In the compose stack, as the `oee_client` service
+docker compose up -d oee_client
+
+# Locally
+uv run uns_oee
+
+# Recompute a range by hand - after correcting master data, for instance
+uv run uns_oee_recompute --asset "CovestroAG/Dormagen/Production/Line1" \
+                         --from 2026-08-01 --to 2026-09-01
+```
+
+`uns_oee_recompute --help` lists the rest, including `--force`, which supersedes existing
+revisions instead of queuing them.
+
+## Observability
+
+Prometheus metrics on **9095** (`uns_oee_shifts_computed`, `uns_oee_shifts_failed`,
+`uns_oee_publish_failed`, `uns_oee_pass_duration_seconds`, `uns_oee_last_pass_timestamp`).
+The Grafana **OEE** dashboard reads `oee.shift_result` and `oee.downtime_event` directly -
+not the enriched metric views, which know nothing about shifts.
+
+## Tests
+
+```bash
+uv run pytest ./12_uns_oee                        # everything
+uv run pytest -m "not integrationtest" ./12_uns_oee   # no database needed
+```
+
+The arithmetic — the calendar, the counters, the interval algebra, the formulas — is all
+pure and covered without a database. The integration tests need a Postgres with the
+migrations applied.
+```
+
+- [ ] **Step 10: Write the ADR**
+
+Create `docs/adr/0008-oee-computed-from-history-not-streamed.md`:
+
+```markdown
+---
+status: accepted
+---
+
+# OEE is computed from shift history, not streamed
+
+Date: 2026-09-01
+
+## Status
+
+Accepted
+
+## Context
+
+The platform needed the memo's pilot success criterion: an OEE number per line that
+production can act on.
+
+The obvious shape is a stream processor. Machine state and counters already arrive on MQTT;
+a subscriber could keep a running Availability, Performance and Quality per line and
+publish them continuously, and the console would show a live gauge.
+
+Three things make that the wrong shape here.
+
+**Availability has no live value.** It is Run Time over *Loading Time*, and Loading Time is
+the shift's scheduled time less its planned stops. Mid-shift, the denominator is not known:
+a changeover scheduled for the last hour has not happened yet. A live gauge would either
+divide by elapsed time — a different quantity that drifts toward the real one and looks
+wrong all shift — or by planned time, and read 40% at 08:00 on every shift ever run.
+
+**A stopped machine has to be asked why.** Auto-classification from a state code gets some
+of the way, and the rest is a person saying "that was the gearbox". That answer arrives
+minutes or hours after the stop, and `is_planned` on the reason moves the interval between
+Unplanned Down and excluded time — so it changes Availability. A number that is final the
+instant the shift ends is a number that cannot absorb the correction.
+
+**Late data is normal.** An edge connector reconnects and flushes an hour of buffered
+samples. Stream state has already moved past them.
+
+## Decision
+
+OEE is computed **after** a shift closes, from the historised `uns_metrics` rows, by a
+scheduler that runs a pass every few minutes.
+
+- A shift becomes eligible `settle_minutes` after its end, so in-flight messages have
+  landed.
+- Each computation records an **input fingerprint** (a row count and a max timestamp) over
+  its window. For `late_window_hours` after the shift ends, a pass that finds a changed
+  fingerprint recomputes and writes a new **revision**; the previous numbers move to
+  `oee.shift_result_revision`. Identical fingerprint, no write.
+- Correcting a downtime reason enqueues that shift in `oee.recompute_request`, which the
+  same pass drains.
+- A manually assigned reason (`reason_source = 'manual'`) is never overwritten by the
+  engine. Recomputation reads the corrected reason and produces a different, better number.
+- Results are published once per revision to `<asset path>/KPI/ShiftOee`, which is a KPI
+  topic and not a measurement. Nothing subscribes to it in order to compute anything else.
+
+Every formula lives in one pure module (`oee_calc.py`) that takes a `ShiftInputs` and
+returns a `ShiftMetrics`. Nothing else does arithmetic. The dashboard reads
+`oee.shift_result`; it does not re-derive OEE from samples, because a second implementation
+of the formula is free to disagree with the first.
+
+Undefined is represented as null, never zero. A shift with no Loading Time did not achieve
+0% — `status` says `NO_LOADING_TIME` and the ratios are null, so a plant holiday does not
+appear on the trend as a catastrophe.
+
+## Consequences
+
+**Good.** The number is explainable: every result has its stops, its per-product counts and
+its ideal cycle times stored beside it. Recomputation is safe by construction — the same
+inputs produce the same fingerprint and therefore no write — so the CLI, the queue and the
+scheduler can all ask for the same range without racing. Corrections are first-class rather
+than an audit-trail afterthought. The engine is a batch reader, so it can be stopped for an
+hour and catch up.
+
+**Bad.** OEE is late by `settle_minutes` plus up to one scan interval — around twenty
+minutes with the defaults — and there is no live gauge to put on a wall display. A shift's
+number can change after an operator sees it, which needs explaining once to every plant that
+adopts it; `revision` and `oee.shift_result_revision` are what make that explanation
+possible. Backfill on an empty results table walks back `backfill_days`, which on a large
+history is the slowest thing the module ever does, so it is bounded and logged.
+
+**Neutral.** Nothing here prevents adding a live *rate* signal later — units per hour is
+well defined mid-shift and needs no Loading Time. That would be a new topic beside
+`KPI/ShiftOee`, not a change to it.
+```
+
+- [ ] **Step 11: Update the root README**
+
+Add to the container table after the `uns_simulator` row (`README.md:117`):
+
+```markdown
+| `oee_client` | Computes shift OEE from the historised `uns_metrics` rows and publishes each result to `<line>/KPI/ShiftOee`. Reads the historian, writes the `oee` schema, never writes to a control system (ADR-0008). Metrics on `9095`, unpublished. |
+```
+
+Add to the module bullet list after the Asset Model line (`README.md:269`):
+
+```markdown
+- The shift OEE engine, which turns that history into Availability x Performance x Quality per line [12_uns_oee](./12_uns_oee/README.md)
+```
+
+Add to the numbered module list after `09_uns_model` (`README.md:339`):
+
+```markdown
+1. [12_uns_oee](./12_uns_oee/README.md): Python project that computes OEE for closed shifts from historised UNS data, stores the result and its downtime breakdown in the `oee` schema, and publishes it back to MQTT
+```
+
+Add to both test-command blocks (`README.md:386` and `:398`):
+
+```bash
+uv run pytest  ./12_uns_oee
+```
+
+```bash
+uv run pytest -m "not integrationtest" ./12_uns_oee
+```
+
+Add a section after **Observability & Visualization** and before **Setting up the development environment** (`README.md:324`):
+
+```markdown
+### **OEE**
+
+**Overall Equipment Effectiveness** — Availability x Performance x Quality — is computed per
+closed shift by **[12_uns_oee](./12_uns_oee/README.md)** from data already in the historian,
+and published back into the namespace on `<line>/KPI/ShiftOee`.
+
+It is deliberately not a live gauge. Availability is Run Time over *Loading Time*, and
+Loading Time is not known until the shift closes — mid-shift, a changeover scheduled for the
+last hour has not happened yet. A live number would either divide by elapsed time, which is a
+different quantity, or read 40% at 08:00 on every shift ever run.
+
+Two consequences are worth knowing before you rely on it:
+
+- **A shift's number can change.** Late-arriving data and corrected downtime reasons both
+  trigger a recomputation within `late_window_hours`. Each restatement bumps `revision` and
+  moves the previous numbers to `oee.shift_result_revision`, so the change is visible rather
+  than silent.
+- **Undefined is null, never zero.** A shift with no Loading Time has `status`
+  `NO_LOADING_TIME` and null ratios. A plant holiday therefore leaves a gap on the trend
+  instead of a catastrophe.
+
+The reasoning is recorded in
+[ADR 0008](./docs/adr/0008-oee-computed-from-history-not-streamed.md).
+```
+
+- [ ] **Step 12: Verify the image builds and the stack starts**
+
+```bash
+docker build -t uns/oee:local --build-arg GIT_HASH=local -f ./12_uns_oee/Dockerfile .
+```
+
+Expected: a successful build. If `uv lock` fails inside the image, the cause is almost always a dependency in `12_uns_oee/pyproject.toml` whose source path is not copied — compare the `COPY` lines against `[tool.uv.sources]`.
+
+```bash
+UNS_graphdb__password=password1 UNS_historian__password=password2 PGPASSWORD=password3 \
+  docker compose up -d oee_client
+docker compose logs oee_client
+```
+
+Expected: `Simulator`-style startup lines from `main.py` — the metrics server bound to 9095, the config summary, and a first scheduler pass. On a fresh stack with the simulator running for less than a shift, the pass finds nothing due and says so; that is correct, not a failure.
+
+```bash
+docker compose exec uns_prometheus wget -qO- http://oee_client:9095/metrics | head -20
+```
+
+Expected: the `uns_oee_*` families, at zero.
+
+- [ ] **Step 13: Run the module's tests and the linter**
+
+Run: `uv run pytest 12_uns_oee/test -q -m "not integrationtest"`
+Expected: PASS.
+
+Run: `uv run ruff check 12_uns_oee/test/test_deployment.py`
+Expected: no findings.
+
+- [ ] **Step 14: Commit**
+
+```bash
+git add 12_uns_oee/Dockerfile 12_uns_oee/README.md 12_uns_oee/test/test_deployment.py \
+        12_uns_oee/pyproject.toml 09_uns_model/Dockerfile docker-compose.yml \
+        08_uns_observability/prometheus/prometheus.yml README.md \
+        docs/adr/0008-oee-computed-from-history-not-streamed.md
+git commit -m "feat(oee): package the engine as a container and document the design decision"
+```
+
+---
+
+### Task 21: The Grafana OEE dashboard
+
+**Files:**
+- Create: `08_uns_observability/grafana/dashboards/oee.json`
+- Create: `12_uns_oee/test/test_dashboard.py`
+- Modify: `08_uns_observability/grafana/provisioning/datasources/datasources.yaml.template:4-22` (declare the `uid`s)
+- Modify: `docker-compose.yml` (`uns_grafana` waits on `oee_client`)
+- Modify: `README.md:121` (the `uns_grafana` row mentions the OEE dashboard)
+
+**Interfaces:**
+- Consumes: `oee.shift_result`, `oee.shift_result_product`, `oee.downtime_event` (Task 2); `model.oee_unit`, `model.asset`, `model.downtime_reason` (Tasks 2, 3). No new Python interfaces.
+- Produces: dashboard `uid: uns-oee`, provisioned into the `UNS` folder by the existing file provider. Nothing depends on it.
+
+**Why the datasource `uid`s are added here.** Both existing dashboards already reference `"uid": "timescaledb"` and `"uid": "prometheus"`, and `datasources.yaml.template` declares neither — Grafana generates a random uid per provisioning run, so those panels resolve to "Datasource not found". This is a pre-existing bug, and it is fixed in this task rather than left alone because the OEE dashboard would otherwise be born broken in exactly the same way and the cause would be attributed to the new code. `test_dashboard.py` asserts every uid a dashboard names is declared, so it cannot recur.
+
+**Why the dashboard reads `oee.shift_result` and not `uns_metrics_1m_enriched`.** The enriched views know about topics and Assets; they know nothing about shifts, producing states, counter resets or product mix. A panel that recomputed OEE from samples would be a second implementation of the formulas in `oee_calc.py`, free to disagree with the number the engine published to MQTT. `test_no_panel_recomputes_oee_from_raw_samples` makes that a test failure rather than a code review.
+
+**Why `shift_start` is the time column and not `computed_at`.** A restated shift must move on the trend where the shift *was*, not where the recomputation happened. Plotting `computed_at` would put a corrected August shift into September.
+
+**Why `WHERE revision = ...` appears nowhere.** `oee.shift_result` holds exactly one row per (unit, shift) — superseded numbers live in `oee.shift_result_revision`. The current result is the only result, which is what makes every panel a plain select.
+
+- [ ] **Step 1: Write the failing dashboard test**
+
+Create `12_uns_oee/test/test_dashboard.py`:
+
+```python
+"""What the OEE dashboard is not allowed to do.
+
+Grafana fails quietly. A panel naming a datasource uid that provisioning never declared
+renders "Datasource not found" in one panel and nothing anywhere else; a panel missing
+`$__timeFilter` works perfectly until the table has a year in it. Both are found by a
+person looking at a screen, which is the worst place to find them.
+"""
+
+import json
+from pathlib import Path
+
+import pytest
+import yaml
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+GRAFANA = REPO_ROOT / "08_uns_observability" / "grafana"
+DASHBOARD_DIR = GRAFANA / "dashboards"
+OEE_DASHBOARD = DASHBOARD_DIR / "oee.json"
+DATASOURCES = GRAFANA / "provisioning" / "datasources" / "datasources.yaml.template"
+
+
+def _panels(dashboard: dict) -> list[dict]:
+    """Flattened, because a collapsed row nests its panels inside itself."""
+    panels = []
+    for panel in dashboard.get("panels", []):
+        panels.append(panel)
+        panels.extend(panel.get("panels", []))
+    return panels
+
+
+def _queries(panel: dict) -> list[str]:
+    return [target["rawSql"] for target in panel.get("targets", []) if "rawSql" in target]
+
+
+@pytest.fixture(scope="module")
+def dashboard() -> dict:
+    return json.loads(OEE_DASHBOARD.read_text(encoding="utf-8"))
+
+
+@pytest.fixture(scope="module")
+def declared_uids() -> set[str]:
+    template = yaml.safe_load(DATASOURCES.read_text(encoding="utf-8"))
+    return {source["uid"] for source in template["datasources"] if "uid" in source}
+
+
+@pytest.mark.parametrize("path", sorted(DASHBOARD_DIR.glob("*.json")), ids=lambda path: path.name)
+def test_every_dashboard_names_a_declared_datasource(path: Path, declared_uids: set[str]):
+    """
+    Applies to all three dashboards, not only the new one: two of them referenced uids
+    that provisioning never declared, which is why the datasource template changed here.
+    """
+    body = json.loads(path.read_text(encoding="utf-8"))
+    named = {
+        panel["datasource"]["uid"]
+        for panel in _panels(body)
+        if isinstance(panel.get("datasource"), dict) and "uid" in panel["datasource"]
+    }
+    assert named <= declared_uids, f"{path.name} names undeclared datasource uid(s): {named - declared_uids}"
+
+
+def test_no_panel_recomputes_oee_from_raw_samples(dashboard: dict):
+    """
+    The engine's numbers or nothing. A panel doing its own arithmetic over `uns_metrics`
+    would be a second implementation of the formulas, free to disagree with the value
+    already published to `<line>/KPI/ShiftOee`.
+    """
+    for panel in _panels(dashboard):
+        for query in _queries(panel):
+            assert "uns_metrics" not in query, f"panel {panel.get('title')!r} reads uns_metrics"
+
+
+def test_every_query_is_bounded_by_the_dashboard_time_range(dashboard: dict):
+    """Without $__timeFilter a panel scans every shift ever computed."""
+    for panel in _panels(dashboard):
+        for query in _queries(panel):
+            assert "$__timeFilter" in query, f"panel {panel.get('title')!r} has an unbounded query"
+
+
+def test_the_trend_is_plotted_against_shift_start(dashboard: dict):
+    """
+    Not `computed_at`: a restated August shift has to move where the shift was, not where
+    the recomputation happened.
+    """
+    trend = next(panel for panel in _panels(dashboard) if panel["type"] == "timeseries")
+    query = _queries(trend)[0]
+    assert "$__timeFilter(shift_start)" in query
+    assert "computed_at" not in query
+
+
+def test_every_query_is_filtered_to_the_selected_asset(dashboard: dict):
+    """A dashboard showing two lines' OEE on one axis is a dashboard showing neither."""
+    for panel in _panels(dashboard):
+        for query in _queries(panel):
+            assert "$asset" in query, f"panel {panel.get('title')!r} ignores the asset variable"
+
+
+def test_the_asset_variable_lists_only_assets_oee_is_computed_for(dashboard: dict):
+    variable = next(item for item in dashboard["templating"]["list"] if item["name"] == "asset")
+    assert variable["type"] == "query"
+    assert "model.oee_unit" in variable["query"]
+    assert "is_active" in variable["query"]
+
+
+def test_panel_ids_are_unique(dashboard: dict):
+    """Duplicated ids make Grafana silently drop a panel on import."""
+    ids = [panel["id"] for panel in _panels(dashboard)]
+    assert len(ids) == len(set(ids))
+
+
+def test_the_dashboard_is_identified_and_tagged(dashboard: dict):
+    assert dashboard["uid"] == "uns-oee"
+    assert dashboard["title"] == "OEE"
+    assert "oee" in dashboard["tags"]
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+Run: `uv run pytest 12_uns_oee/test/test_dashboard.py -v -n 0`
+Expected: FAIL — `FileNotFoundError` for `oee.json` on the module-scoped fixture, and `test_every_dashboard_names_a_declared_datasource` failing for `platform-observability.json` and `process-visualization.json` with `{'prometheus'}` and `{'timescaledb'}`. Both failures are the point: the second one is the pre-existing bug.
+
+- [ ] **Step 3: Declare the datasource `uid`s**
+
+In `08_uns_observability/grafana/provisioning/datasources/datasources.yaml.template`, add a `uid` to each datasource. Without it Grafana generates one per provisioning run and every dashboard's `"uid": "timescaledb"` resolves to nothing:
+
+```yaml
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    # Fixed uid, because the dashboard JSON files reference datasources by uid. Grafana
+    # generates a random one when this is omitted, which is why panels rendered
+    # "Datasource not found" before this line existed.
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://uns_prometheus:9090
+    isDefault: true
+    editable: false
+
+  - name: TimescaleDB
+    uid: timescaledb
+    type: grafana-postgresql-datasource
+    access: proxy
+    url: uns_timescale_db:5432
+    user: uns_dbuser
+    database: uns_historian
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: true
+    secureJsonData:
+      password: ${UNS_HISTORIAN_PASSWORD}
+
+  - name: MQTT
+    uid: mqtt
+    type: grafana-mqtt-datasource
+    access: proxy
+    url: tcp://uns_mqtt_broker:1883
+    jsonData:
+      tlsAuth: false
+      tlsAuthWithCACert: false
+    editable: false
+```
+
+- [ ] **Step 4: Write the dashboard**
+
+Create `08_uns_observability/grafana/dashboards/oee.json`:
+
+```json
+{
+  "annotations": { "list": [] },
+  "description": "Availability x Performance x Quality per closed shift, computed by 12_uns_oee (ADR-0008). Shows closed shifts only: a partial shift has no Loading Time and therefore no Availability.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+      "description": "Most recent closed shift in the selected range. Blank means no shift has closed yet.",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "mappings": [],
+          "max": 1,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 0.5 },
+              { "color": "green", "value": 0.75 }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+          "format": "table",
+          "rawSql": "SELECT r.oee FROM oee.shift_result r JOIN model.oee_unit u ON u.id = r.oee_unit_id JOIN model.asset a ON a.id = u.asset_id WHERE a.path = '$asset' AND $__timeFilter(r.shift_start) ORDER BY r.shift_start DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Latest shift OEE",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+      "description": "Mean over the closed shifts in range. Shifts with an undefined factor are excluded rather than counted as zero.",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "max": 1,
+          "min": 0,
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 12, "x": 6, "y": 0 },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+          "format": "table",
+          "rawSql": "SELECT avg(r.availability) AS \"Availability\", avg(r.performance) AS \"Performance\", avg(r.quality) AS \"Quality\", avg(r.oee) AS \"OEE\" FROM oee.shift_result r JOIN model.oee_unit u ON u.id = r.oee_unit_id JOIN model.asset a ON a.id = u.asset_id WHERE a.path = '$asset' AND $__timeFilter(r.shift_start)",
+          "refId": "A"
+        }
+      ],
+      "title": "Average over range",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+      "description": "Shifts whose numbers are not usable, and why. An empty panel is the healthy case.",
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+      "id": 3,
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+          "format": "table",
+          "rawSql": "SELECT r.status AS \"Status\", count(*) AS \"Shifts\" FROM oee.shift_result r JOIN model.oee_unit u ON u.id = r.oee_unit_id JOIN model.asset a ON a.id = u.asset_id WHERE a.path = '$asset' AND r.status <> 'OK' AND $__timeFilter(r.shift_start) GROUP BY r.status ORDER BY 2 DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Unusable shifts",
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+      "description": "One point per closed shift, plotted at the shift's start. A gap is a shift that was not scheduled; a null is a shift whose factor is undefined.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "pointSize": 6,
+            "showPoints": "always",
+            "spanNulls": false
+          },
+          "max": 1,
+          "min": 0,
+          "unit": "percentunit"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "OEE" },
+            "properties": [{ "id": "custom.lineWidth", "value": 3 }]
+          }
+        ]
+      },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 5 },
+      "id": 4,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+          "format": "time_series",
+          "rawSql": "SELECT r.shift_start AS time, r.oee AS \"OEE\", r.availability AS \"Availability\", r.performance AS \"Performance\", r.quality AS \"Quality\" FROM oee.shift_result r JOIN model.oee_unit u ON u.id = r.oee_unit_id JOIN model.asset a ON a.id = u.asset_id WHERE a.path = '$asset' AND $__timeFilter(r.shift_start) ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "OEE and its factors, by shift",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+      "description": "Lost time per reason code, largest first. Sums to the window's total downtime: an unmapped state is UNCLASSIFIED, never dropped.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "axisPlacement": "auto", "fillOpacity": 80 },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 15 },
+      "id": 5,
+      "options": {
+        "barWidth": 0.7,
+        "legend": { "displayMode": "hidden", "placement": "bottom" },
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "xTickLabelRotation": 0
+      },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+          "format": "table",
+          "rawSql": "SELECT COALESCE(NULLIF(dr.display_name, ''), e.reason_code) AS \"Reason\", sum(e.duration_s) AS \"Lost seconds\" FROM oee.downtime_event e JOIN model.oee_unit u ON u.id = e.oee_unit_id JOIN model.asset a ON a.id = u.asset_id LEFT JOIN model.downtime_reason dr ON dr.code = e.reason_code WHERE a.path = '$asset' AND $__timeFilter(e.started_at) GROUP BY 1 ORDER BY 2 DESC LIMIT 12",
+          "refId": "A"
+        }
+      ],
+      "title": "Downtime Pareto",
+      "type": "barchart"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+      "description": "The stops behind the numbers above. `Source` is `auto` when the engine classified the stop from its state code and `manual` when a person corrected it; the engine never overwrites a manual reason.",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Duration" },
+            "properties": [{ "id": "unit", "value": "s" }]
+          }
+        ]
+      },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 15 },
+      "id": 6,
+      "options": { "showHeader": true, "sortBy": [{ "desc": true, "displayName": "Duration" }] },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+          "format": "table",
+          "rawSql": "SELECT e.started_at AS \"Started\", e.duration_s AS \"Duration\", e.state_value AS \"State\", COALESCE(NULLIF(dr.display_name, ''), e.reason_code) AS \"Reason\", dr.is_planned AS \"Planned\", e.reason_source AS \"Source\", e.assigned_by AS \"By\", e.note AS \"Note\" FROM oee.downtime_event e JOIN model.oee_unit u ON u.id = e.oee_unit_id JOIN model.asset a ON a.id = u.asset_id LEFT JOIN model.downtime_reason dr ON dr.code = e.reason_code WHERE a.path = '$asset' AND $__timeFilter(e.started_at) ORDER BY e.duration_s DESC LIMIT 200",
+          "refId": "A"
+        }
+      ],
+      "title": "Longest stops",
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+      "description": "Good and reject counts per product, with the ideal cycle time each shift's Performance was computed against. A null cycle time is what sets MISSING_IDEAL_CYCLE_TIME.",
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 25 },
+      "id": 7,
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+          "format": "table",
+          "rawSql": "SELECT p.product_code AS \"Product\", sum(p.good_count) AS \"Good\", sum(p.reject_count) AS \"Reject\", max(p.ideal_cycle_time_s) AS \"Ideal cycle (s)\" FROM oee.shift_result_product p JOIN oee.shift_result r ON r.id = p.shift_result_id JOIN model.oee_unit u ON u.id = r.oee_unit_id JOIN model.asset a ON a.id = u.asset_id WHERE a.path = '$asset' AND $__timeFilter(r.shift_start) GROUP BY 1 ORDER BY 2 DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Production by product",
+      "type": "table"
+    }
+  ],
+  "refresh": "5m",
+  "schemaVersion": 39,
+  "tags": ["oee", "process-visualization"],
+  "templating": {
+    "list": [
+      {
+        "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+        "definition": "Assets that OEE is computed for",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Asset",
+        "multi": false,
+        "name": "asset",
+        "options": [],
+        "query": "SELECT a.path FROM model.oee_unit u JOIN model.asset a ON a.id = u.asset_id WHERE u.is_active ORDER BY 1",
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-7d", "to": "now" },
+  "timezone": "browser",
+  "title": "OEE",
+  "uid": "uns-oee",
+  "version": 1
+}
+```
+
+`refresh: 5m`, not `30s`: the underlying data changes once a shift, and the engine's own pass runs every five minutes. A 30-second refresh would issue 600 pointless queries an hour against the same rows.
+
+- [ ] **Step 5: Run the dashboard test to verify it passes**
+
+Run: `uv run pytest 12_uns_oee/test/test_dashboard.py -v -n 0`
+Expected: PASS (9 passed — the parametrised datasource test contributes one per dashboard file).
+
+- [ ] **Step 6: Make Grafana wait for the engine**
+
+In `docker-compose.yml`, add to `uns_grafana`'s `depends_on`:
+
+```yaml
+      # The OEE dashboard's panels read the `oee` schema. `asset_model_setup` creates it,
+      # so this is not about the tables existing - it is so that a stack brought up for a
+      # demo has the engine running before anybody opens the dashboard.
+      oee_client:
+        condition: service_started
+```
+
+- [ ] **Step 7: Update the README's Grafana row**
+
+Change `README.md:121` so the dashboard list is current:
+
+```markdown
+| `uns_grafana` | Dashboards for Process Visualization (plant measurements from `uns_metrics_1m_enriched`), OEE (shift results and downtime from the `oee` schema), and Platform Observability (platform health). Host port: **`3000`** (`http://localhost:3000`). Anonymous access is enabled — see [Known Limitations](#known-limitations--workarounds). |
+```
+
+- [ ] **Step 8: Look at it**
+
+```bash
+UNS_graphdb__password=password1 UNS_historian__password=password2 PGPASSWORD=password3 \
+  docker compose up -d uns_grafana
+```
+
+Open `http://localhost:3000`, folder **UNS**, dashboard **OEE**.
+
+Expected, on a stack that has not yet run a full shift: the **Asset** dropdown lists the lines from `conf/oee/units.yaml`, and every panel is empty. Empty is the correct result — it means the queries resolved and found no closed shifts.
+
+Expected failure mode worth recognising: "Datasource timescaledb was not found" means Step 3's `uid` did not take. Grafana only re-reads provisioning on start, so `docker compose restart uns_grafana` after editing the template.
+
+To see it populated without waiting a shift, backfill against whatever history the simulator has produced:
+
+```bash
+docker compose exec oee_client uv run uns_oee_recompute \
+  --asset "CovestroAG/Dormagen/Production/Line1" --from 2026-08-25 --to 2026-09-01 --force
+```
+
+- [ ] **Step 9: Run the module's tests and the linter**
+
+Run: `uv run pytest 12_uns_oee/test -q -m "not integrationtest"`
+Expected: PASS.
+
+Run: `uv run ruff check 12_uns_oee/test/test_dashboard.py`
+Expected: no findings.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add 08_uns_observability/grafana/dashboards/oee.json \
+        08_uns_observability/grafana/provisioning/datasources/datasources.yaml.template \
+        12_uns_oee/test/test_dashboard.py docker-compose.yml README.md
+git commit -m "feat(observability): add the OEE dashboard and pin the datasource uids"
 ```
 
 ---
