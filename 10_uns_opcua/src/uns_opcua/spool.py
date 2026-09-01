@@ -106,8 +106,16 @@ class Spool:
         """Append a batch in one transaction. Batching is what lets SQLite keep up."""
         if not rows:
             return 0
-        with self._lock, self._db:
-            self._db.executemany(_INSERT, [(row.topic, row.payload, row.qos, now) for row in rows])
+        with self._lock:
+            try:
+                self._db.execute("BEGIN")
+                self._db.executemany(
+                    _INSERT, [(row.topic, row.payload, row.qos, now) for row in rows]
+                )
+                self._db.execute("COMMIT")
+            except Exception:
+                self._db.execute("ROLLBACK")
+                raise
         return len(rows)
 
     # --- reading and draining ------------------------------------------------------

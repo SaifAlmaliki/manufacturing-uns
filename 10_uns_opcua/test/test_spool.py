@@ -1,5 +1,7 @@
 """Unit tests for the bounded, disk-backed store-and-forward spool."""
 
+import sqlite3
+
 import pytest
 from uns_opcua.opcua_config import SpoolConfig
 from uns_opcua.spool import Spool, SpoolRow
@@ -178,3 +180,32 @@ def test_concurrent_writers_and_readers_do_not_corrupt_the_spool(spool):
     assert written == 40
     assert spool.row_count() == 40
     assert len(spool.peek(limit=100)) == 40
+
+
+def test_enqueue_does_not_leave_a_partial_batch_when_an_insert_fails(tmp_path):
+    """A crash mid-batch must not leave a durable partial write."""
+    config = _config(tmp_path)
+    spool = Spool(config)
+    spool.open()
+    try:
+        spool.enqueue([_row("kept")], now=NOW)
+        injector = sqlite3.connect(config.path, isolation_level=None)
+        injector.execute(
+            """
+            CREATE TRIGGER fail_mid_batch
+            AFTER INSERT ON spool
+            WHEN NEW.topic = 'b'
+            BEGIN
+              SELECT RAISE(ABORT, 'injected mid-batch failure');
+            END;
+            """
+        )
+        injector.close()
+
+        with pytest.raises(sqlite3.DatabaseError, match="injected mid-batch failure"):
+            spool.enqueue([_row("a"), _row("b"), _row("c")], now=NOW)
+
+        assert spool.row_count() == 1
+        assert [row.topic for _, row in spool.peek(limit=10)] == ["kept"]
+    finally:
+        spool.close()
