@@ -50,6 +50,7 @@ COPY ./00_uns_config/pyproject.toml ./00_uns_config/README.md /00_uns_config/
 COPY ./00_uns_config/src /00_uns_config/src
 COPY ./${UNS_MODULE}/src ./src/
 COPY ./conf/settings.yaml /app/conf/settings.yaml
+COPY ./conf/simulator /app/conf/simulator
 
 # install minimalistic missing packages & security fixes
 RUN apk update && \

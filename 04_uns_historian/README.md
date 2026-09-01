@@ -2,6 +2,11 @@
 
 [![MQTT Client for Historian](https://github.com/mkashwin/unifiednamespace/actions/workflows/uns_historian-app.yml/badge.svg)](https://github.com/mkashwin/unifiednamespace/actions/workflows/uns_historian-app.yml)
 
+MQTT listener that persists UNS and SparkplugB traffic to TimescaleDB. Depends on
+[`09_uns_model`](../09_uns_model/README.md) for the shared Postgres engine, topic bindings,
+and enrichment (ADRs [0003](../docs/adr/0003-postgres-asset-model-and-read-time-enrichment.md),
+[0004](../docs/adr/0004-sqlalchemy-orm-for-the-model-core-for-ingest.md)).
+
 It makes sense to have the historian connect only to the corporate / cloud instance since the factory doesn't necessarily need the history of all messages. The historian should subscribe to '**#**' or the first level **\<enterprise\>/#**' topic wildcard. However if it is needed for your specific scenario you can easily deploy a historian at the factory level.
 If you need to scale and reduce the load on broker multiple instanced of this client can be deployed with separate topic wild cards
 
@@ -130,14 +135,38 @@ This application reads the shared platform configuration at the repository root.
 
 ## The Logic for persisting the message into the historian
 
-The historian will be persisting all the MQTT messages in the raw format directly after extracting the timestamp from the message
-The message format is expected to be in JSON and should have an attribute `timestamp`
-The attribute key name is configurable in [settings.yaml](../conf/settings.yaml)
-If this attribute is missing the application will use the current time
+The historian persists every MQTT message as JSON after extracting the timestamp from the
+payload. The attribute key name is configurable in [settings.yaml](../conf/settings.yaml).
+If the attribute is missing the application uses the current time (`time.time()`).
 
-```python
-time.time()
-```
+Each message is written in one transaction:
+
+1. One row in the raw hypertable (`historian.table`, default `unifiednamespace`) — the full
+   Historic Event as JSONB, with `ON CONFLICT DO NOTHING` for duplicate delivery.
+2. One row per scalar leaf in `historian.metrics_table` (default `uns_metrics`) — the narrow
+   projection used by Grafana and time-series queries.
+
+After the transaction commits successfully, `TopicBinder` resolves the topic to an Asset once
+so enrichment views can join on equality (ADR-0003). Binding failures are logged, not raised —
+Enrichment is not worth a lost measurement.
+
+## Postgres access (ADR-0004)
+
+This module depends on [`09_uns_model`](../09_uns_model/README.md) and uses a **single shared
+SQLAlchemy async engine** (`Database.shared("historian")`), not a separate asyncpg pool.
+
+| Path | Access style | What |
+| --- | --- | --- |
+| `HistorianHandler.persist_mqtt_msg()` | SQLAlchemy Core (`database.begin()` + bound `INSERT`) | Raw hypertable + metrics hypertable |
+| `TopicBinder.observe()` | SQLAlchemy Core via `AssetModelRepository` | `model.topic_binding` |
+| `AssetModelChangeListener` | Dedicated `LISTEN` connection | Invalidates the in-memory binder cache when the Asset Model changes |
+
+Startup calls `HistorianHandler.warm()`; shutdown calls `HistorianHandler.close()` to dispose the
+shared engine. GraphQL reads the same hypertables through the same engine pattern in
+`07_uns_graphql/backend/historian.py`.
+
+The hypertables themselves are still bootstrapped by `sql_scripts/` (Timescale DDL). Alembic in
+`09_uns_model` owns the authored `model` and `console` schemas and the enrichment views.
 
 ## Setting up the development environment for this module
 
@@ -179,14 +208,16 @@ uv run uns_historian
 
 ## Running tests
 
-The set of test for this module is executed by
-
 ```bash
-#run all tests excluding integration tests
+# Unit tests only (no database)
 uv run pytest -m "not integrationtest" test/
-# runs all tests
+
+# All tests including integration (needs TimescaleDB from docker-compose or local setup)
 uv run pytest test/
 ```
+
+Integration tests expect the hypertables from `sql_scripts/` and the `model` schema from
+`uv run uns_model_setup` (or `docker compose up asset_model_setup`).
 
 ## Deploying the docker container image created for this module
 

@@ -10,6 +10,7 @@ on:
     paths:
       - "00_uns_config/**/*.py"
       - "00_uns_config/pyproject.toml"
+      - "04_uns_historian/sql_scripts/**"
       - "09_uns_model/**/*.py"
       - "09_uns_model/pyproject.toml"
       - "09_uns_model/uv.lock"
@@ -24,6 +25,7 @@ on:
     paths:
       - "00_uns_config/**/*.py"
       - "00_uns_config/pyproject.toml"
+      - "04_uns_historian/sql_scripts/**"
       - "09_uns_model/**/*.py"
       - "09_uns_model/pyproject.toml"
       - "09_uns_model/uv.lock"

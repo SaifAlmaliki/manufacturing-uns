@@ -83,10 +83,9 @@ SELECT add_compression_policy('uns_metrics', INTERVAL '7 days', if_not_exists =>
 
 COMMENT ON TABLE uns_metrics IS
   'Projection of scalar payload leaves keyed by dotted path. Rebuildable from unifiednamespace.';
-COMMENT ON MATERIALIZED VIEW uns_metrics_1m IS
-  '1-minute continuous aggregate for Grafana process visualization.';
-COMMENT ON MATERIALIZED VIEW uns_metrics_1h IS
-  '1-hour continuous aggregate for Grafana process visualization.';
+-- uns_metrics_1m / uns_metrics_1h are Timescale continuous aggregates, not native
+-- PostgreSQL materialized views, so COMMENT ON MATERIALIZED VIEW fails on recent
+-- Timescale releases. Document them here instead.
 
 DO $$
 BEGIN

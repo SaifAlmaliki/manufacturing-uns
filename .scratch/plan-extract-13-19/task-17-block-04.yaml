@@ -1,0 +1,269 @@
+# conf/simulator/asset_health.yaml
+# Spec 8.4. Condition monitoring on the `fast` tier - 1 s per signal per device, which is
+# how vibration is actually sampled and why this family is in `full` and not in `small`.
+#
+# The split between shapes here is physical, not a workaround: load-following signals are
+# `derived` (they genuinely track duty), and condition signals are `ou_walk` (a bearing
+# degrades on its own clock, not the line's). Counters and the oil-cleanliness class carry
+# an explicit slower tier, because a 15-minute register republished every second would be
+# 7 devices' worth of noise.
+
+devices:
+  - id: VIB-01
+    equipment: PumpP101
+    # Every Production cell at every site. No `serves`: a pump on Line1 is not serving
+    # Line1, it is part of it, so it reads ctx.production_rate directly.
+    target: {area: Production}
+    tier: fast
+    signals:
+      VibrationRmsVelocity:
+        # ISO 10816 zones: 4.5 mm/s is the boundary into "unsatisfactory", 7.1 into
+        # "unacceptable". The walk's mean sits in zone A/B so the alarms mean something.
+        shape: ou_walk
+        unit: mm/s
+        mean: 2.1
+        sigma: 0.35
+        tau: 600.0
+        precision: 3
+        range: [0, 20]
+        limits: {hi: 4.5, hihi: 7.1}
+        export_metric: true
+      VibrationAccelPeak:
+        shape: ou_walk
+        unit: g
+        mean: 1.4
+        sigma: 0.28
+        tau: 300.0
+        precision: 3
+        range: [0, 15]
+        limits: {hi: 4.0, hihi: 6.5}
+      BearingEnvelope:
+        shape: ou_walk
+        unit: gE
+        mean: 0.9
+        sigma: 0.2
+        tau: 1200.0
+        precision: 3
+        range: [0, 10]
+        limits: {hi: 2.5, hihi: 4.0}
+      MotorCurrent:
+        shape: derived
+        unit: A
+        expr: idle_a + span_a * ctx.production_rate
+        params: {idle_a: 11.0, span_a: 27.0}
+        precision: 2
+        range: [0, 60]
+        limits: {hi: 44, hihi: 50}
+        export_metric: true
+      MotorWindingTemp:
+        shape: derived
+        unit: "°C"
+        expr: ctx.ambient_temp_c + rise_k * MotorCurrent / rated_a
+        params: {rise_k: 68.0, rated_a: 38.0}
+        precision: 1
+        range: [-20, 180]
+        limits: {hi: 130, hihi: 145}
+      BearingTempDe:
+        shape: derived
+        unit: "°C"
+        expr: ctx.ambient_temp_c + rise_k * MotorCurrent / rated_a
+        params: {rise_k: 34.0, rated_a: 38.0}
+        precision: 1
+        range: [-20, 140]
+        limits: {hi: 85, hihi: 95}
+      BearingTempNde:
+        # Runs cooler than the drive end: no radial load from the coupling.
+        shape: derived
+        unit: "°C"
+        expr: ctx.ambient_temp_c + rise_k * MotorCurrent / rated_a
+        params: {rise_k: 28.0, rated_a: 38.0}
+        precision: 1
+        range: [-20, 140]
+        limits: {hi: 85, hihi: 95}
+      SuctionPressure:
+        shape: ou_walk
+        unit: barg
+        mean: 1.35
+        sigma: 0.06
+        tau: 120.0
+        precision: 3
+        range: [-1, 10]
+        limits: {lo: 0.6, lolo: 0.3}
+      DischargePressure:
+        shape: derived
+        unit: barg
+        expr: SuctionPressure + shutoff_bar * (deadhead_frac + duty_frac * ctx.production_rate)
+        params: {shutoff_bar: 5.8, deadhead_frac: 0.55, duty_frac: 0.45}
+        precision: 3
+        range: [0, 16]
+        limits: {hi: 8.5, hihi: 9.5}
+      DifferentialPressure:
+        shape: derived
+        unit: bar
+        expr: DischargePressure - SuctionPressure
+        precision: 3
+        range: [0, 12]
+        limits: {lo: 2.0, lolo: 1.2}
+      RunHours:
+        # ctx.running is a boolean, and Python's True is 1 in arithmetic - so run hours
+        # accrue only while the line is in EXECUTE, which is what a run-hour meter means.
+        # The only place in this file where a boolean enters an expression; MES-01's
+        # Availability in production.yaml is the other one.
+        shape: counter
+        unit: h
+        rate: ctx.running / 3600.0
+        initial: 22400.0
+        tier: meter
+        precision: 2
+      StartCount:
+        shape: counter
+        unit: "1"
+        rate: 0.00028
+        initial: 4180.0
+        tier: meter
+        precision: 0
+      LubeOilTemp:
+        shape: derived
+        unit: "°C"
+        expr: ctx.ambient_temp_c + rise_k * MotorCurrent / rated_a
+        params: {rise_k: 22.0, rated_a: 38.0}
+        precision: 1
+        range: [-20, 120]
+        limits: {hi: 70, hihi: 80}
+      LubeOilParticleCount:
+        # ISO 4406 cleanliness class, published as the code engineers actually quote.
+        shape: stepped
+        unit: "1"
+        choices: ["16/14/11", "17/15/12", "18/16/13", "19/17/14"]
+        weights: [4, 6, 3, 1]
+        dwell_s: 3600.0
+        tier: status
+        param_type: Status
+      FilterDp:
+        shape: ou_walk
+        unit: bar
+        mean: 0.42
+        sigma: 0.05
+        tau: 3600.0
+        precision: 3
+        range: [0, 3]
+        limits: {hi: 1.2, hihi: 1.8}
+
+  - id: VIB-02
+    equipment: CompressorDrive
+    # Spec 8.4: "plus rotating utility equipment (compressors, pumps)". A generic equipment
+    # tag because one template covers three compressor cells and the cell already
+    # disambiguates the topic.
+    #
+    # Twelve signals, not fifteen: suction, discharge and differential pressure belong to
+    # the compressor itself and are already published by CMP-01/02/03. Duplicating them
+    # here would put two different walks on the same physical measurement.
+    target: {area: Utilities, line: CompressedAir, cell: [Compressor_C1, Compressor_C2]}
+    tier: fast
+    signals:
+      VibrationRmsVelocity:
+        shape: ou_walk
+        unit: mm/s
+        mean: 2.6
+        sigma: 0.4
+        tau: 600.0
+        precision: 3
+        range: [0, 20]
+        limits: {hi: 4.5, hihi: 7.1}
+        export_metric: true
+      VibrationAccelPeak:
+        shape: ou_walk
+        unit: g
+        mean: 1.8
+        sigma: 0.32
+        tau: 300.0
+        precision: 3
+        range: [0, 15]
+        limits: {hi: 4.0, hihi: 6.5}
+      BearingEnvelope:
+        shape: ou_walk
+        unit: gE
+        mean: 1.2
+        sigma: 0.24
+        tau: 1200.0
+        precision: 3
+        range: [0, 10]
+        limits: {hi: 2.5, hihi: 4.0}
+      MotorCurrent:
+        # ctx.served_air_demand would need a `serves` list, and a template that replicates
+        # across three cells at two sites cannot carry one (Task 16). ctx.production_rate is
+        # unavailable too - a utility cell has no LineState. So this is an ou_walk, and the
+        # compressor's own load story lives on CMP-01/02/03's LoadPercent.
+        shape: ou_walk
+        unit: A
+        mean: 196.0
+        sigma: 22.0
+        tau: 180.0
+        precision: 2
+        range: [0, 400]
+        limits: {hi: 320, hihi: 355}
+      MotorWindingTemp:
+        shape: derived
+        unit: "°C"
+        expr: ctx.ambient_temp_c + rise_k * MotorCurrent / rated_a
+        params: {rise_k: 74.0, rated_a: 300.0}
+        precision: 1
+        range: [-20, 180]
+        limits: {hi: 130, hihi: 145}
+      BearingTempDe:
+        shape: derived
+        unit: "°C"
+        expr: ctx.ambient_temp_c + rise_k * MotorCurrent / rated_a
+        params: {rise_k: 42.0, rated_a: 300.0}
+        precision: 1
+        range: [-20, 140]
+        limits: {hi: 90, hihi: 100}
+      BearingTempNde:
+        shape: derived
+        unit: "°C"
+        expr: ctx.ambient_temp_c + rise_k * MotorCurrent / rated_a
+        params: {rise_k: 35.0, rated_a: 300.0}
+        precision: 1
+        range: [-20, 140]
+        limits: {hi: 90, hihi: 100}
+      RunHours:
+        # A literal rate, unlike VIB-01's: a compressor runs whether or not any line is in
+        # EXECUTE, and a utility cell has no ctx.running to read anyway.
+        shape: counter
+        unit: h
+        rate: 1.0 / 3600.0
+        initial: 39800.0
+        tier: meter
+        precision: 2
+      StartCount:
+        shape: counter
+        unit: "1"
+        rate: 0.00011
+        initial: 1620.0
+        tier: meter
+        precision: 0
+      LubeOilTemp:
+        shape: derived
+        unit: "°C"
+        expr: ctx.ambient_temp_c + rise_k * MotorCurrent / rated_a
+        params: {rise_k: 46.0, rated_a: 300.0}
+        precision: 1
+        range: [-20, 140]
+        limits: {hi: 88, hihi: 98}
+      LubeOilParticleCount:
+        shape: stepped
+        unit: "1"
+        choices: ["16/14/11", "17/15/12", "18/16/13", "19/17/14"]
+        weights: [3, 6, 4, 2]
+        dwell_s: 3600.0
+        tier: status
+        param_type: Status
+      FilterDp:
+        shape: ou_walk
+        unit: bar
+        mean: 0.55
+        sigma: 0.07
+        tau: 3600.0
+        precision: 3
+        range: [0, 3]
+        limits: {hi: 1.4, hihi: 2.0}

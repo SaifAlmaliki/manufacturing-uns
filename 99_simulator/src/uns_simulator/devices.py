@@ -3,10 +3,11 @@ Industrial device implementations: PLC, SCADA, and HMI.
 All devices communicate via MQTT using ISA-95 topic structure.
 """
 import asyncio
+import contextlib
 import json
 import logging
 import random
-import time
+import uuid
 from datetime import datetime
 from typing import Any
 
@@ -14,6 +15,9 @@ import aiomqtt
 
 from uns_simulator.config import MQTTConfig
 from uns_simulator.models import Equipment, ISA95Hierarchy, ParameterType
+from uns_simulator.plant import DeviceView
+from uns_simulator.profiles import DeviceSpec
+from uns_simulator.signals import build_signal
 
 LOGGER = logging.getLogger(__name__)
 
@@ -31,10 +35,21 @@ class AsyncMQTTDevice:
         self.hierarchy = hierarchy
         self.mqtt_config = mqtt_config
 
-        client_id = f"graphql-{time.time()}-{random.randint(0, 1000)}"  # noqa: S311
+        # uuid4, not time.time(): devices are constructed in a tight loop and a timestamp
+        # collides. A duplicate client id makes the broker evict the earlier connection.
+        self.client_id = f"uns_simulator-{device_id}-{uuid.uuid4().hex[:8]}"
+
+        self.connected = False
+        self.publish_ok = 0
+        self.publish_fail = 0
+        self.reconnects = 0
+        self.last_error: str | None = None
+        self.last_publish_ts: float | None = None
+        self._stack: contextlib.AsyncExitStack | None = None
+        self._running = False
 
         self.client = aiomqtt.Client(
-            identifier=client_id,
+            identifier=self.client_id,
             clean_session=MQTTConfig.clean_session,
             protocol=MQTTConfig.version,
             transport=MQTTConfig.transport,
@@ -47,7 +62,60 @@ class AsyncMQTTDevice:
             tls_insecure=MQTTConfig.tls_insecure,
         )
 
-        LOGGER.info("Initialized device: %s", device_id)
+        LOGGER.info("Initialized device: %s (client id %s)", device_id, self.client_id)
+
+    async def connect(self) -> bool:
+        """Open one long-lived broker connection, retrying with exponential backoff.
+
+        Backoff doubles from 1 s and is capped at MQTTConfig.retry_interval, so a broker
+        that is down at startup does not turn into a hot loop and does not give up either.
+        """
+        if self.connected:
+            return True
+        cap = float(getattr(MQTTConfig, "retry_interval", 10) or 10)
+        delay = 1.0
+        while True:
+            self._stack = contextlib.AsyncExitStack()
+            try:
+                await self._stack.enter_async_context(self.client)
+            except Exception as exc:
+                self.reconnects += 1
+                self.last_error = str(exc)
+                await self._stack.aclose()
+                self._stack = None
+                LOGGER.warning(
+                    "Device %s could not connect (%s); retrying in %.1fs", self.device_id, exc, delay
+                )
+                await asyncio.sleep(delay)
+                delay = min(delay * 2.0, cap)
+                continue
+            self.connected = True
+            LOGGER.info("Device %s connected to the broker", self.device_id)
+            return True
+
+    async def disconnect(self) -> None:
+        """Close the connection. Safe to call when already disconnected."""
+        self.connected = False
+        if self._stack is None:
+            return
+        stack, self._stack = self._stack, None
+        try:
+            await stack.aclose()
+        except Exception as exc:
+            LOGGER.debug("Device %s disconnect raised %s", self.device_id, exc)
+
+    def health(self) -> dict[str, Any]:
+        """Connection and publish counters. Published as device health by sub-project B."""
+        return {
+            "device_id": self.device_id,
+            "client_id": self.client_id,
+            "connected": self.connected,
+            "publish_ok": self.publish_ok,
+            "publish_fail": self.publish_fail,
+            "reconnects": self.reconnects,
+            "last_error": self.last_error,
+            "last_publish_ts": self.last_publish_ts,
+        }
 
     async def publish_parameter(self, equipment: str, param_type: ParameterType,
                                 param_name: str, data: dict[str, Any]) -> bool:
@@ -80,11 +148,15 @@ class AsyncMQTTDevice:
             topic = self.hierarchy.get_parameter_topic(
                 equipment, param_type, param_name)
 
-            # Publish to MQTT
-            async with self.client:
-                await self.client.publish(topic, json.dumps(enriched_data))
-                LOGGER.debug("Device %s published to %s: %s",
-                             self.device_id, topic, enriched_data.get('value', 'N/A'))
+            if not self.connected:
+                await self.connect()
+
+            await self.client.publish(topic, json.dumps(enriched_data))
+            self.publish_ok += 1
+            self.last_publish_ts = datetime.now().timestamp()
+            LOGGER.debug(
+                "Device %s published to %s: %s", self.device_id, topic, enriched_data.get("value", "N/A")
+            )
             return True
 
         except json.JSONDecodeError as e:
@@ -92,6 +164,10 @@ class AsyncMQTTDevice:
                          self.device_id, e)
             return False
         except Exception as e:
+            self.publish_fail += 1
+            self.last_error = str(e)
+            self.connected = False
+            await self.disconnect()
             LOGGER.error("Publish error in device %s: %s", self.device_id, e)
             return False
 
@@ -129,8 +205,9 @@ class AsyncMQTTDevice:
         raise NotImplementedError("Subclasses must implement start method")
 
     async def stop(self) -> None:
-        """Stop device operation."""
+        """Stop device operation and release the broker connection."""
         self._running = False
+        await self.disconnect()
         LOGGER.info("Device %s stopped", self.device_id)
 
 
@@ -367,8 +444,7 @@ class SCADA(AsyncMQTTDevice):
         status_data = {
             'system_name': self.system_name,
             'system_status': 'Operational',
-            # Simulated device count
-            'connected_devices': random.randint(5, 10),  # noqa: S311
+            'connected_devices': self.connected_devices,
             'data_points_per_second': random.randint(500, 1500),  # noqa: S311
             'system_uptime_hours': round(uptime / 3600, 2),
             'cpu_usage_percent': round(random.uniform(10, 60), 1),  # noqa: S311
@@ -530,3 +606,116 @@ class HMI(AsyncMQTTDevice):
                          self.hmi_id, e, exc_info=True)
         finally:
             await self.stop()
+
+
+class SignalDevice(AsyncMQTTDevice):
+    """A device whose behaviour is entirely declared by its DeviceSpec.
+
+    Two responsibilities, deliberately kept apart:
+      evaluate(dt)      - advance the signals. Called once per plant tick.
+      publish_tier(t)   - send the current values for one cadence tier.
+
+    Splitting them is what makes a 900 s meter reading and a 1 s vibration sample describe
+    the same instant of the same world. The old PLC computed a value at publish time, so a
+    slow publisher necessarily saw a coarser simulation.
+    """
+
+    def __init__(
+        self,
+        spec: DeviceSpec,
+        mqtt_config: dict[str, Any],
+        view: DeviceView,
+        global_seed: int,
+    ) -> None:
+        super().__init__(spec.id, spec.path, mqtt_config)
+        self.spec = spec
+        self.view = view
+        self.enabled = spec.enabled
+        self.values: dict[str, Any] = {}
+        self._last_published: dict[str, Any] = {}
+
+        self._param_types: dict[str, ParameterType] = {}
+        for signal_spec in spec.signals:
+            try:
+                self._param_types[signal_spec.name] = ParameterType(signal_spec.param_type)
+            except ValueError:
+                allowed = ", ".join(member.value for member in ParameterType)
+                raise ValueError(
+                    f"device {spec.id!r} signal {signal_spec.name!r}: unknown param_type "
+                    f"{signal_spec.param_type!r} (allowed: {allowed})"
+                ) from None
+
+        # spec.signals is already in dependency order (profiles.expand_template sorted it),
+        # so evaluating in sequence guarantees a derived signal sees this tick's siblings.
+        self.signals = [
+            build_signal(signal_spec, f"{spec.topic_prefix}/{signal_spec.name}", global_seed)
+            for signal_spec in spec.signals
+        ]
+        self.tiers = frozenset(signal_spec.tier for signal_spec in spec.signals)
+
+    def evaluate(self, dt: float) -> dict[str, Any]:
+        """Advance every signal by `dt` seconds. Synchronous, and never publishes."""
+        for signal in self.signals:
+            self.values[signal.spec.name] = signal.next(dt, self.view, self.values)
+        return self.values
+
+    async def publish_tier(self, tier: str) -> int:
+        """Publish the current value of every signal in `tier`. Returns the success count."""
+        if not self.enabled:
+            return 0
+        published = 0
+        for signal in self.signals:
+            if signal.spec.tier != tier:
+                continue
+            value = self.values.get(signal.spec.name)
+            if value is None:
+                continue
+            # The 'event' tier means "on change" - a door that stays shut says so once.
+            if tier == "event" and self._last_published.get(signal.spec.name, object()) == value:
+                continue
+            payload = {
+                "value": value,
+                "unit": signal.spec.unit,
+                "status": signal.status(),
+                "quality": "Good",
+            }
+            if signal.spec.limits:
+                payload["limits"] = signal.spec.limits
+            if await self.publish_parameter(
+                self.spec.equipment, self._param_types[signal.spec.name], signal.spec.name, payload
+            ):
+                self._last_published[signal.spec.name] = value
+                published += 1
+        return published
+
+    async def run_tier(self, tier: str, interval: float) -> None:
+        """Publish `tier` every `interval` seconds until stopped or cancelled."""
+        self._running = True
+        LOGGER.info("Device %s publishing tier %s every %.1fs", self.device_id, tier, interval)
+        try:
+            while self._running:
+                await self.publish_tier(tier)
+                await asyncio.sleep(interval)
+        except asyncio.CancelledError:
+            LOGGER.info("Device %s tier %s cancelled", self.device_id, tier)
+            raise
+
+    def snapshot(self) -> list[dict[str, Any]]:
+        """Describe every signal. Rendered by sub-project B's SignalInspector."""
+        return [
+            {
+                "name": signal.spec.name,
+                "shape": signal.spec.shape,
+                "unit": signal.spec.unit,
+                "precision": signal.spec.precision,
+                "range": list(signal.spec.value_range) if signal.spec.value_range else None,
+                "limits": dict(signal.spec.limits),
+                "params": dict(signal.spec.params),
+                "tier": signal.spec.tier,
+                "param_type": signal.spec.param_type,
+                "value": self.values.get(signal.spec.name),
+                "status": signal.status(),
+            }
+            for signal in self.signals
+        ]
+

@@ -1,10 +1,13 @@
 import asyncio
 import logging
+from pathlib import Path
 from typing import Any
 
 from uns_simulator.config import settings
-from uns_simulator.devices import HMI, PLC, SCADA
+from uns_simulator.devices import HMI, PLC, SCADA, SignalDevice
 from uns_simulator.models import expand_hierarchy_paths
+from uns_simulator.plant import DeviceView, PlantClock
+from uns_simulator.profiles import FAMILIES, PRODUCTION_KIND, LoadedProfile, load_profile, read_simulator_conf
 
 LOGGER = logging.getLogger(__name__)
 
@@ -29,18 +32,107 @@ def _plc_equipment_config(plc_cfg: Any) -> dict[str, Any]:
     }
 
 
+def load_simulator_config(settings_obj: Any, conf_dir: Path | None = None) -> dict[str, Any]:
+    """Assemble the mapping load_profile expects, files layered over Dynaconf.
+
+    One adapter, so tests hand load_profile a plain dict and never depend on Dynaconf, and
+    production has exactly one place where the two representations meet.
+
+    `conf/simulator/*.yaml` wins over `settings.yaml` key by key, and only where the file
+    supplies something. Whole-mapping replacement would be wrong in one direction and a
+    deep merge wrong in the other: `simulation` only ever lives in settings.yaml, and a
+    `hierarchy` half from each file would be a plant nobody authored. Per-key overlay is
+    what keeps spec 12's promise that an untouched deployment with no conf/simulator/
+    behaves exactly as it does today.
+    """
+    raw: dict[str, Any] = {
+        "hierarchy": settings_obj.get("hierarchy") or {},
+        "plant": settings_obj.get("plant") or {},
+        "profiles": settings_obj.get("profiles") or {},
+        "simulation": settings_obj.get("simulation") or {},
+    }
+    for family in FAMILIES:
+        raw[family] = settings_obj.get(family) or {}
+    for key, value in read_simulator_conf(conf_dir).items():
+        if value:
+            raw[key] = value
+    return raw
+
+
 class UnifiedNamespaceSimulator:
     """Main simulator class following unifiednamespace patterns"""
 
-    def __init__(self):
+    def __init__(self, profile_name: str | None = None, seed: int | None = None):
+        raw_config = load_simulator_config(settings)
         self.mqtt_config = settings.mqtt
         self.simulation_config = settings.simulation
-        self.hierarchies = expand_hierarchy_paths(settings.hierarchy)
+        self.hierarchies = expand_hierarchy_paths(raw_config["hierarchy"])
         self.hierarchy = self.hierarchies[0]
         self.plc_templates = list(settings.get("plc") or [])
         self.equipment_fallback = settings.get("equipment.mixer_tank")
         self.devices: list = []
         self.tasks: list[asyncio.Task] = []
+
+        requested = profile_name or self.simulation_config.get("profile", "full")
+        configured_seed = seed if seed is not None else self.simulation_config.get("seed")
+        self.profile: LoadedProfile = load_profile(raw_config, requested, seed=configured_seed)
+        self.clock = PlantClock(self.profile.context, tick_s=float(self.simulation_config.get("tick_s", 1.0)))
+        self.signal_devices: list[SignalDevice] = self.create_signal_devices()
+        LOGGER.info(
+            "Loaded profile %s: %d devices, %d signals across %s",
+            self.profile.name,
+            self.profile.report.devices,
+            self.profile.report.signals,
+            ", ".join(sorted(self.profile.report.per_family)) or "no families",
+        )
+        for warning in self.profile.report.warnings + self.profile.report.unmatched_templates:
+            LOGGER.warning("profile %s: %s", self.profile.name, warning)
+
+    def create_signal_devices(self) -> list[SignalDevice]:
+        """One SignalDevice per resolved DeviceSpec, each with its own read-only view."""
+        built: list[SignalDevice] = []
+        for spec in self.profile.devices:
+            # Only production areas have a LineState (spec 6.1: a compressor house has no
+            # batch to be IDLE between), so a utility device's view carries `line=None` and
+            # reads production through `serves` instead. The line key is `<Area>/<Line>`,
+            # matching how `build_plant_context` registered it.
+            line = f"{spec.path.area}/{spec.path.line}" if spec.path.kind == PRODUCTION_KIND else None
+            view = DeviceView(self.profile.context, spec.path.site, line, spec.serves)
+            built.append(SignalDevice(spec, self.mqtt_config, view, self.profile.seed))
+        return built
+
+    def tick(self, dt: float) -> None:
+        """Advance every enabled device's signals. Called once per plant tick."""
+        for device in self.signal_devices:
+            if device.enabled:
+                device.evaluate(dt)
+
+    def announce_device_count(self) -> None:
+        """Tell every SCADA how many devices actually exist, instead of a random guess."""
+        count = len(self.signal_devices)
+        for device in self.devices:
+            if isinstance(device, SCADA):
+                device.connected_devices = count
+
+    def status(self) -> dict[str, Any]:
+        """Runtime status. Sub-project B's GET /simulator/status extends this body."""
+        per_tier: dict[str, int] = {}
+        for device in self.signal_devices:
+            for spec in device.spec.signals:
+                per_tier[spec.tier] = per_tier.get(spec.tier, 0) + 1
+        return {
+            "profile": self.profile.name,
+            "seed": self.profile.seed,
+            "device_count": len(self.signal_devices),
+            "signal_count": sum(len(d.spec.signals) for d in self.signal_devices),
+            "tiers": dict(self.profile.tiers),
+            "families": dict(self.profile.families),
+            "per_tier": per_tier,
+            "broker_connected": any(d.connected for d in self.signal_devices),
+            "published_total": sum(d.publish_ok for d in self.signal_devices),
+            "failed_total": sum(d.publish_fail for d in self.signal_devices),
+            "tick_count": self.clock.tick_count,
+        }
 
     def create_plc(self) -> list[PLC]:
         """Create one PLC per cell for each configured equipment template."""
@@ -127,6 +219,21 @@ class UnifiedNamespaceSimulator:
         LOGGER.info("Duration: %s minutes", duration)
         await asyncio.sleep(duration * 60)
 
+    async def _run_clock(self) -> None:
+        """Advance the plant and evaluate every signal on the same tick."""
+        tick_s = self.clock.tick_s
+        self.clock.running = True
+        try:
+            while self.clock.running:
+                self.clock.advance()
+                self.tick(tick_s)
+                await asyncio.sleep(tick_s)
+        except asyncio.CancelledError:
+            LOGGER.info("Plant clock cancelled")
+            raise
+        finally:
+            self.clock.running = False
+
     async def run_simulation(self, duration_minutes: int | None = None):
         """Run the complete simulation"""
         duration = resolve_simulation_duration(
@@ -140,14 +247,39 @@ class UnifiedNamespaceSimulator:
             ),
         )
 
-        self.devices = (
-            [*self.create_plc(), *self.create_scada(), *self.create_hmi()]
-        )
+        self.devices = [
+            *self.signal_devices,
+            *self.create_plc(),
+            *self.create_scada(),
+            *self.create_hmi(),
+        ]
+        self.announce_device_count()
 
-        interval = self.simulation_config.interval
+        # The clock is a task of its own: it advances the world, and self.tick evaluates
+        # every signal on that same advance. Publishing is scheduled separately, per tier.
+        self.clock.on_transition(
+            lambda site, line, state: LOGGER.info("Plant %s/%s -> %s", site, line, state)
+        )
+        self.tasks.append(asyncio.create_task(self._run_clock()))
+
+        for device in self.signal_devices:
+            for tier in sorted(device.tiers):
+                # Already multiplied by the profile's `tier_scale` by `load_profile`, so a
+                # slow profile cannot be defeated by forgetting to scale here.
+                interval = self.profile.tiers.get(tier, 0.0)
+                if interval <= 0.0:
+                    # tier 'event' (and any tier explicitly set to 0) publishes on change
+                    # from the tick itself; scheduling it would be a busy loop.
+                    continue
+                self.tasks.append(asyncio.create_task(device.run_tier(tier, interval)))
+
+        # `.get`, not `.interval`: the legacy devices keep the single flat interval, and tests
+        # hand this class a plain dict rather than the Dynaconf settings object.
+        interval = float(self.simulation_config.get("interval", 5.0))
         for device in self.devices:
-            task = asyncio.create_task(device.start(interval))
-            self.tasks.append(task)
+            if isinstance(device, SignalDevice):
+                continue
+            self.tasks.append(asyncio.create_task(device.start(interval)))
 
         try:
             await self._run_until(duration)
@@ -158,6 +290,7 @@ class UnifiedNamespaceSimulator:
 
     async def _stop_simulation(self):
         """Cleanly stop all devices"""
+        self.clock.stop()
         for device in self.devices:
             await device.stop()
 

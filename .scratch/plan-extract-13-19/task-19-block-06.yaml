@@ -1,0 +1,4 @@
+  # Fallback only. conf/simulator/plant.yaml replaces this whole block when it exists, and it
+  # does in this repository - so edits here have no effect unless that file is removed. Kept
+  # because a deployment with no conf/simulator/ directory still has to have a plant.
+  hierarchy:

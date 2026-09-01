@@ -67,8 +67,14 @@ context.unit_of_measure("value")  # '°C'
 context.enrich("value")           # flat dict: site, line, machine, unit_of_measure, …
 ```
 
-`resolve` is cached in memory with a TTL and returns `None` for an Unmodelled
-Topic. Call `refresh()` after editing the Asset Model in the same process.
+`resolve` is cached in memory with a TTL and returns `None` for an Unmodelled Topic.
+Long-running services (GraphQL, historian) also **listen for `NOTIFY asset_model_changed`**
+and drop their caches when the model is edited elsewhere — for example after
+`docker compose up asset_model_setup`. Call `refresh()` for an in-process edit.
+
+Every write to the Asset tree triggers `rebind_all()` automatically (`ensure_branch`,
+`delete_asset`). Batch seeding passes `rebind=False` per branch and calls `rebind_all()` once
+at the end of `apply_plan()`.
 
 Alert Rules go through their own repository. Every write is an upsert by id, so the
 console saves a rule it has just edited without knowing whether the server has seen
@@ -107,10 +113,9 @@ await binder.observe(topic)   # a no-op for a topic already bound
 
 | Caller | What it does |
 | --- | --- |
-| `04_uns_historian` | `TopicBinder.observe()` after each successful persist, so every topic gets a Topic Binding |
-| `07_uns_graphql` | `getAssets`, `getAssetChildren`, `getAsset`, `getTopicContext`, `getUnmodelledTopics`, `getAssetModelSummary` |
-| `07_uns_graphql` | `getAlertRules`, `getAlertRule`, `getAlertRuleSummary`, and the `console` mutations |
-| Grafana / SQL | `public.uns_metrics_enriched` and `public.uns_metrics_1m_enriched` |
+| `04_uns_historian` | SQLAlchemy Core persist to hypertables; `TopicBinder.observe()` after each successful write; `LISTEN` to invalidate binder cache |
+| `07_uns_graphql` | Asset Model queries, Alert Rule queries/mutations; `TopicContextResolver` with `LISTEN` cache invalidation; historic reads via Core |
+| Grafana / SQL | `public.uns_metrics_enriched` and `public.uns_metrics_1m_enriched` (see [08_uns_observability](../08_uns_observability/README.md)) |
 
 ## Commands
 
@@ -129,8 +134,9 @@ uv run uns_model_seed --from-simulator-config   # import conf/settings.yaml hier
 uv run uns_model_seed --dry-run                 # print what a seed would write
 ```
 
-Seeding is idempotent, and always re-resolves the Topic Bindings afterwards:
-they are derived from the tree, so editing the tree leaves them stale.
+Seeding is idempotent: every Asset is upserted by path, every Metric Definition by
+(Asset, Metric Key), and `apply_plan()` finishes with a single `rebind_all()` plus
+`NOTIFY asset_model_changed` so bindings and downstream caches catch up.
 
 ## Deployment
 
@@ -148,4 +154,6 @@ Asset Model is updated after `conf/settings.yaml` changes.
 `test/test_topic_path.py`, `test/test_asset_context.py`, `test/test_seed.py`,
 `test/test_topic_binder.py` and `test/test_alert_rules.py` are pure unit tests and
 need no database — the repository seam is where the fakes go. Tests marked
-`integrationtest` need Postgres from `docker-compose.yml`.
+`integrationtest` need Postgres from `docker-compose.yml`; the
+[`uns_model-app` workflow](../.github/workflows/uns_model-app.yml) runs them in CI
+against a Timescale service container with hypertables and migrations applied.

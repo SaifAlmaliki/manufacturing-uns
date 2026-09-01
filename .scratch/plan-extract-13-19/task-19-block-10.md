@@ -1,0 +1,5 @@
+- src/uns_simulator/
+  - signals.py — the ten signal shapes and their status derivation ([src/uns_simulator/signals.py](src/uns_simulator/signals.py))
+  - expressions.py — the whitelisted expression evaluator used by `derived` and `counter` ([src/uns_simulator/expressions.py](src/uns_simulator/expressions.py))
+  - plant.py — PackML line state, site ambient conditions, the plant clock ([src/uns_simulator/plant.py](src/uns_simulator/plant.py))
+  - profiles.py — device targeting, profile resolution, the conf/simulator reader ([src/uns_simulator/profiles.py](src/uns_simulator/profiles.py))

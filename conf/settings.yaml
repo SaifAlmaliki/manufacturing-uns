@@ -116,6 +116,9 @@ sparkplugb:
 simulator:
   mqtt:
     client_id: "uns_simulator_client"
+  # Fallback only. conf/simulator/plant.yaml replaces this whole block when it exists, and it
+  # does in this repository - so edits here have no effect unless that file is removed. Kept
+  # because a deployment with no conf/simulator/ directory still has to have a plant.
   hierarchy:
     enterprise: "CovestroAG"
     sites:
@@ -138,40 +141,32 @@ simulator:
                 cells:
                   - "Cell1"
 
-  plc:
-    - id: "001"
-      equipment: "G1"
-      sensors:
-        Temperature:
-          base_value: 75.0
-          variation: 2.0
-          unit: "°C"
-        Pressure:
-          base_value: 150.0
-          variation: 5.0
-          unit: "psi"
-    - id: "002"
-      equipment: "FillingMachine"
-      sensors:
-        FlowRate:
-          base_value: 450.0
-          variation: 20.0
-          unit: "L/min"
+  # The legacy `plc:` list moved to conf/simulator/production.yaml as templates `001` and
+  # `002`, unchanged. `simulator.py` still reads this key, so a deployment carrying its own
+  # settings.yaml with `plc:` keeps working - but declaring it here as well as in
+  # production.yaml would put two publishers on every G1 and FillingMachine topic.
   simulation:
+    # Spec 9: `small` is the shipped default because the graphdb mapper MERGEs once per topic
+    # level on every message. Switch to `full` for the complete ~55-device plant.
+    profile: "small"
+    # A fixed seed makes two runs of one profile comparable. Change it to get a different
+    # plant with the same shape.
+    seed: 20260831
+    # Superseded by `tiers` below, which is why it still reads 5.0: spec 12 requires
+    # `interval` to be honoured as the `process` tier when no `tiers` block exists, and a
+    # deployment that deletes `tiers` should land back on today's behaviour, not on a default.
     interval: 5.0
     duration: 5  # minutes; 0 = run until stopped (Compose sets this to 0)
-    plc_count: 2
-  equipment:
-    mixer_tank:
-      name: "MixerTank"
-      sensors:
-        Temperature:
-          base_value: 75.0
-          variation: 2.0
-          unit: "°C"
-        Pressure:
-          base_value: 150.0
-          variation: 5.0
-          unit: "psi"
+    # Seconds per cadence tier, before the profile's `tier_scale` multiplies them. `event` is
+    # 0.0 meaning "publish on change", and scaling zero keeps it zero - a slow profile must
+    # not turn an alarm topic into a slow periodic one.
+    tiers:
+      fast: 1.0
+      process: 5.0
+      energy: 15.0
+      status: 30.0
+      meter: 900.0
+      lab: 1800.0
+      event: 0.0
 
 dynaconf_merge: true

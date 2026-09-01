@@ -31,6 +31,11 @@ Both Postgres-backed groups need the `09_uns_model` migrations applied
 (`docker compose up asset_model_setup`), and the database role needs write access to
 schema `console`.
 
+Historic TimescaleDB reads and all Postgres access share one SQLAlchemy engine per process
+(`Database.shared("graphql")`) — see [ADR-0004](../docs/adr/0004-sqlalchemy-orm-for-the-model-core-for-ingest.md).
+The Asset Model query module listens for `NOTIFY asset_model_changed` on startup and clears
+the `TopicContextResolver` cache when bindings or authored facts change.
+
 ## Key Configurations to provide
 
 This application reads the shared platform configuration at the repository root. GraphQL-specific MQTT topics and Kafka consumer settings live under the Dynaconf `graphql` environment.

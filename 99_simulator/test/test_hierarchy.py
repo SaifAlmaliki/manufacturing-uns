@@ -1,4 +1,6 @@
-from uns_simulator.models import ISA95Hierarchy, ParameterType, expand_hierarchy_paths
+import pytest
+
+from uns_simulator.models import AREA_KINDS, ISA95Hierarchy, ParameterType, expand_hierarchy_paths
 from uns_simulator.simulator import UnifiedNamespaceSimulator
 from uns_simulator import devices
 
@@ -93,3 +95,71 @@ def test_create_plc_spawns_one_device_per_cell_and_template(monkeypatch):
     }
     assert any("Line1/Cell1/G1/" in t for t in topics)
     assert any("Line1/Cell2/FillingMachine/" in t for t in topics)
+
+
+def test_area_kind_and_nameplate_flow_through_expansion():
+    paths = expand_hierarchy_paths(
+        {
+            "enterprise": "CovestroAG",
+            "sites": [
+                {
+                    "name": "Dormagen",
+                    "areas": [
+                        {
+                            "name": "Production",
+                            "kind": "production",
+                            "lines": [{"name": "Line1", "nameplate_tph": 12.5, "cells": ["Cell1"]}],
+                        },
+                        {
+                            "name": "Utilities",
+                            "kind": "utilities",
+                            "lines": [{"name": "Powerhouse", "cells": ["Cell1"]}],
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+    by_area = {path.area: path for path in paths}
+    assert by_area["Production"].kind == "production"
+    assert by_area["Production"].nameplate_tph == 12.5  # noqa: PLR2004
+    assert by_area["Utilities"].kind == "utilities"
+    assert by_area["Utilities"].nameplate_tph == 0.0
+
+
+def test_kind_defaults_to_production_when_absent():
+    paths = expand_hierarchy_paths(
+        {
+            "enterprise": "E",
+            "sites": [{"name": "S", "areas": [{"name": "A", "lines": [{"name": "L", "cells": ["C"]}]}]}],
+        }
+    )
+    assert paths[0].kind == "production"
+    assert paths[0].nameplate_tph == 0.0
+
+
+def test_an_unknown_area_kind_is_rejected_by_name():
+    """A typo must not silently become a production area that legacy templates target."""
+    with pytest.raises(ValueError, match="utilites"):
+        expand_hierarchy_paths(
+            {
+                "enterprise": "E",
+                "sites": [
+                    {
+                        "name": "S",
+                        "areas": [{"name": "A", "kind": "utilites", "lines": [{"name": "L", "cells": ["C"]}]}],
+                    }
+                ],
+            }
+        )
+
+
+def test_area_kinds_are_exactly_the_two_the_spec_names():
+    assert AREA_KINDS == frozenset({"production", "utilities"})
+
+
+def test_positional_construction_is_unchanged():
+    """Existing call sites pass five positional args; they must keep working."""
+    path = ISA95Hierarchy("E", "S", "A", "L", "C")
+    assert path.kind == "production"
+    assert path.nameplate_tph == 0.0

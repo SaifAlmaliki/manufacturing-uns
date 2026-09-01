@@ -108,17 +108,17 @@ uv run uns_simulator
 | `uns_neo4j_db` | Graph database that stores the current ISA-95 namespace as a tree of nodes. Host ports: `7474` (browser), `7687` (Bolt). |
 | `uns_timescale_db` | Time-series historian (TimescaleDB / Postgres) that keeps a history of MQTT events. Host port: `5432`. |
 | `tsdb_setup_script` | One-shot job that creates the historian database, user, tables (`unifiednamespace` + `uns_metrics`), continuous aggregates, and the compression / retention policies. It **exits after success** — a gray/stopped icon is normal, not a failure. |
-| `asset_model_setup` | One-shot job that creates the `model` schema (the authored Asset Model) and the enrichment views, then imports the configured plant hierarchy. Also **exits after success**. Restart it (`docker compose up asset_model_setup`) after changing the hierarchy in `conf/settings.yaml`. |
+| `asset_model_setup` | One-shot job that creates the `model` and `console` schemas, enrichment views, and imports the configured plant hierarchy. Also **exits after success**. Restart it (`docker compose up asset_model_setup`) after changing the hierarchy in `conf/settings.yaml`; running services pick up binding changes via Postgres `NOTIFY`. |
 | `uns_kafka_broker` | Kafka broker for streaming UNS messages to other systems. Host port: `9092`. |
 | `graphdb_client` | MQTT subscriber that writes live namespace messages into Neo4j (current state / tree). |
-| `historian_client` | MQTT subscriber that writes the same events into TimescaleDB (history). |
+| `historian_client` | MQTT subscriber that writes events into TimescaleDB (history) and binds each distinct topic to the Asset Model after a successful persist. Shares one Postgres engine with `09_uns_model` (ADR-0004). |
 | `spb_mapper_client` | Sparkplug B translator: listens on Sparkplug topics, decodes protobuf, republishes JSON on the ISA-95 UNS topics. |
 | `kafka_mapper_client` | MQTT-to-Kafka bridge: copies UNS MQTT messages onto Kafka topics. |
 | `uns_simulator` | Synthetic PLC / HMI / SCADA publisher used for local demos. Not for production. |
-| `graphql_server` | GraphQL API over MQTT (live), Neo4j (current tree), TimescaleDB (history), and Kafka. Host port: **`8000`** (`http://localhost:8000/graphql`). |
+| `graphql_server` | GraphQL API over MQTT (live), Neo4j (current tree), TimescaleDB (history), Postgres `model` / `console` (Asset Model and Alert Rules), and Kafka. Host port: **`8000`** (`http://localhost:8000/graphql`). |
 | `uns_frontend` | Web console for the namespace tree, payload inspector, live feed, search, and historian. Host port: **`8088`** (`http://localhost:8088`). The browser calls GraphQL on port `8000`. |
 | `uns_prometheus` | Scrapes the `/metrics` endpoints exposed by the mapper clients. Host port: `9090`. |
-| `uns_grafana` | Dashboards for Process Visualization (plant measurements) and Platform Observability (platform health). Host port: **`3000`** (`http://localhost:3000`). Anonymous access is enabled — see [Known Limitations](#known-limitations--workarounds). |
+| `uns_grafana` | Dashboards for Process Visualization (plant measurements from `uns_metrics_1m_enriched`) and Platform Observability (platform health). Host port: **`3000`** (`http://localhost:3000`). Anonymous access is enabled — see [Known Limitations](#known-limitations--workarounds). |
 
 Typical flow: **simulator or plant devices → MQTT → mapper clients → Neo4j / Timescale / Kafka → GraphQL → UI**,
 with **mapper clients → Prometheus → Grafana** alongside it for platform health.
@@ -245,8 +245,9 @@ The historian writes two tables in the same transaction:
 
 Storing the payload whole is right for fidelity but useless for time-series queries — the
 measurement is buried in JSONB and there is no index that helps. `uns_metrics` exists so that
-`time_bucket()` / `avg()` queries are possible at all, and Grafana reads the
-`uns_metrics_1m` / `uns_metrics_1h` continuous aggregates rather than either raw table.
+`time_bucket()` / `avg()` queries are possible at all. Grafana reads the
+`uns_metrics_1m_enriched` view (Asset Model labels joined at read time) rather than raw
+hypertables; see [ADR 0003](./docs/adr/0003-postgres-asset-model-and-read-time-enrichment.md).
 
 Retention drops raw data earliest and coarse aggregates last: raw events 90 days,
 `uns_metrics` 1 year, 1-minute aggregates 1 year, 1-hour aggregates 5 years, compression after
@@ -299,7 +300,8 @@ Some key benefits of adding this support to the UNS are:
 stack, serving two jobs that are deliberately kept separate:
 
 - **Process Visualization** — the plant's own measurements (temperature, flow rate). Reads the
-  `uns_metrics_1m` continuous aggregate over the TimescaleDB data source.
+  `uns_metrics_1m_enriched` view over the TimescaleDB data source so panels show line, machine,
+  and unit of measure from the authored Asset Model.
 - **Platform Observability** — the platform's own behaviour (throughput, persist failures,
   latency). Reads Prometheus.
 
@@ -327,13 +329,13 @@ The current project contains the following microservices
 1. [01_k8scluster](./01_k8scluster/README.md): Scripts and utilities to create a K8s cluster (on the edge and in the cloud)
 1. [02_mqtt-cluster](./02_mqtt-cluster/README.md): Scripts and utilities to create a MQTT cluster (on the edge and in the cloud). Common python package for all uns mqtt listeners and sparkplugB generated code and helper code
 1. [03_uns_graphdb](./03_uns_graphdb/README.md): Python project for mqtt listener that persists all message of the UNS and SparkplugB namespaces to a GraphDB. Spb messages are translated from protocol buffers to JSON prior to persisting
-1. [04_uns_historian](./04_uns_historian/README.md): Python project for mqtt listener that persists all message of the UNS and SparkplugB namespaces to a Historian. Spb messages are translated from protocol buffers to JSON prior to persisting
+1. [04_uns_historian](./04_uns_historian/README.md): MQTT listener that persists UNS and SparkplugB messages to TimescaleDB via SQLAlchemy Core on the shared `uns_model` engine, and binds topics to the Asset Model after each persist
 1. [05_sparkplugb](./05_sparkplugb/README.md): Python project for mqtt listener that listens to the SparkplugB namespace and for translates relevant messages to publish to the UNS namespace
 1. [06_uns_kafka](./06_uns_kafka/README.md): Python project for mqtt listener that subscribes to the MQTT broker and publishes to the KAFKA broker
-1. [07_uns_graphql](./07_uns_graphql/README.md): Python project for GraphQL server to query the Unified NameSpace
+1. [07_uns_graphql](./07_uns_graphql/README.md): GraphQL server over MQTT (live), Neo4j (current tree), TimescaleDB (history), Postgres `model` / `console` (authored Asset Model and Alert Rules), and Kafka
 1. [08_uns_observability](./08_uns_observability/README.md): Prometheus scrape configuration and Grafana provisioning (data sources + dashboards). Configuration only — no Python package, so it is not part of the `uv` workspace and has no tests
 1. [09_uns_model](./09_uns_model/README.md): Python project holding the authored Asset Model (the ISA-95 hierarchy, equipment facts and units of measure) in Postgres via SQLAlchemy and Alembic, plus the views that enrich time-series rows with it at read time
-1. [11_frontend](./11_frontend/README.md): React console that talks only to GraphQL (tree, live MQTT feed, search, historian)
+1. [11_frontend](./11_frontend/README.md): React console that talks only to GraphQL — Asset Model–first tree, payload inspector with read-time enrichment, live feed, search, and historian
 1. [99_simulator](./99_simulator/README.md): Python project for simulating data creation to the UNS. _*NOT TO BE USED IN PRODUCTION*_
 
 Each microservice can be independently imported into VSCode by going into the specific microservice folder. Instructions on setting up the python pip & virtual environments are provided in the respective ´README.md´ within that folder

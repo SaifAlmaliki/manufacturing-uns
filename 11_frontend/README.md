@@ -26,6 +26,8 @@ The `uns_frontend` service serves the production build at **http://localhost:808
 
 ## Layout
 
-- **Home**: ISA-95 tree, payload inspector, live MQTT feed (`#`).
+- **Home**: ISA-95 tree rooted in the authored Asset Model (Neo4j fallback when nothing is modelled), payload inspector with read-time enrichment properties, live MQTT feed (`#`).
 - **Explore**: search, historian (table + trend), and property filters.
 - **Sparkplug B**, **Kafka streams**, **System health**, and **Users** (RBAC demo).
+
+The tree asks GraphQL for `getAssetChildren` and `getTopicContext` before falling back to observed Neo4j nodes. Selecting a published topic merges Asset Model enrichment (line, machine, unit of measure) into the payload inspector.

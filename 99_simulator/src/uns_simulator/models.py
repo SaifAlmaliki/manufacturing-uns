@@ -21,6 +21,10 @@ Defines the structure for MQTT topics and industrial equipment.
 from enum import Enum
 from typing import Any
 
+# Spec 7.2's two area kinds. `utilities` is plural; `production` is the default because
+# spec 7.3 makes an untargeted template match production cells only.
+AREA_KINDS: frozenset[str] = frozenset({"production", "utilities"})
+
 
 def _node_name(node: Any) -> str:
     if isinstance(node, str):
@@ -48,12 +52,23 @@ class ISA95Hierarchy:
     Creates structured MQTT topics like: Enterprise/Site/Area/Line/WorkCell/Equipment/ParameterType/ParameterName
     """
 
-    def __init__(self, enterprise: str, site: str, area: str, line: str, cell: str):
+    def __init__(
+        self,
+        enterprise: str,
+        site: str,
+        area: str,
+        line: str,
+        cell: str,
+        kind: str = "production",
+        nameplate_tph: float = 0.0,
+    ) -> None:
         self.enterprise = enterprise
         self.site = site
         self.area = area
         self.line = line
         self.cell = cell
+        self.kind = kind
+        self.nameplate_tph = nameplate_tph
 
     def get_parameter_topic(self, equipment: str, param_type: ParameterType, param_name: str) -> str:
         """
@@ -86,8 +101,15 @@ def expand_hierarchy_paths(raw: Any) -> list[ISA95Hierarchy]:
             site_name = _node_name(site)
             for area in site.get("areas") or []:
                 area_name = _node_name(area)
+                area_kind = str(area.get("kind", "production")) if hasattr(area, "get") else "production"
+                if area_kind not in AREA_KINDS:
+                    raise ValueError(
+                        f"Area {site_name}/{area_name} has kind {area_kind!r}; "
+                        f"expected one of {sorted(AREA_KINDS)}"
+                    )
                 for line in area.get("lines") or []:
                     line_name = _node_name(line)
+                    nameplate_tph = float(line.get("nameplate_tph", 0.0)) if hasattr(line, "get") else 0.0
                     cells = line.get("cells") or []
                     if not cells:
                         raise ValueError(
@@ -101,6 +123,8 @@ def expand_hierarchy_paths(raw: Any) -> list[ISA95Hierarchy]:
                                 area=area_name,
                                 line=line_name,
                                 cell=_node_name(cell),
+                                kind=area_kind,
+                                nameplate_tph=nameplate_tph,
                             )
                         )
         if not paths:

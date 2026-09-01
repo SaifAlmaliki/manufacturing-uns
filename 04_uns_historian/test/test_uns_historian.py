@@ -54,7 +54,30 @@ def mock_historian_handler():
     loop.close()
 
 
-def test_uns_mqtt_disconnect_historian_close_pool(mock_uns_client, mock_historian_handler):  # noqa: ARG001
+@pytest.fixture(scope="function")
+def mock_asset_model_deps():
+    """Unit tests must not require Asset Model DB credentials or background listeners."""
+
+    def consume_scheduled_coroutine(coro, _loop):
+        if asyncio.iscoroutine(coro):
+            coro.close()
+        return MagicMock()
+
+    with (
+        patch("uns_historian.uns_mqtt_historian.Database.shared", return_value=MagicMock()),
+        patch("uns_historian.uns_mqtt_historian.TopicBinder", return_value=MagicMock()),
+        patch("uns_historian.uns_mqtt_historian.AssetModelChangeListener", return_value=MagicMock()),
+        patch(
+            "uns_historian.uns_mqtt_historian.asyncio.run_coroutine_threadsafe",
+            side_effect=consume_scheduled_coroutine,
+        ),
+    ):
+        yield
+
+
+def test_uns_mqtt_disconnect_historian_close_pool(  # noqa: ARG001
+    mock_uns_client, mock_historian_handler, mock_asset_model_deps
+):
     uns_mqtt_historian = UnsMqttHistorian()
     # simulate the disconnection by calling the callback directly
     uns_mqtt_historian.uns_client.on_disconnect(
@@ -68,24 +91,32 @@ def test_uns_mqtt_disconnect_historian_close_pool(mock_uns_client, mock_historia
     mock_historian_handler.close.assert_not_called()
 
 
-@pytest.mark.usefixtures("mock_uns_client")
+@pytest.mark.usefixtures("mock_uns_client", "mock_asset_model_deps")
 def test_uns_mqtt_historian_main_positive_pool_closure(mock_historian_handler):
     # verify that the main method closed the pool in normal execution
     mock_loop = MagicMock()
-    with patch("asyncio.new_event_loop", return_value=mock_loop), patch("asyncio.set_event_loop"):
+    with (
+        patch("asyncio.new_event_loop", return_value=mock_loop),
+        patch("asyncio.set_event_loop"),
+        patch("uns_historian.uns_mqtt_historian.start_metrics_server"),
+    ):
         main()
 
         mock_loop.run_forever.assert_called_once()
         mock_historian_handler.close.assert_called_once()
 
 
-@pytest.mark.usefixtures("mock_uns_client")
+@pytest.mark.usefixtures("mock_uns_client", "mock_asset_model_deps")
 def test_uns_mqtt_historian_main_negative_pool_closure(mock_historian_handler):
     # verify that the main method closed the pool even if exceptions were raised
     mock_loop = MagicMock()
     mock_loop.run_forever.side_effect = RuntimeError("Mocked Loop Error")
 
-    with patch("asyncio.new_event_loop", return_value=mock_loop), patch("asyncio.set_event_loop"):
+    with (
+        patch("asyncio.new_event_loop", return_value=mock_loop),
+        patch("asyncio.set_event_loop"),
+        patch("uns_historian.uns_mqtt_historian.start_metrics_server"),
+    ):
         with pytest.raises(RuntimeError):
             main()
 
