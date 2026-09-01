@@ -4,11 +4,11 @@ import logging
 import os
 import socket
 import sys
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 
 import psutil
 
-from uns_opcua.opcua_config import MQTTConfig
+from uns_opcua.opcua_config import MQTTConfig, OpcUaConfig
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -68,17 +68,29 @@ def check_existing_connection(host: str, port: int) -> bool:
         return False
 
 
-def main():
+def main(
+    *,
+    servers: Sequence[object] | None = None,
+    check_connection: Callable[[str, int], bool] | None = None,
+) -> None:
     """
-    Healthy means the process is up and the broker connection is established.
+    Healthy means the process is up. When servers are configured, the broker
+    connection must also be established.
 
-    OPC UA sessions are deliberately not checked: a PLC being unreachable is what the
-    spool and the reconnect loop are for, and it must not restart the container.
+    With an empty server list the connector idles and never opens MQTT, so
+    process-up alone is enough. OPC UA sessions are deliberately not checked: a
+    PLC being unreachable is what the spool and the reconnect loop are for, and
+    it must not restart the container.
     """
+    if servers is None:
+        servers = OpcUaConfig.servers
+    if check_connection is None:
+        check_connection = check_existing_connection
+
     if not check_process("uns_opcua"):
         sys.exit(1)
 
-    if not check_existing_connection(MQTTConfig.host, MQTTConfig.port):
+    if servers and not check_connection(MQTTConfig.host, MQTTConfig.port):
         sys.exit(1)
 
     logger.info("Health check passed.")
