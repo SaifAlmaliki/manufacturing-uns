@@ -59,7 +59,7 @@
 | `07_uns_graphql/src/uns_graphql/queries/oee.py` | `oeeShiftResults`, `downtimeEvents`, `downtimePareto`. |
 | `07_uns_graphql/src/uns_graphql/mutations/oee.py` | `assignDowntimeReason`. |
 | `conf/oee/{shifts,units,products,reasons}.yaml` | Human-authored master data. |
-| `08_uns_observability/grafana/dashboards/oee.json` | The OEE trend and downtime Pareto. |
+| `08_uns_observability/grafana/dashboards/oee.json` | The shift trend, the loss waterfall, the downtime Pareto, and the unusable-shift worklist. |
 | `docs/adr/0008-oee-computed-from-history-not-streamed.md` | Records why the engine reads history instead of subscribing. |
 
 ---
@@ -13029,6 +13029,10 @@ git commit -m "feat(oee): package the engine as a container and document the des
 
 **Why `WHERE revision = ...` appears nowhere.** `oee.shift_result` holds exactly one row per (unit, shift) — superseded numbers live in `oee.shift_result_revision`. The current result is the only result, which is what makes every panel a plain select.
 
+**Why the waterfall is a horizontal `barchart`.** Grafana has no waterfall panel type. Spec §15's waterfall is Nakajima's time model — Loading Time, then what survives each loss — and four descending bars express that directly, with the gap between adjacent bars being the loss. A stacked bar would need a "loss" series whose value is a subtraction, and a reader would then have to decide which segment is the number they want. The four values come from `loading_time_s`, `run_time_s`, `performance` and `quality` as stored, so the panel restates the engine's arithmetic rather than performing any.
+
+**The eight panels.** Spec §15 names four: the trend, the waterfall, the Pareto and the `status <> 'OK'` worklist. The other four — latest-shift OEE, the range averages, longest stops, production by product — are there because a dashboard opened by a shift supervisor should answer "how did we just do" before it answers "why", and because `MISSING_IDEAL_CYCLE_TIME` is unactionable until you can see which product has no cycle time. Nothing in the spec is dropped.
+
 - [ ] **Step 1: Write the failing dashboard test**
 
 Create `12_uns_oee/test/test_dashboard.py`:
@@ -13135,6 +13139,23 @@ def test_the_asset_variable_lists_only_assets_oee_is_computed_for(dashboard: dic
     assert variable["type"] == "query"
     assert "model.oee_unit" in variable["query"]
     assert "is_active" in variable["query"]
+
+
+def test_the_waterfall_walks_loading_time_down_to_valuable_time(dashboard: dict):
+    """
+    Spec section 15 asks for a waterfall from Loading Time through the three losses. Its
+    four stages have to descend in that order, because a waterfall whose bars are not
+    successive remainders is just four unrelated bars.
+    """
+    waterfall = next(panel for panel in _panels(dashboard) if panel["title"] == "Loss waterfall")
+    query = _queries(waterfall)[0]
+    positions = [
+        query.index(stage) for stage in ("'Loading time'", "'Run time'", "'Net run time'", "'Valuable time'")
+    ]
+    assert positions == sorted(positions)
+    # Each stage is the previous one less its loss, taken from the stored columns - not
+    # recomputed, and not a fifth factor invented in SQL.
+    assert "run_time_s * coalesce(performance, 0) * coalesce(quality, 0)" in query
 
 
 def test_panel_ids_are_unique(dashboard: dict):
@@ -13401,9 +13422,35 @@ Create `08_uns_observability/grafana/dashboards/oee.json`:
     },
     {
       "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+      "description": "Nakajima's time model, summed over the shifts in range: Loading Time less availability loss is Run Time, less performance loss is Net Run Time, less quality loss is Valuable Operating Time. Each bar is what survives the stage before it, so the gaps are the three losses.",
+      "fieldConfig": {
+        "defaults": { "decimals": 0, "unit": "s" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 25 },
+      "id": 8,
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "stacking": "none",
+        "xTickLabelRotation": 0
+      },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+          "format": "table",
+          "rawSql": "WITH s AS (SELECT r.loading_time_s, r.run_time_s, r.performance, r.quality FROM oee.shift_result r JOIN model.oee_unit u ON u.id = r.oee_unit_id JOIN model.asset a ON a.id = u.asset_id WHERE a.path = '$asset' AND $__timeFilter(r.shift_start)), stages AS (SELECT 1 AS step, 'Loading time' AS stage, sum(loading_time_s) AS seconds FROM s UNION ALL SELECT 2, 'Run time', sum(run_time_s) FROM s UNION ALL SELECT 3, 'Net run time', sum(run_time_s * coalesce(performance, 0)) FROM s UNION ALL SELECT 4, 'Valuable time', sum(run_time_s * coalesce(performance, 0) * coalesce(quality, 0)) FROM s) SELECT stage AS \"Stage\", seconds AS \"Seconds\" FROM stages ORDER BY step",
+          "refId": "A"
+        }
+      ],
+      "title": "Loss waterfall",
+      "type": "barchart"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
       "description": "Good and reject counts per product, with the ideal cycle time each shift's Performance was computed against. A null cycle time is what sets MISSING_IDEAL_CYCLE_TIME.",
       "fieldConfig": { "defaults": {}, "overrides": [] },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 25 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 25 },
       "id": 7,
       "options": { "showHeader": true },
       "targets": [
@@ -13453,7 +13500,7 @@ Create `08_uns_observability/grafana/dashboards/oee.json`:
 - [ ] **Step 5: Run the dashboard test to verify it passes**
 
 Run: `uv run pytest 12_uns_oee/test/test_dashboard.py -v -n 0`
-Expected: PASS (9 passed — the parametrised datasource test contributes one per dashboard file).
+Expected: PASS (10 passed — the parametrised datasource test contributes one per dashboard file).
 
 - [ ] **Step 6: Make Grafana wait for the engine**
 
@@ -13528,6 +13575,8 @@ git commit -m "feat(observability): add the OEE dashboard and pin the datasource
 **Why the shift pattern's timezone is `UTC`.** The DST cases — spring-forward, fall-back, ambiguous and non-existent local times — are pure arithmetic and are covered exhaustively in Task 4 without a database. Repeating them here would make a slow test slower and would obscure what this file is actually checking. A `UTC` pattern makes every expected number readable in the assertion.
 
 **Why `ShiftScheduler.run_pass` is not called.** `run_pass` iterates `active_units()`, which on any real database includes the units seeded from `conf/oee/units.yaml`. Calling it would compute and publish results for the actual plant hierarchy as a side effect of running the test suite. What `run_pass` adds over the pure scheduling functions is exactly three pieces of SQL — `claim_requests`, `complete_requests`, `retention_days` — and those are tested directly.
+
+**Where spec §17's backfill clauses are covered.** §17 lists three backfill assertions in the integration tier. Two of them — "skips shifts predating the earliest input row rather than writing `NO_INPUT_DATA`" and "clamps `backfill_days` to retention" — are decisions made by `backfill_windows` and `clamp_backfill_days`, which are pure functions and are covered exhaustively by Task 13's unit tests. What is genuinely database-dependent about them is the two inputs those functions take, and both are asserted here: `earliest_sample_at` in `test_the_fingerprint_and_the_earliest_sample_come_from_sql`, and `retention_days` in `test_retention_days_reads_the_timescale_job_table`. The third — "computes only shifts with no existing result" — is not a filter at all but a consequence of idempotence, and that is `test_an_unchanged_fingerprint_writes_nothing`.
 
 **The shift the whole file is built on.** One eight-hour window, chosen so every expected value is exact rather than a `pytest.approx` with six digits:
 
@@ -13789,6 +13838,10 @@ async def _seed_shift_samples(database: Database) -> None:
 @pytest_asyncio.fixture(loop_scope="session")
 async def seeded(database: Database):
     """Master data and one shift's samples, with nothing left behind either side."""
+    async with database.begin() as connection:
+        present = (await connection.execute(text("SELECT to_regclass('public.uns_metrics')"))).scalar()
+    if present is None:
+        pytest.skip("uns_metrics is missing: apply 04_uns_historian/sql_scripts first")
     await _clean(database)
     await _seed_master_data(database)
     await _seed_shift_samples(database)
@@ -14237,3 +14290,427 @@ git commit -m "test(oee): integration tests for the engine's SQL against a real 
 ```
 
 ---
+
+### Task 23: End to end — historian, engine, broker, and back
+
+**Files:**
+- Create: `12_uns_oee/test/test_end_to_end.py`
+- Modify: `12_uns_oee/pyproject.toml` (the `test` dependency group and `[tool.uv.sources]`)
+
+**Interfaces:**
+- Consumes: `ResultPublisher`, `PAYLOAD_FIELDS`, `shift_oee_topic` (Task 11); `ShiftPipeline` (Task 12); the seeding helpers and fixtures from `test_integration.py` (Task 22); `flatten_payload_to_metrics` from `04_uns_historian`.
+- Produces: nothing.
+
+**What is and is not simulated.** Spec §17 asks for "simulator → historian → engine → broker". This task runs the second half for real — a real Postgres, a real broker, the real `ResultPublisher` — and replaces the first half with the historian's own `flatten_payload_to_metrics`, called directly on the payload the engine published.
+
+That is a deliberate substitution and it is the stronger test. Starting the simulator and waiting for the historian to have written enough samples to close a shift would take a plant-hour of simulated time, and the result would be nondeterministic: the assertion could only be "some number arrived". What matters at this seam is not that the simulator can produce samples — `99_simulator` has its own tests for that — but that the loop **closes**: that a payload the engine publishes is one the historian can store, and that the metric names it produces are the ones the dashboard and the graph database expect. Calling the real flattener on the real payload proves exactly that, in milliseconds, with an exact expected row set.
+
+**The retry mechanism is the other half of this task.** Task 11 returns `False` from `publish` instead of raising, and Task 10 leaves `published_at` NULL when it does. Nothing in the unit tests can show that those two halves meet: it takes a real broker that is genuinely absent, then genuinely present, to demonstrate that a result computed during an outage is published on the next pass rather than lost.
+
+**Preconditions.** A migrated database *and* a broker:
+
+```bash
+UNS_graphdb__password=password1 UNS_historian__password=password2 PGPASSWORD=password3 \
+  docker compose up -d uns_mqtt_broker uns_timescale_db tsdb_setup_script asset_model_setup
+```
+
+- [ ] **Step 1: Add the historian to the test dependency group**
+
+In `12_uns_oee/pyproject.toml`, add `"uns_historian"` to the **`test`** group in `[dependency-groups]` — not to `[project] dependencies` — and add to `[tool.uv.sources]`:
+
+```toml
+uns_historian = { path = "../04_uns_historian", editable = true }
+```
+
+The container builds with `uv sync --group main`, so this never ships. The dependency exists so the test can call the historian's real flattener rather than reimplement it; a reimplementation would agree with itself forever and prove nothing. The assertion is about the *engine's* payload, so it belongs beside the engine.
+
+- [ ] **Step 2: Write the end-to-end test**
+
+Create `12_uns_oee/test/test_end_to_end.py`:
+
+```python
+"""*******************************************************************************
+* Copyright (c) 2021 Ashwin Krishnan
+*
+* All rights reserved. This program and the accompanying materials
+* are made available under the terms of MIT and  is provided "as is",
+* without warranty of any kind, express or implied, including but
+* not limited to the warranties of merchantability, fitness for a
+* particular purpose and noninfringement. In no event shall the
+* authors, contributors or copyright holders be liable for any claim,
+* damages or other liability, whether in an action of contract,
+* tort or otherwise, arising from, out of or in connection with the software
+* or the use or other dealings in the software.
+*
+* Contributors:
+*    -
+*******************************************************************************
+
+The whole loop: samples in the historian, a shift computed, a message on the broker, and a
+payload the historian can store again.
+
+Needs a migrated database and an MQTT broker on localhost - `docker compose up -d
+uns_mqtt_broker uns_timescale_db tsdb_setup_script asset_model_setup`. The database
+seeding, the shift and the expected numbers all come from `test_integration`, which is on
+the pytest `pythonpath` (root `pyproject.toml`); this file adds only the broker.
+
+The simulator is not started. What matters here is that the loop closes - that the engine's
+payload is one `flatten_payload_to_metrics` can turn into rows, with the metric names the
+dashboards read - and calling the historian's real flattener on the real payload shows that
+exactly, without waiting a simulated plant-hour for a nondeterministic number.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from collections.abc import Awaitable, Callable
+from datetime import timedelta
+
+import aiomqtt
+import pytest
+from sqlalchemy import text
+from uns_historian.metric_flattener import flatten_payload_to_metrics
+
+from uns_oee.master_data import MasterDataLoader
+from uns_oee.oee_config import OeeConfig
+from uns_oee.pipeline import ACTION_COMPUTED, ACTION_REPUBLISHED, ShiftPipeline
+from uns_oee.publisher import PAYLOAD_FIELDS, PAYLOAD_SOURCE, ResultPublisher, shift_oee_topic
+from uns_oee.shift_calendar import ShiftWindow
+from uns_oee.sources import MetricSource
+from uns_oee.store import ResultStore
+
+# `12_uns_oee/test` is on the pytest pythonpath, which is how 03_uns_graphdb's tests already
+# share a helper module. Importing the fixtures keeps one definition of the seeded shift.
+from test_integration import (  # noqa: I001
+    COMPUTED_AT,
+    EXPECTED_AVAILABILITY,
+    EXPECTED_OEE,
+    EXPECTED_PERFORMANCE,
+    EXPECTED_QUALITY,
+    LINE_PATH,
+    WINDOW,
+    database,  # noqa: F401 - a session-scoped fixture, used by `seeded`
+    seeded,  # noqa: F401
+    unit,  # noqa: F401
+)
+
+pytestmark = [
+    pytest.mark.integrationtest,
+    pytest.mark.asyncio(loop_scope="session"),
+    # Same group as the SQL tests: they write the same Asset branch, and this file also
+    # binds a fixed MQTT client id.
+    pytest.mark.xdist_group(name="oee_database"),
+]
+
+CONFIG = OeeConfig(mqtt_host="localhost")
+TOPIC = shift_oee_topic(LINE_PATH)
+# Long enough for a local broker round trip, short enough that the retain test - which is a
+# test that nothing arrives - does not dominate the suite.
+RECEIVE_TIMEOUT_S = 10.0
+SILENCE_TIMEOUT_S = 2.0
+
+
+def _pipeline(database, publisher) -> ShiftPipeline:
+    return ShiftPipeline(
+        MetricSource(database), MasterDataLoader(database), ResultStore(database), publisher
+    )
+
+
+async def _listen_while(
+    action: Callable[[], Awaitable[None]], *, timeout: float = RECEIVE_TIMEOUT_S
+) -> dict | None:
+    """Subscribe, run `action`, and return the first payload on TOPIC, or None on silence.
+
+    The subscription is established before `action` runs, because nothing is retained: a
+    subscriber that arrives after the publish sees nothing, which is the point of the
+    retain test below and would be a race in every other test here.
+    """
+    async with aiomqtt.Client(
+        hostname=CONFIG.mqtt_host,
+        port=CONFIG.mqtt_port,
+        identifier="pytest-oee-listener",
+        protocol=aiomqtt.ProtocolVersion(CONFIG.mqtt_version),
+    ) as client:
+        await client.subscribe(TOPIC, qos=CONFIG.mqtt_qos)
+        await action()
+        try:
+            async with asyncio.timeout(timeout):
+                async for message in client.messages:
+                    return json.loads(message.payload)
+        except TimeoutError:
+            return None
+    return None
+
+
+@pytest.fixture
+def publisher():
+    """The real publisher against the real broker."""
+    return ResultPublisher(CONFIG)
+
+
+async def test_a_computed_shift_arrives_on_the_units_own_kpi_topic(seeded, unit, publisher):
+    """
+    The one assertion that no unit test can fake: the message is on the broker, on the
+    Asset's own path, and it carries the numbers that were stored.
+    """
+    engine = _pipeline(seeded, publisher)
+
+    payload = await _listen_while(lambda: engine.run_shift(unit, WINDOW, COMPUTED_AT))
+    await publisher.aclose()
+
+    assert payload is not None, f"nothing arrived on {TOPIC} within {RECEIVE_TIMEOUT_S}s"
+    assert payload["value"] == pytest.approx(round(EXPECTED_OEE * 100, 1))
+    assert payload["availability"] == pytest.approx(round(EXPECTED_AVAILABILITY * 100, 1))
+    assert payload["performance"] == pytest.approx(round(EXPECTED_PERFORMANCE * 100, 1))
+    assert payload["quality"] == pytest.approx(round(EXPECTED_QUALITY * 100, 1))
+    assert payload["equipment"] == "Line1"
+    assert payload["source"] == PAYLOAD_SOURCE
+    assert payload["status"] == "OK"
+    assert payload["revision"] == 1
+
+
+async def test_the_delivered_payload_has_every_field_section_11_documents(seeded, unit, publisher):
+    """
+    Field for field against the spec, after a JSON round trip through a real broker - which
+    is where a `datetime` that was never converted to epoch milliseconds would surface as a
+    serialisation error rather than as a wrong number.
+    """
+    engine = _pipeline(seeded, publisher)
+
+    payload = await _listen_while(lambda: engine.run_shift(unit, WINDOW, COMPUTED_AT))
+    await publisher.aclose()
+
+    assert payload is not None
+    assert set(payload) == set(PAYLOAD_FIELDS)
+    assert payload["unit"] == "%"
+    assert payload["shift_label"] == "A"
+    # Epoch milliseconds, not ISO strings: the historian maps `timestamp` to its `time` column.
+    assert payload["shift_start"] == pytest.approx(WINDOW.start.timestamp() * 1000.0)
+    assert payload["timestamp"] == pytest.approx(WINDOW.end.timestamp() * 1000.0)
+    assert payload["timestamp"] > payload["shift_start"]
+
+
+async def test_the_historian_turns_the_payload_back_into_metric_rows(seeded, unit, publisher):
+    """
+    The loop closing. `flatten_payload_to_metrics` is the historian's own function, so this
+    is what `uns_metrics` would actually hold - and the four numeric names asserted here are
+    the ones the enriched views, the graph database and the alert engine key on.
+    """
+    engine = _pipeline(seeded, publisher)
+    payload = await _listen_while(lambda: engine.run_shift(unit, WINDOW, COMPUTED_AT))
+    await publisher.aclose()
+    assert payload is not None
+
+    rows = flatten_payload_to_metrics(payload)
+    by_name = {name: (number, word) for name, number, word in rows}
+
+    # A flat payload means one row per field, with no dotted paths to guess at.
+    assert set(by_name) == set(PAYLOAD_FIELDS)
+    assert by_name["value"] == (pytest.approx(round(EXPECTED_OEE * 100, 1)), None)
+    for factor in ("availability", "performance", "quality"):
+        number, word = by_name[factor]
+        assert number is not None, f"{factor} must be numeric or the trend cannot plot it"
+        assert word is None
+    # Strings stay strings; the CHECK constraint on uns_metrics allows exactly one of the two.
+    assert by_name["unit"] == (None, "%")
+    assert by_name["source"] == (None, PAYLOAD_SOURCE)
+    assert by_name["status"] == (None, "OK")
+    for number, word in by_name.values():
+        assert (number is None) != (word is None), "uns_metrics allows exactly one value column"
+
+
+async def test_an_undefined_factor_produces_no_row_rather_than_a_zero(seeded, unit, publisher):
+    """
+    A shift with no samples is `NO_INPUT_DATA` with null factors, and a null leaf must
+    vanish. A zero here would be indistinguishable from a genuinely terrible shift and
+    would drag every hourly and daily rollup down with it.
+    """
+    engine = _pipeline(seeded, publisher)
+    # A window a week before any sample exists: the calendar offers it, the data does not.
+    empty = ShiftWindow(
+        start=WINDOW.start - timedelta(days=7), end=WINDOW.end - timedelta(days=7), label="A"
+    )
+
+    payload = await _listen_while(lambda: engine.run_shift(unit, empty, COMPUTED_AT))
+    await publisher.aclose()
+
+    assert payload is not None
+    assert payload["status"] == "NO_INPUT_DATA"
+    assert payload["value"] is None
+    rows = {name for name, _, _ in flatten_payload_to_metrics(payload)}
+    assert "value" not in rows
+    assert "availability" not in rows
+    # The identifying fields still arrive, so the empty shift is visible as an empty shift.
+    assert {"status", "source", "equipment", "shift_start", "timestamp"} <= rows
+
+
+async def test_nothing_is_retained_on_the_kpi_topic(seeded, unit, publisher):
+    """
+    A shift result is a historical fact stamped at its own `shift_end`. Retained, the broker
+    would hand the last closed shift to every new subscriber as though it were the current
+    one - and a live tile would show yesterday's night shift all morning.
+    """
+    engine = _pipeline(seeded, publisher)
+    await engine.run_shift(unit, WINDOW, COMPUTED_AT)
+    await publisher.aclose()
+
+    late = await _listen_while(lambda: asyncio.sleep(0), timeout=SILENCE_TIMEOUT_S)
+
+    assert late is None, "the shift result was published with retain=True"
+
+
+async def test_a_broker_outage_leaves_the_result_unpublished_and_the_next_pass_sends_it(
+    seeded, unit
+):
+    """
+    The whole retry mechanism, which has no queue and no backoff: `publish` returns False,
+    `published_at` stays NULL, and the next scan sees an unpublished result and sends it.
+    Both halves are needed - either one alone loses the shift or duplicates it.
+    """
+    # Port 1 is privileged and nothing listens on it: a connection refusal, not a timeout.
+    offline = OeeConfig(mqtt_host="localhost", mqtt_port=1)
+    down = ResultPublisher(offline)
+    engine = _pipeline(seeded, down)
+
+    outcome = await engine.run_shift(unit, WINDOW, COMPUTED_AT)
+    await down.aclose()
+
+    assert outcome.action == ACTION_COMPUTED, "the result is computed and stored regardless"
+    assert outcome.published is False
+    assert down.failed >= 1
+    async with seeded.begin() as connection:
+        published_at = (
+            await connection.execute(
+                text("SELECT published_at FROM oee.shift_result WHERE oee_unit_id = :unit"),
+                {"unit": unit.unit_id},
+            )
+        ).scalar()
+    assert published_at is None, "an unsent result must stay unsent, or it is lost"
+
+    # The broker comes back. Nothing about the inputs changed, so this is a republish of the
+    # same revision - not a new one, and not a no-op.
+    recovered = ResultPublisher(CONFIG)
+    retry = _pipeline(seeded, recovered)
+    payload = await _listen_while(
+        lambda: retry.run_shift(unit, WINDOW, COMPUTED_AT + timedelta(minutes=5))
+    )
+    await recovered.aclose()
+
+    assert payload is not None, "the retry never reached the broker"
+    assert payload["revision"] == 1
+    async with seeded.begin() as connection:
+        published_at = (
+            await connection.execute(
+                text("SELECT published_at FROM oee.shift_result WHERE oee_unit_id = :unit"),
+                {"unit": unit.unit_id},
+            )
+        ).scalar()
+    assert published_at is not None
+
+
+async def test_a_republished_result_is_not_a_new_revision(seeded, unit, publisher):
+    """
+    `ACTION_REPUBLISHED` exists so that a broker outage does not inflate the revision
+    number. A restatement means the numbers changed; a resend does not, and an auditor
+    reading `revision 4` must be able to conclude the shift really was restated three times.
+    """
+    engine = _pipeline(seeded, publisher)
+    await engine.run_shift(unit, WINDOW, COMPUTED_AT)
+    async with seeded.begin() as connection:
+        await connection.execute(
+            text("UPDATE oee.shift_result SET published_at = NULL WHERE oee_unit_id = :unit"),
+            {"unit": unit.unit_id},
+        )
+
+    again = await engine.run_shift(unit, WINDOW, COMPUTED_AT + timedelta(minutes=5))
+    await publisher.aclose()
+
+    assert again.action == ACTION_REPUBLISHED
+    assert again.revision == 1
+    assert publisher.published == 2
+```
+
+- [ ] **Step 3: Sync and run it**
+
+Run: `uv sync`
+Then: `uv run pytest 12_uns_oee/test/test_end_to_end.py -v -n 0 -m integrationtest`
+Expected: PASS (7 passed).
+
+Note the `-n 0`. `--dist loadgroup` keeps an `xdist_group` on one worker, but this file also binds the fixed client identifier `pytest-oee-listener`, and two workers connecting with the same identifier under MQTT 5 disconnect each other. Running it serially avoids the question; README `:413` already says the `xdist_group` tests are command-line-only.
+
+Failures worth recognising:
+- `aiomqtt.MqttError: [Errno 111] Connection refused` on the *first* test — the broker is not up. `docker compose up -d uns_mqtt_broker`.
+- `nothing arrived on .../KPI/ShiftOee within 10.0s` — usually a topic mismatch, so print `TOPIC` and compare with what `shift_oee_topic` builds. If the topic is right, the broker refused the publish: EMQX rejects topics with a leading `/` or empty segments, which is what an Asset path with a trailing slash produces.
+- `TypeError: Object of type datetime is not JSON serializable` — a payload field skipped `epoch_millis`. Task 11's `shift_oee_payload` is the only place that can happen.
+- `the shift result was published with retain=True` — `ResultPublisher.publish` passes `retain` from somewhere other than the literal `False`.
+
+- [ ] **Step 4: Confirm the default suite is unaffected**
+
+Run: `uv run pytest 12_uns_oee/test -q -m "not integrationtest"`
+Expected: PASS, with both integration files deselected.
+
+Then the whole suite as CI runs it: `uv run pytest -m "not integrationtest" -q`
+Expected: PASS. This is the run that catches a `pythonpath` entry Task 1 missed — an unresolvable `from test_integration import` fails at collection even when every test in the file is deselected.
+
+- [ ] **Step 5: Run the linter**
+
+Run: `uv run ruff check 12_uns_oee`
+Expected: no findings.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add 12_uns_oee/test/test_end_to_end.py 12_uns_oee/pyproject.toml uv.lock
+git commit -m "test(oee): end-to-end over a real broker, including the unpublished-result retry"
+```
+
+---
+
+## Manual Verification
+
+Everything above is automated. These are the checks a person should make once, on a composed
+stack, because they exercise the parts no test can reach: Grafana's own rendering, and the
+engine running unattended over a real clock.
+
+```bash
+UNS_graphdb__password=password1 UNS_historian__password=password2 PGPASSWORD=password3 \
+  docker compose up -d
+```
+
+- [ ] **The engine starts and stays up.** `docker compose ps oee_client` shows `healthy` within
+      about a minute. `docker compose logs oee_client` ends with a pass summary, not a traceback.
+- [ ] **Backfill ran once and stopped.** The first log lines report a bounded backfill
+      (`backfill_days` shifts at most, clamped to retention); the next pass reports zero
+      computed shifts rather than repeating the work.
+- [ ] **Prometheus is scraping it.** <http://localhost:9090/targets> lists `uns_oee` as `UP`.
+      If it is `DOWN`, `test_deployment.py` passed and the container still failed to bind —
+      check `docker compose logs oee_client` for a port already in use inside the container.
+- [ ] **The dashboard renders.** <http://localhost:3000> → **OEE**. Every panel shows either
+      data or "No data" — a panel reading **"Datasource not found"** means the `uid` pinning
+      from Task 21 did not take effect; recreate the Grafana container so provisioning re-runs.
+- [ ] **The asset picker is populated.** The `asset` variable at the top of the dashboard lists
+      the lines from `conf/oee/units.yaml`. An empty list means `asset_model_setup` did not
+      import the master data.
+- [ ] **A result reached the namespace.** With the stack running:
+      `docker compose exec uns_mqtt_broker emqx ctl listeners` to confirm the broker is up, then
+      subscribe from the host and wait for the next closed shift:
+      `mosquitto_sub -h localhost -t '+/+/+/+/KPI/ShiftOee' -v`.
+      Depending on the shift calendar this can be hours away; the trend panel filling in is the
+      same evidence and needs no waiting.
+- [ ] **A correction changes the number.** In the GraphQL playground at
+      <http://localhost:8000/graphql>, read a stop and reassign it to a planned reason:
+
+```graphql
+query { downtimeEvents(assetPath: "<line>", from: "2026-09-01T00:00:00Z", to: "2026-09-08T00:00:00Z") { id durationS reasonCode reasonSource } }
+mutation { assignDowntimeReason(eventId: "<id>", reasonCode: "CHANGEOVER", assignedBy: "you") { reasonCode reasonSource } }
+```
+
+Within one scheduler interval the shift's Availability on the dashboard rises and its
+`revision` becomes 2, with the previous number still readable in `oee.shift_result_revision`.
+That single loop — a person disagrees with the machine, the machine recomputes, and the old
+answer is still there — is what the whole feature is for.
+
+- [ ] **The recompute CLI works from the host.**
+      `docker compose exec oee_client uv run uns_oee_recompute --asset '<line>' --days 2`
+      prints one line per shift and exits 0.
