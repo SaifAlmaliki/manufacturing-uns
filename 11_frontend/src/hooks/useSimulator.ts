@@ -54,18 +54,16 @@ export function useSimulator() {
 
   const refreshStatus = useCallback(async () => {
     const result = await simulatorClient.getStatus()
-    if (result.ok) {
-      setStatus(result.data)
-      setOffline(false)
+    if (!result.ok) {
+      if (result.error.kind === 'offline') {
+        setOffline(true)
+        return
+      }
+      setLastError(result.error)
       return
     }
-    if (result.error.kind === 'offline') {
-      setOffline(true)
-      // The last known status is deliberately kept on screen. Blanking it would lose the
-      // reason the simulator stopped, which is the one thing worth reading afterwards.
-      return
-    }
-    setLastError(result.error)
+    setStatus(result.data)
+    setOffline(false)
   }, [])
 
   const refreshPlant = useCallback(async () => {
@@ -168,17 +166,17 @@ export function useSimulator() {
       setLastError(null)
       try {
         const result = await action()
-        if (result.ok) {
-          setStatus(result.data)
-          setOffline(false)
-          if (reloadConfig) {
-            await Promise.all([refreshConfig(), refreshDevices()])
-          }
-          return true
+        if (!result.ok) {
+          setLastError(result.error)
+          setOffline(result.error.kind === 'offline')
+          return false
         }
-        setLastError(result.error)
-        setOffline(result.error.kind === 'offline')
-        return false
+        setStatus(result.data)
+        setOffline(false)
+        if (reloadConfig) {
+          await Promise.all([refreshConfig(), refreshDevices()])
+        }
+        return true
       } finally {
         busyRef.current = false
         setBusy(false)

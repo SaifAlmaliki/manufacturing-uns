@@ -407,8 +407,14 @@ async def test_a_failing_transition_listener_does_not_silence_the_others():
     assert seen == ["Execute"]
 
 
+@pytest.fixture
+def _use_raw_config(monkeypatch):
+    """apply_profile reloads from load_simulator_config; tests use RAW, not live settings."""
+    monkeypatch.setattr("uns_simulator.simulator.load_simulator_config", lambda settings_obj, conf_dir=None: RAW)
+
+
 @pytest.mark.asyncio
-async def test_switching_profile_rebuilds_the_devices_and_the_clock():
+async def test_switching_profile_rebuilds_the_devices_and_the_clock(_use_raw_config):
     sim = _sim()
     original_devices = sim.signal_devices
     original_clock = sim.clock
@@ -422,7 +428,7 @@ async def test_switching_profile_rebuilds_the_devices_and_the_clock():
 
 
 @pytest.mark.asyncio
-async def test_switching_profile_keeps_a_running_plant_running():
+async def test_switching_profile_keeps_a_running_plant_running(_use_raw_config):
     sim = _sim()
     sim.clock.tick_s = 0.01
     await sim.start()
@@ -435,7 +441,7 @@ async def test_switching_profile_keeps_a_running_plant_running():
 
 
 @pytest.mark.asyncio
-async def test_an_unknown_profile_is_refused_and_changes_nothing():
+async def test_an_unknown_profile_is_refused_and_changes_nothing(_use_raw_config):
     sim = _sim()
     sim.clock.tick_s = 0.01
     await sim.start()
@@ -451,7 +457,7 @@ async def test_an_unknown_profile_is_refused_and_changes_nothing():
 
 
 @pytest.mark.asyncio
-async def test_a_new_seed_changes_the_plant_but_not_the_shape():
+async def test_a_new_seed_changes_the_plant_but_not_the_shape(_use_raw_config):
     sim = _sim()
     before = len(sim.signal_devices)
     await sim.apply_profile("full", seed=1234)
@@ -461,7 +467,7 @@ async def test_a_new_seed_changes_the_plant_but_not_the_shape():
 
 
 @pytest.mark.asyncio
-async def test_a_rebuilt_clock_still_reports_transitions():
+async def test_a_rebuilt_clock_still_reports_transitions(_use_raw_config):
     """The bug this guards: a profile switch replaces the clock, and every listener
     registered on the old one is silently gone."""
     sim = _sim()

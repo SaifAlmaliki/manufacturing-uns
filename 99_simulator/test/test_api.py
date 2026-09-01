@@ -27,7 +27,14 @@ STATUS = {
     "failed_total": 0,
     "overrides_active": False,
     "tiers": {"fast": 6.0, "process": 30.0, "energy": 90.0, "status": 180.0, "meter": 5400.0, "lab": 10800.0, "event": 0.0},
-    "families": {"energy": True, "water": False, "utilities": False, "asset_health": False, "production": False, "safety": False},
+    "families": {
+        "energy": True,
+        "water": False,
+        "utilities": False,
+        "asset_health": False,
+        "production": False,
+        "safety": False,
+    },
     "per_tier": {"process": 5},
     "tick_count": 0,
 }
@@ -321,9 +328,7 @@ async def test_concurrent_writes_are_serialised():
     directions at once. The lock is the only thing preventing it."""
     sim = FakeSimulator(slow=True)
 
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=create_app(sim)), base_url="http://sim"
-    ) as client:
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(sim)), base_url="http://sim") as client:
         responses = await asyncio.gather(
             client.put("/simulator/profile", json={"profile": "small"}),
             client.put("/simulator/profile", json={"profile": "full"}),

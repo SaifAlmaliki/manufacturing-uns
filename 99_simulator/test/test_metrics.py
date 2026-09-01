@@ -57,7 +57,7 @@ def _device() -> SignalDevice:
             SignalSpec(name="ActivePower", unit="kW", base_value=100.0, tier="energy", export_metric=True),
             SignalSpec(name="PowerFactor", unit="", base_value=0.95, tier="status"),
         ),
-        serves=("Production/Line1",),
+        serves=("Dormagen/Production/Line1",),
     )
     view = DeviceView(context, "Dormagen", None, spec.serves)
     return SignalDevice(spec, {}, view, 7)

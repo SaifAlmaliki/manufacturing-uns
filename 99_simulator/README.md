@@ -203,3 +203,63 @@ Running tests
   ```bash
   uv run pytest -m "not integrationtest" test/
   ```
+
+## Control API
+
+The simulator serves a FastAPI control API on port 8099 (`applications.simulator.api_port`)
+in the simulation's own event loop, so every handler reads live in-process state.
+
+Interactive docs: `http://localhost:8099/simulator/docs` — reachable when the simulator runs
+directly (`uv run uns_simulator`). Under Docker Compose, `uns_simulator`'s `ports:` block is
+commented out on purpose; uncomment it to reach 8099 from the host. The console does not
+need it, because nginx proxies `/simulator` inside the compose network.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/simulator/health` | Liveness, uptime, git hash, version |
+| GET | `/simulator/status` | Run state, counters, publish rates, `overrides_active` |
+| GET | `/simulator/config` | Profile, available profiles, hierarchy, tiers, families, devices |
+| GET | `/simulator/plant` | PackML state and production rate per line, per site |
+| GET | `/simulator/devices` | Device inventory with per-device publish counters |
+| GET | `/simulator/devices/{id}/signals` | Current value, Unit of Measure, tier and topic per signal |
+| GET | `/simulator/diagnostics` | What the profile expanded to, unmatched templates, failing devices, sample topics |
+| POST | `/simulator/run` | `{"action": "start" \| "pause" \| "resume" \| "stop"}` |
+| PUT | `/simulator/profile` | `{"profile": "...", "seed": 42}` — rebuilds the plant, resets counters |
+| PUT | `/simulator/tiers` | Seconds between publishes, per tier |
+| PUT | `/simulator/families` | Enable or disable a sensor family |
+| PUT | `/simulator/devices/{id}` | `{"enabled": false}` |
+
+Every write returns the `/status` body, so a caller never has to poll to find out what
+changed.
+
+**Pause keeps the plant moving.** It cancels the publish tasks and leaves the clock running,
+so PackML states keep advancing and resuming does not restart the plant from Idle.
+
+**Nothing is written back to `conf/simulator/`.** `overrides_active` in the status body is
+true once the running plant has diverged from the files on disk; a restart returns to them.
+
+### Authentication
+
+Set `simulator.api.token` in `conf/.secrets.yaml` to require an `X-Simulator-Token` header.
+Unset by default, which is right for a development tool on a development network and wrong
+for anything else — the API has no user identity and anyone who can reach port 8099 can
+stop the simulator.
+
+### Observability
+
+- **Prometheus** on port 9093, scraped by `08_uns_observability/prometheus/prometheus.yml`:
+  - `uns_simulator_messages_published_total{tier,family}` (counter)
+  - `uns_simulator_publish_failures_total{device}` (counter)
+  - `uns_simulator_reconnects_total{device}` (counter)
+  - `uns_simulator_devices_connected` (gauge)
+  - `uns_simulator_signal_value{device,signal}` (gauge) — only for signals whose profile
+    sets `export_metric: true`. Exporting every signal would put the plant's whole state
+    into Prometheus, which is the historian's job and not a metric.
+- **MQTT self-telemetry** under `uns/platform/simulator/<instance>/`:
+  `status` every ten seconds, `plant/<site>/<line>/state` on each PackML transition, and
+  `device/<id>/health` on change. All retained, with a Last Will on `status` so the topic
+  reads `offline` if the process is killed.
+
+This prefix is Platform Observability, not plant data. No mapper subscribes to it, so none
+of it is persisted as though a machine had measured it. `test/test_self_telemetry.py`
+enforces that against the real topic lists in `conf/settings.yaml`.
