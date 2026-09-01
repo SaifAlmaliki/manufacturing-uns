@@ -201,7 +201,7 @@ def test_parse_spool_rejects_unknown_synchronous_mode():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `uv run pytest 10_uns_opcua/test/test_opcua_config.py -v -p no:xdist`
+Run: `uv run pytest 10_uns_opcua/test/test_opcua_config.py -v -n 0`
 Expected: FAIL — `ModuleNotFoundError: No module named 'uns_opcua'`
 
 - [ ] **Step 3: Write the module metadata and register the workspace member**
@@ -251,7 +251,7 @@ uns_opcua_validate = "uns_opcua.model_check:main"
 [dependency-groups]
 test = [
     "pytest>=9.0.3,<10",
-    "pytest-asyncio>=0.25,<1.5",
+    "pytest-asyncio>=1.3.0,<1.5",
     "pytest-xdist>=3.8.0,<4",
     "pytest-timeout>=2.4.0,<3",
     "pytest-cov>=7.1.0,<8",
@@ -281,7 +281,6 @@ include = ["src/uns_opcua"]
 [tool.pytest.ini_options]
 norecursedirs = [".git", "build", "node_modules", "env*", "tmp*"]
 testpaths = ["test"]
-asyncio_mode = "strict"
 
 [tool.ruff]
 # Extend the `pyproject.toml` file in the parent directory
@@ -514,7 +513,7 @@ class MQTTConfig:
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run: `uv run pytest 10_uns_opcua/test/test_opcua_config.py -v -p no:xdist`
+Run: `uv run pytest 10_uns_opcua/test/test_opcua_config.py -v -n 0`
 Expected: PASS (14 tests)
 
 - [ ] **Step 6: Add the configuration to `conf/settings.yaml`**
@@ -761,7 +760,7 @@ def test_find_conflicts_scopes_node_ids_per_server():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `uv run pytest 10_uns_opcua/test/test_tag_map.py -v -p no:xdist`
+Run: `uv run pytest 10_uns_opcua/test/test_tag_map.py -v -n 0`
 Expected: FAIL — `ModuleNotFoundError: No module named 'uns_opcua.tag_map'`
 
 - [ ] **Step 3: Write the minimal implementation**
@@ -863,7 +862,7 @@ def find_conflicts(bindings: Sequence[TagBinding]) -> list[str]:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `uv run pytest 10_uns_opcua/test/test_tag_map.py -v -p no:xdist`
+Run: `uv run pytest 10_uns_opcua/test/test_tag_map.py -v -n 0`
 Expected: PASS (12 tests)
 
 - [ ] **Step 5: Commit**
@@ -1062,7 +1061,7 @@ def test_serialise_round_trips_and_keeps_unicode_units(binding):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `uv run pytest 10_uns_opcua/test/test_payload.py -v -p no:xdist`
+Run: `uv run pytest 10_uns_opcua/test/test_payload.py -v -n 0`
 Expected: FAIL — `ModuleNotFoundError: No module named 'uns_opcua.payload'`
 
 - [ ] **Step 3: Write the minimal implementation**
@@ -1167,7 +1166,7 @@ def serialise(payload: dict[str, Any]) -> bytes:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `uv run pytest 10_uns_opcua/test/test_payload.py -v -p no:xdist`
+Run: `uv run pytest 10_uns_opcua/test/test_payload.py -v -n 0`
 Expected: PASS (16 tests)
 
 - [ ] **Step 5: Commit**
@@ -1253,7 +1252,7 @@ def test_unlabelled_metrics_increment():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `uv run pytest 10_uns_opcua/test/test_prometheus_metrics.py -v -p no:xdist`
+Run: `uv run pytest 10_uns_opcua/test/test_prometheus_metrics.py -v -n 0`
 Expected: FAIL — `ImportError: cannot import name 'prometheus_metrics' from 'uns_opcua'`
 
 - [ ] **Step 3: Write the minimal implementation**
@@ -1340,7 +1339,7 @@ def start_metrics_server(port: int) -> None:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `uv run pytest 10_uns_opcua/test/test_prometheus_metrics.py -v -p no:xdist`
+Run: `uv run pytest 10_uns_opcua/test/test_prometheus_metrics.py -v -n 0`
 Expected: PASS (3 tests)
 
 - [ ] **Step 5: Commit**
@@ -1561,7 +1560,7 @@ def test_concurrent_writers_and_readers_do_not_corrupt_the_spool(spool):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `uv run pytest 10_uns_opcua/test/test_spool.py -v -p no:xdist`
+Run: `uv run pytest 10_uns_opcua/test/test_spool.py -v -n 0`
 Expected: FAIL — `ModuleNotFoundError: No module named 'uns_opcua.spool'`
 
 - [ ] **Step 3: Write the minimal implementation**
@@ -1775,7 +1774,7 @@ class Spool:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `uv run pytest 10_uns_opcua/test/test_spool.py -v -p no:xdist`
+Run: `uv run pytest 10_uns_opcua/test/test_spool.py -v -n 0`
 Expected: PASS (15 tests)
 
 - [ ] **Step 5: Commit**
@@ -1960,7 +1959,7 @@ async def test_enqueue_drop_oldest_discards_the_oldest_when_full():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `uv run pytest 10_uns_opcua/test/test_collector.py -v -p no:xdist`
+Run: `uv run pytest 10_uns_opcua/test/test_collector.py -v -n 0`
 Expected: FAIL — `ModuleNotFoundError: No module named 'uns_opcua.collector'`
 
 - [ ] **Step 3: Write the minimal implementation**
@@ -2237,7 +2236,7 @@ class Collector:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `uv run pytest 10_uns_opcua/test/test_collector.py -v -p no:xdist`
+Run: `uv run pytest 10_uns_opcua/test/test_collector.py -v -n 0`
 Expected: PASS (9 tests)
 
 - [ ] **Step 5: Write the integration test against an in-process OPC UA server**
@@ -2393,7 +2392,7 @@ Note: the first test derives `node_id` from the live node rather than hardcoding
 
 - [ ] **Step 6: Run the integration test**
 
-Run: `uv run pytest 10_uns_opcua/test/test_collector_integration.py -v -p no:xdist -m integrationtest`
+Run: `uv run pytest 10_uns_opcua/test/test_collector_integration.py -v -n 0 -m integrationtest`
 Expected: PASS (3 tests). If the deadband test fails with all four values delivered, the filter was rejected — check the `create_monitored_items` results rather than assuming the API changed.
 
 - [ ] **Step 7: Commit**
@@ -2571,7 +2570,7 @@ async def test_forward_batch_preserves_per_topic_order_across_batches(spool):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `uv run pytest 10_uns_opcua/test/test_forwarder.py -v -p no:xdist`
+Run: `uv run pytest 10_uns_opcua/test/test_forwarder.py -v -n 0`
 Expected: FAIL — `ModuleNotFoundError: No module named 'uns_opcua.forwarder'`
 
 - [ ] **Step 3: Write the minimal implementation**
@@ -2758,7 +2757,7 @@ Note the `finally` in `forward_batch`: `aiomqtt.publish` at QoS 1 returns only a
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `uv run pytest 10_uns_opcua/test/test_forwarder.py -v -p no:xdist`
+Run: `uv run pytest 10_uns_opcua/test/test_forwarder.py -v -n 0`
 Expected: PASS (9 tests)
 
 - [ ] **Step 5: Commit**
@@ -2917,7 +2916,7 @@ def test_every_issue_for_one_tag_is_reported_at_once():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `uv run pytest 10_uns_opcua/test/test_model_check.py -v -p no:xdist`
+Run: `uv run pytest 10_uns_opcua/test/test_model_check.py -v -n 0`
 Expected: FAIL — `ModuleNotFoundError: No module named 'uns_opcua.model_check'`
 
 - [ ] **Step 3: Write the minimal implementation**
@@ -3099,7 +3098,7 @@ Note that `ModelConfig.from_settings("opcua")` reads the `historian.*` keys — 
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `uv run pytest 10_uns_opcua/test/test_model_check.py -v -p no:xdist`
+Run: `uv run pytest 10_uns_opcua/test/test_model_check.py -v -n 0`
 Expected: PASS (10 tests)
 
 - [ ] **Step 5: Commit**
@@ -3227,7 +3226,7 @@ async def test_run_connector_cancels_every_task_on_shutdown(tmp_path, monkeypatc
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `uv run pytest 10_uns_opcua/test/test_main.py -v -p no:xdist`
+Run: `uv run pytest 10_uns_opcua/test/test_main.py -v -n 0`
 Expected: FAIL — `ModuleNotFoundError: No module named 'uns_opcua.main'`
 
 - [ ] **Step 3: Write the supervisor**
@@ -3436,7 +3435,7 @@ if __name__ == "__main__":
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run: `uv run pytest 10_uns_opcua/test/test_main.py -v -p no:xdist`
+Run: `uv run pytest 10_uns_opcua/test/test_main.py -v -n 0`
 Expected: PASS (3 tests)
 
 - [ ] **Step 6: Run the whole module suite**
@@ -3487,6 +3486,7 @@ LABEL org.opencontainers.image.licenses=MIT
 WORKDIR /app
 
 COPY ./${UNS_MODULE}/pyproject.toml ./${UNS_MODULE}/README.md ./LICENSE* ./
+# 00_uns_config and 09_uns_model land at the paths this module's `../` uv sources expect.
 COPY ./00_uns_config/pyproject.toml ./00_uns_config/README.md /00_uns_config/
 COPY ./00_uns_config/src /00_uns_config/src
 # uns_model provides the Asset Model tables the mapping is validated against. alembic.ini
@@ -3559,11 +3559,9 @@ In `docker-compose.yml`, add this after `historian_client`. It follows that serv
     depends_on:
       uns_mqtt_broker:
         condition: service_healthy
-      # Validation is non-gating, but waiting for the schema avoids a guaranteed-noisy
-      # warning on every cold start.
-      asset_model_setup:
-        condition: service_completed_successfully
 ```
+
+Deliberately **no `depends_on` for `asset_model_setup`**, even though the model check reads its schema. Gating the container on Postgres in the dev stack would contradict the design's non-gating rule and hide the very behaviour the rule exists to guarantee. A cold start where the model is not ready yet logs `Asset Model validation skipped` and keeps publishing, which is correct.
 
 `docker-compose.yml` currently has **no top-level `volumes:` block**, so add one at the end of the file, at the same indentation level as `services:`:
 
@@ -3608,7 +3606,7 @@ and therefore per-topic ordering — for free.
 
 Run:
 ```bash
-docker compose up -d mqtt_broker opcua_client
+docker compose up -d uns_mqtt_broker opcua_client
 docker compose logs opcua_client --tail 30
 curl -s localhost:9093/metrics | grep -E "uns_opcua_(spool_rows|server_up)"
 ```
@@ -3802,7 +3800,7 @@ async def test_a_crash_between_publish_and_delete_replays_rather_than_loses(tmp_
 
 - [ ] **Step 2: Run the test**
 
-Run: `uv run pytest 10_uns_opcua/test/test_end_to_end.py -v -p no:xdist -m integrationtest`
+Run: `uv run pytest 10_uns_opcua/test/test_end_to_end.py -v -n 0 -m integrationtest`
 Expected: PASS (2 tests)
 
 - [ ] **Step 3: Run the full repository suite to check nothing regressed**
