@@ -27,11 +27,17 @@ default:
       name: "uns_spb_mapper"
     simulator:
       name: "uns_simulator"
+      # The simulator's own control API (99_simulator/src/uns_simulator/api.py).
+      # Not part of the GraphQL surface: it commands a process, it does not query the
+      # Unified Namespace. See docs/adr/0007-simulator-control-api-outside-graphql.md.
+      api_port: 8099
 
   urls:
     graphql_host: "localhost"
     graphql_port: 8000
     graphql_path: "/graphql"
+    simulator_host: "localhost"
+    simulator_port: 8099
     cors_origins:
       - "http://localhost:5173"
       - "http://127.0.0.1:5173"
@@ -75,6 +81,10 @@ default:
     table: "unifiednamespace"
     metrics_table: "uns_metrics"
     metrics_port: 9091
+
+  simulator:
+    # Prometheus scrapes this. 9091 is the historian's and 9092 the graph database's.
+    metrics_port: 9093
 
   kafka:
     bootstrap_servers: "localhost:9092"

@@ -398,6 +398,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           requiredFeature = 'system_ops';
           featureName = 'System Health & Operations';
           break;
+        case 'simulator':
+          requiredFeature = 'simulator_ops';
+          featureName = 'Simulator Console & Diagnostics';
+          break;
         case 'users':
           requiredFeature = 'user_management';
           featureName = 'User Management & RBAC';

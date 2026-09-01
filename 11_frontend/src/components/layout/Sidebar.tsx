@@ -17,6 +17,7 @@ import {
   AlertTriangle,
   X,
   Bell,
+  FlaskConical,
 } from 'lucide-react';
 import { useUNS } from '../../context/UNSContext';
 import { useAuth } from '../../context/AuthContext';
@@ -119,6 +120,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: Activity,
       description: 'Subsystems & Health Matrix',
       featureKey: 'system_ops',
+    },
+    {
+      to: '/simulator',
+      tabId: 'simulator',
+      label: 'Simulator Control',
+      shortLabel: 'Simulator',
+      icon: FlaskConical,
+      description: 'Synthetic Plant Data Generator',
+      featureKey: 'simulator_ops',
+      badge: 'SIM',
     },
     {
       to: '/users',

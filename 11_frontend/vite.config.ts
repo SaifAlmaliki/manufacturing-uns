@@ -25,6 +25,12 @@ export default defineConfig(() => {
           changeOrigin: true,
           ws: true,
         },
+        // The simulator's control API. No `ws: true`: the console polls it over HTTP and
+        // gets its live feed from MQTT through /graphql.
+        '/simulator': {
+          target: platform.simulatorProxyTarget,
+          changeOrigin: true,
+        },
       },
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: process.env.DISABLE_HMR === 'true' ? null : {},

@@ -3,10 +3,11 @@ import asyncio
 import pytest
 
 from uns_simulator import devices as devices_module
-from uns_simulator.models import expand_hierarchy_paths
+from uns_simulator.models import ParameterType, expand_hierarchy_paths
 from uns_simulator.plant import PlantClock
 from uns_simulator.profiles import TIER_DEFAULTS, load_profile
 from uns_simulator.simulator import (
+    ReconfigurationError,
     UnifiedNamespaceSimulator,
     resolve_simulation_duration,
 )
@@ -107,7 +108,10 @@ RAW = {
             }
         ]
     },
-    "profiles": {"full": {"families": ["energy"]}},
+    "profiles": {
+        "full": {"families": ["energy"]},
+        "small": {"tier_scale": 6.0, "families": ["energy"]},
+    },
     "simulation": {"seed": 1234, "interval": 5.0, "duration": 0},
 }
 
@@ -138,6 +142,8 @@ def _sim():
     sim.profile = load_profile(RAW, "full")
     sim.clock = PlantClock(sim.profile.context, tick_s=1.0)
     sim.signal_devices = sim.create_signal_devices()
+    sim.raw_config = RAW
+    sim._init_run_state()
     return sim
 
 
@@ -199,6 +205,8 @@ def test_status_reports_the_loaded_profile():
     assert status["seed"] == 1234
     assert status["device_count"] == 1
     assert status["signal_count"] == 2
+    assert status["run_state"] == "stopped"
+    assert status["uptime_s"] == 0.0
     # `full` leaves `tier_scale` at its 1.0 default, so the pre-scaled tiers are the defaults.
     assert status["tiers"]["meter"] == TIER_DEFAULTS["meter"]
     assert status["families"] == {
@@ -212,6 +220,7 @@ def test_status_reports_the_loaded_profile():
     assert status["per_tier"] == {"energy": 1, "meter": 1}
     assert status["published_total"] == 0
     assert status["failed_total"] == 0
+    assert all(rate == 0.0 for rate in status["msg_per_sec"].values())
 
 
 @pytest.mark.asyncio
@@ -264,3 +273,464 @@ def test_scada_is_told_the_real_device_count():
     scada = [d for d in sim.devices if isinstance(d, devices_module.SCADA)]
     assert scada
     assert scada[0].connected_devices == len(sim.signal_devices)
+
+
+@pytest.mark.asyncio
+async def test_a_fresh_simulator_is_stopped():
+    sim = _sim()
+    assert sim.run_state == "stopped"
+    assert sim.started_at is None
+    assert sim._publish_tasks == []
+
+
+@pytest.mark.asyncio
+async def test_start_runs_the_clock_and_schedules_one_task_per_device_tier():
+    sim = _sim()
+    sim.clock.tick_s = 0.01
+    expected = sum(len(device.tiers) for device in sim.signal_devices)
+
+    await sim.start()
+    try:
+        assert sim.run_state == "running"
+        assert len(sim._publish_tasks) == expected
+        assert sim._clock_task is not None
+        await asyncio.sleep(0.05)
+        assert sim.clock.tick_count > 0
+    finally:
+        await sim.stop()
+
+
+@pytest.mark.asyncio
+async def test_start_twice_does_not_double_the_publishers():
+    sim = _sim()
+    sim.clock.tick_s = 0.01
+    await sim.start()
+    try:
+        scheduled = len(sim._publish_tasks)
+        await sim.start()
+        assert len(sim._publish_tasks) == scheduled
+    finally:
+        await sim.stop()
+
+
+@pytest.mark.asyncio
+async def test_pause_halts_publishing_and_keeps_the_plant_moving():
+    """The point of pause: the world carries on so resuming shows where it went."""
+    sim = _sim()
+    sim.clock.tick_s = 0.01
+    sim.profile.tiers = dict.fromkeys(sim.profile.tiers, 0.01)
+
+    await sim.start()
+    try:
+        await asyncio.sleep(0.05)
+        await sim.pause()
+        assert sim.run_state == "paused"
+        assert sim._publish_tasks == []
+
+        published = sim.status()["published_total"]
+        ticks = sim.clock.tick_count
+        await asyncio.sleep(0.05)
+
+        assert sim.status()["published_total"] == published
+        assert sim.clock.tick_count > ticks
+    finally:
+        await sim.stop()
+
+
+@pytest.mark.asyncio
+async def test_resume_restarts_publishing_without_restarting_the_clock():
+    sim = _sim()
+    sim.clock.tick_s = 0.01
+    await sim.start()
+    try:
+        clock_task = sim._clock_task
+        started_at = sim.started_at
+        await sim.pause()
+        await sim.resume()
+
+        assert sim.run_state == "running"
+        assert sim._clock_task is clock_task
+        assert sim.started_at == started_at
+        assert sim._publish_tasks != []
+    finally:
+        await sim.stop()
+
+
+@pytest.mark.asyncio
+async def test_stop_cancels_every_task_and_forgets_the_run():
+    sim = _sim()
+    sim.clock.tick_s = 0.01
+    await sim.start()
+    await sim.stop()
+
+    assert sim.run_state == "stopped"
+    assert sim._publish_tasks == []
+    assert sim._clock_task is None
+    assert sim.started_at is None
+    assert sim.clock.running is False
+
+
+@pytest.mark.asyncio
+async def test_stop_and_pause_are_idempotent():
+    sim = _sim()
+    await sim.pause()
+    assert sim.run_state == "stopped"
+    await sim.stop()
+    await sim.stop()
+    assert sim.run_state == "stopped"
+
+
+@pytest.mark.asyncio
+async def test_a_disabled_device_is_never_scheduled():
+    sim = _sim()
+    sim.clock.tick_s = 0.01
+    sim.signal_devices[0].enabled = False
+    expected = sum(len(d.tiers) for d in sim.signal_devices[1:])
+
+    await sim.start()
+    try:
+        assert len(sim._publish_tasks) == expected
+    finally:
+        await sim.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_failing_transition_listener_does_not_silence_the_others():
+    """PlantClock swallows callback exceptions, so a broken listener would otherwise be
+    invisible and could starve the one that publishes self-telemetry."""
+    sim = _sim()
+    seen: list[str] = []
+    sim.on_plant_transition(lambda site, line, state: (_ for _ in ()).throw(RuntimeError("boom")))
+    sim.on_plant_transition(lambda site, line, state: seen.append(state))
+
+    sim._notify_transition("Dormagen", "Production/Line1", "Execute")
+    assert seen == ["Execute"]
+
+
+@pytest.mark.asyncio
+async def test_switching_profile_rebuilds_the_devices_and_the_clock():
+    sim = _sim()
+    original_devices = sim.signal_devices
+    original_clock = sim.clock
+
+    await sim.apply_profile("small")
+
+    assert sim.profile.name == "small"
+    assert sim.signal_devices is not original_devices
+    assert sim.clock is not original_clock
+    assert sim.overrides_active is False
+
+
+@pytest.mark.asyncio
+async def test_switching_profile_keeps_a_running_plant_running():
+    sim = _sim()
+    sim.clock.tick_s = 0.01
+    await sim.start()
+    try:
+        await sim.apply_profile("small")
+        assert sim.run_state == "running"
+        assert sim._publish_tasks != []
+    finally:
+        await sim.stop()
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_profile_is_refused_and_changes_nothing():
+    sim = _sim()
+    sim.clock.tick_s = 0.01
+    await sim.start()
+    try:
+        with pytest.raises(ReconfigurationError) as excinfo:
+            await sim.apply_profile("huge")
+        assert excinfo.value.field == "profile"
+        assert "huge" in excinfo.value.message
+        assert sim.run_state == "running"
+        assert sim.profile.name == "full"
+    finally:
+        await sim.stop()
+
+
+@pytest.mark.asyncio
+async def test_a_new_seed_changes_the_plant_but_not_the_shape():
+    sim = _sim()
+    before = len(sim.signal_devices)
+    await sim.apply_profile("full", seed=1234)
+
+    assert sim.profile.seed == 1234
+    assert len(sim.signal_devices) == before
+
+
+@pytest.mark.asyncio
+async def test_a_rebuilt_clock_still_reports_transitions():
+    """The bug this guards: a profile switch replaces the clock, and every listener
+    registered on the old one is silently gone."""
+    sim = _sim()
+    seen: list[str] = []
+    sim.on_plant_transition(lambda site, line, state: seen.append(state))
+
+    await sim.apply_profile("small")
+    sim._notify_transition("Dormagen", "Production/Line1", "Execute")
+
+    assert seen == ["Execute"]
+
+
+@pytest.mark.asyncio
+async def test_a_tier_interval_can_be_changed_at_runtime():
+    sim = _sim()
+    await sim.apply_tiers({"process": 12.5})
+
+    assert sim.profile.tiers["process"] == 12.5
+    assert sim.overrides_active is True
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_tier_names_itself_in_the_refusal():
+    sim = _sim()
+    with pytest.raises(ReconfigurationError) as excinfo:
+        await sim.apply_tiers({"turbo": 1.0})
+    assert excinfo.value.field == "turbo"
+    assert sim.overrides_active is False
+
+
+@pytest.mark.asyncio
+async def test_a_negative_tier_interval_is_refused():
+    sim = _sim()
+    with pytest.raises(ReconfigurationError) as excinfo:
+        await sim.apply_tiers({"process": -1.0})
+    assert excinfo.value.field == "process"
+
+
+@pytest.mark.asyncio
+async def test_changing_a_tier_while_running_reschedules_the_publishers():
+    sim = _sim()
+    sim.clock.tick_s = 0.01
+    await sim.start()
+    try:
+        before = list(sim._publish_tasks)
+        await sim.apply_tiers({"process": 0.02})
+        assert all(task.cancelled() or task.done() for task in before)
+        assert sim._publish_tasks != []
+        assert all(task not in before for task in sim._publish_tasks)
+    finally:
+        await sim.stop()
+
+
+@pytest.mark.asyncio
+async def test_changing_a_tier_while_paused_does_not_start_publishing():
+    sim = _sim()
+    sim.clock.tick_s = 0.01
+    await sim.start()
+    try:
+        await sim.pause()
+        await sim.apply_tiers({"process": 0.02})
+        assert sim.run_state == "paused"
+        assert sim._publish_tasks == []
+    finally:
+        await sim.stop()
+
+
+@pytest.mark.asyncio
+async def test_disabling_a_family_disables_the_devices_it_contributed():
+    sim = _sim()
+    family = sim.signal_devices[0].spec.family
+    await sim.apply_families({family: False})
+
+    assert sim.profile.families[family] is False
+    assert all(not d.enabled for d in sim.signal_devices if d.spec.family == family)
+    assert sim.overrides_active is True
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_family_names_itself_in_the_refusal():
+    sim = _sim()
+    with pytest.raises(ReconfigurationError) as excinfo:
+        await sim.apply_families({"nonsense": True})
+    assert excinfo.value.field == "nonsense"
+
+
+@pytest.mark.asyncio
+async def test_one_device_can_be_disabled_by_id():
+    sim = _sim()
+    device_id = sim.signal_devices[0].spec.id
+    await sim.set_device_enabled(device_id, False)
+
+    assert sim.signal_devices[0].enabled is False
+    assert sim.overrides_active is True
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_device_id_raises_key_error():
+    sim = _sim()
+    with pytest.raises(KeyError):
+        await sim.set_device_enabled("no-such-device", False)
+
+
+def test_health_answers_while_the_plant_is_stopped():
+    sim = _sim()
+    body = sim.health_body()
+
+    assert body["status"] == "ok"
+    assert body["uptime_s"] >= 0.0
+    assert body["git_hash"]
+    assert body["version"]
+
+
+def test_status_carries_every_key_the_console_polls():
+    sim = _sim()
+    body = sim.status()
+
+    assert set(body) == {
+        "run_state",
+        "profile",
+        "seed",
+        "device_count",
+        "signal_count",
+        "uptime_s",
+        "broker_connected",
+        "msg_per_sec",
+        "published_total",
+        "failed_total",
+        "overrides_active",
+        "tiers",
+        "families",
+        "per_tier",
+        "tick_count",
+    }
+    assert body["run_state"] == "stopped"
+    assert body["uptime_s"] == 0.0
+
+
+def test_a_stopped_plant_reports_no_throughput():
+    """A theoretical rate from a stopped simulator is the number that ends up in a
+    capacity discussion as though it were measured."""
+    sim = _sim()
+    assert set(sim.status()["msg_per_sec"]) == set(sim.profile.tiers)
+    assert all(rate == 0.0 for rate in sim.status()["msg_per_sec"].values())
+
+
+@pytest.mark.asyncio
+async def test_a_running_plant_reports_throughput_and_uptime():
+    sim = _sim()
+    sim.clock.tick_s = 0.01
+    await sim.start()
+    try:
+        body = sim.status()
+        assert body["run_state"] == "running"
+        assert body["uptime_s"] >= 0.0
+        assert sum(body["msg_per_sec"].values()) > 0.0
+    finally:
+        await sim.stop()
+
+
+def test_the_plant_snapshot_is_keyed_by_site_then_line():
+    sim = _sim()
+    sites = sim.plant_snapshot()["sites"]
+
+    site = next(iter(sites.values()))
+    assert "ambient_temp_c" in site
+    assert "shift" in site
+    assert "tariff" in site
+    line = next(iter(site["lines"].values()))
+    assert {"state", "production_rate", "throughput_tph", "heat_load", "air_demand", "time_in_state_s"} <= set(line)
+
+
+def test_every_device_reports_the_twelve_fields_the_table_shows():
+    sim = _sim()
+    row = sim.device_snapshots()[0]
+
+    assert set(row) == {
+        "id",
+        "equipment",
+        "topic_prefix",
+        "tier",
+        "family",
+        "enabled",
+        "connected",
+        "last_publish_ts",
+        "publish_ok",
+        "publish_fail",
+        "last_error",
+        "signal_count",
+    }
+
+
+def test_signals_are_returned_for_one_device_by_id():
+    sim = _sim()
+    device_id = sim.signal_devices[0].spec.id
+    body = sim.signal_snapshot(device_id)
+
+    assert body["device_id"] == device_id
+    assert len(body["signals"]) == len(sim.signal_devices[0].spec.signals)
+    assert "last_publish_ts" in body["signals"][0]
+    assert "unit" in body["signals"][0]
+
+
+def test_each_signal_row_carries_the_topic_it_publishes_on():
+    """The console keys its sparklines on this, and only Python knows how to build it."""
+    sim = _sim()
+    device = sim.signal_devices[0]
+    row = sim.signal_snapshot(device.spec.id)["signals"][0]
+
+    assert row["topic"] == f"{device.spec.topic_prefix}/{row['param_type']}/{row['name']}"
+    # Exactly the topic ISA95Hierarchy.get_parameter_topic builds for the same signal.
+    assert row["topic"] == device.spec.path.get_parameter_topic(
+        device.spec.equipment, ParameterType(row["param_type"]), row["name"]
+    )
+
+
+def test_an_unknown_device_id_raises_key_error_from_the_read_model_too():
+    sim = _sim()
+    with pytest.raises(KeyError):
+        sim.signal_snapshot("no-such-device")
+
+
+def test_the_config_snapshot_lists_the_profiles_that_could_be_switched_to():
+    sim = _sim()
+    body = sim.config_snapshot()
+
+    assert body["profile"] == "full"
+    assert "small" in body["available_profiles"]
+    assert body["hierarchy"]
+    assert {"enterprise", "site", "area", "line", "cell", "kind"} <= set(body["hierarchy"][0])
+    device = body["devices"][0]
+    assert {"id", "equipment", "family", "tier", "enabled", "topic_prefix", "signal_count", "serves", "target"} == set(device)
+    assert {"site", "area", "line", "cell", "kind"} == set(device["target"])
+
+
+def test_diagnostics_reports_the_load_report_and_nothing_failing_yet():
+    sim = _sim()
+    body = sim.diagnostics()
+
+    assert set(body) == {"report", "failing_devices", "sample_topics"}
+    assert set(body["report"]) == {
+        "devices",
+        "signals",
+        "per_family",
+        "per_tier",
+        "serves_links",
+        "unmatched_templates",
+        "warnings",
+    }
+    assert body["failing_devices"] == []
+
+
+def test_a_device_with_failures_shows_up_in_diagnostics():
+    sim = _sim()
+    sim.signal_devices[0].publish_fail = 3
+    sim.signal_devices[0].last_error = "[Errno 111] Connection refused"
+
+    failing = sim.diagnostics()["failing_devices"]
+    assert len(failing) == 1
+    assert failing[0]["device_id"] == sim.signal_devices[0].device_id
+    assert failing[0]["publish_fail"] == 3
+
+
+def test_sample_topics_look_exactly_like_what_gets_published():
+    sim = _sim()
+    device = sim.signal_devices[0]
+    signal = device.spec.signals[0]
+    expected = f"{device.spec.topic_prefix}/{signal.param_type}/{signal.name}"
+
+    topics = sim.sample_topics()
+    assert expected in topics
+    assert len(topics) <= 20

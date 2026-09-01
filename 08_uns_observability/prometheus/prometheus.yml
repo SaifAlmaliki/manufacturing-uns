@@ -14,3 +14,7 @@ scrape_configs:
   - job_name: uns_graphdb
     static_configs:
       - targets: ["graphdb_client:9092"]
+
+  - job_name: uns_simulator
+    static_configs:
+      - targets: ["uns_simulator:9093"]

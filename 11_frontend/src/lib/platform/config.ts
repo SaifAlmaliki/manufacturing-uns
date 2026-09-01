@@ -9,6 +9,8 @@ export type PlatformSettings = {
   graphqlProxyTarget: string
   frontendDevPort: number
   frontendComposePort: number
+  simulatorApiPort: number
+  simulatorProxyTarget: string
 }
 
 declare const __UNS_PLATFORM_CONFIG__: PlatformSettings

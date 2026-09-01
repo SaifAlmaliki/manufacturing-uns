@@ -616,6 +616,10 @@ class SignalDevice(AsyncMQTTDevice):
             build_signal(signal_spec, f"{spec.topic_prefix}/{signal_spec.name}", global_seed) for signal_spec in spec.signals
         ]
         self.tiers = frozenset(signal_spec.tier for signal_spec in spec.signals)
+        # Prometheus wants a per-tier breakdown (spec 5.3) and `publish_ok` is one total.
+        # Seeded with every tier the device owns so a tier that has not published yet is a
+        # zero rather than a missing series.
+        self.published_by_tier: dict[str, int] = dict.fromkeys(self.tiers, 0)
 
     def evaluate(self, dt: float) -> dict[str, Any]:
         """Advance every signal by `dt` seconds. Synchronous, and never publishes."""
@@ -650,6 +654,7 @@ class SignalDevice(AsyncMQTTDevice):
             ):
                 self._last_published[signal.spec.name] = value
                 published += 1
+        self.published_by_tier[tier] = self.published_by_tier.get(tier, 0) + published
         return published
 
     async def run_tier(self, tier: str, interval: float) -> None:

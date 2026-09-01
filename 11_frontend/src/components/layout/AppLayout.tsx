@@ -37,6 +37,7 @@ export const AppLayout: React.FC = () => {
     if (path.startsWith('/sparkplug')) return 'sparkplug';
     if (path.startsWith('/streams')) return 'streams';
     if (path.startsWith('/system')) return 'system';
+    if (path.startsWith('/simulator')) return 'simulator';
     if (path.startsWith('/users')) return 'users';
     return 'home';
   };

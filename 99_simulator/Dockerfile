@@ -77,6 +77,9 @@ ENV UV_NO_DEFAULT_GROUPS=true \
 ARG GIT_HASH
 ENV GIT_HASH=${GIT_HASH:-dev}
 
+# 8099 is the control API, 9093 the Prometheus endpoint.
+EXPOSE 8099 9093
+
 # Mount the volume /conf
 VOLUME /app/conf
 # Set the Entrypoint script to run the uns_simulator module

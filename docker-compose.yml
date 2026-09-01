@@ -241,6 +241,18 @@ services:
     build:
       context: .
       dockerfile: ./99_simulator/Dockerfile
+    # Uncomment to reach the control API from the host — needed for `npm run dev` against a
+    # composed stack, and for the curl checks in the plan's Manual Verification.
+    #
+    # Commented out by default because the API has no user identity: anyone who can reach
+    # 8099 can stop the simulator, switch its profile, or disable a device (spec 10). Inside
+    # the compose network `uns_frontend`'s nginx reaches it by service name and no host port
+    # is needed, so publishing it by default would widen the reachable surface for nothing.
+    #
+    # 9093 stays unpublished either way: Prometheus scrapes it from inside the network,
+    # exactly as it does the historian's 9091 and the graph database's 9092.
+    # ports:
+    #   - "8099:8099"
     volumes:
       - ./conf:/app/conf
     environment:
@@ -299,6 +311,9 @@ services:
       - "8088:80"
     depends_on:
       - graphql_server
+      # nginx.conf proxies /simulator to it, and nginx will not start on an unresolvable
+      # upstream hostname.
+      - uns_simulator
 
   uns_prometheus:
     image: "prom/prometheus:latest"
@@ -309,6 +324,7 @@ services:
     depends_on:
       - historian_client
       - graphdb_client
+      - uns_simulator
 
   uns_grafana:
     image: "grafana/grafana:latest"

@@ -74,3 +74,25 @@ class MQTTConfig:
         Does not check if the values provided are correct or not
         """
         return cls.host is not None
+
+
+class SimulatorAPIConfig:
+    """Where the control API and the metrics endpoint listen (spec 8).
+
+    Class-level reads, matching MQTTConfig: by import time Dynaconf has already merged
+    conf/settings.yaml, conf/.secrets.yaml and any UNS_* environment override, so there
+    is nothing to defer.
+    """
+
+    # Binds every interface because the process runs in a container whose port is
+    # published. `api_host` is deliberately absent from settings.yaml — override it with
+    # UNS_SIMULATOR__API_HOST=127.0.0.1 when running the simulator directly on a host.
+    api_host: str = settings.get("simulator.api_host", "0.0.0.0")  # noqa: S104
+    api_port: int = settings.get("applications.simulator.api_port", 8099)
+    metrics_port: int = settings.get("simulator.metrics_port", 9093)
+    token: str | None = settings.get("simulator.api.token", None)
+
+    @classmethod
+    def is_token_required(cls) -> bool:
+        """True when a shared secret is configured. An empty string counts as absent."""
+        return bool(cls.token)

@@ -5,6 +5,8 @@ declare const __UNS_PLATFORM_CONFIG__: import('../../platform/settings').Platfor
 interface ImportMetaEnv {
   readonly VITE_GRAPHQL_URL?: string
   readonly VITE_GRAPHQL_WS_URL?: string
+  /** Sent as X-Simulator-Token. Unset means the simulator's API takes no token. */
+  readonly VITE_SIMULATOR_TOKEN?: string
 }
 
 interface ImportMeta {
