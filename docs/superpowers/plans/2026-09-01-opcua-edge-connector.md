@@ -18,7 +18,7 @@
 - **No secrets in code or in `settings.yaml`.** Certificate pass phrases and broker credentials come from `conf/.secrets.yaml` or `UNS_`-prefixed environment variables.
 - **No `status` field in the payload.** The connector publishes `quality` from the OPC UA `StatusCode`; it never invents `Normal`/`Warning`/`Alarm`.
 - Python `requires-python = ">=3.14, <4"`, matching every other module.
-- Dependency pins, exactly: `asyncua>=2.0.1,<3`, `aiomqtt>=2.5.1,<3`, `dynaconf~=3.2`, `prometheus-client>=0.21.0,<1`, `psutil>=6.1.1,<8`, `logger~=1.4`.
+- Dependency pins, exactly: `asyncua>=2.0.1,<3`, `aiomqtt>=2.5.1,<3`, `dynaconf~=3.2`, `prometheus-client>=0.21.0,<1`, `psutil>=6.1.1,<8`, `logger~=1.4`, `sqlalchemy[asyncio]>=2.0.36,<3` (matching `09_uns_model`).
 - Prometheus metric names are prefixed `uns_opcua_`. Metrics port is `9093` (9091 is the historian, 9092 the graphdb).
 - Module directory is `10_uns_opcua`, package `uns_opcua`, Dynaconf environment `opcua`.
 - Asset Model validation **reports, never gates.** The connector must start and publish with Postgres unreachable.
@@ -235,6 +235,9 @@ dependencies = [
     "dynaconf~=3.2",
     "psutil>=6.1.1,<8",
     "prometheus-client>=0.21.0,<1",
+    # model_check.py imports sqlalchemy directly, so it is declared rather than relied
+    # on transitively through uns_model. asyncpg arrives with uns_model's own pin.
+    "sqlalchemy[asyncio]>=2.0.36,<3",
 ]
 
 [project.urls]
@@ -254,14 +257,34 @@ test = [
     "pytest-cov>=7.1.0,<8",
 ]
 
+# Relative paths, matching every other module. This is also what makes the Dockerfile
+# work: the module sits at /app and its siblings are copied to /00_uns_config and
+# /09_uns_model, so `../00_uns_config` resolves inside the image as well as in the
+# workspace.
+[tool.uv.sources]
+uns_config = { path = "../00_uns_config", editable = true }
+uns_model = { path = "../09_uns_model", editable = true }
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.sdist]
+include = ["src/uns_opcua"]
+
 [tool.hatch.build.targets.wheel]
-packages = ["src/uns_opcua"]
+include = ["src/uns_opcua"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src/uns_opcua" = "uns_opcua"
+
+[tool.pytest.ini_options]
+norecursedirs = [".git", "build", "node_modules", "env*", "tmp*"]
+testpaths = ["test"]
+asyncio_mode = "strict"
 
 [tool.ruff]
+# Extend the `pyproject.toml` file in the parent directory
 extend = "../pyproject.toml"
 ```
 
@@ -916,7 +939,8 @@ def test_quality_from_code(code, expected):
 
 
 def test_to_epoch_ms():
-    assert to_epoch_ms(SOURCE_TS) == pytest.approx(1756728000123.0)
+    # 2026-09-01T12:00:00.123Z. Verified against datetime rather than typed from memory.
+    assert to_epoch_ms(SOURCE_TS) == pytest.approx(1788264000123.0)
 
 
 def test_to_epoch_ms_treats_a_naive_datetime_as_utc():
@@ -940,7 +964,7 @@ def test_build_payload_uses_source_timestamp(binding):
         "value": 74.83,
         "unit": "°C",
         "quality": "Good",
-        "timestamp": pytest.approx(1756728000123.0),
+        "timestamp": pytest.approx(to_epoch_ms(SOURCE_TS)),
         "source": CLIENT_ID,
         "equipment": "MixerTank",
     }
@@ -1343,6 +1367,11 @@ queue drops distinct from spool-bound drops so a disk problem stays visible."
 
 `Spool` is deliberately synchronous. `sqlite3` blocks, so every caller wraps it in `asyncio.to_thread` — that keeps the event loop free while leaving the spool trivially testable without an event loop. `now` is a parameter rather than a `time.time()` call so the age bound can be tested deterministically.
 
+Two consequences of `asyncio.to_thread` that the implementation must handle, both verified rather than assumed:
+
+- **`sqlite3.connect` defaults to `check_same_thread=True`**, and `asyncio.to_thread` runs on a pool thread that is not the one that opened the connection. Confirmed: it raises `ProgrammingError: SQLite objects created in a thread can only be used in that same thread`. So the connection is opened with `check_same_thread=False`.
+- **That makes serialising access this class's job.** `sqlite3.threadsafety` is 3 on this build, but it reflects a SQLite compile-time option and is not guaranteed elsewhere, and the writer and forwarder do call the spool concurrently from different pool threads. An `RLock` around every method removes the question. `RLock` rather than `Lock` because `trim()` calls `row_count()` and `byte_size()`.
+
 - [ ] **Step 1: Write the failing test**
 
 Create `10_uns_opcua/test/test_spool.py`:
@@ -1492,8 +1521,42 @@ def test_wal_mode_and_synchronous_are_applied(tmp_path):
     try:
         assert spool.pragma("journal_mode") == "wal"
         assert spool.pragma("synchronous") == 2  # FULL
+        assert spool.pragma("auto_vacuum") == 2  # INCREMENTAL, so max_bytes can be met
     finally:
         spool.close()
+
+
+def test_the_spool_is_usable_from_another_thread(spool):
+    """
+    Every caller reaches the spool through asyncio.to_thread, which runs on a pool
+    thread that did not open the connection. sqlite3 raises ProgrammingError for that
+    unless check_same_thread=False.
+    """
+    import concurrent.futures
+
+    def write_and_count() -> int:
+        spool.enqueue([_row("from-a-thread")], now=NOW)
+        return spool.row_count()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        assert pool.submit(write_and_count).result() == 1
+        # A second, different pool thread must work too.
+        assert pool.submit(write_and_count).result() == 2
+
+
+def test_concurrent_writers_and_readers_do_not_corrupt_the_spool(spool):
+    """The writer and forwarder tasks really do hit the spool at the same time."""
+    import concurrent.futures
+
+    def write(index: int) -> int:
+        return spool.enqueue([_row(f"t{index}")], now=NOW)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+        written = sum(pool.map(write, range(40)))
+
+    assert written == 40
+    assert spool.row_count() == 40
+    assert len(spool.peek(limit=100)) == 40
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -1522,6 +1585,7 @@ deterministic under test.
 
 import logging
 import sqlite3
+import threading
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -1560,6 +1624,10 @@ class Spool:
     def __init__(self, config: SpoolConfig) -> None:
         self._config = config
         self._connection: sqlite3.Connection | None = None
+        # Callers reach this class through asyncio.to_thread, so two different pool
+        # threads can arrive at once. RLock rather than Lock because trim() calls
+        # row_count() and byte_size().
+        self._lock = threading.RLock()
 
     # --- lifecycle -----------------------------------------------------------------
 
@@ -1568,18 +1636,29 @@ class Spool:
         path = Path(self._config.path)
         if path.parent != Path():
             path.parent.mkdir(parents=True, exist_ok=True)
-        self._connection = sqlite3.connect(self._config.path, isolation_level=None)
-        # WAL lets the forwarder read while the writer writes. synchronous=NORMAL risks
-        # the last few milliseconds on a power cut, which beats an order of magnitude of
-        # throughput; FULL stays available for sites that disagree.
-        self._connection.execute("PRAGMA journal_mode=WAL")
-        self._connection.execute(f"PRAGMA synchronous={self._config.synchronous}")
-        self._connection.executescript(_DDL)
+        with self._lock:
+            # check_same_thread=False is mandatory: sqlite3 otherwise refuses to be used
+            # from the asyncio.to_thread pool thread that did not open it. This class's
+            # own lock provides the serialisation that flag gives up.
+            self._connection = sqlite3.connect(
+                self._config.path, isolation_level=None, check_same_thread=False
+            )
+            # auto_vacuum has to be set before the first table exists, so it goes before
+            # the DDL. Without it, deleted pages are never returned and the max_bytes
+            # bound could never be satisfied.
+            self._connection.execute("PRAGMA auto_vacuum=INCREMENTAL")
+            # WAL lets the forwarder read while the writer writes. synchronous=NORMAL
+            # risks the last few milliseconds on a power cut, which beats an order of
+            # magnitude of throughput; FULL stays available for sites that disagree.
+            self._connection.execute("PRAGMA journal_mode=WAL")
+            self._connection.execute(f"PRAGMA synchronous={self._config.synchronous}")
+            self._connection.executescript(_DDL)
 
     def close(self) -> None:
-        if self._connection is not None:
-            self._connection.close()
-            self._connection = None
+        with self._lock:
+            if self._connection is not None:
+                self._connection.close()
+                self._connection = None
 
     @property
     def _db(self) -> sqlite3.Connection:
@@ -1589,7 +1668,8 @@ class Spool:
 
     def pragma(self, name: str) -> Any:
         """Read back a pragma. Used by tests to assert the durability settings."""
-        return self._db.execute(f"PRAGMA {name}").fetchone()[0]
+        with self._lock:
+            return self._db.execute(f"PRAGMA {name}").fetchone()[0]
 
     # --- writing -------------------------------------------------------------------
 
@@ -1597,7 +1677,7 @@ class Spool:
         """Append a batch in one transaction. Batching is what lets SQLite keep up."""
         if not rows:
             return 0
-        with self._db:
+        with self._lock, self._db:
             self._db.executemany(_INSERT, [(row.topic, row.payload, row.qos, now) for row in rows])
         return len(rows)
 
@@ -1605,9 +1685,11 @@ class Spool:
 
     def peek(self, limit: int) -> list[tuple[int, SpoolRow]]:
         """The oldest `limit` rows, in id order. Rows stay until delete_through."""
+        with self._lock:
+            rows = self._db.execute(_PEEK, (limit,)).fetchall()
         return [
             (row_id, SpoolRow(topic=topic, payload=bytes(payload), qos=qos))
-            for row_id, topic, payload, qos in self._db.execute(_PEEK, (limit,)).fetchall()
+            for row_id, topic, payload, qos in rows
         ]
 
     def delete_through(self, max_id: int) -> int:
@@ -1616,7 +1698,7 @@ class Spool:
         them. A crash between publish and delete replays on restart, which the
         historian's ON CONFLICT DO NOTHING absorbs.
         """
-        with self._db:
+        with self._lock, self._db:
             cursor = self._db.execute("DELETE FROM spool WHERE id <= ?", (max_id,))
         return cursor.rowcount
 
@@ -1630,10 +1712,11 @@ class Spool:
         full disk that takes the whole edge node down, which is strictly worse than
         losing the oldest tail of the data.
         """
-        dropped = 0
-        dropped += self._trim_by_age(now)
-        dropped += self._trim_by_rows()
-        dropped += self._trim_by_bytes()
+        with self._lock:
+            dropped = 0
+            dropped += self._trim_by_age(now)
+            dropped += self._trim_by_rows()
+            dropped += self._trim_by_bytes()
         if dropped:
             LOGGER.warning("Spool dropped %s oldest rows to stay inside its bounds", dropped)
         return dropped
@@ -1674,23 +1757,26 @@ class Spool:
     # --- observation ---------------------------------------------------------------
 
     def row_count(self) -> int:
-        return int(self._db.execute("SELECT count(*) FROM spool").fetchone()[0])
+        with self._lock:
+            return int(self._db.execute("SELECT count(*) FROM spool").fetchone()[0])
 
     def byte_size(self) -> int:
-        page_count = self._db.execute("PRAGMA page_count").fetchone()[0]
-        page_size = self._db.execute("PRAGMA page_size").fetchone()[0]
+        with self._lock:
+            page_count = self._db.execute("PRAGMA page_count").fetchone()[0]
+            page_size = self._db.execute("PRAGMA page_size").fetchone()[0]
         return int(page_count) * int(page_size)
 
     def oldest_spooled_at(self) -> float | None:
         """The oldest row's spool time, or None when the spool is empty."""
-        row = self._db.execute("SELECT min(spooled_at) FROM spool").fetchone()
+        with self._lock:
+            row = self._db.execute("SELECT min(spooled_at) FROM spool").fetchone()
         return None if row[0] is None else float(row[0])
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest 10_uns_opcua/test/test_spool.py -v -p no:xdist`
-Expected: PASS (13 tests)
+Expected: PASS (15 tests)
 
 - [ ] **Step 5: Commit**
 
@@ -1821,7 +1907,7 @@ async def test_handler_enqueues_a_serialised_payload(bindings):
     assert payload["value"] == 74.83
     assert payload["quality"] == "Good"
     assert payload["source"] == "uns_opcua_dormagen"
-    assert payload["timestamp"] == pytest.approx(1756728000123.0)
+    assert payload["timestamp"] == pytest.approx(SOURCE_TS.timestamp() * 1000)
     assert "status" not in payload
 
 
@@ -2242,7 +2328,9 @@ async def _collect(server_config, queue) -> asyncio.Task:
 async def test_subscribing_delivers_the_current_value_immediately(opcua_server):
     """This is what recovers the gap after a session drop - no explicit read needed."""
     _, temperature = opcua_server
-    node_id = (await temperature.read_browse_name()) and temperature.nodeid.to_string()
+    # Read the id off the live node: the numeric part depends on how many nodes the
+    # server created first, so hardcoding ns=2;i=2 would be guessing.
+    node_id = temperature.nodeid.to_string()
     queue: asyncio.Queue[SpoolRow] = asyncio.Queue()
 
     task = await _collect(_server_config(node_id, deadband=None), queue)
@@ -2854,7 +2942,7 @@ from dataclasses import dataclass
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
-from uns_model.model_config import MODEL_SCHEMA
+from uns_model.model_config import MODEL_SCHEMA, ModelConfig
 from uns_opcua import prometheus_metrics as metrics
 from uns_opcua.opcua_config import OpcUaConfig
 from uns_opcua.tag_map import TagBinding, build_bindings, find_conflicts
@@ -2947,11 +3035,19 @@ def all_bindings() -> list[TagBinding]:
     return [binding for server in OpcUaConfig.servers for binding in build_bindings(server)]
 
 
-async def validate(bindings: Sequence[TagBinding], database_url: str | None = None) -> list[ModelIssue]:
-    """Load the model facts and check the bindings against them."""
-    from uns_model.model_config import ModelConfig  # imported here so --help works without a database
+async def validate(bindings: Sequence[TagBinding]) -> list[ModelIssue]:
+    """
+    Load the model facts and check the bindings against them.
 
-    engine = create_async_engine(database_url or ModelConfig.db_url(), pool_pre_ping=True)
+    `09_uns_model` keeps the password out of the URL and hands it over in
+    `connect_args()` alongside the SSL context, so the engine is built the same way here
+    rather than composing a second, divergent URL.
+    """
+    config = ModelConfig.from_settings("opcua")
+    if not config.is_valid():
+        raise RuntimeError("The Asset Model database is not configured")
+
+    engine = create_async_engine(config.url, connect_args=config.connect_args(), pool_pre_ping=True)
     try:
         asset_paths, metric_units = await load_model_facts(engine)
     finally:
@@ -2999,7 +3095,7 @@ if __name__ == "__main__":
     main()
 ```
 
-If `uns_model.model_config` exposes the database URL under a different name than `ModelConfig.db_url()`, use whatever `09_uns_model` already uses — check `09_uns_model/src/uns_model/model_config.py` and match it rather than inventing a second way to build the URL.
+Note that `ModelConfig.from_settings("opcua")` reads the `historian.*` keys — the Asset Model shares the historian's database, which is why `model_config.py`'s docstring says the environment is a parameter. There is no separate `opcua` database to configure.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -3122,7 +3218,11 @@ async def test_run_connector_cancels_every_task_on_shutdown(tmp_path, monkeypatc
     with pytest.raises(asyncio.CancelledError):
         await task
 
-    assert not [t for t in asyncio.all_tasks() if t is not asyncio.current_task() and not t.done()]
+    # Name the tasks we own rather than asserting on all_tasks(), which also holds the
+    # test runner's own tasks.
+    owned = {"spool_writer", "forwarder", "model_check", "collector:plc01"}
+    leaked = [t.get_name() for t in asyncio.all_tasks() if t.get_name() in owned and not t.done()]
+    assert leaked == []
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -3431,35 +3531,48 @@ Expected: build succeeds. If `cryptography` tries to compile from source, the wh
 
 - [ ] **Step 3: Add the Compose service**
 
-In `docker-compose.yml`, add a service alongside the other clients. Match the existing services' `network`, `depends_on`, and `volumes` conventions for `conf`; the spool volume is new.
+In `docker-compose.yml`, add this after `historian_client`. It follows that service's shape exactly: no `image:`, `container_name:` or `restart:` key (the existing build-services set none), no `networks:` key (the file has none — everything shares Compose's default network), and configuration passed as `UNS_<block>__<key>` environment variables.
 
 ```yaml
+  # Read-only OPC UA edge connector. Not started by default in a stock checkout: with no
+  # opcua.servers configured it logs that there is nothing to collect and exits.
   opcua_client:
     build:
       context: .
       dockerfile: ./10_uns_opcua/Dockerfile
-      args:
-        GIT_HASH: ${GIT_HASH:-dev}
-    image: uns/opcua_client:latest
-    container_name: opcua_client
-    restart: unless-stopped
-    depends_on:
-      - mqtt_broker
     volumes:
-      - ./conf:/app/conf:ro
+      - ./conf:/app/conf
       # The spool must outlive the container - that is the whole point of it.
       - opcua_spool:/var/lib/uns_opcua
     ports:
       - "9093:9093"
+    environment:
+      UNS_CONF_DIR: /app/conf
+      UNS_MODULE: 10_uns_opcua
+      UNS_mqtt__host: uns_mqtt_broker
+      UNS_opcua__metrics_port: 9093
+      # The Asset Model shares the historian's database, so model_check reads these.
+      UNS_historian__hostname: uns_timescale_db
+      UNS_historian__database: "uns_historian"
+      UNS_historian__username: uns_dbuser
+      UNS_historian__password: ${UNS_historian__password}
+    depends_on:
+      uns_mqtt_broker:
+        condition: service_healthy
+      # Validation is non-gating, but waiting for the schema avoids a guaranteed-noisy
+      # warning on every cold start.
+      asset_model_setup:
+        condition: service_completed_successfully
 ```
 
-And in the top-level `volumes:` block, add:
+`docker-compose.yml` currently has **no top-level `volumes:` block**, so add one at the end of the file, at the same indentation level as `services:`:
 
 ```yaml
+volumes:
   opcua_spool:
 ```
 
-Match the surrounding services exactly for the `networks:` key and the broker's service name — read the neighbouring service definitions rather than copying the names above verbatim.
+Finally, add `opcua_client` to `uns_prometheus`'s `depends_on` list, next to the existing `historian_client` and `graphdb_client` entries.
 
 - [ ] **Step 4: Add the Prometheus scrape target**
 
