@@ -127,8 +127,8 @@ historian:
 
 opcua:
   opcua:
-    # Replace with the plant's servers. node_id, asset and metric_path are all required;
-    # the published topic is asset + "/" + metric_path.
+    # Replace with the plant's servers. node_id and asset are required; metric_path is
+    # optional and appended to the published topic as asset + "/" + metric_path.
     servers: []
 
 kafka_mapper:

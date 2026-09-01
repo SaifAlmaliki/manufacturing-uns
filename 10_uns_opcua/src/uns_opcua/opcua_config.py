@@ -92,13 +92,13 @@ def parse_tag(raw: Any) -> TagConfig:
     node_id = raw.get("node_id")
     if not node_id:
         raise ValueError("An opcua tag is missing 'node_id'")
-    asset = raw.get("asset")
+    asset = str(raw.get("asset") or "").strip("/")
     if not asset:
         raise ValueError(f"opcua tag {node_id!r} is missing 'asset'")
     return TagConfig(
         node_id=str(node_id),
-        asset=str(asset).strip("/"),
-        metric_path=str(raw.get("metric_path", "")).strip("/"),
+        asset=asset,
+        metric_path=str(raw.get("metric_path") or "").strip("/"),
         unit=raw.get("unit"),
         deadband=parse_deadband(raw.get("deadband")),
     )

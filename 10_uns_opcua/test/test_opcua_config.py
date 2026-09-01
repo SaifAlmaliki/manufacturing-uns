@@ -27,6 +27,11 @@ def test_parse_tag_requires_node_id_and_asset():
         parse_tag({"node_id": "ns=2;i=5"})
 
 
+def test_parse_tag_rejects_slash_only_asset():
+    with pytest.raises(ValueError, match="asset"):
+        parse_tag({"node_id": "ns=2;i=5", "asset": "/"})
+
+
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
