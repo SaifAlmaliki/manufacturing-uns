@@ -23,6 +23,8 @@
 - Module directory is `10_uns_opcua`, package `uns_opcua`, Dynaconf environment `opcua`.
 - Asset Model validation **reports, never gates.** The connector must start and publish with Postgres unreachable.
 - Integration tests are marked `@pytest.mark.integrationtest`. Tests that share the Compose broker also get `@pytest.mark.xdist_group`.
+- The root `addopts` already contains `-n auto`, so use **`-n 0`** to run a file serially — `-p no:xdist` would unload the plugin and make pytest reject its own `-n` flag.
+- `asyncio_mode` is unset repo-wide, so pytest-asyncio runs in its default strict mode: every async test needs `@pytest.mark.asyncio` (or a module-level `pytestmark`) and every async fixture needs `@pytest_asyncio.fixture`.
 
 ---
 
@@ -3842,3 +3844,15 @@ Two deviations from the spec, both deliberate:
 
 1. **The spec's "read every monitored node once after reconnect" is dropped.** Verification showed that creating a monitored item already delivers the current value, with the server's true `SourceTimestamp` — strictly better than a read. The spec has been corrected to match.
 2. **Three metrics were added** beyond the spec's twelve (`deadband_rejected`, `unresolved_nodes`, `queue_dropped`), because the spec's failure-mode table promises a counter for each of those cases without naming one.
+
+## Corrections already applied — do not "fix" these back
+
+Found while reviewing this plan against the running environment. Each was verified, not reasoned about, so treat the values here as authoritative over intuition:
+
+1. **`sqlite3.connect(..., check_same_thread=False)` plus an `RLock` is mandatory.** Every spool call goes through `asyncio.to_thread`, which uses a pool thread. Reproduced: the default raises `ProgrammingError: SQLite objects created in a thread can only be used in that same thread`. Two tests in Task 5 pin this.
+2. **`PRAGMA auto_vacuum=INCREMENTAL` must be set before the DDL.** Without it, freed pages are never returned, `page_count` never falls, and the `max_bytes` bound deletes the entire spool every time it is exceeded instead of trimming to fit.
+3. **`-n 0`, never `-p no:xdist`.** The root `addopts` carries `-n auto`.
+4. **`[tool.uv.sources]` with `../` relative paths.** This is what makes the Dockerfile work — siblings are copied to `/00_uns_config` and `/09_uns_model`, and the module sits at `/app`.
+5. **The Asset Model engine is built from `ModelConfig.from_settings(...)`, `.url` and `.connect_args()`.** There is no `db_url()` helper; the password is deliberately kept out of the URL, so composing a URL by hand would either leak it into logs or fail to authenticate.
+6. **Epoch constant:** `2026-09-01T12:00:00.123Z` is `1788264000123.0`. Where a test can derive the expected value from its own input, it does, so this class of error cannot recur.
+7. **No `depends_on: asset_model_setup`** on the Compose service, despite the model check needing that schema — gating on it would contradict the non-gating rule.
