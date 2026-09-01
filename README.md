@@ -112,7 +112,7 @@ uv run uns_simulator
 | `uns_kafka_broker` | Kafka broker for streaming UNS messages to other systems. Host port: `9092`. |
 | `graphdb_client` | MQTT subscriber that writes live namespace messages into Neo4j (current state / tree). |
 | `historian_client` | MQTT subscriber that writes events into TimescaleDB (history) and binds each distinct topic to the Asset Model after a successful persist. Shares one Postgres engine with `09_uns_model` (ADR-0004). |
-| `opcua_client` | Read-only OPC UA edge connector: subscribes to PLC/SCADA nodes and publishes into the UNS with a disk-backed store-and-forward spool. Host port: `9093` (Prometheus metrics). With no `opcua.servers` configured it logs and exits cleanly. |
+| `opcua_client` | Read-only OPC UA edge connector: subscribes to PLC/SCADA nodes and publishes into the UNS with a disk-backed store-and-forward spool. Host port: `9093` (Prometheus metrics). With no `opcua.servers` configured it logs that there is nothing to collect, stays up serving Prometheus metrics on `9093`, and does not connect to a PLC. |
 | `spb_mapper_client` | Sparkplug B translator: listens on Sparkplug topics, decodes protobuf, republishes JSON on the ISA-95 UNS topics. |
 | `kafka_mapper_client` | MQTT-to-Kafka bridge: copies UNS MQTT messages onto Kafka topics. |
 | `uns_simulator` | Synthetic PLC / HMI / SCADA publisher used for local demos. Not for production. |
