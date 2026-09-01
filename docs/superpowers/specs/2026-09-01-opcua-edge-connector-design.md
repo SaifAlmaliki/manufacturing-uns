@@ -126,10 +126,16 @@ Alpine remains viable with no build toolchain in the image.
 
 ## 6. Configuration and topic derivation
 
-Mappings name an **Asset** and a **Metric Key** rather than a flat topic, because that is
-already the project's vocabulary (finding 10): the topic is `asset + "/" + metric_key`.
+Mappings name an **Asset** and a **`metric_path`** rather than a flat topic, because that is
+already the project's vocabulary (finding 10): the topic is `asset + "/" + metric_path`.
 This avoids restating an eight-level path per tag and makes Asset Model validation a direct
 lookup rather than a string parse.
+
+`metric_path` is deliberately the existing name from `TopicBinding.metric_path`
+(`tables.py:247`, "Topic segments below the Asset"), *not* Metric Key. CONTEXT.md defines a
+Metric Key as the topic segments below the Asset **followed by the dotted path within the
+payload** — `ProcessValue/Temperature/value`. Topic derivation must not include that payload
+leaf, so reusing "Metric Key" here would be wrong by one segment.
 
 ```yaml
 opcua:
@@ -154,9 +160,9 @@ opcua:
       tags:
         - node_id: "ns=2;s=Mixer.Temp_PV"
           asset: "CovestroAG/Dormagen/Production/Line1/Cell1/MixerTank"
-          metric_key: "ProcessValue/Temperature"
+          metric_path: "ProcessValue/Temperature"   # topic segments below the Asset
           unit: "°C"
-          deadband: { type: "absolute", value: 0.2 }
+          deadband: { type: "absolute", value: 0.2 }   # or { type: "percent", value: 1.0 }
 ```
 
 Credentials and pass phrases come from `conf/.secrets.yaml` or environment variables, as
@@ -260,7 +266,10 @@ tolerate its absence.
 when `model_check: true`. It reports:
 
 - `asset` values absent from `model.asset`
-- `metric_key` values with no matching `MetricDefinition`
+- `metric_path` values with no matching `MetricDefinition`. Because a `MetricDefinition` is
+  keyed by Metric Key, and this connector's payload always carries its scalar under `value`,
+  the key to look up is `<metric_path>/value` — for example `ProcessValue/Temperature` is
+  checked against `ProcessValue/Temperature/value`.
 - a configured `unit` disagreeing with the MetricDefinition's Unit of Measure
 - duplicate `node_id`s, and two tags resolving to the same topic
 
