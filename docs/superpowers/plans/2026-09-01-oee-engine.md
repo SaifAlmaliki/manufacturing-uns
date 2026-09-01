@@ -77,7 +77,7 @@
 
 **Interfaces:**
 - Consumes: `uns_config.get_settings`, `uns_model.model_config.ModelConfig`.
-- Produces: `OeeConfig` (frozen dataclass) with fields `metrics_port: int`, `scan_interval_seconds: float`, `settle_minutes: int`, `late_window_hours: int`, `backfill_days: int`, `mqtt_host: str | None`, `mqtt_port: int`, `mqtt_client_id: str`, `mqtt_qos: int`, `mqtt_username: str | None`, `mqtt_password: str | None`, `metrics_table: str`; classmethod `OeeConfig.from_settings(module_env: str = "oee") -> OeeConfig`; method `is_valid() -> bool`.
+- Produces: `OeeConfig` (frozen dataclass) with fields `metrics_port: int`, `scan_interval_seconds: float`, `settle_minutes: int`, `late_window_hours: int`, `backfill_days: int`, `mqtt_host: str | None`, `mqtt_port: int`, `mqtt_client_id: str`, `mqtt_qos: int`, `mqtt_username: str | None`, `mqtt_password: str | None`, `mqtt_keep_alive: int`, `mqtt_version: int`, `mqtt_transport: str`, `metrics_table: str`; classmethod `OeeConfig.from_settings(module_env: str = "oee") -> OeeConfig`; method `is_valid() -> bool`.
 
 - [ ] **Step 1: Create the module package files**
 
@@ -113,7 +113,6 @@ dependencies = [
     "asyncpg>=0.31.0,<0.32",
     "aiomqtt>=2.4.0,<3",
     "prometheus-client>=0.21.0,<1",
-    "psutil>=6.1.0,<8",
     "dynaconf~=3.2",
 ]
 
@@ -236,6 +235,15 @@ def test_from_settings_reads_the_oee_environment():
     assert config.metrics_port == 9095
     assert config.mqtt_client_id == "uns_oee_client"
     assert config.scan_interval_seconds == 300
+
+
+def test_from_settings_reuses_the_platforms_shared_broker_settings():
+    config = OeeConfig.from_settings("oee")
+    assert config.mqtt_host == "localhost"
+    assert config.mqtt_port == 1883
+    assert config.mqtt_keep_alive == 60
+    assert config.mqtt_version == 5
+    assert config.mqtt_transport == "tcp"
 ```
 
 - [ ] **Step 5: Run the test to verify it fails**
@@ -279,6 +287,9 @@ class OeeConfig:
     mqtt_qos: int = 1
     mqtt_username: str | None = None
     mqtt_password: str | None = None
+    mqtt_keep_alive: int = 60
+    mqtt_version: int = 5
+    mqtt_transport: str = "tcp"
     metrics_port: int = 9095
     scan_interval_seconds: float = 300.0
     settle_minutes: int = 15
@@ -299,6 +310,11 @@ class OeeConfig:
             mqtt_qos=settings.get("mqtt.qos", 1),
             mqtt_username=settings.get("mqtt.username", None),
             mqtt_password=settings.get("mqtt.password", None),
+            # The platform's shared `mqtt:` block already sets these three
+            # (`conf/settings.yaml:53`-`:56`); read them rather than hardcode a second answer.
+            mqtt_keep_alive=settings.get("mqtt.keep_alive", 60),
+            mqtt_version=settings.get("mqtt.version", 5),
+            mqtt_transport=settings.get("mqtt.transport", "tcp"),
             metrics_port=settings.get("oee.metrics_port", 9095),
             scan_interval_seconds=settings.get("oee.scan_interval_seconds", 300.0),
             settle_minutes=settings.get("oee.settle_minutes", 15),
@@ -320,7 +336,7 @@ class OeeConfig:
 - [ ] **Step 7: Run the test to verify it passes**
 
 Run: `uv sync && uv run pytest 12_uns_oee/test/test_oee_config.py -v -n 0`
-Expected: PASS (3 passed).
+Expected: PASS (4 passed).
 
 - [ ] **Step 8: Commit**
 
@@ -344,6 +360,8 @@ git commit -m "feat(oee): scaffold 12_uns_oee module and its configuration"
 - Produces: `OEE_SCHEMA`; ORM classes `Product`, `ShiftPattern`, `ShiftPatternSlot`, `ShiftException`, `OeeUnit`, `IdealCycleTime`, `DowntimeReason`, `StateReasonMap`, `ShiftResult`, `ShiftResultProduct`, `ShiftResultRevision`, `DowntimeEvent`, `RecomputeRequest`; vocabulary tuples `SHIFT_EXCEPTION_KINDS`, `OEE_STATUSES`, `REASON_SOURCES`, `DEFAULT_PRODUCING_STATES`, `DEFAULT_DOWNTIME_REASONS`; constant `UNCLASSIFIED_REASON_CODE = "UNCLASSIFIED"`.
 
 Why a new file rather than appending to `tables.py`: that file is already 405 lines covering the Asset Model and the console. Thirteen more tables would take it past 800 and mix two subsystems that are reviewed separately. `oee_tables.py` imports the one `Base` so `create_all()` still sees every table.
+
+**These classes declare no `relationship()`, unlike `tables.py`.** Every consumer is async, and under asyncio a lazy load raises `MissingGreenlet` at the attribute access rather than at the query that forgot to eager-load — a long way from the cause. Task 9 and Task 14 therefore join explicitly and select the columns they need. Foreign keys are still declared; only the ORM navigation is left out. Do not add relationships "for convenience".
 
 - [ ] **Step 1: Add the schema constant**
 
@@ -2933,6 +2951,7219 @@ Expected: PASS (8 passed — the parametrised test counts twice).
 git add 12_uns_oee/src/uns_oee/shift_calendar.py 12_uns_oee/test/test_shift_calendar.py \
         12_uns_oee/pyproject.toml
 git commit -m "feat(oee): resolve shift patterns into DST-correct UTC windows"
+```
+
+---
+
+### Task 5: Counter arithmetic and interval arithmetic
+
+**Files:**
+- Create: `12_uns_oee/src/uns_oee/counters.py`
+- Create: `12_uns_oee/src/uns_oee/states.py`
+- Create: `12_uns_oee/test/test_counters.py`
+- Create: `12_uns_oee/test/test_states.py`
+
+**Interfaces:**
+- Consumes: nothing. Both modules are standard library only.
+- Produces:
+  - `counters.Sample(at: datetime, value: float)`; `counters.CounterDelta(total: float, resets: int, samples: int)`; `counters.counter_delta(samples: Sequence[Sample]) -> CounterDelta`; `counters.counter_delta_in(samples: Sequence[Sample], start: datetime, end: datetime) -> CounterDelta`
+  - `states.Interval(start: datetime, end: datetime)` with `.duration_s -> float` and `.clipped_to(other: Interval) -> Interval | None`; `states.StateSample(at: datetime, state: str)`; `states.StateSegment(state: str, interval: Interval)`; `states.StopInterval(state: str, interval: Interval)`; `states.state_segments(samples, window) -> list[StateSegment]`; `states.stop_intervals(segments, producing_states) -> list[StopInterval]`; `states.union_duration_s(intervals) -> float`; `states.merge(intervals) -> list[Interval]`; `states.intersect(left, right) -> list[Interval]`; `states.subtract(left, right) -> list[Interval]`
+
+These two modules carry all of the OEE numerator and denominator arithmetic, and nothing else in the module is allowed to reimplement any of it. Every later stage — Loading Time, Run Time, per-product apportioning, the downtime Pareto — is a call into `states`, and every count is a call into `counters`. That is the whole reason they are pure, standard-library-only, and tested first.
+
+- [ ] **Step 1: Write the failing counter test**
+
+`12_uns_oee/test/test_counters.py`:
+
+```python
+"""Tests for monotonic counter differencing.
+
+A PLC production counter is not a measurement, it is an odometer. It only ever climbs, and
+then one day the operator power-cycles the panel or the tag wraps at 32767 and it starts
+again from zero. Differencing naively gives a large negative number, which silently drags a
+shift's Good Count below zero and makes Quality nonsense. Every case below is one of those
+days.
+"""
+
+from datetime import datetime, timedelta, timezone
+
+from uns_oee.counters import Sample, counter_delta, counter_delta_in
+
+T0 = datetime(2026, 9, 7, 6, 0, tzinfo=timezone.utc)
+
+
+def at(minutes: float) -> datetime:
+    return T0 + timedelta(minutes=minutes)
+
+
+def samples(*pairs: tuple[float, float]) -> list[Sample]:
+    return [Sample(at=at(minutes), value=value) for minutes, value in pairs]
+
+
+def test_a_rising_counter_is_last_minus_first():
+    delta = counter_delta(samples((0, 100.0), (5, 140.0), (10, 175.0)))
+    assert delta.total == 75.0
+    assert delta.resets == 0
+    assert delta.samples == 3
+
+
+def test_a_reset_contributes_the_value_after_the_reset():
+    # 100 -> 140, then a restart that has already climbed back to 12 by the time we see it.
+    delta = counter_delta(samples((0, 100.0), (5, 140.0), (10, 12.0), (15, 30.0)))
+    assert delta.total == 40.0 + 12.0 + 18.0
+    assert delta.resets == 1
+
+
+def test_two_resets_are_both_counted():
+    delta = counter_delta(samples((0, 50.0), (5, 5.0), (10, 3.0)))
+    assert delta.resets == 2
+    assert delta.total == 5.0 + 3.0
+
+
+def test_a_flat_counter_produces_zero_not_none():
+    delta = counter_delta(samples((0, 88.0), (5, 88.0)))
+    assert delta.total == 0.0
+    assert delta.resets == 0
+
+
+def test_one_sample_cannot_produce_a_delta():
+    delta = counter_delta(samples((0, 88.0)))
+    assert delta.total == 0.0
+    assert delta.samples == 1
+
+
+def test_no_samples_is_zero_and_not_an_error():
+    delta = counter_delta([])
+    assert delta.total == 0.0
+    assert delta.samples == 0
+
+
+def test_samples_are_sorted_before_differencing():
+    delta = counter_delta(samples((10, 175.0), (0, 100.0), (5, 140.0)))
+    assert delta.total == 75.0
+    assert delta.resets == 0
+
+
+def test_a_window_anchors_on_the_sample_at_or_before_the_start():
+    # The shift starts at minute 5. The counter read 140 at minute 5 exactly and 200 at the
+    # end, so the shift made 60 - the pre-shift climb from 100 must not be included.
+    window = counter_delta_in(samples((0, 100.0), (5, 140.0), (30, 200.0)), at(5), at(30))
+    assert window.total == 60.0
+
+
+def test_a_window_uses_the_last_prior_sample_when_none_lands_on_the_boundary():
+    # Nothing arrived exactly at minute 10, so minute 8's reading is the baseline. This
+    # attributes the two minutes before the shift to the shift, bounded by one sample
+    # interval - the alternative loses everything made before the first in-shift sample,
+    # which is a larger and less predictable error.
+    window = counter_delta_in(samples((8, 140.0), (12, 150.0), (30, 200.0)), at(10), at(30))
+    assert window.total == 60.0
+
+
+def test_a_window_with_no_prior_sample_starts_at_the_first_sample_inside_it():
+    window = counter_delta_in(samples((12, 150.0), (30, 200.0)), at(10), at(30))
+    assert window.total == 50.0
+
+
+def test_a_window_excludes_samples_after_its_end():
+    window = counter_delta_in(samples((0, 100.0), (30, 200.0), (40, 260.0)), at(0), at(30))
+    assert window.total == 100.0
+
+
+def test_a_window_end_is_inclusive_so_the_closing_sample_counts():
+    window = counter_delta_in(samples((0, 100.0), (30, 200.0)), at(0), at(30))
+    assert window.total == 100.0
+
+
+def test_an_empty_window_is_zero():
+    window = counter_delta_in(samples((0, 100.0), (30, 200.0)), at(50), at(60))
+    assert window.total == 0.0
+    assert window.samples == 0
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `uv run pytest 12_uns_oee/test/test_counters.py -v -n 0`
+Expected: FAIL — `ModuleNotFoundError: No module named 'uns_oee.counters'`.
+
+- [ ] **Step 3: Write `counters.py`**
+
+`12_uns_oee/src/uns_oee/counters.py`:
+
+```python
+"""Turning odometer readings into production counts.
+
+A PLC production counter climbs and then, on a power cycle or a tag wrap, restarts. So the
+count a shift produced is the sum of the positive steps between consecutive readings, not
+last minus first - and a step that goes backwards is read as a restart whose new value is
+itself production since the restart.
+
+Pure and stateless: same samples in, same numbers out, on any run. That is Rule 1, and it
+is what makes a recomputation of last Tuesday agree with what was stored last Tuesday.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import datetime
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class Sample:
+    """One counter reading. `at` is UTC-aware; `value` is the raw tag value."""
+
+    at: datetime
+    value: float
+
+
+@dataclass(frozen=True, slots=True)
+class CounterDelta:
+    """How much a counter advanced, and how much of that was inferred across a restart.
+
+    `resets` is carried so a suspicious shift is identifiable: one reset in a shift is a
+    power cycle, twelve is a misconfigured binding pointed at a value that is not a counter.
+    """
+
+    total: float = 0.0
+    resets: int = 0
+    samples: int = 0
+
+
+def counter_delta(samples: Sequence[Sample]) -> CounterDelta:
+    """The production represented by `samples`, restart-safe.
+
+    Sorted first, because the historian is queried by time but a caller may have merged two
+    result sets, and one out-of-order pair would read as a reset and inflate the total.
+    """
+    ordered = sorted(samples)
+    total = 0.0
+    resets = 0
+    for previous, current in zip(ordered, ordered[1:], strict=False):
+        step = current.value - previous.value
+        if step >= 0:
+            total += step
+        else:
+            # The counter restarted somewhere in between. Everything it has climbed to
+            # since is production; what it lost between `previous` and the restart is not
+            # recoverable from the samples and is not invented here.
+            resets += 1
+            total += max(current.value, 0.0)
+    return CounterDelta(total=total, resets=resets, samples=len(ordered))
+
+
+def counter_delta_in(samples: Sequence[Sample], start: datetime, end: datetime) -> CounterDelta:
+    """The production between `start` and `end`, both bounds inclusive.
+
+    When no sample lands on `start` exactly, the last sample before it is pulled in as the
+    baseline so the climb up to the first in-shift reading is not lost. That attributes up
+    to one sample interval of pre-shift production to the shift; the alternative - starting
+    at the first sample inside the window - loses an unbounded amount, because a counter on
+    the fifteen-minute meter tier may have no in-shift sample until minute fourteen. A
+    sample sitting exactly on the boundary already is the baseline, so nothing is pulled in.
+    """
+    ordered = sorted(samples)
+    inside = [sample for sample in ordered if start <= sample.at <= end]
+    prior = [sample for sample in ordered if sample.at < start]
+    if inside and prior and inside[0].at > start:
+        inside.insert(0, prior[-1])
+    return counter_delta(inside)
+
+
+__all__ = ["CounterDelta", "Sample", "counter_delta", "counter_delta_in"]
+```
+
+- [ ] **Step 4: Run the counter test to verify it passes**
+
+Run: `uv run pytest 12_uns_oee/test/test_counters.py -v -n 0`
+Expected: PASS (13 passed).
+
+- [ ] **Step 5: Write the failing state test**
+
+`12_uns_oee/test/test_states.py`:
+
+```python
+"""Tests for state segmentation and interval arithmetic.
+
+Two rules are being pinned here. First: the state a machine is in when a shift begins is
+whatever it was last reported to be, even if that report predates the shift - a machine
+stopped at 05:40 is still stopped at 06:00, and a segmenter that starts at the first
+in-shift sample would credit the stop to nobody. Second: durations come from a union, never
+from a sum. Overlapping stops double-count under addition, and a double-counted stop can
+push Run Time negative.
+"""
+
+from datetime import datetime, timedelta, timezone
+
+from uns_oee.states import (
+    Interval,
+    StateSample,
+    StateSegment,
+    intersect,
+    merge,
+    state_segments,
+    stop_intervals,
+    subtract,
+    union_duration_s,
+)
+
+PRODUCING = ("EXECUTE",)
+
+
+def t(hour: int, minute: int = 0) -> datetime:
+    return datetime(2026, 9, 7, hour, minute, tzinfo=timezone.utc)
+
+
+SHIFT = Interval(t(6), t(14))
+
+
+def test_the_state_before_the_shift_carries_into_it():
+    segments = state_segments(
+        [StateSample(t(5, 50), "HELD"), StateSample(t(7), "EXECUTE")], SHIFT
+    )
+    assert [(segment.state, segment.interval) for segment in segments] == [
+        ("HELD", Interval(t(6), t(7))),
+        ("EXECUTE", Interval(t(7), t(14))),
+    ]
+
+
+def test_a_sample_on_the_shift_start_is_the_opening_state_and_is_not_duplicated():
+    segments = state_segments(
+        [StateSample(t(6), "IDLE"), StateSample(t(10), "EXECUTE")], SHIFT
+    )
+    assert [segment.state for segment in segments] == ["IDLE", "EXECUTE"]
+    assert segments[0].interval == Interval(t(6), t(10))
+
+
+def test_a_sample_on_the_shift_end_belongs_to_the_next_shift():
+    segments = state_segments(
+        [StateSample(t(6), "EXECUTE"), StateSample(t(14), "HELD")], SHIFT
+    )
+    assert segments == [StateSegment(state="EXECUTE", interval=Interval(t(6), t(14)))]
+
+
+def test_repeated_identical_states_become_one_segment():
+    segments = state_segments(
+        [
+            StateSample(t(5, 50), "EXECUTE"),
+            StateSample(t(8), "EXECUTE"),
+            StateSample(t(11), "EXECUTE"),
+        ],
+        SHIFT,
+    )
+    assert len(segments) == 1
+    assert segments[0].interval == SHIFT
+
+
+def test_with_no_prior_sample_the_first_segment_starts_where_the_data_does():
+    segments = state_segments([StateSample(t(7), "HELD")], SHIFT)
+    assert segments[0].interval == Interval(t(7), t(14))
+
+
+def test_no_samples_in_or_before_the_window_yields_nothing():
+    assert state_segments([StateSample(t(15), "EXECUTE")], SHIFT) == []
+    assert state_segments([], SHIFT) == []
+
+
+def test_stops_are_every_segment_not_in_a_producing_state():
+    segments = state_segments(
+        [
+            StateSample(t(6), "EXECUTE"),
+            StateSample(t(9), "HELD"),
+            StateSample(t(9, 30), "EXECUTE"),
+            StateSample(t(12), "SUSPENDED"),
+        ],
+        SHIFT,
+    )
+    stops = stop_intervals(segments, PRODUCING)
+    assert [(stop.state, stop.interval.duration_s) for stop in stops] == [
+        ("HELD", 1800.0),
+        ("SUSPENDED", 7200.0),
+    ]
+    assert union_duration_s([stop.interval for stop in stops]) == 9000.0
+
+
+def test_two_producing_states_can_be_declared():
+    segments = state_segments(
+        [StateSample(t(6), "EXECUTE"), StateSample(t(10), "COMPLETING")], SHIFT
+    )
+    assert stop_intervals(segments, ("EXECUTE", "COMPLETING")) == []
+
+
+def test_merge_coalesces_overlapping_and_touching_intervals():
+    assert merge(
+        [Interval(t(6), t(8)), Interval(t(7), t(9)), Interval(t(9), t(10)), Interval(t(12), t(13))]
+    ) == [Interval(t(6), t(10)), Interval(t(12), t(13))]
+
+
+def test_union_never_double_counts():
+    overlapping = [Interval(t(6), t(9)), Interval(t(7), t(10))]
+    assert sum(interval.duration_s for interval in overlapping) == 6 * 3600
+    assert union_duration_s(overlapping) == 4 * 3600
+
+
+def test_intersect_keeps_only_common_time():
+    assert intersect([Interval(t(6), t(10))], [Interval(t(8), t(12))]) == [Interval(t(8), t(10))]
+    assert intersect([Interval(t(6), t(7))], [Interval(t(8), t(9))]) == []
+
+
+def test_subtract_can_split_an_interval_in_two():
+    assert subtract([Interval(t(6), t(14))], [Interval(t(9), t(10))]) == [
+        Interval(t(6), t(9)),
+        Interval(t(10), t(14)),
+    ]
+
+
+def test_subtract_removes_a_fully_covered_interval():
+    assert subtract([Interval(t(9), t(10))], [Interval(t(6), t(14))]) == []
+
+
+def test_subtract_with_nothing_to_remove_returns_the_merged_input():
+    assert subtract([Interval(t(6), t(8)), Interval(t(7), t(9))], []) == [Interval(t(6), t(9))]
+
+
+def test_a_zero_length_interval_has_no_duration_and_survives_no_operation():
+    assert Interval(t(6), t(6)).duration_s == 0.0
+    assert merge([Interval(t(6), t(6))]) == []
+
+
+def test_an_inverted_interval_reads_as_empty_rather_than_negative():
+    # Defensive: a caller that mixed up its bounds must not create negative Run Time.
+    assert Interval(t(10), t(6)).duration_s == 0.0
+
+
+def test_clipped_to_is_none_when_there_is_no_overlap():
+    assert Interval(t(6), t(7)).clipped_to(Interval(t(8), t(9))) is None
+    assert Interval(t(6), t(9)).clipped_to(SHIFT) == Interval(t(6), t(9))
+
+
+def test_intervals_sort_by_start_then_end():
+    unsorted = [Interval(t(8), t(9)), Interval(t(6), t(12)), Interval(t(6), t(7))]
+    assert sorted(unsorted) == [Interval(t(6), t(7)), Interval(t(6), t(12)), Interval(t(8), t(9))]
+
+
+def test_a_stop_that_spans_the_whole_shift_is_the_whole_shift():
+    segments = state_segments([StateSample(t(4), "ABORTED")], SHIFT)
+    stops = stop_intervals(segments, PRODUCING)
+    assert union_duration_s([stop.interval for stop in stops]) == timedelta(hours=8).total_seconds()
+```
+
+- [ ] **Step 6: Run the test to verify it fails**
+
+Run: `uv run pytest 12_uns_oee/test/test_states.py -v -n 0`
+Expected: FAIL — `ModuleNotFoundError: No module named 'uns_oee.states'`.
+
+- [ ] **Step 7: Write `states.py`**
+
+`12_uns_oee/src/uns_oee/states.py`:
+
+```python
+"""Machine-state segments and the interval algebra the OEE numbers are built from.
+
+Loading Time is a shift window with planned-down periods subtracted. Run Time is Loading
+Time with stops subtracted. A product's share of Run Time is Run Time intersected with the
+periods that product was running. All three are the same three operations - merge, subtract,
+intersect - so they live here once, and every duration comes out of `union_duration_s`.
+
+Never sum durations. Two stops that overlap sum to more than the time that elapsed, and a
+Run Time computed by subtracting a sum can go negative, which surfaces as an OEE above one
+or below zero and is not traceable back to the arithmetic that caused it.
+
+Intervals are half-open: `[start, end)`. A sample landing exactly on a shift end therefore
+opens the next shift rather than closing this one, and no instant is counted twice.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
+from datetime import datetime
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class Interval:
+    """A half-open UTC interval. Inverted or empty bounds read as zero, never negative."""
+
+    start: datetime
+    end: datetime
+
+    @property
+    def duration_s(self) -> float:
+        return max((self.end - self.start).total_seconds(), 0.0)
+
+    @property
+    def is_empty(self) -> bool:
+        return self.end <= self.start
+
+    def clipped_to(self, other: Interval) -> Interval | None:
+        """The overlap with `other`, or `None` when they do not overlap."""
+        start = max(self.start, other.start)
+        end = min(self.end, other.end)
+        return None if end <= start else Interval(start, end)
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class StateSample:
+    """One machine-state report. `state` is the raw published value, e.g. `"EXECUTE"`."""
+
+    at: datetime
+    state: str
+
+
+@dataclass(frozen=True, slots=True)
+class StateSegment:
+    """A period the machine spent continuously in one state, clipped to the shift."""
+
+    state: str
+    interval: Interval
+
+
+@dataclass(frozen=True, slots=True)
+class StopInterval:
+    """A segment in a non-producing state - a candidate for a downtime reason code."""
+
+    state: str
+    interval: Interval
+
+
+def state_segments(samples: Sequence[StateSample], window: Interval) -> list[StateSegment]:
+    """Segment `window` by machine state.
+
+    The last sample at or before `window.start` sets the opening state, because state is a
+    level and not an event: a machine that went down at 05:40 and published nothing since is
+    still down at 06:00. With no such sample the first segment starts where the data starts -
+    the state before the first report is unknown and is not guessed.
+
+    Consecutive samples reporting the same state are coalesced, so a status tier republishing
+    `EXECUTE` every thirty seconds produces one segment and not nine hundred and sixty.
+    """
+    ordered = sorted(samples)
+    prior = [sample for sample in ordered if sample.at <= window.start]
+    points = [StateSample(at=window.start, state=prior[-1].state)] if prior else []
+    points.extend(sample for sample in ordered if window.start < sample.at < window.end)
+
+    segments: list[StateSegment] = []
+    for index, point in enumerate(points):
+        end = points[index + 1].at if index + 1 < len(points) else window.end
+        if end <= point.at:
+            continue
+        if segments and segments[-1].state == point.state:
+            merged = Interval(segments[-1].interval.start, end)
+            segments[-1] = StateSegment(state=point.state, interval=merged)
+            continue
+        segments.append(StateSegment(state=point.state, interval=Interval(point.at, end)))
+    return segments
+
+
+def stop_intervals(
+    segments: Sequence[StateSegment], producing_states: Sequence[str]
+) -> list[StopInterval]:
+    """Every segment whose state is not one the unit declares as producing.
+
+    Kept as separate stops rather than a merged blanket, because each one gets its own reason
+    code: a thirty-minute changeover and a two-hour breakdown are one number in Availability
+    and two very different lines in the Pareto.
+    """
+    producing = set(producing_states)
+    return [
+        StopInterval(state=segment.state, interval=segment.interval)
+        for segment in segments
+        if segment.state not in producing
+    ]
+
+
+def merge(intervals: Iterable[Interval]) -> list[Interval]:
+    """The input as a minimal set of non-overlapping intervals, earliest first.
+
+    Touching intervals are joined: `[06:00, 08:00)` and `[08:00, 09:00)` describe two hours
+    of continuous time and splitting them would only invite a later off-by-one.
+    """
+    ordered = sorted(interval for interval in intervals if not interval.is_empty)
+    merged: list[Interval] = []
+    for interval in ordered:
+        if merged and interval.start <= merged[-1].end:
+            merged[-1] = Interval(merged[-1].start, max(merged[-1].end, interval.end))
+        else:
+            merged.append(interval)
+    return merged
+
+
+def union_duration_s(intervals: Iterable[Interval]) -> float:
+    """Seconds covered by at least one interval. The only sanctioned way to total time."""
+    return sum(interval.duration_s for interval in merge(intervals))
+
+
+def intersect(left: Iterable[Interval], right: Iterable[Interval]) -> list[Interval]:
+    """Time covered by both sides."""
+    overlaps = [
+        clipped
+        for one in merge(left)
+        for other in merge(right)
+        if (clipped := one.clipped_to(other)) is not None
+    ]
+    return merge(overlaps)
+
+
+def subtract(left: Iterable[Interval], right: Iterable[Interval]) -> list[Interval]:
+    """Time covered by `left` and not by `right`."""
+    remaining = merge(left)
+    for cut in merge(right):
+        next_remaining: list[Interval] = []
+        for interval in remaining:
+            if cut.end <= interval.start or cut.start >= interval.end:
+                next_remaining.append(interval)
+                continue
+            if interval.start < cut.start:
+                next_remaining.append(Interval(interval.start, cut.start))
+            if cut.end < interval.end:
+                next_remaining.append(Interval(cut.end, interval.end))
+        remaining = next_remaining
+    return remaining
+
+
+__all__ = [
+    "Interval",
+    "StateSample",
+    "StateSegment",
+    "StopInterval",
+    "intersect",
+    "merge",
+    "state_segments",
+    "stop_intervals",
+    "subtract",
+    "union_duration_s",
+]
+```
+
+- [ ] **Step 8: Run the state test to verify it passes**
+
+Run: `uv run pytest 12_uns_oee/test/test_states.py -v -n 0`
+Expected: PASS (18 passed).
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add 12_uns_oee/src/uns_oee/counters.py 12_uns_oee/src/uns_oee/states.py \
+        12_uns_oee/test/test_counters.py 12_uns_oee/test/test_states.py
+git commit -m "feat(oee): add restart-safe counter deltas and interval algebra"
+```
+
+---
+
+### Task 6: Downtime reason classification
+
+**Files:**
+- Create: `12_uns_oee/src/uns_oee/classifier.py`
+- Create: `12_uns_oee/test/test_classifier.py`
+
+**Interfaces:**
+- Consumes: `uns_oee.states.Interval`, `uns_oee.states.StopInterval` (Task 5); `uns_model.oee_tables.UNCLASSIFIED_REASON_CODE` (Task 2).
+- Produces: `ReasonSpec(code: str, display_name: str, category: str, is_planned: bool)`; `ManualReason(reason_code: str, note: str | None = None, assigned_by: str | None = None)`; `ReasonResolver(reasons: Mapping[str, ReasonSpec], unit_rules: Mapping[str, str], default_rules: Mapping[str, str])` with `.resolve(state_value: str) -> ReasonSpec`; `ClassifiedStop(interval: Interval, state_value: str, reason_code: str, is_planned: bool, source: str, note: str | None, assigned_by: str | None)`; `classify(stops, resolver, manual=None) -> list[ClassifiedStop]`; `planned_intervals(classified) -> list[Interval]`; `unplanned_intervals(classified) -> list[Interval]`.
+
+Classification is an input to the arithmetic, not a report on it (spec §8): `is_planned` decides whether an interval leaves Loading Time or reduces Run Time, so this task has to be finished before `oee_calc` can be written.
+
+- [ ] **Step 1: Write the failing test**
+
+`12_uns_oee/test/test_classifier.py`:
+
+```python
+"""Tests for resolving a machine state into a downtime reason code.
+
+Three behaviours matter here and each has a failure mode that is invisible in the numbers.
+A unit-specific rule must beat the plant-wide one, or a line with its own vocabulary silently
+reports someone else's reasons. An unmapped state must land in UNCLASSIFIED and never in
+null, or the Pareto stops summing to total downtime. And a manual assignment must survive
+recomputation - Rule 3 - or the operator who corrected a reason watches the engine undo it
+the next time late data arrives.
+"""
+
+from datetime import datetime, timezone
+
+import pytest
+
+from uns_oee.classifier import (
+    ManualReason,
+    ReasonResolver,
+    ReasonSpec,
+    classify,
+    planned_intervals,
+    unplanned_intervals,
+)
+from uns_oee.states import Interval, StopInterval
+
+
+def t(hour: int, minute: int = 0) -> datetime:
+    return datetime(2026, 9, 7, hour, minute, tzinfo=timezone.utc)
+
+
+REASONS = {
+    "UNCLASSIFIED": ReasonSpec("UNCLASSIFIED", "Unclassified", "UNKNOWN", is_planned=False),
+    "CHANGEOVER": ReasonSpec("CHANGEOVER", "Changeover", "PLANNED", is_planned=True),
+    "PLANNED_BREAK": ReasonSpec("PLANNED_BREAK", "Planned break", "PLANNED", is_planned=True),
+    "BREAKDOWN": ReasonSpec("BREAKDOWN", "Breakdown", "UNPLANNED", is_planned=False),
+    "MINOR_STOP": ReasonSpec("MINOR_STOP", "Minor stop", "UNPLANNED", is_planned=False),
+}
+
+
+def resolver(unit_rules: dict[str, str] | None = None) -> ReasonResolver:
+    return ReasonResolver(
+        reasons=REASONS,
+        unit_rules=unit_rules or {},
+        default_rules={"HELD": "MINOR_STOP", "ABORTED": "BREAKDOWN", "SUSPENDED": "CHANGEOVER"},
+    )
+
+
+def stop(from_hour: int, to_hour: int, state: str) -> StopInterval:
+    return StopInterval(state=state, interval=Interval(t(from_hour), t(to_hour)))
+
+
+def test_a_plant_wide_rule_resolves_a_state():
+    assert resolver().resolve("HELD").code == "MINOR_STOP"
+
+
+def test_a_unit_rule_beats_the_plant_wide_rule():
+    assert resolver({"HELD": "PLANNED_BREAK"}).resolve("HELD").code == "PLANNED_BREAK"
+
+
+def test_an_unmapped_state_is_unclassified_and_never_null():
+    resolved = resolver().resolve("STOPPING")
+    assert resolved.code == "UNCLASSIFIED"
+    assert resolved.is_planned is False
+
+
+def test_a_rule_naming_a_reason_the_resolver_does_not_know_is_a_loud_error():
+    # The FK makes this impossible from the database. It is reachable from a hand-edited
+    # conf file, and mislabelling every stop on a line is worse than failing one shift.
+    broken = ReasonResolver(reasons=REASONS, unit_rules={}, default_rules={"HELD": "NOPE"})
+    with pytest.raises(ValueError, match="NOPE"):
+        broken.resolve("HELD")
+
+
+def test_a_resolver_without_the_unclassified_reason_is_rejected_on_construction():
+    with pytest.raises(ValueError, match="UNCLASSIFIED"):
+        ReasonResolver(reasons={"BREAKDOWN": REASONS["BREAKDOWN"]}, unit_rules={}, default_rules={})
+
+
+def test_every_stop_is_classified_as_auto_by_default():
+    classified = classify([stop(9, 10, "HELD"), stop(11, 12, "ABORTED")], resolver())
+    assert [(item.reason_code, item.source) for item in classified] == [
+        ("MINOR_STOP", "auto"),
+        ("BREAKDOWN", "auto"),
+    ]
+
+
+def test_a_manual_reason_wins_and_is_marked_manual():
+    manual = {t(9): ManualReason(reason_code="PLANNED_BREAK", note="canteen", assigned_by="operator1")}
+    classified = classify([stop(9, 10, "HELD")], resolver(), manual)
+    assert classified[0].reason_code == "PLANNED_BREAK"
+    assert classified[0].source == "manual"
+    assert classified[0].is_planned is True
+    assert classified[0].note == "canteen"
+    assert classified[0].assigned_by == "operator1"
+
+
+def test_a_manual_reason_for_a_different_stop_does_not_leak():
+    manual = {t(20): ManualReason(reason_code="PLANNED_BREAK")}
+    classified = classify([stop(9, 10, "HELD")], resolver(), manual)
+    assert classified[0].source == "auto"
+    assert classified[0].reason_code == "MINOR_STOP"
+
+
+def test_a_manual_reason_naming_an_unknown_code_is_a_loud_error():
+    manual = {t(9): ManualReason(reason_code="GONE")}
+    with pytest.raises(ValueError, match="GONE"):
+        classify([stop(9, 10, "HELD")], resolver(), manual)
+
+
+def test_planned_and_unplanned_intervals_partition_the_stops():
+    classified = classify(
+        [stop(9, 10, "HELD"), stop(11, 12, "SUSPENDED"), stop(13, 14, "ABORTED")], resolver()
+    )
+    assert planned_intervals(classified) == [Interval(t(11), t(12))]
+    assert unplanned_intervals(classified) == [Interval(t(9), t(10)), Interval(t(13), t(14))]
+
+
+def test_no_stops_classifies_to_nothing():
+    assert classify([], resolver()) == []
+    assert planned_intervals([]) == []
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `uv run pytest 12_uns_oee/test/test_classifier.py -v -n 0`
+Expected: FAIL — `ModuleNotFoundError: No module named 'uns_oee.classifier'`.
+
+- [ ] **Step 3: Write the implementation**
+
+`12_uns_oee/src/uns_oee/classifier.py`:
+
+```python
+"""From a machine state to a downtime reason code.
+
+Two lookups and a floor. A rule declared for this unit wins; failing that the plant-wide
+rule for the state; failing that `UNCLASSIFIED`. Never null - a downtime Pareto has to sum
+to total downtime, and a null bucket holding a third of the lost time is how downtime
+analysis loses its credibility.
+
+The reason carries `is_planned`, which is why this runs before the calculator: a planned
+reason moves its interval out of Loading Time entirely, while an unplanned one reduces Run
+Time inside it. Same seconds, different factor.
+
+Pure: no database. The resolver is handed the rows it needs, so every precedence case is one
+dictionary literal in a test.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+
+from uns_model.oee_tables import UNCLASSIFIED_REASON_CODE
+
+from uns_oee.states import Interval, StopInterval
+
+AUTO = "auto"
+MANUAL = "manual"
+
+
+@dataclass(frozen=True, slots=True)
+class ReasonSpec:
+    """One `model.downtime_reason` row, as the calculator needs it."""
+
+    code: str
+    display_name: str
+    category: str
+    is_planned: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ManualReason:
+    """An operator's attribution, read back from an existing `oee.downtime_event` row."""
+
+    reason_code: str
+    note: str | None = None
+    assigned_by: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ClassifiedStop:
+    """A stop with its reason resolved, ready to be written and to be arithmetic."""
+
+    interval: Interval
+    state_value: str
+    reason_code: str
+    is_planned: bool
+    source: str = AUTO
+    note: str | None = None
+    assigned_by: str | None = None
+
+
+class ReasonResolver:
+    """The precedence chain for one OEE unit.
+
+    Constructed per unit and per run from `model.state_reason_map` and
+    `model.downtime_reason`; holding no connection is what lets the pipeline classify a
+    hundred backfilled shifts without re-querying.
+    """
+
+    def __init__(
+        self,
+        reasons: Mapping[str, ReasonSpec],
+        unit_rules: Mapping[str, str],
+        default_rules: Mapping[str, str],
+    ) -> None:
+        if UNCLASSIFIED_REASON_CODE not in reasons:
+            raise ValueError(
+                f"reason vocabulary is missing {UNCLASSIFIED_REASON_CODE!r}, which is the floor "
+                f"every unmapped state falls back to. Migration 0003 seeds it."
+            )
+        self._reasons = dict(reasons)
+        self._unit_rules = dict(unit_rules)
+        self._default_rules = dict(default_rules)
+
+    def resolve(self, state_value: str) -> ReasonSpec:
+        """The reason for `state_value`: unit rule, then plant-wide rule, then unclassified."""
+        code = self._unit_rules.get(state_value) or self._default_rules.get(state_value)
+        if code is None:
+            return self._reasons[UNCLASSIFIED_REASON_CODE]
+        return self.spec(code)
+
+    def spec(self, code: str) -> ReasonSpec:
+        """The reason with this code.
+
+        Raises rather than falling back, because a code with no row means the vocabulary was
+        loaded incompletely. Labelling every stop on a line as unclassified would hide that.
+        """
+        try:
+            return self._reasons[code]
+        except KeyError as error:
+            raise ValueError(f"reason code {code!r} is not in the loaded reason vocabulary") from error
+
+
+def classify(
+    stops: Sequence[StopInterval],
+    resolver: ReasonResolver,
+    manual: Mapping[object, ManualReason] | None = None,
+) -> list[ClassifiedStop]:
+    """Attach a reason to every stop, honouring Rule 3.
+
+    `manual` is keyed by the stop's start instant, matching `oee.downtime_event`'s
+    `(oee_unit_id, started_at)` key. A stop whose start is in that mapping keeps the
+    operator's code permanently: auto-classification proposes, it never overrules.
+    """
+    assigned = manual or {}
+    classified: list[ClassifiedStop] = []
+    for stop in stops:
+        override = assigned.get(stop.interval.start)
+        spec = resolver.spec(override.reason_code) if override else resolver.resolve(stop.state)
+        classified.append(
+            ClassifiedStop(
+                interval=stop.interval,
+                state_value=stop.state,
+                reason_code=spec.code,
+                is_planned=spec.is_planned,
+                source=MANUAL if override else AUTO,
+                note=override.note if override else None,
+                assigned_by=override.assigned_by if override else None,
+            )
+        )
+    return classified
+
+
+def planned_intervals(classified: Sequence[ClassifiedStop]) -> list[Interval]:
+    """The intervals that leave Loading Time."""
+    return [item.interval for item in classified if item.is_planned]
+
+
+def unplanned_intervals(classified: Sequence[ClassifiedStop]) -> list[Interval]:
+    """The intervals that reduce Run Time within Loading Time."""
+    return [item.interval for item in classified if not item.is_planned]
+
+
+__all__ = [
+    "AUTO",
+    "MANUAL",
+    "ClassifiedStop",
+    "ManualReason",
+    "ReasonResolver",
+    "ReasonSpec",
+    "classify",
+    "planned_intervals",
+    "unplanned_intervals",
+]
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `uv run pytest 12_uns_oee/test/test_classifier.py -v -n 0`
+Expected: PASS (11 passed).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add 12_uns_oee/src/uns_oee/classifier.py 12_uns_oee/test/test_classifier.py
+git commit -m "feat(oee): resolve machine states into downtime reason codes"
+```
+
+---
+
+### Task 7: The calculator
+
+**Files:**
+- Create: `12_uns_oee/src/uns_oee/oee_calc.py`
+- Create: `12_uns_oee/test/test_oee_calc.py`
+
+**Interfaces:**
+- Consumes: `uns_oee.states.{Interval, intersect, merge, subtract, union_duration_s}` (Task 5); `uns_oee.classifier.{ClassifiedStop, planned_intervals, unplanned_intervals}` (Task 6); `uns_model.oee_tables.OEE_STATUSES` (Task 2).
+- Produces: `ProductSegment(product_code: str | None, intervals: tuple[Interval, ...], ideal_cycle_time_s: float | None, good_count: float, reject_count: float)` with `.total_count -> float`; `ShiftInputs(window: Interval, exception_intervals: tuple[Interval, ...], classified_stops: tuple[ClassifiedStop, ...], products: tuple[ProductSegment, ...], has_input_data: bool)`; `ProductMetrics(product_code, run_time_s, good_count, reject_count, total_count, ideal_cycle_time_s)`; `ShiftMetrics` with fields `loading_time_s, run_time_s, planned_down_s, unplanned_down_s, good_count, reject_count, total_count, availability, performance, performance_raw, quality, oee, status, products, missing_ideal_cycle_time, performance_over_unity`; `compute(inputs: ShiftInputs) -> ShiftMetrics`; status constants `STATUS_OK`, `STATUS_NO_LOADING_TIME`, `STATUS_NO_PRODUCTION`, `STATUS_MISSING_IDEAL_CYCLE_TIME`, `STATUS_NO_INPUT_DATA`.
+
+This is spec §8 transcribed into one function, and §8.1 is its test list. Every row of that table is a case where the obvious implementation divides by zero or, worse, returns a plausible number.
+
+The shift's counts are defined as the sum over product segments rather than as an independent whole-window counter delta. When a unit has no `product_metric_key` the pipeline passes one segment spanning the shift, so the two definitions coincide there — and where they would not, summing keeps `Σ products == shift`, so a per-product panel always reconciles with the headline row.
+
+- [ ] **Step 1: Write the failing test**
+
+`12_uns_oee/test/test_oee_calc.py`:
+
+```python
+"""Tests for the OEE arithmetic.
+
+Spec section 8.1 is a table of six cases in which the obvious implementation either raises
+ZeroDivisionError or - much worse - returns a believable number. Each has a test here. The
+believable-number cases are the reason `status` exists: a shift nobody staffed is not a 0%
+shift, and recording it as one poisons every average it enters for the rest of the year.
+"""
+
+from datetime import datetime, timezone
+
+from uns_model.oee_tables import OEE_STATUSES
+
+from uns_oee.classifier import ClassifiedStop
+from uns_oee.oee_calc import (
+    STATUS_MISSING_IDEAL_CYCLE_TIME,
+    STATUS_NO_INPUT_DATA,
+    STATUS_NO_LOADING_TIME,
+    STATUS_NO_PRODUCTION,
+    STATUS_OK,
+    ProductSegment,
+    ShiftInputs,
+    compute,
+)
+from uns_oee.states import Interval
+
+
+def t(hour: int, minute: int = 0) -> datetime:
+    return datetime(2026, 9, 7, hour, minute, tzinfo=timezone.utc)
+
+
+SHIFT = Interval(t(6), t(14))  # eight hours = 28800 s
+
+
+def stop(from_h: int, to_h: int, *, planned: bool, state: str = "HELD") -> ClassifiedStop:
+    return ClassifiedStop(
+        interval=Interval(t(from_h), t(to_h)),
+        state_value=state,
+        reason_code="CHANGEOVER" if planned else "BREAKDOWN",
+        is_planned=planned,
+        source="auto",
+        note=None,
+        assigned_by=None,
+    )
+
+
+def segment(
+    *,
+    code: str | None = "R-100-STD",
+    intervals: tuple[Interval, ...] = (SHIFT,),
+    ideal: float | None = 2.0,
+    good: float = 0.0,
+    reject: float = 0.0,
+) -> ProductSegment:
+    return ProductSegment(
+        product_code=code,
+        intervals=intervals,
+        ideal_cycle_time_s=ideal,
+        good_count=good,
+        reject_count=reject,
+    )
+
+
+def test_a_clean_shift_multiplies_out():
+    # Loading 28800 s, one hour unplanned stop -> Run Time 25200 s.
+    # 12000 units at an ideal 2.0 s/unit = 24000 s of work in 25200 s of run time.
+    metrics = compute(
+        ShiftInputs(
+            window=SHIFT,
+            classified_stops=(stop(9, 10, planned=False),),
+            products=(segment(good=11760, reject=240),),
+        )
+    )
+    assert metrics.loading_time_s == 28800.0
+    assert metrics.planned_down_s == 0.0
+    assert metrics.unplanned_down_s == 3600.0
+    assert metrics.run_time_s == 25200.0
+    assert metrics.total_count == 12000.0
+    assert metrics.availability == 25200.0 / 28800.0
+    assert metrics.performance == (2.0 * 12000.0) / 25200.0
+    assert metrics.quality == 11760.0 / 12000.0
+    assert metrics.oee == metrics.availability * metrics.performance * metrics.quality
+    assert metrics.status == STATUS_OK
+
+
+def test_a_planned_reason_stop_leaves_loading_time():
+    # Availability is not punished for a changeover: the hour comes out of the denominator.
+    metrics = compute(
+        ShiftInputs(window=SHIFT, classified_stops=(stop(9, 10, planned=True),), products=(segment(good=100),))
+    )
+    assert metrics.planned_down_s == 3600.0
+    assert metrics.loading_time_s == 25200.0
+    assert metrics.unplanned_down_s == 0.0
+    assert metrics.run_time_s == 25200.0
+    assert metrics.availability == 1.0
+
+
+def test_a_calendar_exception_also_leaves_loading_time():
+    metrics = compute(
+        ShiftInputs(window=SHIFT, exception_intervals=(Interval(t(6), t(8)),), products=(segment(good=100),))
+    )
+    assert metrics.planned_down_s == 7200.0
+    assert metrics.loading_time_s == 21600.0
+
+
+def test_an_exception_overlapping_a_planned_stop_is_counted_once():
+    # Summing would give 7200 + 3600 = 10800 and inflate Availability. The union is 7200.
+    metrics = compute(
+        ShiftInputs(
+            window=SHIFT,
+            exception_intervals=(Interval(t(6), t(8)),),
+            classified_stops=(stop(7, 8, planned=True),),
+            products=(segment(good=100),),
+        )
+    )
+    assert metrics.planned_down_s == 7200.0
+    assert metrics.loading_time_s == 21600.0
+
+
+def test_an_unplanned_stop_inside_planned_time_does_not_reduce_run_time_twice():
+    # The breakdown happened during a window nobody was scheduled to run. It is already out
+    # of Loading Time, so it must not also come out of Run Time.
+    metrics = compute(
+        ShiftInputs(
+            window=SHIFT,
+            exception_intervals=(Interval(t(6), t(8)),),
+            classified_stops=(stop(6, 7, planned=False),),
+            products=(segment(good=100),),
+        )
+    )
+    assert metrics.loading_time_s == 21600.0
+    assert metrics.unplanned_down_s == 0.0
+    assert metrics.run_time_s == 21600.0
+
+
+def test_an_unplanned_stop_straddling_the_planned_boundary_counts_only_its_loaded_part():
+    metrics = compute(
+        ShiftInputs(
+            window=SHIFT,
+            exception_intervals=(Interval(t(6), t(8)),),
+            classified_stops=(stop(7, 9, planned=False),),
+            products=(segment(good=100),),
+        )
+    )
+    assert metrics.unplanned_down_s == 3600.0
+    assert metrics.run_time_s == 18000.0
+
+
+def test_overlapping_unplanned_stops_are_unioned():
+    stops = (stop(9, 11, planned=False), stop(10, 12, planned=False))
+    metrics = compute(ShiftInputs(window=SHIFT, classified_stops=stops, products=(segment(good=100),)))
+    assert metrics.unplanned_down_s == 3 * 3600.0
+
+
+def test_a_fully_planned_down_shift_has_no_factors():
+    metrics = compute(
+        ShiftInputs(window=SHIFT, exception_intervals=(SHIFT,), products=(segment(good=0),))
+    )
+    assert metrics.loading_time_s == 0.0
+    assert metrics.status == STATUS_NO_LOADING_TIME
+    assert metrics.availability is None
+    assert metrics.performance is None
+    assert metrics.quality is None
+    assert metrics.oee is None
+
+
+def test_a_scheduled_shift_that_produced_nothing_keeps_availability():
+    metrics = compute(
+        ShiftInputs(window=SHIFT, classified_stops=(stop(6, 10, planned=False),), products=(segment(),))
+    )
+    assert metrics.availability == (28800.0 - 14400.0) / 28800.0
+    assert metrics.performance is None
+    assert metrics.quality is None
+    assert metrics.oee is None
+    assert metrics.status == STATUS_NO_PRODUCTION
+
+
+def test_counts_with_no_run_time_null_performance_but_keep_quality():
+    # The inputs disagree: the unit was stopped all shift yet the counter moved. Inventing a
+    # Performance would hide that; Quality is still a fact about the units that exist.
+    metrics = compute(
+        ShiftInputs(window=SHIFT, classified_stops=(stop(6, 14, planned=False),), products=(segment(good=90, reject=10),))
+    )
+    assert metrics.run_time_s == 0.0
+    assert metrics.availability == 0.0
+    assert metrics.performance is None
+    assert metrics.quality == 0.9
+    assert metrics.oee is None
+    assert metrics.status == STATUS_NO_PRODUCTION
+
+
+def test_a_silent_unit_is_distinguished_from_an_idle_one():
+    metrics = compute(ShiftInputs(window=SHIFT, has_input_data=False))
+    assert metrics.status == STATUS_NO_INPUT_DATA
+    assert metrics.availability is None
+    assert metrics.loading_time_s == 0.0
+    assert metrics.run_time_s == 0.0
+    assert metrics.total_count == 0.0
+
+
+def test_a_missing_ideal_cycle_time_nulls_performance_and_says_so():
+    metrics = compute(ShiftInputs(window=SHIFT, products=(segment(ideal=None, good=100),)))
+    assert metrics.performance is None
+    assert metrics.performance_raw is None
+    assert metrics.quality == 1.0
+    assert metrics.oee is None
+    assert metrics.status == STATUS_MISSING_IDEAL_CYCLE_TIME
+    assert metrics.missing_ideal_cycle_time is True
+
+
+def test_a_segment_that_produced_nothing_needs_no_ideal_cycle_time():
+    products = (
+        segment(code="R-100-STD", intervals=(Interval(t(6), t(10)),), ideal=2.0, good=1000),
+        segment(code="R-330-LOW", intervals=(Interval(t(10), t(14)),), ideal=None),
+    )
+    metrics = compute(ShiftInputs(window=SHIFT, products=products))
+    assert metrics.status == STATUS_OK
+    assert metrics.missing_ideal_cycle_time is False
+
+
+def test_performance_above_one_is_clamped_and_flagged():
+    # 20000 units at 2.0 s each is 40000 s of work claimed inside 28800 s of run time. The
+    # authored ideal cycle time is wrong; the true value is kept so it can be seen.
+    metrics = compute(ShiftInputs(window=SHIFT, products=(segment(good=20000),)))
+    assert metrics.performance_raw == 40000.0 / 28800.0
+    assert metrics.performance == 1.0
+    assert metrics.performance_over_unity is True
+    assert metrics.oee == metrics.availability * 1.0 * metrics.quality
+    assert metrics.status == STATUS_OK
+
+
+def test_performance_is_time_weighted_across_products():
+    products = (
+        segment(code="R-100-STD", intervals=(Interval(t(6), t(10)),), ideal=2.0, good=6000),
+        segment(code="R-220-STD", intervals=(Interval(t(10), t(14)),), ideal=4.0, good=3000),
+    )
+    metrics = compute(ShiftInputs(window=SHIFT, products=products))
+    assert metrics.total_count == 9000.0
+    assert metrics.performance == (2.0 * 6000.0 + 4.0 * 3000.0) / 28800.0
+    assert [item.run_time_s for item in metrics.products] == [14400.0, 14400.0]
+
+
+def test_a_products_run_time_excludes_downtime_inside_its_own_segment():
+    products = (
+        segment(code="R-100-STD", intervals=(Interval(t(6), t(10)),), ideal=2.0, good=6000),
+        segment(code="R-220-STD", intervals=(Interval(t(10), t(14)),), ideal=4.0, good=3000),
+    )
+    metrics = compute(
+        ShiftInputs(window=SHIFT, classified_stops=(stop(8, 9, planned=False),), products=products)
+    )
+    assert [item.run_time_s for item in metrics.products] == [10800.0, 14400.0]
+    assert sum(item.run_time_s for item in metrics.products) == metrics.run_time_s
+
+
+def test_quality_uses_good_over_total_and_reject_is_reported():
+    metrics = compute(ShiftInputs(window=SHIFT, products=(segment(good=900, reject=100),)))
+    assert metrics.good_count == 900.0
+    assert metrics.reject_count == 100.0
+    assert metrics.total_count == 1000.0
+    assert metrics.quality == 0.9
+
+
+def test_every_status_the_calculator_returns_is_a_declared_status():
+    assert {
+        STATUS_OK,
+        STATUS_NO_LOADING_TIME,
+        STATUS_NO_PRODUCTION,
+        STATUS_MISSING_IDEAL_CYCLE_TIME,
+        STATUS_NO_INPUT_DATA,
+    } <= set(OEE_STATUSES)
+
+
+def test_no_products_at_all_is_no_production_not_a_crash():
+    metrics = compute(ShiftInputs(window=SHIFT))
+    assert metrics.status == STATUS_NO_PRODUCTION
+    assert metrics.availability == 1.0
+    assert metrics.products == ()
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `uv run pytest 12_uns_oee/test/test_oee_calc.py -v -n 0`
+Expected: FAIL — `ModuleNotFoundError: No module named 'uns_oee.oee_calc'`.
+
+- [ ] **Step 3: Write the implementation**
+
+`12_uns_oee/src/uns_oee/oee_calc.py`:
+
+```python
+"""The OEE arithmetic, and nothing else.
+
+Spec section 8:
+
+    Planned Down   = | (planned exception windows u planned-reason stops) n shift |
+    Loading Time   = (shift_end - shift_start) - Planned Down
+    Unplanned Down = | (unplanned-reason stops) n Loading Time |
+    Run Time       = Loading Time - Unplanned Down
+
+    Availability = Run Time / Loading Time
+    Performance  = sum_p (ideal_cycle_time_s(p) x total_count(p)) / Run Time
+    Quality      = Good Count / Total Count
+    OEE          = Availability x Performance x Quality
+
+Planned time has two sources: a calendar exception, and a stop whose reason is planned. Both
+leave Loading Time, and they are unioned - an exception window overlapping a changeover is
+one period of planned time, and summing it twice inflates Availability. In the flattering
+direction, which is the kind of error nobody reports.
+
+Unplanned stops are intersected with Loading Time before they reduce Run Time, so a breakdown
+during a planned shutdown is not subtracted twice.
+
+No factor is ever invented. Where a denominator is zero the factor is `None` and `status`
+says which case it was, because a shift that nobody staffed is not a 0% shift.
+
+Pure, and no clock: `compute` reads only what it is given.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+
+from uns_oee.classifier import ClassifiedStop, planned_intervals, unplanned_intervals
+from uns_oee.states import Interval, intersect, subtract, union_duration_s
+
+STATUS_OK = "OK"
+STATUS_NO_LOADING_TIME = "NO_LOADING_TIME"
+STATUS_NO_PRODUCTION = "NO_PRODUCTION"
+STATUS_MISSING_IDEAL_CYCLE_TIME = "MISSING_IDEAL_CYCLE_TIME"
+STATUS_NO_INPUT_DATA = "NO_INPUT_DATA"
+
+#: Performance above this means the authored ideal cycle time is wrong. Clamped, never hidden.
+_PERFORMANCE_CEILING = 1.0
+
+
+@dataclass(frozen=True, slots=True)
+class ProductSegment:
+    """What one product ran during, and what it produced.
+
+    Counts are counter deltas taken over `intervals`, not pro-rated from a shift total: a
+    counter is cumulative, so its delta across a segment already is that segment's output and
+    needs no assumption about rate. `product_code` is `None` when the unit declares no product
+    binding, in which case the pipeline passes a single segment spanning the whole shift.
+    """
+
+    product_code: str | None = None
+    intervals: tuple[Interval, ...] = ()
+    ideal_cycle_time_s: float | None = None
+    good_count: float = 0.0
+    reject_count: float = 0.0
+
+    @property
+    def total_count(self) -> float:
+        return self.good_count + self.reject_count
+
+
+@dataclass(frozen=True, slots=True)
+class ShiftInputs:
+    """Everything one shift's numbers are computed from.
+
+    `has_input_data` is separate from `products` being empty: a unit that published nothing
+    all shift is a different fact from a unit that was scheduled, ran, and made nothing.
+    """
+
+    window: Interval
+    exception_intervals: tuple[Interval, ...] = ()
+    classified_stops: tuple[ClassifiedStop, ...] = ()
+    products: tuple[ProductSegment, ...] = ()
+    has_input_data: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class ProductMetrics:
+    """One product's share of the shift, as stored in `oee.shift_result_product`."""
+
+    product_code: str | None
+    run_time_s: float
+    good_count: float
+    reject_count: float
+    total_count: float
+    ideal_cycle_time_s: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class ShiftMetrics:
+    """One shift's result. A `None` factor is a fact, not a missing value - see `status`."""
+
+    loading_time_s: float = 0.0
+    run_time_s: float = 0.0
+    planned_down_s: float = 0.0
+    unplanned_down_s: float = 0.0
+    good_count: float = 0.0
+    reject_count: float = 0.0
+    total_count: float = 0.0
+    availability: float | None = None
+    performance: float | None = None
+    performance_raw: float | None = None
+    quality: float | None = None
+    oee: float | None = None
+    status: str = STATUS_NO_INPUT_DATA
+    products: tuple[ProductMetrics, ...] = field(default_factory=tuple)
+    missing_ideal_cycle_time: bool = False
+    performance_over_unity: bool = False
+
+
+def compute(inputs: ShiftInputs) -> ShiftMetrics:
+    """The four factors for one shift, or the reason there are none."""
+    if not inputs.has_input_data:
+        return ShiftMetrics(status=STATUS_NO_INPUT_DATA)
+
+    planned = list(inputs.exception_intervals) + planned_intervals(inputs.classified_stops)
+    planned_in_shift = intersect(planned, [inputs.window])
+    planned_down_s = union_duration_s(planned_in_shift)
+    loading = subtract([inputs.window], planned_in_shift)
+    loading_time_s = union_duration_s(loading)
+
+    unplanned_in_loading = intersect(unplanned_intervals(inputs.classified_stops), loading)
+    unplanned_down_s = union_duration_s(unplanned_in_loading)
+    run = subtract(loading, unplanned_in_loading)
+    run_time_s = union_duration_s(run)
+
+    products = _product_metrics(inputs.products, run)
+    good_count = sum(item.good_count for item in products)
+    reject_count = sum(item.reject_count for item in products)
+    total_count = good_count + reject_count
+
+    if loading_time_s <= 0.0:
+        return ShiftMetrics(
+            planned_down_s=planned_down_s,
+            good_count=good_count,
+            reject_count=reject_count,
+            total_count=total_count,
+            status=STATUS_NO_LOADING_TIME,
+            products=products,
+        )
+
+    availability = run_time_s / loading_time_s
+    quality = good_count / total_count if total_count > 0.0 else None
+    performance_raw, missing_ideal = _performance_raw(products, run_time_s, total_count)
+    performance = None if performance_raw is None else min(performance_raw, _PERFORMANCE_CEILING)
+    oee = None if performance is None or quality is None else availability * performance * quality
+
+    return ShiftMetrics(
+        loading_time_s=loading_time_s,
+        run_time_s=run_time_s,
+        planned_down_s=planned_down_s,
+        unplanned_down_s=unplanned_down_s,
+        good_count=good_count,
+        reject_count=reject_count,
+        total_count=total_count,
+        availability=availability,
+        performance=performance,
+        performance_raw=performance_raw,
+        quality=quality,
+        oee=oee,
+        status=_status(performance, quality, missing_ideal),
+        products=products,
+        missing_ideal_cycle_time=missing_ideal,
+        performance_over_unity=performance_raw is not None and performance_raw > _PERFORMANCE_CEILING,
+    )
+
+
+def _product_metrics(
+    segments: Sequence[ProductSegment], run: Sequence[Interval]
+) -> tuple[ProductMetrics, ...]:
+    """Each segment's counts, with its run time clipped to the shift's actual Run Time.
+
+    Clipping means the per-product run times sum to the shift's Run Time rather than to the
+    segments' wall-clock length, so a per-product panel reconciles with the headline row.
+    """
+    return tuple(
+        ProductMetrics(
+            product_code=segment.product_code,
+            run_time_s=union_duration_s(intersect(segment.intervals, run)),
+            good_count=segment.good_count,
+            reject_count=segment.reject_count,
+            total_count=segment.total_count,
+            ideal_cycle_time_s=segment.ideal_cycle_time_s,
+        )
+        for segment in segments
+    )
+
+
+def _performance_raw(
+    products: Sequence[ProductMetrics], run_time_s: float, total_count: float
+) -> tuple[float | None, bool]:
+    """The unclamped Performance, and whether an ideal cycle time was missing.
+
+    All-or-nothing on the master data: if any product that actually produced has no authored
+    ideal cycle time, Performance is null rather than computed from the products that do. A
+    partial numerator over the full Run Time understates Performance by an amount that looks
+    like a real loss.
+    """
+    if run_time_s <= 0.0 or total_count <= 0.0:
+        return None, False
+    producing = [item for item in products if item.total_count > 0.0]
+    if any(item.ideal_cycle_time_s is None for item in producing):
+        return None, True
+    ideal_seconds = sum(
+        (item.ideal_cycle_time_s or 0.0) * item.total_count for item in producing
+    )
+    return ideal_seconds / run_time_s, False
+
+
+def _status(performance: float | None, quality: float | None, missing_ideal: bool) -> str:
+    """Which of the section 8.1 cases this shift landed in.
+
+    Order matters: a shift with no ideal cycle time and no production is reported as
+    NO_PRODUCTION, because fixing the master data would not give it a Performance.
+    """
+    if quality is None or (performance is None and not missing_ideal):
+        return STATUS_NO_PRODUCTION
+    if missing_ideal:
+        return STATUS_MISSING_IDEAL_CYCLE_TIME
+    return STATUS_OK
+
+
+__all__ = [
+    "STATUS_MISSING_IDEAL_CYCLE_TIME",
+    "STATUS_NO_INPUT_DATA",
+    "STATUS_NO_LOADING_TIME",
+    "STATUS_NO_PRODUCTION",
+    "STATUS_OK",
+    "ProductMetrics",
+    "ProductSegment",
+    "ShiftInputs",
+    "ShiftMetrics",
+    "compute",
+]
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `uv run pytest 12_uns_oee/test/test_oee_calc.py -v -n 0`
+Expected: PASS (19 passed).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add 12_uns_oee/src/uns_oee/oee_calc.py 12_uns_oee/test/test_oee_calc.py
+git commit -m "feat(oee): compute availability, performance and quality per shift"
+```
+
+---
+
+### Task 8: Reading samples out of `uns_metrics`
+
+**Files:**
+- Create: `12_uns_oee/src/uns_oee/sources.py`
+- Create: `12_uns_oee/test/test_sources.py`
+
+**Interfaces:**
+- Consumes: `uns_model.engine.Database` (existing); `uns_oee.counters.Sample` (Task 5); `uns_oee.states.StateSample` (Task 5).
+- Produces: `MetricRef(topic: str, metric_name: str)`; `split_metric_key(asset_path: str, metric_key: str) -> MetricRef`; `Fingerprint(row_count: int, max_time: datetime | None, manual_digest: str = "-")` with `.as_text() -> str`, `.is_empty -> bool` and `.with_manual(digest: str) -> Fingerprint`; `MetricSource(database, metrics_table="uns_metrics", prior_lookback_hours=24)` with `async numeric_samples(ref, start, end, *, include_prior=True) -> list[Sample]`, `async text_samples(ref, start, end, *, include_prior=True) -> list[StateSample]`, `async fingerprint(refs, start, end) -> Fingerprint`, `async earliest_sample_at(refs) -> datetime | None`; module functions `window_sql`, `prior_sql`, `fingerprint_sql`, `earliest_sql`, `pair_params`.
+
+The access path is already there: `idx_uns_metrics_topic_metric_time ON uns_metrics (topic, metric_name, time DESC)` (`04_uns_historian/sql_scripts/04_setup_metrics_hypertable.sql:19`–`:20`). Every query in this module is written to use it, and none of them touch `unifiednamespace` or the JSONB payloads.
+
+Two design points that the tests pin:
+
+**`include_prior` has a bounded lookback.** The state at a shift start is the last sample at or before the boundary, so a second query reaching backwards is unavoidable. Without a lower bound, a unit that stopped publishing a year ago makes Timescale walk every chunk in the hypertable backwards. `prior_lookback_hours` (default 24) caps it; a unit silent for longer than that has no state to carry in, which the calculator reports as `NO_INPUT_DATA` rather than guessing.
+
+**A binding maps to `(topic, metric_name)` by splitting at the last `/`.** `asset.path` is `CovestroAG/Dormagen/Production/Line1` and the binding is `Cell1/MES-01/Status/PackMlState/value`; the simulator publishes to `.../Cell1/MES-01/Status/PackMlState` with a payload of `{"value": ..., "unit": ..., "status": ..., "quality": ...}`, and `flatten_payload_to_metrics` (`04_uns_historian/src/uns_historian/metric_flattener.py:10`) turns each leaf into a row with `metric_name = "value"`. So the last segment of the binding is the metric name and everything before it is the topic. That also means a nested payload is addressable — `.../Status/Detail/value.inner` — without a second convention.
+
+- [ ] **Step 1: Write the failing test**
+
+`12_uns_oee/test/test_sources.py`:
+
+```python
+"""Tests for the historian read path.
+
+The SQL is exercised for real in the end-to-end integration test. What is worth pinning
+without a database is everything around it: that a metric binding resolves to the right
+(topic, metric_name) pair, that the prior-sample query is bounded so it cannot walk a whole
+hypertable backwards, that a text metric and a numeric metric read different columns, and
+that the fingerprint is a stable string - a fingerprint that formats differently between two
+runs would make every shift look like it had late data.
+"""
+
+from datetime import datetime, timedelta, timezone
+
+import pytest
+
+from uns_oee.sources import (
+    Fingerprint,
+    MetricRef,
+    MetricSource,
+    earliest_sql,
+    fingerprint_sql,
+    pair_params,
+    prior_sql,
+    split_metric_key,
+    window_sql,
+)
+
+ASSET = "CovestroAG/Dormagen/Production/Line1"
+STATE_KEY = "Cell1/MES-01/Status/PackMlState/value"
+T0 = datetime(2026, 9, 7, 6, 0, tzinfo=timezone.utc)
+
+
+class FakeResult:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def fetchall(self):
+        return self._rows
+
+    def first(self):
+        return self._rows[0] if self._rows else None
+
+
+class FakeConnection:
+    def __init__(self, results):
+        self._results = list(results)
+        self.calls: list[tuple[str, dict]] = []
+
+    async def execute(self, statement, parameters=None):
+        self.calls.append((str(statement), dict(parameters or {})))
+        return self._results.pop(0) if self._results else FakeResult([])
+
+
+class FakeDatabase:
+    """Stands in for `uns_model.engine.Database`; only `begin()` is used by MetricSource."""
+
+    def __init__(self, *results):
+        self.connection = FakeConnection(results)
+
+    def begin(self):
+        connection = self.connection
+
+        class _Ctx:
+            async def __aenter__(self):
+                return connection
+
+            async def __aexit__(self, *_exc):
+                return False
+
+        return _Ctx()
+
+
+def test_a_binding_splits_into_topic_and_metric_name():
+    assert split_metric_key(ASSET, STATE_KEY) == MetricRef(
+        topic=f"{ASSET}/Cell1/MES-01/Status/PackMlState", metric_name="value"
+    )
+
+
+def test_a_nested_payload_leaf_is_addressable():
+    assert split_metric_key(ASSET, "Cell1/MES-01/Status/Detail/value.inner").metric_name == "value.inner"
+
+
+def test_surrounding_slashes_do_not_produce_an_empty_segment():
+    assert split_metric_key(f"{ASSET}/", f"/{STATE_KEY}") == split_metric_key(ASSET, STATE_KEY)
+
+
+def test_a_binding_with_no_slash_is_rejected():
+    with pytest.raises(ValueError, match="value"):
+        split_metric_key(ASSET, "value")
+
+
+def test_a_fingerprint_formats_the_same_way_twice():
+    fingerprint = Fingerprint(row_count=1440, max_time=T0)
+    assert fingerprint.as_text() == "1440:2026-09-07T06:00:00+00:00:-"
+    assert fingerprint.as_text() == Fingerprint(row_count=1440, max_time=T0).as_text()
+    assert fingerprint.is_empty is False
+
+
+def test_an_empty_fingerprint_is_recognisable_and_still_formats():
+    empty = Fingerprint()
+    assert empty.is_empty is True
+    assert empty.as_text() == "0:-:-"
+
+
+def test_an_operator_reassignment_moves_the_fingerprint_without_moving_a_sample():
+    fingerprint = Fingerprint(row_count=1440, max_time=T0)
+    reassigned = fingerprint.with_manual("9f2c1a")
+    assert reassigned.as_text() != fingerprint.as_text()
+    # Same historian rows: the recompute is driven by the operator, not by late data.
+    assert (reassigned.row_count, reassigned.max_time) == (1440, T0)
+    assert reassigned.is_empty is False
+
+
+def test_the_historian_half_of_a_stored_fingerprint_is_recoverable():
+    fingerprint = Fingerprint(row_count=1440, max_time=T0)
+    # A reassignment leaves the historian half identical; late data changes it.
+    assert Fingerprint.source_part(fingerprint.with_manual("9f2c1a").as_text()) == (
+        Fingerprint.source_part(fingerprint.as_text())
+    )
+    later = Fingerprint(row_count=1441, max_time=T0)
+    assert Fingerprint.source_part(later.as_text()) != Fingerprint.source_part(fingerprint.as_text())
+    assert Fingerprint.source_part(Fingerprint().as_text()) == "0:-"
+
+
+def test_a_table_name_that_is_not_an_identifier_is_refused():
+    with pytest.raises(ValueError, match="metrics table"):
+        MetricSource(FakeDatabase(), metrics_table="uns_metrics; DROP TABLE model.asset")
+
+
+def test_the_window_query_reads_the_column_the_caller_asked_for():
+    numeric = window_sql("uns_metrics", "value_double")
+    text = window_sql("uns_metrics", "value_text")
+    assert "value_double IS NOT NULL" in numeric
+    assert "value_text IS NOT NULL" in text
+    for statement in (numeric, text):
+        assert "topic = :topic" in statement
+        assert "metric_name = :metric_name" in statement
+        assert "ORDER BY time" in statement
+
+
+def test_the_prior_query_is_bounded_at_both_ends_and_takes_one_row():
+    statement = prior_sql("uns_metrics", "value_double")
+    assert "time < :start" in statement
+    assert "time >= :lookback_from" in statement
+    assert "ORDER BY time DESC" in statement
+    assert "LIMIT 1" in statement
+
+
+def test_the_pair_predicate_binds_one_placeholder_per_pair():
+    refs = [MetricRef("a", "value"), MetricRef("b", "value")]
+    statement = fingerprint_sql("uns_metrics", len(refs))
+    assert "(topic, metric_name) IN ((:topic_0, :metric_0), (:topic_1, :metric_1))" in statement
+    assert "count(*)" in statement
+    assert "max(time)" in statement
+    assert pair_params(refs) == {
+        "topic_0": "a",
+        "metric_0": "value",
+        "topic_1": "b",
+        "metric_1": "value",
+    }
+
+
+def test_a_fingerprint_over_no_bindings_is_empty_without_a_query():
+    statement = fingerprint_sql("uns_metrics", 0)
+    assert statement == ""
+
+
+def test_the_earliest_query_is_a_min_over_the_same_pairs():
+    statement = earliest_sql("uns_metrics", 1)
+    assert "min(time)" in statement
+    assert "(:topic_0, :metric_0)" in statement
+
+
+@pytest.mark.asyncio
+async def test_numeric_samples_prepend_the_prior_reading():
+    database = FakeDatabase(
+        FakeResult([(T0 - timedelta(minutes=2), 140.0)]),
+        FakeResult([(T0 + timedelta(minutes=5), 150.0), (T0 + timedelta(minutes=10), 160.0)]),
+    )
+    source = MetricSource(database)
+    samples = await source.numeric_samples(
+        MetricRef("topic", "value"), T0, T0 + timedelta(hours=8)
+    )
+    assert [sample.value for sample in samples] == [140.0, 150.0, 160.0]
+    assert samples == sorted(samples)
+
+
+@pytest.mark.asyncio
+async def test_include_prior_false_issues_one_query_only():
+    database = FakeDatabase(FakeResult([(T0, 150.0)]))
+    source = MetricSource(database)
+    await source.numeric_samples(MetricRef("topic", "value"), T0, T0 + timedelta(hours=8), include_prior=False)
+    assert len(database.connection.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_the_prior_query_passes_the_bounded_lookback():
+    database = FakeDatabase(FakeResult([]), FakeResult([]))
+    source = MetricSource(database, prior_lookback_hours=6)
+    await source.numeric_samples(MetricRef("topic", "value"), T0, T0 + timedelta(hours=8))
+    _statement, parameters = database.connection.calls[0]
+    assert parameters["lookback_from"] == T0 - timedelta(hours=6)
+
+
+@pytest.mark.asyncio
+async def test_text_samples_become_state_samples():
+    database = FakeDatabase(
+        FakeResult([(T0 - timedelta(minutes=1), "HELD")]),
+        FakeResult([(T0 + timedelta(hours=1), "EXECUTE")]),
+    )
+    source = MetricSource(database)
+    samples = await source.text_samples(MetricRef("topic", "value"), T0, T0 + timedelta(hours=8))
+    assert [sample.state for sample in samples] == ["HELD", "EXECUTE"]
+
+
+@pytest.mark.asyncio
+async def test_a_null_value_row_is_skipped_rather_than_becoming_a_zero():
+    # The CHECK constraint makes one of the two value columns null on every row, so a caller
+    # that queried the wrong column would otherwise read a column of zeros.
+    database = FakeDatabase(FakeResult([]), FakeResult([(T0, None), (T0 + timedelta(minutes=1), 12.0)]))
+    source = MetricSource(database)
+    samples = await source.numeric_samples(MetricRef("topic", "value"), T0, T0 + timedelta(hours=1))
+    assert [sample.value for sample in samples] == [12.0]
+
+
+@pytest.mark.asyncio
+async def test_a_fingerprint_with_no_bindings_never_touches_the_database():
+    database = FakeDatabase()
+    source = MetricSource(database)
+    assert await source.fingerprint([], T0, T0 + timedelta(hours=8)) == Fingerprint()
+    assert database.connection.calls == []
+
+
+@pytest.mark.asyncio
+async def test_a_fingerprint_reads_the_count_and_the_latest_time():
+    database = FakeDatabase(FakeResult([(1440, T0)]))
+    source = MetricSource(database)
+    fingerprint = await source.fingerprint([MetricRef("topic", "value")], T0, T0 + timedelta(hours=8))
+    assert fingerprint == Fingerprint(row_count=1440, max_time=T0)
+
+
+@pytest.mark.asyncio
+async def test_earliest_sample_at_is_none_when_the_unit_has_never_published():
+    database = FakeDatabase(FakeResult([(None,)]))
+    source = MetricSource(database)
+    assert await source.earliest_sample_at([MetricRef("topic", "value")]) is None
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `uv run pytest 12_uns_oee/test/test_sources.py -v -n 0`
+Expected: FAIL — `ModuleNotFoundError: No module named 'uns_oee.sources'`.
+
+- [ ] **Step 3: Write the implementation**
+
+`12_uns_oee/src/uns_oee/sources.py`:
+
+```python
+"""Reading machine samples out of the historian's narrow metrics table.
+
+Every statement here is written to hit `idx_uns_metrics_topic_metric_time (topic,
+metric_name, time DESC)`, which already exists. Nothing in this module reads the JSONB
+`unifiednamespace` table or the continuous aggregates: the aggregates average, and an OEE
+counter delta cannot be taken from an average.
+
+A metric binding is `<segments below the Asset>/<payload leaf>` - the same meaning
+`TopicBinding.metric_path` already carries. Splitting at the last slash gives the MQTT topic
+and the flattened leaf name, which is `value` for every signal the simulator publishes.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+from collections.abc import Sequence
+from dataclasses import dataclass, replace
+from datetime import datetime, timedelta
+
+from sqlalchemy import text
+from uns_model.engine import Database
+
+from uns_oee.counters import Sample
+from uns_oee.states import StateSample
+
+LOGGER = logging.getLogger(__name__)
+
+#: The metrics table comes from configuration, not from a request, but it is interpolated
+#: into SQL - so it is checked against this rather than trusted.
+_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+#: How far before a shift start the "last known value" query is allowed to reach. Bounded so
+#: a unit that stopped publishing months ago cannot make Timescale walk every chunk backwards.
+DEFAULT_PRIOR_LOOKBACK_HOURS = 24
+
+
+@dataclass(frozen=True, slots=True)
+class MetricRef:
+    """One addressable series: an MQTT topic and a flattened payload leaf name."""
+
+    topic: str
+    metric_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class Fingerprint:
+    """What the input window looked like, cheaply enough to re-read often.
+
+    Row count and latest sample time. Late-arriving data changes one or both, which is the
+    signal to recompute the shift and supersede the stored revision.
+
+    `manual_digest` is the third input and does not come from the historian: an operator
+    reassigning a downtime reason changes the arithmetic without changing a single sample.
+    Left at "-" here and filled in by the pipeline, which is where the reasons are read.
+    """
+
+    row_count: int = 0
+    max_time: datetime | None = None
+    manual_digest: str = "-"
+
+    @property
+    def is_empty(self) -> bool:
+        """Whether the historian had anything to say. Manual reasons do not make a shift
+        non-empty: a reason attached to a stop that no longer has samples behind it is not
+        input data."""
+        return self.row_count == 0
+
+    def as_text(self) -> str:
+        """The stored form. Stable across runs - two formats would look like late data."""
+        return (
+            f"{self.row_count}:"
+            f"{self.max_time.isoformat() if self.max_time else '-'}:"
+            f"{self.manual_digest}"
+        )
+
+    def with_manual(self, digest: str) -> Fingerprint:
+        """This fingerprint plus the operator's contribution to the inputs."""
+        return replace(self, manual_digest=digest)
+
+    @staticmethod
+    def source_part(stored: str) -> str:
+        """The historian half of a stored fingerprint, without the operator's digest.
+
+        The parser lives beside the formatter so the two cannot drift. It exists because
+        "the data changed" and "someone reassigned a reason" are different events, and
+        `uns_oee_late_data_detected_total` must only count the first.
+        """
+        return stored.rpartition(":")[0]
+
+
+def split_metric_key(asset_path: str, metric_key: str) -> MetricRef:
+    """Resolve an Asset path plus a binding into a topic and a metric name."""
+    combined = f"{asset_path.strip('/')}/{metric_key.strip('/')}"
+    topic, _, metric_name = combined.rpartition("/")
+    if not topic or not metric_name:
+        raise ValueError(
+            f"metric binding {metric_key!r} must be at least one topic segment followed by a "
+            f"payload leaf, e.g. 'Cell1/MES-01/Status/PackMlState/value'"
+        )
+    return MetricRef(topic=topic, metric_name=metric_name)
+
+
+def window_sql(table: str, value_column: str) -> str:
+    """Every sample of one series inside a closed window, oldest first."""
+    return (
+        f"SELECT time, {value_column} FROM {table} "
+        f"WHERE topic = :topic AND metric_name = :metric_name "
+        f"AND time >= :start AND time <= :end AND {value_column} IS NOT NULL "
+        f"ORDER BY time"
+    )
+
+
+def prior_sql(table: str, value_column: str) -> str:
+    """The last sample of one series before a window, within a bounded lookback."""
+    return (
+        f"SELECT time, {value_column} FROM {table} "
+        f"WHERE topic = :topic AND metric_name = :metric_name "
+        f"AND time < :start AND time >= :lookback_from AND {value_column} IS NOT NULL "
+        f"ORDER BY time DESC LIMIT 1"
+    )
+
+
+def fingerprint_sql(table: str, pair_count: int) -> str:
+    """Row count and latest sample time across several series. Empty string for no series."""
+    if pair_count <= 0:
+        return ""
+    return (
+        f"SELECT count(*), max(time) FROM {table} "
+        f"WHERE {_pair_predicate(pair_count)} AND time >= :start AND time <= :end"
+    )
+
+
+def earliest_sql(table: str, pair_count: int) -> str:
+    """The first sample time across several series. Used once, to bound the backfill."""
+    if pair_count <= 0:
+        return ""
+    return f"SELECT min(time) FROM {table} WHERE {_pair_predicate(pair_count)}"
+
+
+def pair_params(refs: Sequence[MetricRef]) -> dict[str, str]:
+    """Bound parameters for `_pair_predicate`, in the same order."""
+    parameters: dict[str, str] = {}
+    for index, ref in enumerate(refs):
+        parameters[f"topic_{index}"] = ref.topic
+        parameters[f"metric_{index}"] = ref.metric_name
+    return parameters
+
+
+def _pair_predicate(pair_count: int) -> str:
+    """`(topic, metric_name) IN ((:topic_0, :metric_0), ...)`.
+
+    A row constructor rather than two `= ANY(...)` clauses, which would match the cross
+    product - four topics and two metric names would silently include four pairs nobody asked
+    for, and the fingerprint would move for reasons unrelated to the shift.
+    """
+    pairs = ", ".join(f"(:topic_{index}, :metric_{index})" for index in range(pair_count))
+    return f"(topic, metric_name) IN ({pairs})"
+
+
+class MetricSource:
+    """The historian read path for one OEE run.
+
+    Holds no state beyond its connection source, so the pipeline can reuse one instance for a
+    thirty-day backfill.
+    """
+
+    def __init__(
+        self,
+        database: Database,
+        metrics_table: str = "uns_metrics",
+        prior_lookback_hours: int = DEFAULT_PRIOR_LOOKBACK_HOURS,
+    ) -> None:
+        if not _IDENTIFIER.match(metrics_table):
+            raise ValueError(f"metrics table {metrics_table!r} is not a plain SQL identifier")
+        self._database = database
+        self._table = metrics_table
+        self._prior_lookback = timedelta(hours=prior_lookback_hours)
+
+    async def numeric_samples(
+        self, ref: MetricRef, start: datetime, end: datetime, *, include_prior: bool = True
+    ) -> list[Sample]:
+        """Counter readings for one series, with the pre-window baseline unless refused."""
+        rows = await self._rows(ref, start, end, "value_double", include_prior)
+        return sorted(Sample(at=at, value=float(value)) for at, value in rows if value is not None)
+
+    async def text_samples(
+        self, ref: MetricRef, start: datetime, end: datetime, *, include_prior: bool = True
+    ) -> list[StateSample]:
+        """State or product readings for one series, with the value in force at `start`."""
+        rows = await self._rows(ref, start, end, "value_text", include_prior)
+        return sorted(StateSample(at=at, state=str(value)) for at, value in rows if value is not None)
+
+    async def fingerprint(
+        self, refs: Sequence[MetricRef], start: datetime, end: datetime
+    ) -> Fingerprint:
+        """One indexed aggregate over every series a unit reads. Cheap enough to re-run often."""
+        statement = fingerprint_sql(self._table, len(refs))
+        if not statement:
+            return Fingerprint()
+        parameters = pair_params(refs) | {"start": start, "end": end}
+        async with self._database.begin() as connection:
+            row = (await connection.execute(text(statement), parameters)).first()
+        if row is None:
+            return Fingerprint()
+        return Fingerprint(row_count=int(row[0] or 0), max_time=row[1])
+
+    async def earliest_sample_at(self, refs: Sequence[MetricRef]) -> datetime | None:
+        """The first sample a unit ever published, or `None`. Bounds the startup backfill."""
+        statement = earliest_sql(self._table, len(refs))
+        if not statement:
+            return None
+        async with self._database.begin() as connection:
+            row = (await connection.execute(text(statement), pair_params(refs))).first()
+        return None if row is None else row[0]
+
+    async def _rows(
+        self, ref: MetricRef, start: datetime, end: datetime, value_column: str, include_prior: bool
+    ) -> list[tuple[datetime, object]]:
+        """The window's rows, preceded by the baseline row when one is wanted and exists."""
+        base = {"topic": ref.topic, "metric_name": ref.metric_name, "start": start, "end": end}
+        rows: list[tuple[datetime, object]] = []
+        async with self._database.begin() as connection:
+            if include_prior:
+                prior = await connection.execute(
+                    text(prior_sql(self._table, value_column)),
+                    base | {"lookback_from": start - self._prior_lookback},
+                )
+                rows.extend(prior.fetchall())
+            window = await connection.execute(text(window_sql(self._table, value_column)), base)
+            rows.extend(window.fetchall())
+        return rows
+
+
+__all__ = [
+    "DEFAULT_PRIOR_LOOKBACK_HOURS",
+    "Fingerprint",
+    "MetricRef",
+    "MetricSource",
+    "earliest_sql",
+    "fingerprint_sql",
+    "pair_params",
+    "prior_sql",
+    "split_metric_key",
+    "window_sql",
+]
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `uv run pytest 12_uns_oee/test/test_sources.py -v -n 0`
+Expected: PASS (22 passed).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add 12_uns_oee/src/uns_oee/sources.py 12_uns_oee/test/test_sources.py
+git commit -m "feat(oee): read state and counter samples from uns_metrics"
+```
+
+---
+
+### Task 9: Loading master data
+
+**Files:**
+- Create: `12_uns_oee/src/uns_oee/master_data.py`
+- Create: `12_uns_oee/test/test_master_data.py`
+
+**Interfaces:**
+- Consumes: `uns_model.engine.Database`; `uns_model.tables.Asset`; `uns_model.oee_tables.{OeeUnit, ShiftPattern, ShiftPatternSlot, ShiftException, IdealCycleTime, DowntimeReason, StateReasonMap, Product, DEFAULT_PRODUCING_STATES}` (Task 2); `uns_oee.shift_calendar.{ShiftSchedule, ShiftSlot}` (Task 4); `uns_oee.sources.{MetricRef, split_metric_key}` (Task 8); `uns_oee.classifier.{ReasonResolver, ReasonSpec}` (Task 6); `uns_oee.states.{Interval, merge}` (Task 5).
+- Produces: `UnitMasterData` (frozen) with fields `unit_id: int, asset_id: int, asset_path: str, schedule: ShiftSchedule, producing_states: tuple[str, ...], state_ref: MetricRef, good_ref: MetricRef, reject_ref: MetricRef | None, product_ref: MetricRef | None, ideal_cycle_times: Mapping[str | None, float], resolver: ReasonResolver`, property `.refs -> tuple[MetricRef, ...]`, method `.ideal_cycle_time_for(product_code: str | None) -> float | None`; `ExceptionWindow(interval: Interval, kind: str, asset_path: str | None)`; `MasterDataLoader(database)` with `async active_units() -> list[UnitMasterData]` and `async exception_windows(unit, window) -> list[ExceptionWindow]`; module functions `applies_to(exception_asset_path: str | None, unit_asset_path: str) -> bool`, `exception_intervals(windows: Sequence[ExceptionWindow]) -> list[Interval]`.
+
+There is no product-id lookup, because `oee.shift_result_product.product_code` stores the value the machine published rather than a foreign key (Task 2). `model.product` is still read — it is what gives an `ideal_cycle_time` row its product code.
+
+`reject_count_metric_key` is nullable in Task 2's schema, so `reject_ref` is optional. A unit with no reject binding reports `reject_count = 0` and therefore `quality = 1.0` — which is what the plant's instrumentation actually says, and is visible in the stored row rather than hidden in an assumption.
+
+Every query joins explicitly instead of declaring ORM relationships. Under asyncio a lazy load raises `MissingGreenlet` at the point of attribute access, a long way from the query that failed to eager-load it; an explicit `select(OeeUnit, Asset.path, ...)` cannot fail that way. Task 2's OEE tables therefore declare no `relationship()`, unlike `tables.py`.
+
+**An assumption the spec left open, stated explicitly:** `model.shift_exception.asset_id` is described as "the Site or Line it applies to", and `conf/oee/exceptions` authors a plant-wide Christmas holiday with no Asset at all. This task resolves an exception against a unit when the exception's Asset is null (every unit), is the unit's own Asset, or is an **ancestor** of it — so a site-wide shutdown authored on `CovestroAG/Dormagen` applies to `CovestroAG/Dormagen/Production/Line1`. A descendant never matches upward: a cell-level exception does not stop the line. All three `kind` values subtract from Loading Time identically (spec §7.1); `kind` is carried for reporting only.
+
+Ancestor matching is done in Python rather than in SQL. A thirty-day window contains a handful of exception rows, and `literal(path).like(asset.path || '/%')` is both harder to read and harder to test than a prefix check.
+
+- [ ] **Step 1: Write the failing test**
+
+`12_uns_oee/test/test_master_data.py`:
+
+```python
+"""Tests for the pure half of master-data loading.
+
+The queries themselves are exercised against a real database in the end-to-end integration
+test. What is worth pinning here is the resolution logic, because each rule has a quiet
+failure mode: an ideal cycle time that falls back to the wrong default reads as a Performance
+change nobody made, and an exception that resolves to the wrong Asset silently rewrites
+Loading Time for a line that was running.
+"""
+
+from dataclasses import replace
+from datetime import datetime, time, timezone
+
+from uns_oee.classifier import ReasonResolver, ReasonSpec
+from uns_oee.master_data import (
+    ExceptionWindow,
+    UnitMasterData,
+    applies_to,
+    exception_intervals,
+)
+from uns_oee.shift_calendar import ShiftSchedule, ShiftSlot
+from uns_oee.sources import MetricRef
+from uns_oee.states import Interval
+
+LINE = "CovestroAG/Dormagen/Production/Line1"
+
+
+def t(hour: int) -> datetime:
+    return datetime(2026, 9, 7, hour, tzinfo=timezone.utc)
+
+
+def unit(ideal: dict[str | None, float] | None = None) -> UnitMasterData:
+    return UnitMasterData(
+        unit_id=1,
+        asset_id=42,
+        asset_path=LINE,
+        schedule=ShiftSchedule(
+            name="Dormagen 3-shift",
+            timezone="Europe/Berlin",
+            slots=(ShiftSlot(0, time(6, 0), 480, "A"),),
+        ),
+        producing_states=("EXECUTE",),
+        state_ref=MetricRef(f"{LINE}/Cell1/MES-01/Status/PackMlState", "value"),
+        good_ref=MetricRef(f"{LINE}/Cell1/MES-01/ProcessValue/GoodCount", "value"),
+        reject_ref=MetricRef(f"{LINE}/Cell1/MES-01/ProcessValue/RejectCount", "value"),
+        product_ref=MetricRef(f"{LINE}/Cell1/MES-01/Status/RecipeId", "value"),
+        ideal_cycle_times=ideal if ideal is not None else {None: 3.0, "R-100-STD": 2.0},
+        resolver=ReasonResolver(
+            reasons={"UNCLASSIFIED": ReasonSpec("UNCLASSIFIED", "Unclassified", "UNKNOWN", False)},
+            unit_rules={},
+            default_rules={},
+        ),
+    )
+
+
+def test_an_exact_product_wins_over_the_asset_default():
+    assert unit().ideal_cycle_time_for("R-100-STD") == 2.0
+
+
+def test_an_unknown_product_falls_back_to_the_asset_default():
+    assert unit().ideal_cycle_time_for("R-999-NEW") == 3.0
+
+
+def test_no_product_uses_the_asset_default():
+    assert unit().ideal_cycle_time_for(None) == 3.0
+
+
+def test_with_no_default_an_unknown_product_has_no_ideal_cycle_time():
+    assert unit({"R-100-STD": 2.0}).ideal_cycle_time_for("R-999-NEW") is None
+
+
+def test_refs_lists_every_series_the_unit_reads():
+    assert len(unit().refs) == 4
+    assert unit().refs[0] == unit().state_ref
+
+
+def test_a_unit_with_no_product_binding_reads_three_series():
+    assert len(replace(unit(), product_ref=None).refs) == 3
+
+
+def test_a_unit_with_no_reject_binding_reads_three_series():
+    # A machine with no reject counter is a real configuration. It reports quality 1.0, and
+    # the missing binding is visible in the unit row rather than assumed away.
+    assert len(replace(unit(), reject_ref=None).refs) == 3
+
+
+def test_a_unit_with_neither_optional_binding_reads_two_series():
+    assert len(replace(unit(), reject_ref=None, product_ref=None).refs) == 2
+
+
+def test_an_exception_with_no_asset_applies_everywhere():
+    assert applies_to(None, LINE) is True
+
+
+def test_an_exception_on_the_unit_itself_applies():
+    assert applies_to(LINE, LINE) is True
+
+
+def test_an_exception_on_an_ancestor_applies():
+    assert applies_to("CovestroAG/Dormagen", LINE) is True
+    assert applies_to("CovestroAG", LINE) is True
+
+
+def test_an_exception_on_a_descendant_does_not_apply():
+    assert applies_to(f"{LINE}/Cell1", LINE) is False
+
+
+def test_an_exception_on_a_sibling_does_not_apply():
+    assert applies_to("CovestroAG/Dormagen/Production/Line2", LINE) is False
+
+
+def test_a_prefix_that_is_not_a_path_boundary_does_not_apply():
+    # "Line1" must not match "Line10". The separator is part of the comparison.
+    assert applies_to("CovestroAG/Dormagen/Production/Line10", LINE) is False
+    assert applies_to("CovestroAG/Dormagen/Production/Line1", f"{LINE}0") is False
+
+
+def test_exception_intervals_are_extracted_in_order():
+    windows = [
+        ExceptionWindow(interval=Interval(t(10), t(11)), kind="PLANNED_DOWN", asset_path=LINE),
+        ExceptionWindow(interval=Interval(t(6), t(7)), kind="HOLIDAY", asset_path=None),
+    ]
+    assert exception_intervals(windows) == [Interval(t(6), t(7)), Interval(t(10), t(11))]
+
+
+def test_overlapping_exceptions_are_coalesced_so_they_cannot_be_double_counted():
+    windows = [
+        ExceptionWindow(interval=Interval(t(6), t(9)), kind="PLANNED_DOWN", asset_path=LINE),
+        ExceptionWindow(interval=Interval(t(8), t(11)), kind="HOLIDAY", asset_path=None),
+    ]
+    assert exception_intervals(windows) == [Interval(t(6), t(11))]
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `uv run pytest 12_uns_oee/test/test_master_data.py -v -n 0`
+Expected: FAIL — `ModuleNotFoundError: No module named 'uns_oee.master_data'`.
+
+- [ ] **Step 3: Write the implementation**
+
+`12_uns_oee/src/uns_oee/master_data.py`:
+
+```python
+"""Loading the authored master data one OEE run needs.
+
+Read once per scan and handed to the pure modules as frozen dataclasses, so a thirty-day
+backfill re-queries nothing. Everything that resolves - an ideal cycle time falling back to
+the Asset default, an exception applying to a descendant Asset - resolves here, in one place,
+where it is testable without a database.
+"""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+
+from sqlalchemy import select
+from uns_model.engine import Database
+from uns_model.oee_tables import (
+    DEFAULT_PRODUCING_STATES,
+    DowntimeReason,
+    IdealCycleTime,
+    OeeUnit,
+    Product,
+    ShiftException,
+    ShiftPattern,
+    ShiftPatternSlot,
+    StateReasonMap,
+)
+from uns_model.tables import Asset
+
+from uns_oee.classifier import ReasonResolver, ReasonSpec
+from uns_oee.shift_calendar import ShiftSchedule, ShiftSlot
+from uns_oee.sources import MetricRef, split_metric_key
+from uns_oee.states import Interval, merge
+
+LOGGER = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class UnitMasterData:
+    """One `model.oee_unit` row with everything it points at already resolved."""
+
+    unit_id: int
+    asset_id: int
+    asset_path: str
+    schedule: ShiftSchedule
+    producing_states: tuple[str, ...]
+    state_ref: MetricRef
+    good_ref: MetricRef
+    reject_ref: MetricRef | None
+    product_ref: MetricRef | None
+    ideal_cycle_times: Mapping[str | None, float]
+    resolver: ReasonResolver
+
+    @property
+    def refs(self) -> tuple[MetricRef, ...]:
+        """Every series this unit reads. The fingerprint is taken over exactly these.
+
+        Exactly these, so a unit with no reject counter is not fingerprinted over a series
+        that will never have rows - which would leave `max(time)` permanently behind and make
+        every shift look like it was still waiting for data.
+        """
+        optional = (self.reject_ref, self.product_ref)
+        return (self.state_ref, self.good_ref, *(ref for ref in optional if ref is not None))
+
+    def ideal_cycle_time_for(self, product_code: str | None) -> float | None:
+        """This product's authored cycle time, else the Asset default, else nothing.
+
+        A value row winning over a null row is the same precedence `MetricDefinition` and
+        `state_reason_map` already use. Returning `None` rather than a guess is what makes the
+        calculator report MISSING_IDEAL_CYCLE_TIME instead of averaging over a master data gap.
+        """
+        if product_code is not None and product_code in self.ideal_cycle_times:
+            return self.ideal_cycle_times[product_code]
+        return self.ideal_cycle_times.get(None)
+
+
+@dataclass(frozen=True, slots=True)
+class ExceptionWindow:
+    """A `model.shift_exception` row that applies to a unit, clipped to the shift."""
+
+    interval: Interval
+    kind: str
+    asset_path: str | None
+
+
+def applies_to(exception_asset_path: str | None, unit_asset_path: str) -> bool:
+    """Whether an exception authored on one Asset covers a unit.
+
+    Null covers every unit; the unit's own Asset covers it; an ancestor covers it, so a
+    site-wide shutdown does not have to be repeated on every line. A descendant does not: one
+    cell stopping is not the line stopping, which is the whole point of reporting at the line.
+    """
+    if exception_asset_path is None:
+        return True
+    if exception_asset_path == unit_asset_path:
+        return True
+    return unit_asset_path.startswith(f"{exception_asset_path}/")
+
+
+def exception_intervals(windows: Sequence[ExceptionWindow]) -> list[Interval]:
+    """The windows as a minimal set of non-overlapping intervals.
+
+    Coalesced here rather than at the call site so two overlapping exceptions cannot be
+    subtracted from Loading Time twice.
+    """
+    return merge(window.interval for window in windows)
+
+
+class MasterDataLoader:
+    """Every read of the authored tables the engine performs."""
+
+    def __init__(self, database: Database) -> None:
+        self._database = database
+
+    async def active_units(self) -> list[UnitMasterData]:
+        """Every active OEE unit, fully resolved. One call per scan.
+
+        Five small selects rather than one join with five left outer joins: the authored tables
+        hold tens of rows, and the shared lookups - reasons, rules, slots - are the same for
+        every unit, so fetching them once each is both fewer rows and easier to read.
+        """
+        async with self._database.session() as session:
+            reasons = {
+                row.code: ReasonSpec(
+                    code=row.code,
+                    display_name=row.display_name,
+                    category=row.category,
+                    is_planned=row.is_planned,
+                )
+                for row in (await session.scalars(select(DowntimeReason))).all()
+            }
+            rules = (await session.scalars(select(StateReasonMap))).all()
+            slots = (await session.scalars(select(ShiftPatternSlot))).all()
+            cycle_times = (
+                await session.execute(
+                    select(
+                        IdealCycleTime.asset_id,
+                        Product.code,
+                        IdealCycleTime.seconds_per_unit,
+                    ).outerjoin(Product, IdealCycleTime.product_id == Product.id)
+                )
+            ).all()
+            units = (
+                await session.execute(
+                    select(OeeUnit, Asset.path, ShiftPattern.name, ShiftPattern.timezone)
+                    .join(Asset, OeeUnit.asset_id == Asset.id)
+                    .join(ShiftPattern, OeeUnit.shift_pattern_id == ShiftPattern.id)
+                    .where(OeeUnit.is_active.is_(True))
+                    .order_by(Asset.path)
+                )
+            ).all()
+
+        return [
+            self._resolve(
+                unit=unit,
+                asset_path=asset_path,
+                schedule=_schedule(pattern_name, pattern_timezone, unit.shift_pattern_id, slots),
+                reasons=reasons,
+                rules=rules,
+                cycle_times=cycle_times,
+            )
+            for unit, asset_path, pattern_name, pattern_timezone in units
+        ]
+
+    async def exception_windows(
+        self, unit: UnitMasterData, window: Interval
+    ) -> list[ExceptionWindow]:
+        """The exceptions overlapping `window` that apply to `unit`, clipped to it.
+
+        Fetched by time range only; whether an exception's Asset covers the unit is decided in
+        Python by `applies_to`, because the rows in one window are few and a prefix check is
+        easier to be sure of than the SQL equivalent.
+        """
+        async with self._database.session() as session:
+            rows = (
+                await session.execute(
+                    select(ShiftException, Asset.path)
+                    .outerjoin(Asset, ShiftException.asset_id == Asset.id)
+                    .where(
+                        ShiftException.starts_at < window.end,
+                        ShiftException.ends_at > window.start,
+                    )
+                )
+            ).all()
+
+        found: list[ExceptionWindow] = []
+        for exception, asset_path in rows:
+            if not applies_to(asset_path, unit.asset_path):
+                continue
+            clipped = Interval(exception.starts_at, exception.ends_at).clipped_to(window)
+            if clipped is not None:
+                found.append(
+                    ExceptionWindow(interval=clipped, kind=exception.kind, asset_path=asset_path)
+                )
+        return found
+
+    def _resolve(
+        self,
+        unit: OeeUnit,
+        asset_path: str,
+        schedule: ShiftSchedule,
+        reasons: Mapping[str, ReasonSpec],
+        rules: Sequence[StateReasonMap],
+        cycle_times: Sequence[tuple[int, str | None, float]],
+    ) -> UnitMasterData:
+        """One ORM unit and the shared lookups, as a frozen record the pure modules accept."""
+        producing = tuple(unit.producing_states or ())
+        if not producing:
+            LOGGER.warning(
+                "OEE unit %s declares no producing states; falling back to %s. Every state "
+                "would otherwise be a stop and Availability would read zero.",
+                asset_path,
+                DEFAULT_PRODUCING_STATES,
+            )
+            producing = tuple(DEFAULT_PRODUCING_STATES)
+
+        return UnitMasterData(
+            unit_id=unit.id,
+            asset_id=unit.asset_id,
+            asset_path=asset_path,
+            schedule=schedule,
+            producing_states=producing,
+            state_ref=split_metric_key(asset_path, unit.state_metric_key),
+            good_ref=split_metric_key(asset_path, unit.good_count_metric_key),
+            reject_ref=_optional_ref(asset_path, unit.reject_count_metric_key),
+            product_ref=_optional_ref(asset_path, unit.product_metric_key),
+            ideal_cycle_times={
+                product_code: float(seconds)
+                for asset_id, product_code, seconds in cycle_times
+                if asset_id == unit.asset_id
+            },
+            resolver=ReasonResolver(
+                reasons=reasons,
+                unit_rules={
+                    rule.state_value: rule.reason_code
+                    for rule in rules
+                    if rule.oee_unit_id == unit.id
+                },
+                default_rules={
+                    rule.state_value: rule.reason_code
+                    for rule in rules
+                    if rule.oee_unit_id is None
+                },
+            ),
+        )
+
+
+def _optional_ref(asset_path: str, metric_key: str | None) -> MetricRef | None:
+    """A binding that the unit may legitimately not have. Blank counts as absent."""
+    return split_metric_key(asset_path, metric_key) if metric_key else None
+
+
+def _schedule(
+    name: str, timezone_name: str, pattern_id: int, slots: Sequence[ShiftPatternSlot]
+) -> ShiftSchedule:
+    """The ORM shift pattern as the calendar's calculation shape.
+
+    Sorted, so two runs build the same schedule and the windows come out in the same order -
+    `shift_windows` sorts its output anyway, but a stable schedule is easier to compare in a log.
+    """
+    return ShiftSchedule(
+        name=name,
+        timezone=timezone_name,
+        slots=tuple(
+            ShiftSlot(
+                day_of_week=slot.day_of_week,
+                start_time=slot.start_time,
+                duration_minutes=slot.duration_minutes,
+                label=slot.label or "",
+            )
+            for slot in sorted(
+                (slot for slot in slots if slot.shift_pattern_id == pattern_id),
+                key=lambda slot: (slot.day_of_week, slot.start_time),
+            )
+        ),
+    )
+
+
+__all__ = [
+    "ExceptionWindow",
+    "MasterDataLoader",
+    "UnitMasterData",
+    "applies_to",
+    "exception_intervals",
+]
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `uv run pytest 12_uns_oee/test/test_master_data.py -v -n 0`
+Expected: PASS (16 passed).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add 12_uns_oee/src/uns_oee/master_data.py 12_uns_oee/test/test_master_data.py
+git commit -m "feat(oee): load shift patterns, bindings and reason rules per unit"
+```
+
+---
+
+### Task 10: Storing a result idempotently
+
+**Files:**
+- Create: `12_uns_oee/src/uns_oee/store.py`
+- Create: `12_uns_oee/test/test_store.py`
+
+**Interfaces:**
+- Consumes: `Database` from `uns_model.engine`; `DowntimeEvent`, `ShiftResult`, `ShiftResultProduct`, `ShiftResultRevision` from `uns_model.oee_tables` (Task 2); `ShiftWindow` (Task 4); `Interval` (Task 5); `AUTO`, `MANUAL`, `ClassifiedStop`, `ManualReason` (Task 6); `ProductMetrics`, `ShiftMetrics` (Task 7); `Fingerprint` (Task 8).
+- Produces: module constants `GEOMETRY_COLUMNS: tuple[str, ...]`, `REASON_COLUMNS: tuple[str, ...]`; `StoredResult(result_id: int, revision: int, input_fingerprint: str, published_at: datetime | None)`; pure functions `result_values(unit_id: int, window: ShiftWindow, metrics: ShiftMetrics, fingerprint: Fingerprint, computed_at: datetime) -> dict[str, object]`, `revision_values(stored: ShiftResult) -> dict[str, object]`, `product_values(result_id: int, metrics: ShiftMetrics) -> list[dict[str, object]]`, `event_values(unit_id: int, shift_start: datetime, stops: Sequence[ClassifiedStop]) -> list[dict[str, object]]`, `downtime_upsert(rows: Sequence[Mapping[str, object]]) -> PostgresInsert`; `ResultStore(database)` with `async existing(unit_id, shift_start) -> StoredResult | None`, `async manual_reasons(unit_id, window) -> dict[datetime, ManualReason]`, `async save(unit_id, window, metrics, stops, fingerprint, computed_at) -> StoredResult`, `async mark_published(result_id, published_at) -> None`.
+
+Recomputation is the normal case, not the exception, so this module is where idempotence is enforced. Three separate mechanisms carry it:
+
+**The keys are stable.** A result is keyed `(oee_unit_id, shift_start)` and a stop `(oee_unit_id, started_at)`. Neither key involves anything the engine derives, so recomputing a shift finds its own previous work instead of duplicating it.
+
+**The old numbers are kept.** A revision copies the row that is about to be replaced into `oee.shift_result_revision` and bumps `revision`. A number that changes with no record of what it was is worse than no number: the first question a plant manager asks about a corrected OEE is what it used to be.
+
+**A manual reason is refused twice.** Task 6 already honours a stored manual reason when it classifies. This module refuses the overwrite a second time, in the `ON CONFLICT` clause, so a stop a person has explained keeps that explanation even if `manual_reasons` failed to match it — which it will whenever recomputation moves a stop's `started_at` by a sample. That second refusal is the difference between an operator's work being durable and it being probabilistic.
+
+The pure mappers are separated from the two `async` methods for the same reason as Task 8: the column mapping and the conflict clause are what can be wrong, and they can be tested without a database. Task 17 exercises the round trip against a real Postgres.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `12_uns_oee/test/test_store.py`:
+
+```python
+"""Tests for uns_oee.store - the column mappings and the conflict clause.
+
+Compiled against the PostgreSQL dialect rather than executed, because what can be wrong
+here is which columns a recomputation touches, and that is visible in the statement. The
+round trip - two saves of the same shift leaving one row, a manual reason surviving the
+second - is Task 17's integration test, which needs a real database to be worth anything.
+"""
+
+from dataclasses import replace
+from datetime import datetime, timezone
+
+from sqlalchemy.dialects import postgresql
+
+from uns_model.oee_tables import ShiftResult
+from uns_oee.classifier import AUTO, MANUAL, ClassifiedStop
+from uns_oee.oee_calc import ProductMetrics, ShiftMetrics
+from uns_oee.shift_calendar import ShiftWindow
+from uns_oee.sources import Fingerprint
+from uns_oee.states import Interval
+from uns_oee.store import (
+    GEOMETRY_COLUMNS,
+    REASON_COLUMNS,
+    downtime_upsert,
+    event_values,
+    product_values,
+    result_values,
+    revision_values,
+)
+
+UNIT = 7
+FINGERPRINT = Fingerprint(row_count=2880, max_time=datetime(2026, 9, 7, 12, tzinfo=timezone.utc))
+COMPUTED_AT = datetime(2026, 9, 7, 12, 5, tzinfo=timezone.utc)
+
+
+def t(hour: int) -> datetime:
+    return datetime(2026, 9, 7, hour, tzinfo=timezone.utc)
+
+
+WINDOW = ShiftWindow(start=t(4), end=t(12), label="A")
+
+
+def metrics() -> ShiftMetrics:
+    return ShiftMetrics(
+        loading_time_s=27000.0,
+        run_time_s=24300.0,
+        planned_down_s=1800.0,
+        unplanned_down_s=2700.0,
+        good_count=11760.0,
+        reject_count=240.0,
+        total_count=12000.0,
+        availability=0.9,
+        performance=0.95,
+        performance_raw=0.95,
+        quality=0.98,
+        oee=0.8379,
+        status="OK",
+        products=(
+            ProductMetrics(
+                product_code="R-100-STD",
+                run_time_s=24300.0,
+                good_count=11760.0,
+                reject_count=240.0,
+                total_count=12000.0,
+                ideal_cycle_time_s=2.0,
+            ),
+        ),
+    )
+
+
+def stop(
+    from_hour: int,
+    to_hour: int,
+    *,
+    reason: str = "MECH_FAILURE",
+    source: str = AUTO,
+    note: str = "",
+    assigned_by: str | None = None,
+) -> ClassifiedStop:
+    return ClassifiedStop(
+        interval=Interval(t(from_hour), t(to_hour)),
+        state_value="ABORTED",
+        reason_code=reason,
+        is_planned=False,
+        source=source,
+        note=note,
+        assigned_by=assigned_by,
+    )
+
+
+def compile_pg(statement) -> tuple[str, dict[str, object]]:
+    """The statement as lower-cased SQL plus its bind parameters.
+
+    Without `literal_binds`, so nothing depends on how a given SQLAlchemy version renders a
+    timezone-aware datetime as a literal. Values are asserted through `params`.
+    """
+    compiled = statement.compile(dialect=postgresql.dialect())
+    return str(compiled).lower(), dict(compiled.params)
+
+
+def test_result_values_carry_the_window_and_its_label():
+    values = result_values(UNIT, WINDOW, metrics(), FINGERPRINT, COMPUTED_AT)
+    assert values["oee_unit_id"] == UNIT
+    assert values["shift_start"] == t(4)
+    assert values["shift_end"] == t(12)
+    assert values["shift_label"] == "A"
+
+
+def test_result_values_carry_every_factor_and_its_fingerprint():
+    values = result_values(UNIT, WINDOW, metrics(), FINGERPRINT, COMPUTED_AT)
+    assert values["availability"] == 0.9
+    assert values["performance"] == 0.95
+    assert values["performance_raw"] == 0.95
+    assert values["quality"] == 0.98
+    assert values["oee"] == 0.8379
+    assert values["status"] == "OK"
+    assert values["input_fingerprint"] == FINGERPRINT.as_text()
+    assert values["computed_at"] == COMPUTED_AT
+
+
+def test_an_undefined_factor_is_stored_as_null_not_zero():
+    blank = replace(metrics(), availability=None, performance=None, quality=None, oee=None)
+    values = result_values(UNIT, WINDOW, blank, FINGERPRINT, COMPUTED_AT)
+    assert values["availability"] is None
+    assert values["oee"] is None
+
+
+def test_a_saved_result_is_always_unpublished():
+    assert result_values(UNIT, WINDOW, metrics(), FINGERPRINT, COMPUTED_AT)["published_at"] is None
+
+
+def test_revision_values_copy_the_stored_row_verbatim():
+    stored = ShiftResult(
+        id=99,
+        oee_unit_id=UNIT,
+        shift_start=t(4),
+        revision=2,
+        loading_time_s=27000.0,
+        run_time_s=24300.0,
+        good_count=11760.0,
+        reject_count=240.0,
+        total_count=12000.0,
+        availability=0.9,
+        performance=0.95,
+        quality=0.98,
+        oee=0.8379,
+        status="OK",
+        input_fingerprint="2880:2026-09-07T12:00:00+00:00",
+        computed_at=COMPUTED_AT,
+    )
+    values = revision_values(stored)
+    assert values["revision"] == 2
+    assert values["oee"] == 0.8379
+    assert values["input_fingerprint"] == "2880:2026-09-07T12:00:00+00:00"
+    assert values["computed_at"] == COMPUTED_AT
+    assert "superseded_at" not in values
+
+
+def test_one_product_row_per_segment():
+    rows = product_values(99, metrics())
+    assert len(rows) == 1
+    assert rows[0] == {
+        "shift_result_id": 99,
+        "product_code": "R-100-STD",
+        "good_count": 11760.0,
+        "reject_count": 240.0,
+        "total_count": 12000.0,
+        "ideal_cycle_time_s": 2.0,
+    }
+
+
+def test_a_segment_with_no_product_code_stores_the_empty_string():
+    unbound = replace(metrics().products[0], product_code=None)
+    rows = product_values(99, replace(metrics(), products=(unbound,)))
+    assert rows[0]["product_code"] == ""
+
+
+def test_a_segment_with_no_ideal_cycle_time_stores_null():
+    gap = replace(metrics().products[0], ideal_cycle_time_s=None)
+    rows = product_values(99, replace(metrics(), products=(gap,)))
+    assert rows[0]["ideal_cycle_time_s"] is None
+
+
+def test_no_segments_is_no_product_rows():
+    assert product_values(99, replace(metrics(), products=())) == []
+
+
+def test_one_event_row_per_stop_with_its_duration():
+    rows = event_values(UNIT, t(4), (stop(6, 7), stop(9, 10)))
+    assert [row["started_at"] for row in rows] == [t(6), t(9)]
+    assert [row["duration_s"] for row in rows] == [3600.0, 3600.0]
+    assert {row["shift_start"] for row in rows} == {t(4)}
+
+
+def test_an_event_carries_the_classification():
+    row = event_values(UNIT, t(4), (stop(6, 7),))[0]
+    assert row["oee_unit_id"] == UNIT
+    assert row["state_value"] == "ABORTED"
+    assert row["reason_code"] == "MECH_FAILURE"
+    assert row["reason_source"] == AUTO
+    assert row["assigned_by"] is None
+    assert row["assigned_at"] is None
+    assert row["note"] == ""
+
+
+def test_a_manual_classification_carries_its_assigner_and_note():
+    manual = stop(6, 7, reason="TOOL_CHANGE", source=MANUAL, note="die swap", assigned_by="operator1")
+    row = event_values(UNIT, t(4), (manual,))[0]
+    assert row["reason_code"] == "TOOL_CHANGE"
+    assert row["reason_source"] == MANUAL
+    assert row["assigned_by"] == "operator1"
+    assert row["note"] == "die swap"
+
+
+def test_no_stops_is_no_event_rows():
+    assert event_values(UNIT, t(4), ()) == []
+
+
+def test_the_upsert_conflicts_on_unit_and_started_at():
+    sql, _ = compile_pg(downtime_upsert(event_values(UNIT, t(4), (stop(6, 7),))))
+    assert "on conflict (oee_unit_id, started_at) do update" in sql
+
+
+def test_the_upsert_always_refreshes_the_stops_geometry():
+    sql, _ = compile_pg(downtime_upsert(event_values(UNIT, t(4), (stop(6, 7),))))
+    for column in GEOMETRY_COLUMNS:
+        assert f"excluded.{column}" in sql
+        assert f"downtime_event.{column}" not in sql
+
+
+def test_the_upsert_never_overwrites_a_manual_reason():
+    sql, params = compile_pg(downtime_upsert(event_values(UNIT, t(4), (stop(6, 7),))))
+    assert "case when" in sql
+    for column in REASON_COLUMNS:
+        assert f"downtime_event.{column}" in sql
+        assert f"excluded.{column}" in sql
+    assert MANUAL in params.values()
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `uv run pytest 12_uns_oee/test/test_store.py -v -n 0`
+Expected: FAIL — `ModuleNotFoundError: No module named 'uns_oee.store'`.
+
+- [ ] **Step 3: Write the implementation**
+
+Create `12_uns_oee/src/uns_oee/store.py`:
+
+```python
+"""Writing one shift's numbers, so that writing them twice changes nothing.
+
+Recomputation is normal here: a late sample, a corrected shift exception or an operator
+assigning a downtime reason all make yesterday's shift worth computing again. Every write is
+therefore keyed on something the engine did not derive - a result on (unit, shift_start), a
+stop on (unit, started_at) - and the numbers a revision replaces move to
+`oee.shift_result_revision` rather than disappearing.
+
+The one thing a recomputation must never do is overwrite a person. `classifier.classify`
+already honours a stored manual reason; the `ON CONFLICT` clause here refuses the overwrite a
+second time, because the match by `started_at` fails whenever recomputation moves a stop's
+first sample, and an operator's work must not depend on that.
+"""
+
+import logging
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from datetime import datetime
+
+from sqlalchemy import case, delete, insert, select, update
+from sqlalchemy.dialects.postgresql import Insert as PostgresInsert
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+from uns_model.engine import Database
+from uns_model.oee_tables import (
+    DowntimeEvent,
+    ShiftResult,
+    ShiftResultProduct,
+    ShiftResultRevision,
+)
+from uns_oee.classifier import MANUAL, ClassifiedStop, ManualReason
+from uns_oee.oee_calc import ShiftMetrics
+from uns_oee.shift_calendar import ShiftWindow
+from uns_oee.sources import Fingerprint
+
+LOGGER = logging.getLogger(__name__)
+
+#: Derived from the samples on every run, so always refreshed. None of these is ever authored.
+GEOMETRY_COLUMNS = ("shift_start", "ended_at", "duration_s", "state_value")
+
+#: Kept as they are once `reason_source` is 'manual'. This tuple is the enforcement of Rule 3.
+REASON_COLUMNS = ("reason_code", "reason_source", "assigned_by", "assigned_at", "note")
+
+
+@dataclass(frozen=True, slots=True)
+class StoredResult:
+    """What is already on record for one shift.
+
+    `input_fingerprint` is the reason this type exists: comparing it against a fresh
+    fingerprint is how the pipeline decides a shift needs no work, which is what makes a
+    30-day backfill cheap on its second run.
+    """
+
+    result_id: int
+    revision: int
+    input_fingerprint: str
+    published_at: datetime | None
+
+
+def result_values(
+    unit_id: int,
+    window: ShiftWindow,
+    metrics: ShiftMetrics,
+    fingerprint: Fingerprint,
+    computed_at: datetime,
+) -> dict[str, object]:
+    """The `oee.shift_result` column values for one computed shift.
+
+    `published_at` is always None, including on a revision. A corrected number has not been
+    published even though the number it replaces was, and keeping the old timestamp would make
+    the publisher skip the correction and leave MQTT disagreeing with the database for good.
+    """
+    return {
+        "oee_unit_id": unit_id,
+        "shift_start": window.start,
+        "shift_end": window.end,
+        "shift_label": window.label,
+        "loading_time_s": metrics.loading_time_s,
+        "run_time_s": metrics.run_time_s,
+        "planned_down_s": metrics.planned_down_s,
+        "unplanned_down_s": metrics.unplanned_down_s,
+        "good_count": metrics.good_count,
+        "reject_count": metrics.reject_count,
+        "total_count": metrics.total_count,
+        "availability": metrics.availability,
+        "performance": metrics.performance,
+        "performance_raw": metrics.performance_raw,
+        "quality": metrics.quality,
+        "oee": metrics.oee,
+        "status": metrics.status,
+        "input_fingerprint": fingerprint.as_text(),
+        "computed_at": computed_at,
+        "published_at": None,
+    }
+
+
+def revision_values(stored: ShiftResult) -> dict[str, object]:
+    """The row about to be replaced, as an `oee.shift_result_revision` insert.
+
+    The old `revision` and the old `computed_at` are copied, not restamped: this row's whole
+    purpose is to say what the number was and when it was worked out. `superseded_at` is left
+    to the column default so the database, not the engine, records when it stopped being true.
+    """
+    return {
+        "oee_unit_id": stored.oee_unit_id,
+        "shift_start": stored.shift_start,
+        "revision": stored.revision,
+        "loading_time_s": stored.loading_time_s,
+        "run_time_s": stored.run_time_s,
+        "good_count": stored.good_count,
+        "reject_count": stored.reject_count,
+        "total_count": stored.total_count,
+        "availability": stored.availability,
+        "performance": stored.performance,
+        "quality": stored.quality,
+        "oee": stored.oee,
+        "status": stored.status,
+        "input_fingerprint": stored.input_fingerprint,
+        "computed_at": stored.computed_at,
+    }
+
+
+def product_values(result_id: int, metrics: ShiftMetrics) -> list[dict[str, object]]:
+    """One `oee.shift_result_product` row per product segment.
+
+    A segment with no product code stores the empty string rather than NULL, because
+    `product_code` is part of a unique constraint and NULLs there would let the same unbound
+    segment be inserted twice.
+    """
+    return [
+        {
+            "shift_result_id": result_id,
+            "product_code": item.product_code or "",
+            "good_count": item.good_count,
+            "reject_count": item.reject_count,
+            "total_count": item.total_count,
+            "ideal_cycle_time_s": item.ideal_cycle_time_s,
+        }
+        for item in metrics.products
+    ]
+
+
+def event_values(
+    unit_id: int, shift_start: datetime, stops: Sequence[ClassifiedStop]
+) -> list[dict[str, object]]:
+    """One `oee.downtime_event` row per classified stop.
+
+    `assigned_at` is always None. A stop can only be manual because a stored row already was,
+    and the conflict clause keeps that row's timestamp - so a value here would either be
+    ignored or, worse, restamp a human decision with the time the engine last ran.
+    """
+    return [
+        {
+            "oee_unit_id": unit_id,
+            "shift_start": shift_start,
+            "started_at": stop.interval.start,
+            "ended_at": stop.interval.end,
+            "duration_s": stop.interval.duration_s,
+            "state_value": stop.state_value,
+            "reason_code": stop.reason_code,
+            "reason_source": stop.source,
+            "assigned_by": stop.assigned_by,
+            "assigned_at": None,
+            "note": stop.note,
+        }
+        for stop in stops
+    ]
+
+
+def downtime_upsert(rows: Sequence[Mapping[str, object]]) -> PostgresInsert:
+    """Insert these stops, refreshing what is derived and preserving what a person set.
+
+    In `ON CONFLICT DO UPDATE`, an unqualified reference to the target table is the row already
+    stored and `excluded` is the row being inserted. So each reason column becomes: keep the
+    stored value where the stored `reason_source` is 'manual', otherwise take the new one. The
+    geometry columns take the new value unconditionally, because a stop that recomputed to a
+    different length is a better fact than the one on record.
+    """
+    statement = pg_insert(DowntimeEvent)
+    stored = DowntimeEvent.__table__.c
+    is_manual = stored.reason_source == MANUAL
+    refreshed: dict[str, object] = {
+        column: statement.excluded[column] for column in GEOMETRY_COLUMNS
+    }
+    preserved: dict[str, object] = {
+        column: case((is_manual, stored[column]), else_=statement.excluded[column])
+        for column in REASON_COLUMNS
+    }
+    return statement.values(list(rows)).on_conflict_do_update(
+        index_elements=["oee_unit_id", "started_at"],
+        set_=refreshed | preserved,
+    )
+
+
+class ResultStore:
+    """Every write the engine makes to the `oee` schema."""
+
+    def __init__(self, database: Database) -> None:
+        self._database = database
+
+    async def existing(self, unit_id: int, shift_start: datetime) -> StoredResult | None:
+        """What is on record for this shift, or None if it has never been computed."""
+        async with self._database.session() as session:
+            row = (
+                await session.execute(
+                    select(
+                        ShiftResult.id,
+                        ShiftResult.revision,
+                        ShiftResult.input_fingerprint,
+                        ShiftResult.published_at,
+                    ).where(
+                        ShiftResult.oee_unit_id == unit_id,
+                        ShiftResult.shift_start == shift_start,
+                    )
+                )
+            ).one_or_none()
+        if row is None:
+            return None
+        return StoredResult(
+            result_id=row.id,
+            revision=row.revision,
+            input_fingerprint=row.input_fingerprint,
+            published_at=row.published_at,
+        )
+
+    async def manual_reasons(
+        self, unit_id: int, window: ShiftWindow
+    ) -> dict[datetime, ManualReason]:
+        """The human-assigned reasons inside this shift, keyed by the stop's start instant.
+
+        Keyed by `started_at` because that is what `classifier.classify` matches on, and what
+        the unique constraint keys on. A stop whose start moved between runs will not match,
+        which is why `downtime_upsert` refuses the overwrite as well.
+        """
+        async with self._database.session() as session:
+            rows = (
+                await session.execute(
+                    select(
+                        DowntimeEvent.started_at,
+                        DowntimeEvent.reason_code,
+                        DowntimeEvent.note,
+                        DowntimeEvent.assigned_by,
+                    ).where(
+                        DowntimeEvent.oee_unit_id == unit_id,
+                        DowntimeEvent.reason_source == MANUAL,
+                        DowntimeEvent.started_at >= window.start,
+                        DowntimeEvent.started_at < window.end,
+                    )
+                )
+            ).all()
+        return {
+            row.started_at: ManualReason(
+                reason_code=row.reason_code, note=row.note, assigned_by=row.assigned_by
+            )
+            for row in rows
+        }
+
+    async def save(
+        self,
+        unit_id: int,
+        window: ShiftWindow,
+        metrics: ShiftMetrics,
+        stops: Sequence[ClassifiedStop],
+        fingerprint: Fingerprint,
+        computed_at: datetime,
+    ) -> StoredResult:
+        """Write this shift's numbers, superseding whatever was there. One transaction.
+
+        The existing row is selected `FOR UPDATE` so two engine processes cannot both decide
+        they are writing revision 3. On the insert path there is no row to lock, and the unique
+        constraint on (oee_unit_id, shift_start) is what stops the duplicate instead.
+        """
+        values = result_values(unit_id, window, metrics, fingerprint, computed_at)
+        async with self._database.session() as session:
+            stored = (
+                await session.scalars(
+                    select(ShiftResult)
+                    .where(
+                        ShiftResult.oee_unit_id == unit_id,
+                        ShiftResult.shift_start == window.start,
+                    )
+                    .with_for_update()
+                )
+            ).one_or_none()
+
+            if stored is None:
+                revision = 1
+                result_id = (
+                    await session.execute(
+                        insert(ShiftResult)
+                        .values(**values, revision=revision)
+                        .returning(ShiftResult.id)
+                    )
+                ).scalar_one()
+            else:
+                revision = stored.revision + 1
+                result_id = stored.id
+                session.add(ShiftResultRevision(**revision_values(stored)))
+                await session.execute(
+                    update(ShiftResult)
+                    .where(ShiftResult.id == result_id)
+                    .values(**values, revision=revision)
+                )
+                await session.execute(
+                    delete(ShiftResultProduct).where(
+                        ShiftResultProduct.shift_result_id == result_id
+                    )
+                )
+                LOGGER.info(
+                    "OEE unit %d shift %s recomputed as revision %d",
+                    unit_id,
+                    window.start.isoformat(),
+                    revision,
+                )
+
+            products = product_values(result_id, metrics)
+            if products:
+                await session.execute(insert(ShiftResultProduct), products)
+
+            events = event_values(unit_id, window.start, stops)
+            if events:
+                await session.execute(downtime_upsert(events))
+
+        return StoredResult(
+            result_id=result_id,
+            revision=revision,
+            input_fingerprint=str(values["input_fingerprint"]),
+            published_at=None,
+        )
+
+    async def mark_published(self, result_id: int, published_at: datetime) -> None:
+        """Record that this result reached MQTT.
+
+        Separate from `save` and written after the publish returns, so a broker outage leaves
+        `published_at` NULL and the next scan retries rather than silently losing the message.
+        """
+        async with self._database.session() as session:
+            await session.execute(
+                update(ShiftResult)
+                .where(ShiftResult.id == result_id)
+                .values(published_at=published_at)
+            )
+
+
+__all__ = [
+    "GEOMETRY_COLUMNS",
+    "REASON_COLUMNS",
+    "ResultStore",
+    "StoredResult",
+    "downtime_upsert",
+    "event_values",
+    "product_values",
+    "result_values",
+    "revision_values",
+]
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `uv run pytest 12_uns_oee/test/test_store.py -v -n 0`
+Expected: PASS (15 passed).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add 12_uns_oee/src/uns_oee/store.py 12_uns_oee/test/test_store.py
+git commit -m "feat(oee): store shift results idempotently, preserving manual reasons"
+```
+
+---
+
+### Task 11: Publishing the result back into the namespace
+
+**Files:**
+- Create: `12_uns_oee/src/uns_oee/publisher.py`
+- Create: `12_uns_oee/test/test_publisher.py`
+
+**Interfaces:**
+- Consumes: `OeeConfig` (Task 1); `ShiftWindow` (Task 4); `ShiftMetrics` (Task 7).
+- Produces: constants `KPI_PARAMETER_TYPE = "KPI"`, `KPI_PARAMETER_NAME = "ShiftOee"`, `PAYLOAD_SOURCE = "uns_oee"`, `PAYLOAD_FIELDS: frozenset[str]`; pure functions `shift_oee_topic(asset_path: str) -> str`, `equipment_of(asset_path: str) -> str`, `epoch_millis(at: datetime) -> float`, `as_percent(ratio: float | None) -> float | None`, `shift_oee_payload(asset_path: str, window: ShiftWindow, metrics: ShiftMetrics, revision: int) -> dict[str, Any]`; `ResultPublisher(config, client_factory=None)` with `async publish(asset_path, window, metrics, revision) -> bool`, `async aclose() -> None`, property `connected: bool`, counters `published: int`, `failed: int`.
+
+Spec §11 fixes the topic and the payload; this task transcribes them and adds one long-lived connection.
+
+Two decisions the spec implies but does not spell out:
+
+**A null factor stays null in the payload.** `_scalar_to_metric` returns `None` for a `None` value (`04_uns_historian/src/uns_historian/metric_flattener.py:52`–`:53`), so a null leaf produces no `uns_metrics` row at all. That is exactly the behaviour spec §7.2 wants — an undefined Availability has no row rather than a fabricated zero — and it means the publisher can emit the nulls verbatim instead of inventing a sentinel.
+
+**`publish` returns a bool; it does not raise.** The caller uses the answer to decide whether to call `ResultStore.mark_published`. A broker outage therefore leaves `published_at` NULL and the next scan retries, which is the whole retry mechanism — there is no queue and no backoff loop in this module.
+
+Counts stay floats even though spec §11's example shows integers: a counter delta need not be discrete, because a kilogram counter is a counter, and the historian stores both as `value_double` regardless.
+
+Nothing is published with `retain=True`. A shift result is a historical fact stamped at its own `shift_end`; retained, it would be re-delivered to every new subscriber as though it were the current shift. The trend comes from the historian, which is the point of the whole design.
+
+TLS is not wired up, because `conf/settings.yaml:47`–`:58` defines no TLS keys for any module's broker connection, and OEE would be the only place one existed. Credentials, if set, come from `conf/.secrets.yaml` or `UNS_`-prefixed environment variables as everywhere else.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `12_uns_oee/test/test_publisher.py`:
+
+```python
+"""Tests for uns_oee.publisher - the topic, the payload, and one connection.
+
+The payload numbers here are spec section 11's worked example, so a change to the rounding
+or to a field name fails against the document rather than against a copy of it.
+"""
+
+import json
+from datetime import datetime, timezone
+
+import pytest
+
+from uns_oee.oee_config import OeeConfig
+from uns_oee.oee_calc import ShiftMetrics
+from uns_oee.publisher import (
+    PAYLOAD_FIELDS,
+    PAYLOAD_SOURCE,
+    ResultPublisher,
+    epoch_millis,
+    equipment_of,
+    shift_oee_payload,
+    shift_oee_topic,
+)
+from uns_oee.shift_calendar import ShiftWindow
+
+LINE = "CovestroAG/Dormagen/Production/Line1"
+WINDOW = ShiftWindow(
+    start=datetime(2026, 9, 7, 4, tzinfo=timezone.utc),
+    end=datetime(2026, 9, 7, 12, tzinfo=timezone.utc),
+    label="A",
+)
+CONFIG = OeeConfig(mqtt_host="localhost")
+
+
+def metrics() -> ShiftMetrics:
+    return ShiftMetrics(
+        loading_time_s=27000.0,
+        run_time_s=24084.0,
+        planned_down_s=1800.0,
+        unplanned_down_s=2916.0,
+        good_count=12840.0,
+        reject_count=182.0,
+        total_count=13022.0,
+        availability=0.892,
+        performance=0.841,
+        performance_raw=0.841,
+        quality=0.952,
+        oee=0.714,
+        status="OK",
+    )
+
+
+class FakeClient:
+    """An aiomqtt.Client stand-in: an async context manager with a publish."""
+
+    def __init__(self, *, fail: bool = False) -> None:
+        self.messages: list[tuple[str, str, int, bool]] = []
+        self.fail = fail
+        self.entered = 0
+        self.exited = 0
+
+    async def __aenter__(self) -> "FakeClient":
+        self.entered += 1
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> bool:
+        self.exited += 1
+        return False
+
+    async def publish(self, topic, payload, qos=0, retain=False) -> None:
+        if self.fail:
+            raise RuntimeError("broker unreachable")
+        self.messages.append((topic, payload, qos, retain))
+
+
+def test_the_topic_is_the_asset_path_plus_the_kpi_parameter():
+    assert shift_oee_topic(LINE) == f"{LINE}/KPI/ShiftOee"
+
+
+def test_equipment_is_the_last_segment_of_the_asset_path():
+    assert equipment_of(LINE) == "Line1"
+    assert equipment_of("Line1") == "Line1"
+
+
+def test_the_headline_value_is_oee_as_a_percentage():
+    payload = shift_oee_payload(LINE, WINDOW, metrics(), revision=1)
+    assert payload["value"] == 71.4
+    assert payload["unit"] == "%"
+
+
+def test_every_factor_is_a_percentage_and_no_count_is():
+    payload = shift_oee_payload(LINE, WINDOW, metrics(), revision=1)
+    assert payload["availability"] == 89.2
+    assert payload["performance"] == 84.1
+    assert payload["quality"] == 95.2
+    assert payload["good_count"] == 12840.0
+    assert payload["reject_count"] == 182.0
+    assert payload["total_count"] == 13022.0
+
+
+def test_the_timestamp_is_shift_end_in_epoch_milliseconds():
+    payload = shift_oee_payload(LINE, WINDOW, metrics(), revision=1)
+    assert payload["timestamp"] == epoch_millis(WINDOW.end)
+    assert payload["shift_start"] == epoch_millis(WINDOW.start)
+    assert payload["timestamp"] > payload["shift_start"]
+
+
+def test_an_undefined_factor_stays_null_so_the_historian_writes_no_row():
+    blank = ShiftMetrics(status="NO_LOADING_TIME")
+    payload = shift_oee_payload(LINE, WINDOW, blank, revision=1)
+    assert payload["value"] is None
+    assert payload["availability"] is None
+    assert payload["quality"] is None
+    assert payload["status"] == "NO_LOADING_TIME"
+
+
+def test_the_shift_label_source_and_revision_travel_with_the_payload():
+    payload = shift_oee_payload(LINE, WINDOW, metrics(), revision=3)
+    assert payload["shift_label"] == "A"
+    assert payload["source"] == PAYLOAD_SOURCE
+    assert payload["equipment"] == "Line1"
+    assert payload["revision"] == 3
+
+
+def test_the_payload_has_exactly_the_documented_field_set():
+    assert set(shift_oee_payload(LINE, WINDOW, metrics(), revision=1)) == PAYLOAD_FIELDS
+
+
+@pytest.mark.asyncio
+async def test_publishing_sends_one_json_message_at_the_configured_qos():
+    client = FakeClient()
+    publisher = ResultPublisher(CONFIG, client_factory=lambda: client)
+
+    assert await publisher.publish(LINE, WINDOW, metrics(), revision=1) is True
+
+    topic, body, qos, retain = client.messages[0]
+    assert topic == f"{LINE}/KPI/ShiftOee"
+    assert json.loads(body)["value"] == 71.4
+    assert qos == CONFIG.mqtt_qos
+    assert retain is False
+    assert publisher.published == 1
+    await publisher.aclose()
+
+
+@pytest.mark.asyncio
+async def test_a_second_publish_reuses_the_one_connection():
+    client = FakeClient()
+    publisher = ResultPublisher(CONFIG, client_factory=lambda: client)
+
+    await publisher.publish(LINE, WINDOW, metrics(), revision=1)
+    await publisher.publish(LINE, WINDOW, metrics(), revision=2)
+
+    assert client.entered == 1
+    assert len(client.messages) == 2
+    await publisher.aclose()
+
+
+@pytest.mark.asyncio
+async def test_a_broker_failure_is_reported_not_raised():
+    publisher = ResultPublisher(CONFIG, client_factory=lambda: FakeClient(fail=True))
+
+    assert await publisher.publish(LINE, WINDOW, metrics(), revision=1) is False
+    assert publisher.failed == 1
+    assert publisher.published == 0
+    assert not publisher.connected
+
+
+@pytest.mark.asyncio
+async def test_a_failure_drops_the_connection_so_the_next_call_reconnects():
+    clients = [FakeClient(fail=True), FakeClient()]
+    publisher = ResultPublisher(CONFIG, client_factory=lambda: clients.pop(0))
+
+    assert await publisher.publish(LINE, WINDOW, metrics(), revision=1) is False
+    assert await publisher.publish(LINE, WINDOW, metrics(), revision=1) is True
+    assert publisher.failed == 1
+    assert publisher.published == 1
+    await publisher.aclose()
+
+
+@pytest.mark.asyncio
+async def test_closing_an_unconnected_publisher_is_not_an_error():
+    publisher = ResultPublisher(CONFIG, client_factory=FakeClient)
+    await publisher.aclose()
+    assert not publisher.connected
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `uv run pytest 12_uns_oee/test/test_publisher.py -v -n 0`
+Expected: FAIL — `ModuleNotFoundError: No module named 'uns_oee.publisher'`.
+
+- [ ] **Step 3: Write the implementation**
+
+Create `12_uns_oee/src/uns_oee/publisher.py`:
+
+```python
+"""Publishing a closed shift's OEE back onto the unit's own Asset path.
+
+The engine reads history and writes a result, and this module is the only part of it that
+touches MQTT. One message per unit per shift on `<asset path>/KPI/ShiftOee`, over one
+long-lived connection - the scheduler wakes every few minutes, and a connect-publish-
+disconnect per result would spend more time in handshakes than in work.
+
+`publish` returns False rather than raising. Whether the message reached the broker decides
+whether `ResultStore.mark_published` is called, and a NULL `published_at` is what makes the
+next scan try again. That is the entire retry mechanism: no queue, no backoff, nothing to
+drain on shutdown, and nothing that can silently lose a result because a process died.
+"""
+
+import contextlib
+import json
+import logging
+from collections.abc import Callable
+from datetime import datetime
+from typing import Any
+
+import aiomqtt
+
+from uns_oee.oee_config import OeeConfig
+from uns_oee.oee_calc import ShiftMetrics
+from uns_oee.shift_calendar import ShiftWindow
+
+LOGGER = logging.getLogger(__name__)
+
+#: The sixth ParameterType, added to the simulator's enum in Task 17. A computed shift KPI is
+#: not a ProcessValue, and the graph database and alert engine both type topics by this segment.
+KPI_PARAMETER_TYPE = "KPI"
+KPI_PARAMETER_NAME = "ShiftOee"
+
+#: `source` on every payload, so a consumer can tell a computed number from a measured one.
+PAYLOAD_SOURCE = "uns_oee"
+
+#: Percentages are published to this many decimals. One is what a shift report shows.
+_PERCENT_DECIMALS = 1
+
+#: Spec section 11's field set, asserted against rather than described.
+PAYLOAD_FIELDS = frozenset(
+    {
+        "value",
+        "unit",
+        "quality",
+        "timestamp",
+        "source",
+        "equipment",
+        "availability",
+        "performance",
+        "good_count",
+        "reject_count",
+        "total_count",
+        "shift_label",
+        "shift_start",
+        "status",
+        "revision",
+    }
+)
+
+
+def shift_oee_topic(asset_path: str) -> str:
+    """The unit's own Asset path plus the KPI parameter. No new topic namespace."""
+    return f"{asset_path}/{KPI_PARAMETER_TYPE}/{KPI_PARAMETER_NAME}"
+
+
+def equipment_of(asset_path: str) -> str:
+    """The last segment of the Asset path, which is the platform's `equipment` convention.
+
+    Imprecise at line level - `Line1` is not a piece of equipment - but it is the existing
+    convention, and a second field name for the same idea would be worse than a loose word.
+    """
+    return asset_path.rsplit("/", 1)[-1]
+
+
+def epoch_millis(at: datetime) -> float:
+    """A timezone-aware instant as epoch milliseconds.
+
+    Milliseconds because `conf/settings.yaml:57` makes `timestamp` the historian's `time`
+    column, and every other publisher on this platform already uses that unit.
+    """
+    return at.timestamp() * 1000.0
+
+
+def as_percent(ratio: float | None) -> float | None:
+    """A 0-1 factor as a percentage, or None if it is undefined.
+
+    None survives as None: `flatten_payload_to_metrics` skips a null leaf entirely
+    (`metric_flattener.py:52`), so an undefined factor produces no `uns_metrics` row instead
+    of a zero that would drag every rollup down.
+    """
+    return None if ratio is None else round(ratio * 100.0, _PERCENT_DECIMALS)
+
+
+def shift_oee_payload(
+    asset_path: str, window: ShiftWindow, metrics: ShiftMetrics, revision: int
+) -> dict[str, Any]:
+    """Spec section 11's payload for one closed shift.
+
+    `timestamp` is `shift_end`, so the historian stamps the result at the moment the shift
+    finished - which is where a trend line needs it, not where the engine happened to run.
+    Counts stay floats: a counter delta need not be discrete, and `value_double` holds both.
+    """
+    return {
+        "value": as_percent(metrics.oee),
+        "unit": "%",
+        "quality": as_percent(metrics.quality),
+        "timestamp": epoch_millis(window.end),
+        "source": PAYLOAD_SOURCE,
+        "equipment": equipment_of(asset_path),
+        "availability": as_percent(metrics.availability),
+        "performance": as_percent(metrics.performance),
+        "good_count": metrics.good_count,
+        "reject_count": metrics.reject_count,
+        "total_count": metrics.total_count,
+        "shift_label": window.label,
+        "shift_start": epoch_millis(window.start),
+        "status": metrics.status,
+        "revision": revision,
+    }
+
+
+class ResultPublisher:
+    """One MQTT connection, opened on the first publish and kept.
+
+    `client_factory` exists so a test can hand in a stand-in; production leaves it unset and
+    gets a client built from `OeeConfig`.
+    """
+
+    def __init__(
+        self, config: OeeConfig, client_factory: Callable[[], Any] | None = None
+    ) -> None:
+        self._config = config
+        self._client_factory = client_factory or self._build_client
+        self._stack: contextlib.AsyncExitStack | None = None
+        self._client: Any | None = None
+        self.published = 0
+        self.failed = 0
+
+    @property
+    def connected(self) -> bool:
+        return self._client is not None
+
+    def _build_client(self) -> aiomqtt.Client:
+        """A client from the platform's shared `mqtt:` settings.
+
+        `clean_session` is deliberately left unset: aiomqtt rejects it under MQTT 5, and the
+        platform's `mqtt.version` is 5. No Last Will either - the engine has no online state
+        worth announcing, unlike the simulator's heartbeat.
+        """
+        return aiomqtt.Client(
+            identifier=self._config.mqtt_client_id,
+            hostname=self._config.mqtt_host,
+            port=self._config.mqtt_port,
+            username=self._config.mqtt_username,
+            password=self._config.mqtt_password,
+            keepalive=self._config.mqtt_keep_alive,
+            protocol=aiomqtt.ProtocolVersion(self._config.mqtt_version),
+            transport=self._config.mqtt_transport,
+        )
+
+    async def _connect(self) -> Any:
+        """The live client, connecting first if there is not one."""
+        if self._client is None:
+            stack = contextlib.AsyncExitStack()
+            self._client = await stack.enter_async_context(self._client_factory())
+            self._stack = stack
+            LOGGER.info(
+                "OEE publisher connected to %s:%s as %s",
+                self._config.mqtt_host,
+                self._config.mqtt_port,
+                self._config.mqtt_client_id,
+            )
+        return self._client
+
+    async def _drop(self) -> None:
+        """Forget the connection, so the next publish makes a new one.
+
+        Errors while closing are suppressed: this is called because publishing already failed,
+        and a second exception from the same broken socket says nothing new.
+        """
+        stack = self._stack
+        self._stack = None
+        self._client = None
+        if stack is not None:
+            with contextlib.suppress(Exception):
+                await stack.aclose()
+
+    async def publish(
+        self, asset_path: str, window: ShiftWindow, metrics: ShiftMetrics, revision: int
+    ) -> bool:
+        """Send one shift result. True if the broker took it.
+
+        Not retained: a shift result is a historical fact stamped at its own `shift_end`, and
+        retaining it would hand every new subscriber the last closed shift as though it were
+        the current one.
+        """
+        topic = shift_oee_topic(asset_path)
+        body = json.dumps(shift_oee_payload(asset_path, window, metrics, revision))
+        try:
+            client = await self._connect()
+            await client.publish(topic, body, qos=self._config.mqtt_qos, retain=False)
+        except Exception:
+            self.failed += 1
+            LOGGER.exception("OEE publish to %s failed; leaving it unpublished for retry", topic)
+            await self._drop()
+            return False
+        self.published += 1
+        LOGGER.debug("Published %s revision %d", topic, revision)
+        return True
+
+    async def aclose(self) -> None:
+        """Close the connection if there is one. Safe to call when there is not."""
+        await self._drop()
+
+
+__all__ = [
+    "KPI_PARAMETER_NAME",
+    "KPI_PARAMETER_TYPE",
+    "PAYLOAD_FIELDS",
+    "PAYLOAD_SOURCE",
+    "ResultPublisher",
+    "as_percent",
+    "epoch_millis",
+    "equipment_of",
+    "shift_oee_payload",
+    "shift_oee_topic",
+]
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `uv run pytest 12_uns_oee/test/test_publisher.py -v -n 0`
+Expected: PASS (13 passed).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add 12_uns_oee/src/uns_oee/publisher.py 12_uns_oee/test/test_publisher.py
+git commit -m "feat(oee): publish shift results on the unit's KPI/ShiftOee topic"
+```
+
+---
+
+### Task 12: One shift, end to end
+
+**Files:**
+- Create: `12_uns_oee/src/uns_oee/pipeline.py`
+- Create: `12_uns_oee/test/test_pipeline.py`
+
+**Interfaces:**
+- Consumes: `UNCLASSIFIED_REASON_CODE` from `uns_model.oee_tables` (Task 2); `ShiftWindow` (Task 4); `Sample`, `counter_delta`, `counter_delta_in` (Task 5); `Interval`, `StateSample`, `merge`, `state_segments`, `stop_intervals`, `union_duration_s` (Task 5); `ClassifiedStop`, `ManualReason`, `classify` (Task 6); `ProductSegment`, `ShiftInputs`, `ShiftMetrics`, `compute` (Task 7); `Fingerprint`, `MetricSource` (Task 8); `MasterDataLoader`, `UnitMasterData`, `exception_intervals` (Task 9); `ResultStore`, `StoredResult` (Task 10); `ResultPublisher` (Task 11).
+- Produces: action constants `ACTION_COMPUTED = "COMPUTED"`, `ACTION_REVISED = "REVISED"`, `ACTION_REPUBLISHED = "REPUBLISHED"`, `ACTION_UNCHANGED = "UNCHANGED"`; `ShiftSamples(state, good, reject, product)` with `.counter_resets -> int`; `ShiftOutcome(unit_id, asset_path, window, action, metrics, revision, published, input_rows, counter_resets, unclassified_seconds, late_data, compute_seconds)`; pure functions `as_interval(window: ShiftWindow) -> Interval`, `product_segments(unit, window, samples) -> tuple[ProductSegment, ...]`, `shift_inputs(unit, window, samples, exceptions, manual, *, has_input_data=True) -> ShiftInputs`, `unclassified_seconds(stops: Sequence[ClassifiedStop]) -> float`, `manual_digest(manual: Mapping[datetime, ManualReason]) -> str`; `ShiftPipeline(source, master, store, publisher)` with `async run_shift(unit, window, computed_at) -> ShiftOutcome`.
+
+Spec §5 fixes the order: `shift_calendar → sources → counters + states → classifier → oee_calc → store → publisher`. Everything before `store` is a pure function here, and only `run_shift` performs IO — which is why the interesting behaviour is tested without a database and only the five-branch action decision needs fakes.
+
+**Why a product code series is a state series.** `state_segments` turns `(instant, string)` samples into contiguous segments of equal value. That is exactly what segmenting a shift by `RecipeId` is, so per-product segmentation reuses it rather than reimplementing coalescing. Per-segment counts then come from `counter_delta_in` over each interval, and because that function includes the sample sitting exactly on `end`, the increment across a product changeover is credited to the outgoing product and the incoming one starts from the changeover value. Σ per-product therefore equals the whole-window delta, which is what makes `oee.shift_result_product` reconcile with `oee.shift_result`.
+
+**Why an unpublished shift is recomputed rather than read back.** When the fingerprint matches the stored one but `published_at` is NULL, the numbers on record are already right and only the MQTT message is missing. Recomputing them costs one shift's arithmetic and lets the publisher be handed a `ShiftMetrics` without a second read path out of `oee.shift_result`. Rule 1 is what makes this sound — the same inputs give the same output — so the recomputed metrics are published under the **stored** revision and nothing is written. Bumping the revision because a broker was down would make `revision` count outages instead of corrections.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `12_uns_oee/test/test_pipeline.py`:
+
+```python
+"""Tests for uns_oee.pipeline - the shift's assembly line.
+
+Two halves. The pure functions get real sample series, because the bugs that matter here are
+arithmetic: a product changeover counted twice, a stop truncated at the shift boundary, a
+manual reason lost. The five-branch action decision gets fakes, because what matters there is
+which writes happen - and a revision bump for a broker outage is a bug no arithmetic test
+would catch.
+"""
+
+from datetime import datetime, time, timezone
+
+import pytest
+
+from uns_model.oee_tables import UNCLASSIFIED_REASON_CODE
+from uns_oee.classifier import AUTO, MANUAL, ManualReason, ReasonResolver, ReasonSpec
+from uns_oee.counters import Sample
+from uns_oee.master_data import ExceptionWindow, UnitMasterData
+from uns_oee.oee_calc import ShiftMetrics
+from uns_oee.pipeline import (
+    ACTION_COMPUTED,
+    ACTION_REPUBLISHED,
+    ACTION_REVISED,
+    ACTION_UNCHANGED,
+    ShiftPipeline,
+    ShiftSamples,
+    manual_digest,
+    product_segments,
+    shift_inputs,
+    unclassified_seconds,
+)
+from uns_oee.shift_calendar import ShiftSchedule, ShiftSlot, ShiftWindow
+from uns_oee.sources import Fingerprint, MetricRef
+from uns_oee.states import Interval, StateSample
+from uns_oee.store import StoredResult
+
+LINE = "CovestroAG/Dormagen/Production/Line1"
+MES = f"{LINE}/Cell1/MES-01"
+
+
+def t(hour: int, minute: int = 0) -> datetime:
+    return datetime(2026, 9, 7, hour, minute, tzinfo=timezone.utc)
+
+
+WINDOW = ShiftWindow(start=t(6), end=t(14), label="A")
+COMPUTED_AT = datetime(2026, 9, 7, 14, 15, tzinfo=timezone.utc)
+
+REASONS = {
+    UNCLASSIFIED_REASON_CODE: ReasonSpec(UNCLASSIFIED_REASON_CODE, "Unclassified", "UNKNOWN", False),
+    "MECH_FAILURE": ReasonSpec("MECH_FAILURE", "Mechanical failure", "EQUIPMENT", False),
+    "TOOL_CHANGE": ReasonSpec("TOOL_CHANGE", "Tool change", "PLANNED", True),
+}
+
+
+def unit(*, product_bound: bool = True) -> UnitMasterData:
+    return UnitMasterData(
+        unit_id=1,
+        asset_id=42,
+        asset_path=LINE,
+        schedule=ShiftSchedule(
+            name="Dormagen 3-shift",
+            timezone="Europe/Berlin",
+            slots=(ShiftSlot(0, time(6, 0), 480, "A"),),
+        ),
+        producing_states=("EXECUTE",),
+        state_ref=MetricRef(f"{MES}/Status/PackMlState", "value"),
+        good_ref=MetricRef(f"{MES}/ProcessValue/GoodCount", "value"),
+        reject_ref=MetricRef(f"{MES}/ProcessValue/RejectCount", "value"),
+        product_ref=MetricRef(f"{MES}/Status/RecipeId", "value") if product_bound else None,
+        ideal_cycle_times={None: 3.0, "R-100-STD": 2.0},
+        resolver=ReasonResolver(
+            reasons=REASONS,
+            unit_rules={},
+            default_rules={"ABORTED": "MECH_FAILURE", "SUSPENDED": "TOOL_CHANGE"},
+        ),
+    )
+
+
+def samples(
+    *,
+    state: tuple[StateSample, ...] = (),
+    good: tuple[Sample, ...] = (),
+    reject: tuple[Sample, ...] = (),
+    product: tuple[StateSample, ...] = (),
+) -> ShiftSamples:
+    return ShiftSamples(state=state, good=good, reject=reject, product=product)
+
+
+#: EXECUTE from before the boundary, ABORTED 09:00-10:00, EXECUTE to the end.
+RUN_WITH_ONE_STOP = (
+    StateSample(t(5, 58), "EXECUTE"),
+    StateSample(t(9), "ABORTED"),
+    StateSample(t(10), "EXECUTE"),
+)
+GOOD_CLIMB = (Sample(t(6), 0.0), Sample(t(10), 2500.0), Sample(t(14), 6000.0))
+REJECT_CLIMB = (Sample(t(6), 0.0), Sample(t(14), 100.0))
+TWO_PRODUCTS = (StateSample(t(6), "R-100-STD"), StateSample(t(10), "R-200-FAST"))
+
+
+# --- the pure half -------------------------------------------------------------------
+
+
+def test_a_unit_with_no_product_binding_gets_one_segment_spanning_the_shift():
+    segments = product_segments(
+        unit(product_bound=False), WINDOW, samples(good=GOOD_CLIMB, reject=REJECT_CLIMB)
+    )
+    assert len(segments) == 1
+    assert segments[0].product_code is None
+    assert segments[0].intervals == (Interval(t(6), t(14)),)
+    assert segments[0].good_count == 6000.0
+    assert segments[0].reject_count == 100.0
+    assert segments[0].ideal_cycle_time_s == 3.0
+
+
+def test_a_product_series_splits_the_shift_into_one_segment_per_code():
+    segments = product_segments(
+        unit(), WINDOW, samples(good=GOOD_CLIMB, reject=REJECT_CLIMB, product=TWO_PRODUCTS)
+    )
+    assert {segment.product_code for segment in segments} == {"R-100-STD", "R-200-FAST"}
+
+
+def test_per_product_counts_sum_to_the_whole_window_delta():
+    segments = product_segments(
+        unit(), WINDOW, samples(good=GOOD_CLIMB, reject=REJECT_CLIMB, product=TWO_PRODUCTS)
+    )
+    by_code = {segment.product_code: segment for segment in segments}
+    assert by_code["R-100-STD"].good_count == 2500.0
+    assert by_code["R-200-FAST"].good_count == 3500.0
+    assert sum(segment.good_count for segment in segments) == 6000.0
+
+
+def test_each_segment_carries_the_ideal_cycle_time_for_its_own_code():
+    segments = product_segments(unit(), WINDOW, samples(good=GOOD_CLIMB, product=TWO_PRODUCTS))
+    by_code = {segment.product_code: segment for segment in segments}
+    assert by_code["R-100-STD"].ideal_cycle_time_s == 2.0
+    assert by_code["R-200-FAST"].ideal_cycle_time_s == 3.0
+
+
+def test_a_product_that_ran_twice_keeps_both_of_its_intervals():
+    interrupted = (
+        StateSample(t(6), "R-100-STD"),
+        StateSample(t(8), "R-200-FAST"),
+        StateSample(t(10), "R-100-STD"),
+    )
+    segments = product_segments(unit(), WINDOW, samples(good=GOOD_CLIMB, product=interrupted))
+    by_code = {segment.product_code: segment for segment in segments}
+    assert by_code["R-100-STD"].intervals == (Interval(t(6), t(8)), Interval(t(10), t(14)))
+
+
+def test_a_counter_reset_inside_the_shift_is_counted():
+    restarted = (Sample(t(6), 0.0), Sample(t(10), 2500.0), Sample(t(11), 0.0), Sample(t(14), 900.0))
+    assert samples(good=restarted).counter_resets == 1
+    assert samples(good=GOOD_CLIMB, reject=REJECT_CLIMB).counter_resets == 0
+
+
+def test_the_state_held_at_the_shift_start_is_carried_in():
+    inputs = shift_inputs(unit(), WINDOW, samples(state=RUN_WITH_ONE_STOP), (), {})
+    # One stop only. If the 05:58 EXECUTE sample were dropped, the shift would open with an
+    # unknown state and 06:00-09:00 would become a second, fabricated stop.
+    assert len(inputs.classified_stops) == 1
+    assert inputs.classified_stops[0].interval == Interval(t(9), t(10))
+
+
+def test_a_stop_is_classified_before_the_inputs_are_built():
+    inputs = shift_inputs(unit(), WINDOW, samples(state=RUN_WITH_ONE_STOP), (), {})
+    stop = inputs.classified_stops[0]
+    assert stop.reason_code == "MECH_FAILURE"
+    assert stop.source == AUTO
+    assert stop.is_planned is False
+
+
+def test_a_planned_reason_marks_the_stop_planned():
+    suspended = (StateSample(t(5, 58), "EXECUTE"), StateSample(t(9), "SUSPENDED"), StateSample(t(10), "EXECUTE"))
+    inputs = shift_inputs(unit(), WINDOW, samples(state=suspended), (), {})
+    assert inputs.classified_stops[0].reason_code == "TOOL_CHANGE"
+    assert inputs.classified_stops[0].is_planned is True
+
+
+def test_a_manual_reason_wins_over_the_rule():
+    manual = {t(9): ManualReason(reason_code="TOOL_CHANGE", note="die swap", assigned_by="operator1")}
+    inputs = shift_inputs(unit(), WINDOW, samples(state=RUN_WITH_ONE_STOP), (), manual)
+    stop = inputs.classified_stops[0]
+    assert stop.reason_code == "TOOL_CHANGE"
+    assert stop.source == MANUAL
+    assert stop.assigned_by == "operator1"
+
+
+def test_exception_windows_become_exception_intervals():
+    windows = (
+        ExceptionWindow(interval=Interval(t(6), t(7)), kind="PLANNED_DOWN", asset_path=LINE),
+        ExceptionWindow(interval=Interval(t(7), t(8)), kind="NON_PRODUCING", asset_path=None),
+    )
+    inputs = shift_inputs(unit(), WINDOW, samples(state=RUN_WITH_ONE_STOP), windows, {})
+    # Merged, so two adjacent exceptions cannot subtract from Loading Time twice.
+    assert inputs.exception_intervals == (Interval(t(6), t(8)),)
+
+
+def test_no_input_rows_makes_the_shift_report_no_input_data():
+    inputs = shift_inputs(unit(), WINDOW, samples(), (), {}, has_input_data=False)
+    assert inputs.has_input_data is False
+
+
+def test_unclassified_seconds_totals_only_the_unclassified_stops():
+    unknown = (StateSample(t(5, 58), "EXECUTE"), StateSample(t(9), "HELD"), StateSample(t(10), "EXECUTE"))
+    inputs = shift_inputs(unit(), WINDOW, samples(state=unknown), (), {})
+    assert inputs.classified_stops[0].reason_code == UNCLASSIFIED_REASON_CODE
+    assert unclassified_seconds(inputs.classified_stops) == 3600.0
+
+
+def test_unclassified_seconds_is_zero_when_every_stop_has_a_reason():
+    inputs = shift_inputs(unit(), WINDOW, samples(state=RUN_WITH_ONE_STOP), (), {})
+    assert unclassified_seconds(inputs.classified_stops) == 0.0
+
+
+def test_no_manual_reasons_digests_to_a_stable_placeholder():
+    assert manual_digest({}) == "-"
+
+
+def test_a_reassigned_code_changes_the_digest():
+    before = {t(9): ManualReason(reason_code="TOOL_CHANGE", assigned_by="operator1")}
+    after = {t(9): ManualReason(reason_code="MECH_FAILURE", assigned_by="operator1")}
+    assert manual_digest(before) != manual_digest(after)
+    # The note and the author are not inputs to the arithmetic, so they are not in the digest.
+    assert manual_digest(before) == manual_digest(
+        {t(9): ManualReason(reason_code="TOOL_CHANGE", note="die swap", assigned_by="operator2")}
+    )
+
+
+def test_a_reason_moved_to_another_stop_changes_the_digest():
+    here = {t(9): ManualReason(reason_code="TOOL_CHANGE")}
+    there = {t(11): ManualReason(reason_code="TOOL_CHANGE")}
+    assert manual_digest(here) != manual_digest(there)
+
+
+# --- the IO half ---------------------------------------------------------------------
+
+
+class FakeSource:
+    def __init__(self, series: ShiftSamples, fingerprint: Fingerprint) -> None:
+        self.series = series
+        self._fingerprint = fingerprint
+
+    async def fingerprint(self, refs, start, end) -> Fingerprint:
+        return self._fingerprint
+
+    async def text_samples(self, ref, start, end, *, include_prior=True):
+        return list(self.series.product if ref.topic.endswith("RecipeId") else self.series.state)
+
+    async def numeric_samples(self, ref, start, end, *, include_prior=True):
+        return list(self.series.reject if ref.topic.endswith("RejectCount") else self.series.good)
+
+
+class FakeMaster:
+    def __init__(self, windows=()) -> None:
+        self.windows = list(windows)
+
+    async def exception_windows(self, unit, window):
+        return list(self.windows)
+
+
+class FakeStore:
+    def __init__(self, stored: StoredResult | None = None) -> None:
+        self.stored = stored
+        self.manual: dict[datetime, ManualReason] = {}
+        self.saves: list[int] = []
+        self.marked: list[tuple[int, datetime]] = []
+
+    async def existing(self, unit_id, shift_start):
+        return self.stored
+
+    async def manual_reasons(self, unit_id, window):
+        return dict(self.manual)
+
+    async def save(self, unit_id, window, metrics, stops, fingerprint, computed_at):
+        revision = 1 if self.stored is None else self.stored.revision + 1
+        self.saves.append(revision)
+        return StoredResult(
+            result_id=11,
+            revision=revision,
+            input_fingerprint=fingerprint.as_text(),
+            published_at=None,
+        )
+
+    async def mark_published(self, result_id, published_at):
+        self.marked.append((result_id, published_at))
+
+
+class FakePublisher:
+    def __init__(self, *, ok: bool = True) -> None:
+        self.ok = ok
+        self.sent: list[tuple[str, int]] = []
+
+    async def publish(self, asset_path, window, metrics, revision) -> bool:
+        self.sent.append((asset_path, revision))
+        return self.ok
+
+
+FULL_SHIFT = ShiftSamples(
+    state=RUN_WITH_ONE_STOP, good=GOOD_CLIMB, reject=REJECT_CLIMB, product=TWO_PRODUCTS
+)
+FINGERPRINT = Fingerprint(row_count=2880, max_time=t(14))
+
+
+def pipeline(store: FakeStore, publisher: FakePublisher, fingerprint=FINGERPRINT) -> ShiftPipeline:
+    return ShiftPipeline(
+        source=FakeSource(FULL_SHIFT, fingerprint),
+        master=FakeMaster(),
+        store=store,
+        publisher=publisher,
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_shift_with_no_stored_result_is_computed_at_revision_one():
+    store, publisher = FakeStore(), FakePublisher()
+    outcome = await pipeline(store, publisher).run_shift(unit(), WINDOW, COMPUTED_AT)
+
+    assert outcome.action == ACTION_COMPUTED
+    assert outcome.revision == 1
+    assert outcome.published is True
+    assert outcome.input_rows == 2880
+    assert outcome.metrics is not None
+    assert outcome.metrics.status == "OK"
+    assert store.saves == [1]
+    assert store.marked == [(11, COMPUTED_AT)]
+    assert publisher.sent == [(LINE, 1)]
+
+
+@pytest.mark.asyncio
+async def test_a_changed_fingerprint_is_a_revision():
+    stored = StoredResult(result_id=11, revision=1, input_fingerprint="1440:-", published_at=t(14))
+    store, publisher = FakeStore(stored), FakePublisher()
+    outcome = await pipeline(store, publisher).run_shift(unit(), WINDOW, COMPUTED_AT)
+
+    assert outcome.action == ACTION_REVISED
+    assert outcome.revision == 2
+    assert outcome.late_data is True
+    assert store.saves == [2]
+    assert publisher.sent == [(LINE, 2)]
+
+
+@pytest.mark.asyncio
+async def test_an_unchanged_published_shift_does_no_work_at_all():
+    stored = StoredResult(
+        result_id=11, revision=1, input_fingerprint=FINGERPRINT.as_text(), published_at=t(14)
+    )
+    store, publisher = FakeStore(stored), FakePublisher()
+    outcome = await pipeline(store, publisher).run_shift(unit(), WINDOW, COMPUTED_AT)
+
+    assert outcome.action == ACTION_UNCHANGED
+    assert outcome.metrics is None
+    assert store.saves == []
+    assert publisher.sent == []
+
+
+@pytest.mark.asyncio
+async def test_an_unchanged_unpublished_shift_is_republished_at_the_same_revision():
+    stored = StoredResult(
+        result_id=11, revision=2, input_fingerprint=FINGERPRINT.as_text(), published_at=None
+    )
+    store, publisher = FakeStore(stored), FakePublisher()
+    outcome = await pipeline(store, publisher).run_shift(unit(), WINDOW, COMPUTED_AT)
+
+    assert outcome.action == ACTION_REPUBLISHED
+    assert outcome.revision == 2
+    # Nothing written but the publication timestamp: a broker outage is not a correction.
+    assert store.saves == []
+    assert store.marked == [(11, COMPUTED_AT)]
+    assert publisher.sent == [(LINE, 2)]
+
+
+@pytest.mark.asyncio
+async def test_a_reassigned_reason_is_a_revision_even_though_no_sample_moved():
+    stored = StoredResult(
+        result_id=11, revision=1, input_fingerprint=FINGERPRINT.as_text(), published_at=t(14)
+    )
+    store, publisher = FakeStore(stored), FakePublisher()
+    store.manual = {t(9): ManualReason(reason_code="TOOL_CHANGE", assigned_by="operator1")}
+    outcome = await pipeline(store, publisher).run_shift(unit(), WINDOW, COMPUTED_AT)
+
+    # Spec section 13: Loading Time shrinks, Availability changes, revision bumps.
+    assert outcome.action == ACTION_REVISED
+    assert outcome.revision == 2
+    # Not late data: no sample moved, so `uns_oee_late_data_detected_total` must not move.
+    assert outcome.late_data is False
+    assert store.saves == [2]
+
+
+@pytest.mark.asyncio
+async def test_a_failed_publish_leaves_the_result_unmarked_for_the_next_pass():
+    store, publisher = FakeStore(), FakePublisher(ok=False)
+    outcome = await pipeline(store, publisher).run_shift(unit(), WINDOW, COMPUTED_AT)
+
+    assert outcome.action == ACTION_COMPUTED
+    assert outcome.published is False
+    assert store.saves == [1]
+    assert store.marked == []
+
+
+@pytest.mark.asyncio
+async def test_a_silent_unit_still_gets_a_row_with_no_input_data():
+    store, publisher = FakeStore(), FakePublisher()
+    empty = Fingerprint(row_count=0, max_time=None)
+    outcome = await pipeline(store, publisher, empty).run_shift(unit(), WINDOW, COMPUTED_AT)
+
+    assert outcome.action == ACTION_COMPUTED
+    assert outcome.metrics is not None
+    assert outcome.metrics.status == "NO_INPUT_DATA"
+    assert store.saves == [1]
+
+
+@pytest.mark.asyncio
+async def test_the_outcome_reports_the_shifts_unclassified_downtime():
+    store, publisher = FakeStore(), FakePublisher()
+    outcome = await pipeline(store, publisher).run_shift(unit(), WINDOW, COMPUTED_AT)
+    assert outcome.unclassified_seconds == 0.0
+    assert outcome.counter_resets == 0
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `uv run pytest 12_uns_oee/test/test_pipeline.py -v -n 0`
+Expected: FAIL — `ModuleNotFoundError: No module named 'uns_oee.pipeline'`.
+
+- [ ] **Step 3: Write the implementation**
+
+Create `12_uns_oee/src/uns_oee/pipeline.py`:
+
+```python
+"""Computing one shift for one unit, in the order spec section 5 fixes.
+
+    shift_calendar -> sources -> counters + states -> classifier -> oee_calc -> store -> publisher
+
+`classifier` runs before `oee_calc` because a reason's `is_planned` flag decides whether its
+stop leaves Loading Time, so classification is an arithmetic input and not a presentation
+detail.
+
+Everything up to `store` is a pure function in this module: `product_segments` and
+`shift_inputs` take sample lists and return dataclasses. Only `ShiftPipeline.run_shift`
+performs IO, and it reads no clock - `computed_at` is passed in by the scheduler, which is
+what lets a whole shift be recomputed deterministically from the same rows.
+"""
+
+import hashlib
+import logging
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from datetime import datetime
+
+from uns_model.oee_tables import UNCLASSIFIED_REASON_CODE
+from uns_oee.classifier import ClassifiedStop, ManualReason, classify
+from uns_oee.counters import Sample, counter_delta, counter_delta_in
+from uns_oee.master_data import ExceptionWindow, MasterDataLoader, UnitMasterData, exception_intervals
+from uns_oee.oee_calc import ProductSegment, ShiftInputs, ShiftMetrics, compute
+from uns_oee.publisher import ResultPublisher
+from uns_oee.shift_calendar import ShiftWindow
+from uns_oee.sources import Fingerprint, MetricSource
+from uns_oee.states import Interval, StateSample, merge, state_segments, stop_intervals, union_duration_s
+from uns_oee.store import ResultStore
+
+LOGGER = logging.getLogger(__name__)
+
+#: A shift computed for the first time. `revision` is 1.
+ACTION_COMPUTED = "COMPUTED"
+
+#: A shift recomputed because its input fingerprint moved. `revision` was bumped.
+ACTION_REVISED = "REVISED"
+
+#: The stored numbers were already right; only the MQTT message was missing.
+ACTION_REPUBLISHED = "REPUBLISHED"
+
+#: Same inputs, already published. Nothing was read past the fingerprint.
+ACTION_UNCHANGED = "UNCHANGED"
+
+
+@dataclass(frozen=True, slots=True)
+class ShiftSamples:
+    """Every series one shift needs, already fetched.
+
+    Separated from the fetching so the arithmetic can be tested against a hand-written series.
+    An empty tuple is a legitimate value: a unit with no reject binding has no reject samples,
+    and a counter delta over nothing is zero rather than an error.
+    """
+
+    state: tuple[StateSample, ...] = ()
+    good: tuple[Sample, ...] = ()
+    reject: tuple[Sample, ...] = ()
+    product: tuple[StateSample, ...] = ()
+
+    @property
+    def counter_resets(self) -> int:
+        """Resets seen across both counters. Reported, never silently absorbed."""
+        return counter_delta(self.good).resets + counter_delta(self.reject).resets
+
+
+@dataclass(frozen=True, slots=True)
+class ShiftOutcome:
+    """What `run_shift` did, in the terms the scheduler and the metrics need."""
+
+    unit_id: int
+    asset_path: str
+    window: ShiftWindow
+    action: str
+    metrics: ShiftMetrics | None
+    revision: int
+    published: bool
+    input_rows: int = 0
+    counter_resets: int = 0
+    unclassified_seconds: float = 0.0
+
+    #: Whether the historian's half of the fingerprint moved, as opposed to an operator having
+    #: reassigned a reason. Both cause a revision; only this one is late-arriving data.
+    late_data: bool = False
+
+    #: Wall time this shift took, stamped by the scheduler from `time.monotonic()`. Left at
+    #: zero here: the pipeline reads no clock, and this number is never stored - it exists
+    #: only to fill `uns_oee_shift_compute_seconds`.
+    compute_seconds: float = 0.0
+
+
+def as_interval(window: ShiftWindow) -> Interval:
+    """The shift window as the half-open interval the arithmetic works in."""
+    return Interval(window.start, window.end)
+
+
+def product_segments(
+    unit: UnitMasterData, window: ShiftWindow, samples: ShiftSamples
+) -> tuple[ProductSegment, ...]:
+    """The shift split by what was running, with each part's counts.
+
+    A product code series is a state series - contiguous runs of one string - so this reuses
+    `state_segments` rather than reimplementing coalescing. With no product binding, or no
+    product samples to segment by, the whole shift is one unnamed segment; the calculator
+    handles that identically, and the counts then equal the whole-window delta.
+    """
+    whole = as_interval(window)
+    if unit.product_ref is None or not samples.product:
+        return (_segment(unit, None, (whole,), samples),)
+
+    grouped: dict[str, list[Interval]] = {}
+    for segment in state_segments(samples.product, whole):
+        grouped.setdefault(segment.state, []).append(segment.interval)
+    return tuple(
+        _segment(unit, code, tuple(merge(intervals)), samples)
+        for code, intervals in grouped.items()
+    )
+
+
+def _segment(
+    unit: UnitMasterData,
+    product_code: str | None,
+    intervals: tuple[Interval, ...],
+    samples: ShiftSamples,
+) -> ProductSegment:
+    """One product's counts, taken per interval rather than pro-rated.
+
+    `counter_delta_in` includes the sample sitting exactly on the interval's end, so the
+    increment across a changeover is credited to the outgoing product and the incoming one
+    starts from the changeover value. The per-product totals therefore sum to the shift's.
+    """
+    return ProductSegment(
+        product_code=product_code,
+        intervals=intervals,
+        ideal_cycle_time_s=unit.ideal_cycle_time_for(product_code),
+        good_count=sum(counter_delta_in(samples.good, i.start, i.end).total for i in intervals),
+        reject_count=sum(counter_delta_in(samples.reject, i.start, i.end).total for i in intervals),
+    )
+
+
+def shift_inputs(
+    unit: UnitMasterData,
+    window: ShiftWindow,
+    samples: ShiftSamples,
+    exceptions: Sequence[ExceptionWindow],
+    manual: Mapping[datetime, ManualReason],
+    *,
+    has_input_data: bool = True,
+) -> ShiftInputs:
+    """Everything the calculator needs, assembled from one shift's rows.
+
+    All three shift-exception kinds subtract from Loading Time (`SHIFT_EXCEPTION_KINDS` is
+    PLANNED_DOWN, NON_PRODUCING, HOLIDAY, kept distinct only so a report can name which), so
+    no filtering by kind happens here.
+    """
+    whole = as_interval(window)
+    segments = state_segments(samples.state, whole)
+    stops = stop_intervals(segments, unit.producing_states)
+    return ShiftInputs(
+        window=whole,
+        exception_intervals=tuple(exception_intervals(exceptions)),
+        classified_stops=tuple(classify(stops, unit.resolver, manual=manual)),
+        products=product_segments(unit, window, samples),
+        has_input_data=has_input_data,
+    )
+
+
+def unclassified_seconds(stops: Sequence[ClassifiedStop]) -> float:
+    """Downtime with no reason rule behind it - the master data quality signal.
+
+    Totalled by union, like every other duration in this module, so two stops that somehow
+    overlap cannot inflate the number an engineer is being asked to act on.
+    """
+    return union_duration_s(
+        [stop.interval for stop in stops if stop.reason_code == UNCLASSIFIED_REASON_CODE]
+    )
+
+
+def manual_digest(manual: Mapping[datetime, ManualReason]) -> str:
+    """A short, stable summary of the operator's attributions for one shift.
+
+    Hashed rather than stored verbatim so `input_fingerprint` stays a short key on a shift
+    with fifty reassigned stops. Both the stop instants and the codes go in, sorted, because
+    a reason moved from one stop to another is as much a change as a code edited in place.
+    """
+    if not manual:
+        return "-"
+    joined = "|".join(
+        f"{at.isoformat()}={reason.reason_code}" for at, reason in sorted(manual.items())
+    )
+    return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:16]
+
+
+class ShiftPipeline:
+    """One shift for one unit: fetch, compute, store, publish."""
+
+    def __init__(
+        self,
+        source: MetricSource,
+        master: MasterDataLoader,
+        store: ResultStore,
+        publisher: ResultPublisher,
+    ) -> None:
+        self._source = source
+        self._master = master
+        self._store = store
+        self._publisher = publisher
+
+    async def run_shift(
+        self, unit: UnitMasterData, window: ShiftWindow, computed_at: datetime
+    ) -> ShiftOutcome:
+        """Compute and publish one closed shift, doing as little as the inputs allow.
+
+        The fingerprint is checked first because it is three indexed reads, which is what makes
+        re-checking every open shift on every pass affordable while a full recompute is not.
+        Four outcomes follow from it and from whether the stored row reached MQTT.
+
+        The manual reasons are read before the decision, not after it. A reassignment changes
+        no sample, so a fingerprint made only of historian rows would call the shift unchanged
+        and never write the corrected Availability - which is exactly the case spec section 13
+        says must bump the revision.
+        """
+        counted = await self._source.fingerprint(unit.refs, window.start, window.end)
+        manual = await self._store.manual_reasons(unit.unit_id, window)
+        fingerprint = counted.with_manual(manual_digest(manual))
+        stored = await self._store.existing(unit.unit_id, window.start)
+        unchanged = stored is not None and stored.input_fingerprint == fingerprint.as_text()
+
+        if unchanged and stored.published_at is not None:
+            return ShiftOutcome(
+                unit_id=unit.unit_id,
+                asset_path=unit.asset_path,
+                window=window,
+                action=ACTION_UNCHANGED,
+                metrics=None,
+                revision=stored.revision,
+                published=True,
+                input_rows=fingerprint.row_count,
+            )
+
+        samples = await self._fetch(unit, window)
+        exceptions = await self._master.exception_windows(unit, as_interval(window))
+        inputs = shift_inputs(
+            unit,
+            window,
+            samples,
+            exceptions,
+            manual,
+            has_input_data=not fingerprint.is_empty,
+        )
+        metrics = compute(inputs)
+
+        if unchanged:
+            # Rule 1: same inputs, same output. So the numbers on record are these numbers,
+            # and publishing them under the stored revision is exact. Writing a new revision
+            # here would make `revision` count broker outages instead of corrections.
+            action = ACTION_REPUBLISHED
+            result_id, revision = stored.result_id, stored.revision
+        else:
+            saved = await self._store.save(
+                unit.unit_id,
+                window,
+                metrics,
+                inputs.classified_stops,
+                fingerprint,
+                computed_at,
+            )
+            result_id, revision = saved.result_id, saved.revision
+            action = ACTION_COMPUTED if revision == 1 else ACTION_REVISED
+
+        # A revision has two causes and the operator needs to tell them apart. Comparing only
+        # the historian half isolates late-arriving data from a reason reassignment.
+        late_data = stored is not None and Fingerprint.source_part(
+            stored.input_fingerprint
+        ) != Fingerprint.source_part(fingerprint.as_text())
+
+        published = await self._publisher.publish(unit.asset_path, window, metrics, revision)
+        if published:
+            await self._store.mark_published(result_id, computed_at)
+
+        LOGGER.info(
+            "OEE %s %s shift %s: %s revision %d, status %s",
+            unit.asset_path,
+            window.label,
+            window.start.isoformat(),
+            action,
+            revision,
+            metrics.status,
+        )
+        return ShiftOutcome(
+            unit_id=unit.unit_id,
+            asset_path=unit.asset_path,
+            window=window,
+            action=action,
+            metrics=metrics,
+            revision=revision,
+            published=published,
+            input_rows=fingerprint.row_count,
+            counter_resets=samples.counter_resets,
+            unclassified_seconds=unclassified_seconds(inputs.classified_stops),
+            late_data=late_data,
+        )
+
+    async def _fetch(self, unit: UnitMasterData, window: ShiftWindow) -> ShiftSamples:
+        """Every series this unit binds, for this window.
+
+        `include_prior` is left at its default for all four: the state at the boundary decides
+        whether the shift opens in a stop, and a counter's pre-boundary value is what makes the
+        first in-shift delta correct rather than a jump from zero.
+        """
+        state = await self._source.text_samples(unit.state_ref, window.start, window.end)
+        good = await self._source.numeric_samples(unit.good_ref, window.start, window.end)
+        reject = (
+            await self._source.numeric_samples(unit.reject_ref, window.start, window.end)
+            if unit.reject_ref is not None
+            else []
+        )
+        product = (
+            await self._source.text_samples(unit.product_ref, window.start, window.end)
+            if unit.product_ref is not None
+            else []
+        )
+        return ShiftSamples(
+            state=tuple(state), good=tuple(good), reject=tuple(reject), product=tuple(product)
+        )
+
+
+__all__ = [
+    "ACTION_COMPUTED",
+    "ACTION_REPUBLISHED",
+    "ACTION_REVISED",
+    "ACTION_UNCHANGED",
+    "ShiftOutcome",
+    "ShiftPipeline",
+    "ShiftSamples",
+    "as_interval",
+    "manual_digest",
+    "product_segments",
+    "shift_inputs",
+    "unclassified_seconds",
+]
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `uv run pytest 12_uns_oee/test/test_pipeline.py -v -n 0`
+Expected: PASS (25 passed).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add 12_uns_oee/src/uns_oee/pipeline.py 12_uns_oee/test/test_pipeline.py
+git commit -m "feat(oee): compute, store and publish one shift end to end"
+```
+
+---
+
+### Task 13: Deciding which shifts are due
+
+**Files:**
+- Create: `12_uns_oee/src/uns_oee/scheduler.py`
+- Create: `12_uns_oee/test/test_scheduler.py`
+
+**Interfaces:**
+- Consumes: `uns_model.engine.Database`; `uns_model.oee_tables.RecomputeRequest` (Task 2); `OeeConfig` (Task 1); `ShiftWindow`, `shift_windows` (Task 4); `MetricSource` (Task 8); `MasterDataLoader`, `UnitMasterData` (Task 9); `ShiftOutcome`, `ShiftPipeline` (Task 12).
+- Produces: `REQUEST_CLAIM_LIMIT = 200`; `SKIP_NO_HISTORY = "NO_HISTORY"`, `SKIP_PREDATES_DATA = "PREDATES_DATA"`; `ClaimedRange(request_id: int, unit_id: int | None, start: datetime, end: datetime)`; `BackfillPlan(windows, skipped_no_history, skipped_predates_data)`; `BackfillTally(unit_id, asset_path, computed, skipped_no_history, skipped_predates_data)`; `PassSummary(outcomes, units, windows, failures, backfilled, backfill)`; pure functions `clamp_backfill_days(configured: int, retention: float | None) -> int`, `recheck_windows(unit, now, *, settle_minutes, late_window_hours) -> list[ShiftWindow]`, `backfill_windows(unit, now, *, settle_minutes, backfill_days, earliest_input_at) -> BackfillPlan`, `request_windows(unit, ranges, now, *, settle_minutes) -> list[ShiftWindow]`, `ranges_for(unit_id, claimed) -> tuple[tuple[datetime, datetime], ...]`, `ordered_unique(windows) -> list[ShiftWindow]`; `async retention_days(database, table) -> float | None`; `async claim_requests(database, at, *, limit=REQUEST_CLAIM_LIMIT) -> list[ClaimedRange]`; `async complete_requests(database, request_ids, at, *, error=None) -> None`; `ShiftScheduler(config, database, source, master, pipeline, *, claim=..., retention=..., complete=...)` with `async run_pass(now: datetime) -> PassSummary`.
+
+Spec §9 gives the engine two phases and this module is both of them. A shift becomes due at `shift_end + settle_minutes` — the settle window is what stops a shift being computed from a historian that is still catching up. After that it is re-checked on every pass until `shift_end + late_window_hours`, and then it is left alone. §9.1 adds a third source of work, the bounded backfill, and a fourth arrives through `oee.recompute_request` when an operator reassigns a reason.
+
+**Why the late window closes at all.** Re-checking a shift costs two indexed queries (the fingerprint and the stored row), so re-checking everything forever would grow linearly with the plant's history and eventually consume a whole scan interval doing nothing. The late window is the statement that a machine does not amend last month's data on its own. A human still can, and that path is the recompute request, which has no window.
+
+**Why `backfill_days` is clamped.** `uns_metrics` carries a one-year retention policy (`04_uns_historian/sql_scripts/04_setup_metrics_hypertable.sql:67`). Asking for a 400-day backfill would enumerate 1200 shifts whose rows were dropped months ago and write 1200 `NO_INPUT_DATA` results that look like an outage. The clamp reads the policy from `timescaledb_information.jobs` and logs both numbers once, so the operator learns the request was reduced rather than discovering it in the data.
+
+**Why `now` is a parameter.** `run_pass(now)` is the only place the pass's timestamp enters, and `main.py` is the only caller that reads a clock. Everything below — the window enumeration, the fingerprint comparison, `computed_at` on the stored row — derives from that one value, which is what makes a pass replayable.
+
+**Why two coroutine functions are injectable.** `claim_requests` and `retention_days` are the scheduler's only SQL, and they are three statements against tables the store does not own. Passing them in as defaults keeps `ShiftScheduler`'s decision logic testable without a database, and keeps the SQL out of `ResultStore`, whose job is one shift's results.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `12_uns_oee/test/test_scheduler.py`:
+
+```python
+"""Tests for uns_oee.scheduler - which shifts a pass computes, and why.
+
+The window arithmetic is pure and gets real schedules: the bugs that matter are a shift
+computed before the historian caught up, a shift re-checked forever, and a backfill that
+invents thirty days of NO_INPUT_DATA out of dropped chunks. The pass itself gets fakes,
+because what matters there is that one broken unit does not stop the plant's other lines.
+"""
+
+from datetime import datetime, time, timedelta, timezone
+
+import pytest
+from sqlalchemy.dialects import postgresql
+
+from uns_oee.oee_config import OeeConfig
+from uns_oee.pipeline import ACTION_COMPUTED, ShiftOutcome
+from uns_oee.scheduler import (
+    ClaimedRange,
+    ShiftScheduler,
+    backfill_windows,
+    claim_requests,
+    clamp_backfill_days,
+    ordered_unique,
+    ranges_for,
+    recheck_windows,
+    request_windows,
+    retention_days,
+)
+from uns_oee.shift_calendar import ShiftSchedule, ShiftSlot, ShiftWindow
+
+NOW = datetime(2026, 9, 9, 15, 0, tzinfo=timezone.utc)
+SETTLE = 15
+LATE = 48
+
+#: One eight-hour morning shift every day, in UTC so the arithmetic in this file is readable.
+#: Task 4's tests are where the timezone and DST behaviour is pinned.
+DAILY = ShiftSchedule(
+    name="daily mornings",
+    timezone="UTC",
+    slots=tuple(ShiftSlot(day, time(6, 0), 480, "A") for day in range(7)),
+)
+
+
+class FakeUnit:
+    """Only the three attributes the scheduler reads off a UnitMasterData."""
+
+    def __init__(self, unit_id: int = 1, schedule: ShiftSchedule = DAILY) -> None:
+        self.unit_id = unit_id
+        self.asset_path = f"CovestroAG/Dormagen/Production/Line{unit_id}"
+        self.schedule = schedule
+        self.refs = ()
+
+
+def days(windows) -> list[int]:
+    return [window.start.day for window in windows]
+
+
+# --- the window arithmetic -----------------------------------------------------------
+
+
+def test_a_settled_shift_inside_the_late_window_is_rechecked():
+    windows = recheck_windows(FakeUnit(), NOW, settle_minutes=SETTLE, late_window_hours=LATE)
+    # Sept 9 ended an hour ago, Sept 8 twenty-five hours ago. Sept 7 ended 49h ago.
+    assert days(windows) == [8, 9]
+
+
+def test_a_shift_that_has_not_settled_is_not_rechecked():
+    just_ended = datetime(2026, 9, 9, 14, 10, tzinfo=timezone.utc)
+    windows = recheck_windows(FakeUnit(), just_ended, settle_minutes=SETTLE, late_window_hours=LATE)
+    assert 9 not in days(windows)
+
+
+def test_a_shift_older_than_the_late_window_is_not_rechecked():
+    windows = recheck_windows(FakeUnit(), NOW, settle_minutes=SETTLE, late_window_hours=LATE)
+    assert 7 not in days(windows)
+    assert 6 not in days(windows)
+
+
+def test_the_lookback_covers_a_shift_longer_than_a_day():
+    marathon = ShiftSchedule(
+        name="weekly",
+        timezone="UTC",
+        slots=(ShiftSlot(0, time(6, 0), 60 * 30, "LONG"),),
+    )
+    # Started Mon Sept 7 06:00, ended Tue Sept 8 12:00 - 27h before NOW, so inside the late
+    # window. A fixed one-day lookback would have missed its start.
+    windows = recheck_windows(
+        FakeUnit(schedule=marathon), NOW, settle_minutes=SETTLE, late_window_hours=LATE
+    )
+    assert days(windows) == [7]
+
+
+def test_backfill_enumerates_from_now_minus_backfill_days_oldest_first():
+    plan = backfill_windows(
+        FakeUnit(),
+        NOW,
+        settle_minutes=SETTLE,
+        backfill_days=3,
+        earliest_input_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+    )
+    assert days(plan.windows) == [7, 8, 9]
+    assert plan.skipped_predates_data == 0
+
+
+def test_a_backfill_shift_ending_before_the_first_input_row_is_skipped():
+    plan = backfill_windows(
+        FakeUnit(),
+        NOW,
+        settle_minutes=SETTLE,
+        backfill_days=30,
+        earliest_input_at=datetime(2026, 9, 7, 10, 0, tzinfo=timezone.utc),
+    )
+    # Sept 7's shift ends at 14:00, after the first row, so it is computed. Everything before
+    # it predates the data entirely and is skipped rather than written as NO_INPUT_DATA.
+    assert days(plan.windows) == [7, 8, 9]
+    # Aug 11 through Sept 6 inclusive: counted, so the choice is visible in Prometheus.
+    assert plan.skipped_predates_data == 27
+
+
+def test_a_unit_that_never_published_anything_gets_no_backfill():
+    plan = backfill_windows(
+        FakeUnit(), NOW, settle_minutes=SETTLE, backfill_days=30, earliest_input_at=None
+    )
+    assert plan.windows == ()
+    assert plan.skipped_no_history == 30
+    assert plan.skipped_predates_data == 0
+
+
+def test_a_recompute_range_becomes_the_shift_windows_inside_it():
+    ranges = ((datetime(2026, 9, 7, tzinfo=timezone.utc), datetime(2026, 9, 9, tzinfo=timezone.utc)),)
+    windows = request_windows(FakeUnit(), ranges, NOW, settle_minutes=SETTLE)
+    # Requested ranges ignore the late window entirely: a human asked.
+    assert days(windows) == [7, 8]
+
+
+def test_an_unsettled_shift_inside_a_requested_range_is_not_returned():
+    ranges = ((datetime(2026, 9, 9, tzinfo=timezone.utc), datetime(2026, 9, 10, tzinfo=timezone.utc)),)
+    just_ended = datetime(2026, 9, 9, 14, 10, tzinfo=timezone.utc)
+    assert request_windows(FakeUnit(), ranges, just_ended, settle_minutes=SETTLE) == []
+
+
+def test_a_range_with_no_unit_applies_to_every_unit():
+    claimed = [ClaimedRange(request_id=1, unit_id=None, start=NOW, end=NOW + timedelta(hours=1))]
+    assert len(ranges_for(1, claimed)) == 1
+    assert len(ranges_for(99, claimed)) == 1
+
+
+def test_a_range_with_a_unit_applies_only_to_that_unit():
+    claimed = [ClaimedRange(request_id=1, unit_id=1, start=NOW, end=NOW + timedelta(hours=1))]
+    assert len(ranges_for(1, claimed)) == 1
+    assert ranges_for(2, claimed) == ()
+
+
+def test_windows_from_two_sources_collapse_to_one_ordered_list():
+    first = ShiftWindow(start=NOW - timedelta(days=1), end=NOW - timedelta(hours=16), label="A")
+    second = ShiftWindow(start=NOW - timedelta(hours=9), end=NOW - timedelta(hours=1), label="A")
+    assert ordered_unique([second, first, second]) == [first, second]
+
+
+def test_backfill_days_is_clamped_to_the_retention_policy():
+    assert clamp_backfill_days(400, 365.25) == 365
+
+
+def test_a_backfill_inside_retention_is_left_alone():
+    assert clamp_backfill_days(30, 365.25) == 30
+
+
+def test_no_retention_policy_leaves_the_backfill_alone():
+    assert clamp_backfill_days(400, None) == 400
+
+
+# --- the three statements ------------------------------------------------------------
+
+
+class FakeResult:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def fetchall(self):
+        return self._rows
+
+    def first(self):
+        return self._rows[0] if self._rows else None
+
+
+class FakeConnection:
+    def __init__(self, results):
+        self._results = list(results)
+        self.calls: list[tuple[str, dict]] = []
+
+    async def execute(self, statement, parameters=None):
+        # Compiled against PostgreSQL because SKIP LOCKED does not exist in the default
+        # dialect, and it is the whole point of the claim query.
+        compiled = statement.compile(dialect=postgresql.dialect())
+        self.calls.append((str(compiled).lower(), dict(parameters or {})))
+        return self._results.pop(0) if self._results else FakeResult([])
+
+
+class FakeDatabase:
+    """Stands in for `uns_model.engine.Database`; only `begin()` is used here."""
+
+    def __init__(self, *results):
+        self.connection = FakeConnection(results)
+
+    def begin(self):
+        connection = self.connection
+
+        class _Ctx:
+            async def __aenter__(self):
+                return connection
+
+            async def __aexit__(self, *_exc):
+                return False
+
+        return _Ctx()
+
+
+@pytest.mark.asyncio
+async def test_the_retention_query_asks_timescale_for_the_metrics_table():
+    database = FakeDatabase(FakeResult([(365.25,)]))
+    assert await retention_days(database, "uns_metrics") == 365.25
+    sql, params = database.connection.calls[0]
+    assert "timescaledb_information.jobs" in sql
+    assert "policy_retention" in sql
+    assert params == {"table": "uns_metrics"}
+
+
+@pytest.mark.asyncio
+async def test_no_retention_row_reads_as_no_policy():
+    assert await retention_days(FakeDatabase(FakeResult([])), "uns_metrics") is None
+    assert await retention_days(FakeDatabase(FakeResult([(None,)])), "uns_metrics") is None
+
+
+@pytest.mark.asyncio
+async def test_claiming_skips_rows_another_worker_holds():
+    rows = [(7, 1, NOW - timedelta(days=1), NOW)]
+    database = FakeDatabase(FakeResult(rows))
+    claimed = await claim_requests(database, NOW)
+
+    assert claimed == [ClaimedRange(request_id=7, unit_id=1, start=NOW - timedelta(days=1), end=NOW)]
+    sql, _ = database.connection.calls[0]
+    # SKIP LOCKED is what makes a second engine instance a no-op instead of a duplicate.
+    assert "skip locked" in sql
+    assert "claimed_at is null" in sql
+
+
+# --- one pass ------------------------------------------------------------------------
+
+
+class FakeSource:
+    def __init__(self, earliest=None):
+        self.earliest = earliest
+        self.asked = 0
+
+    async def earliest_sample_at(self, refs):
+        self.asked += 1
+        return self.earliest
+
+
+class FakeMaster:
+    def __init__(self, units):
+        self.units = list(units)
+
+    async def active_units(self):
+        return list(self.units)
+
+
+class FakePipeline:
+    def __init__(self, *, failing_units=()):
+        self.failing_units = set(failing_units)
+        self.calls: list[tuple[int, datetime, datetime]] = []
+
+    async def run_shift(self, unit, window, computed_at):
+        if unit.unit_id in self.failing_units:
+            raise RuntimeError("historian went away")
+        self.calls.append((unit.unit_id, window.start, computed_at))
+        return ShiftOutcome(
+            unit_id=unit.unit_id,
+            asset_path=unit.asset_path,
+            window=window,
+            action=ACTION_COMPUTED,
+            metrics=None,
+            revision=1,
+            published=True,
+        )
+
+
+def scheduler(master, pipeline, source=None, *, claimed=(), backfill_days=30):
+    config = OeeConfig(
+        settle_minutes=SETTLE, late_window_hours=LATE, backfill_days=backfill_days
+    )
+    completed: list[tuple[tuple[int, ...], datetime]] = []
+
+    async def fake_claim(database, at, *, limit=200):
+        return list(claimed)
+
+    async def fake_retention(database, table):
+        return None
+
+    async def fake_complete(database, request_ids, at, *, error=None):
+        completed.append((tuple(request_ids), at))
+
+    instance = ShiftScheduler(
+        config=config,
+        database=FakeDatabase(),
+        source=source or FakeSource(),
+        master=master,
+        pipeline=pipeline,
+        claim=fake_claim,
+        retention=fake_retention,
+        complete=fake_complete,
+    )
+    instance.completed = completed
+    return instance
+
+
+@pytest.mark.asyncio
+async def test_a_pass_computes_every_settled_window_for_every_active_unit():
+    pipeline = FakePipeline()
+    master = FakeMaster([FakeUnit(1), FakeUnit(2)])
+    source = FakeSource(earliest=datetime(2026, 9, 8, tzinfo=timezone.utc))
+    summary = await scheduler(master, pipeline, source).run_pass(NOW)
+
+    assert summary.units == 2
+    assert summary.failures == 0
+    assert summary.backfilled is True
+    # Sept 8 and Sept 9 for each unit: the backfill's windows are the same two, deduped.
+    assert [(unit_id, start.day) for unit_id, start, _ in pipeline.calls] == [
+        (1, 8), (1, 9), (2, 8), (2, 9),
+    ]
+    assert len(summary.outcomes) == 4
+
+
+@pytest.mark.asyncio
+async def test_the_backfill_only_runs_on_the_first_pass():
+    source = FakeSource(earliest=datetime(2026, 9, 8, tzinfo=timezone.utc))
+    instance = scheduler(FakeMaster([FakeUnit(1)]), FakePipeline(), source)
+
+    await instance.run_pass(NOW)
+    assert source.asked == 1
+    second = await instance.run_pass(NOW + timedelta(minutes=5))
+    assert source.asked == 1
+    assert second.backfilled is False
+
+
+@pytest.mark.asyncio
+async def test_a_failing_unit_does_not_stop_the_pass():
+    pipeline = FakePipeline(failing_units={1})
+    master = FakeMaster([FakeUnit(1), FakeUnit(2)])
+    summary = await scheduler(master, pipeline).run_pass(NOW)
+
+    assert summary.failures == 2  # unit 1's two windows
+    assert {unit_id for unit_id, _, _ in pipeline.calls} == {2}
+
+
+@pytest.mark.asyncio
+async def test_a_pass_with_a_failure_retries_the_backfill():
+    source = FakeSource(earliest=datetime(2026, 9, 8, tzinfo=timezone.utc))
+    instance = scheduler(FakeMaster([FakeUnit(1)]), FakePipeline(failing_units={1}), source)
+
+    await instance.run_pass(NOW)
+    await instance.run_pass(NOW + timedelta(minutes=5))
+    # A backfill that half failed is not a backfill. Two enumerations, not one.
+    assert source.asked == 2
+
+
+@pytest.mark.asyncio
+async def test_a_claimed_request_is_computed_and_completed():
+    pipeline = FakePipeline()
+    request = ClaimedRange(
+        request_id=7,
+        unit_id=1,
+        start=datetime(2026, 9, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 9, 3, tzinfo=timezone.utc),
+    )
+    instance = scheduler(FakeMaster([FakeUnit(1)]), pipeline, claimed=[request])
+    await instance.run_pass(NOW)
+
+    computed = sorted({start.day for _, start, _ in pipeline.calls})
+    # Sept 1 and 2 from the request, plus the two the late window already covered.
+    assert computed == [1, 2, 8, 9]
+    assert instance.completed == [((7,), NOW)]
+
+
+@pytest.mark.asyncio
+async def test_the_pipeline_is_given_the_passs_timestamp():
+    pipeline = FakePipeline()
+    await scheduler(FakeMaster([FakeUnit(1)]), pipeline).run_pass(NOW)
+    assert {computed_at for _, _, computed_at in pipeline.calls} == {NOW}
+
+
+@pytest.mark.asyncio
+async def test_every_outcome_is_stamped_with_how_long_it_took():
+    summary = await scheduler(FakeMaster([FakeUnit(1)]), FakePipeline()).run_pass(NOW)
+    # Monotonic, so never negative even if the host clock steps mid-pass.
+    assert all(outcome.compute_seconds >= 0.0 for outcome in summary.outcomes)
+
+
+@pytest.mark.asyncio
+async def test_the_pass_reports_what_the_backfill_declined():
+    source = FakeSource(earliest=datetime(2026, 9, 8, tzinfo=timezone.utc))
+    summary = await scheduler(FakeMaster([FakeUnit(1)]), FakePipeline(), source).run_pass(NOW)
+    tally = summary.backfill[0]
+    assert tally.asset_path.endswith("Line1")
+    assert (tally.computed, tally.skipped_predates_data, tally.skipped_no_history) == (2, 28, 0)
+
+
+@pytest.mark.asyncio
+async def test_a_later_pass_reports_no_backfill_at_all():
+    instance = scheduler(FakeMaster([FakeUnit(1)]), FakePipeline())
+    await instance.run_pass(NOW)
+    assert (await instance.run_pass(NOW + timedelta(minutes=5))).backfill == ()
+
+
+@pytest.mark.asyncio
+async def test_a_silent_unit_still_gets_its_steady_state_windows():
+    pipeline = FakePipeline()
+    # earliest_sample_at is None, so the unit has never published. The backfill skips it, but
+    # the late window does not: spec section 13 wants one NO_INPUT_DATA row per silent shift.
+    await scheduler(FakeMaster([FakeUnit(1)]), pipeline, FakeSource(earliest=None)).run_pass(NOW)
+    assert sorted(start.day for _, start, _ in pipeline.calls) == [8, 9]
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `uv run pytest 12_uns_oee/test/test_scheduler.py -v -n 0`
+Expected: FAIL — `ModuleNotFoundError: No module named 'uns_oee.scheduler'`.
+
+- [ ] **Step 3: Write the implementation**
+
+Create `12_uns_oee/src/uns_oee/scheduler.py`:
+
+```python
+"""Which shifts a pass computes (spec sections 9 and 9.1).
+
+Four sources of work, in one ordered list per unit:
+
+  recheck   every settled shift still inside `late_window_hours`
+  request   every settled shift inside a claimed `oee.recompute_request` range
+  backfill  on the first pass only, back to `backfill_days` clamped to retention
+  (nothing)  a shift older than the late window with no request against it
+
+`run_pass(now)` takes the pass's timestamp as an argument and passes it down as `computed_at`.
+Nothing in this module or below it reads a clock, which is what makes a pass replayable and
+`recompute_cli` able to reproduce a historical result exactly.
+"""
+
+import logging
+import time
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, replace
+from datetime import datetime, timedelta
+
+from sqlalchemy import select, text, update
+
+from uns_model.engine import Database
+from uns_model.oee_tables import RecomputeRequest
+from uns_oee.master_data import MasterDataLoader, UnitMasterData
+from uns_oee.oee_config import OeeConfig
+from uns_oee.pipeline import ShiftOutcome, ShiftPipeline
+from uns_oee.shift_calendar import ShiftWindow, shift_windows
+from uns_oee.sources import MetricSource
+
+LOGGER = logging.getLogger(__name__)
+
+#: Requests claimed per pass. A ceiling rather than a page size: a reason reassignment queues
+#: one row, so reaching 200 means something is generating requests in a loop, and draining
+#: them all in one pass would starve the shifts that are actually due.
+REQUEST_CLAIM_LIMIT = 200
+
+#: Label values for `uns_oee_backfill_shifts_skipped_total{unit,reason}`. Two distinct facts:
+#: a unit that has never published anything, and a shift older than the data it would need.
+SKIP_NO_HISTORY = "NO_HISTORY"
+SKIP_PREDATES_DATA = "PREDATES_DATA"
+
+#: Postgres parses the policy's interval and converts it to days; see `retention_days`.
+_RETENTION_SQL = """
+SELECT EXTRACT(EPOCH FROM (config->>'drop_after')::interval) / 86400.0
+FROM timescaledb_information.jobs
+WHERE proc_name = 'policy_retention' AND hypertable_name = :table
+"""
+
+
+@dataclass(frozen=True, slots=True)
+class ClaimedRange:
+    """One recompute request this instance has taken. `unit_id` None means every unit."""
+
+    request_id: int
+    unit_id: int | None
+    start: datetime
+    end: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class BackfillPlan:
+    """The backfill's windows plus what it declined, so the skips can be counted.
+
+    A skip is reported rather than silently dropped: spec section 13 requires
+    `_backfill_shifts_skipped_total`, because "no result for last March" and "we chose not to
+    compute last March" are different answers to the same operator question.
+    """
+
+    windows: tuple[ShiftWindow, ...] = ()
+    skipped_no_history: int = 0
+    skipped_predates_data: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class BackfillTally:
+    """One unit's backfill, as the metrics module needs it labelled."""
+
+    unit_id: int
+    asset_path: str
+    computed: int
+    skipped_no_history: int
+    skipped_predates_data: int
+
+
+@dataclass(frozen=True, slots=True)
+class PassSummary:
+    """What one pass did. Consumed by prometheus_metrics, which owns no state of its own."""
+
+    outcomes: tuple[ShiftOutcome, ...] = ()
+    units: int = 0
+    windows: int = 0
+    failures: int = 0
+    backfilled: bool = False
+    backfill: tuple[BackfillTally, ...] = ()
+
+
+def clamp_backfill_days(configured: int, retention: float | None) -> int:
+    """`backfill_days`, reduced to what the retention policy can still answer.
+
+    Without the clamp, a 400-day request against a one-year hypertable would write months of
+    NO_INPUT_DATA results for chunks that were dropped on schedule - an outage in the data
+    that never happened in the plant.
+    """
+    if retention is None:
+        return configured
+    return min(configured, int(retention))
+
+
+def _lookback(unit: UnitMasterData, late_window_hours: int) -> timedelta:
+    """How far back to enumerate so no shift inside the late window is missed.
+
+    `shift_windows` bounds by start, so the range has to open one full shift earlier than the
+    late window itself. Derived from the schedule's longest slot rather than a fixed margin,
+    because a 30-hour campaign shift is a legitimate roster.
+    """
+    longest = max(
+        (timedelta(minutes=slot.duration_minutes) for slot in unit.schedule.slots),
+        default=timedelta(),
+    )
+    return timedelta(hours=late_window_hours) + longest
+
+
+def recheck_windows(
+    unit: UnitMasterData, now: datetime, *, settle_minutes: int, late_window_hours: int
+) -> list[ShiftWindow]:
+    """Settled shifts still inside their late window - the steady-state work of a pass.
+
+    No earliest-input guard here, deliberately. A unit that has gone silent must still get one
+    row per shift with `status = 'NO_INPUT_DATA'` (spec section 13), because that row is the
+    only evidence in the system that a line stopped reporting.
+    """
+    limit = timedelta(hours=late_window_hours)
+    return [
+        window
+        for window in shift_windows(unit.schedule, now - _lookback(unit, late_window_hours), now)
+        if window.is_closed_at(now, settle_minutes) and now - window.end <= limit
+    ]
+
+
+def backfill_windows(
+    unit: UnitMasterData,
+    now: datetime,
+    *,
+    settle_minutes: int,
+    backfill_days: int,
+    earliest_input_at: datetime | None,
+) -> BackfillPlan:
+    """Settled shifts back to `now - backfill_days` that the unit has data for.
+
+    A shift ending at or before the unit's first sample is skipped entirely rather than stored
+    as NO_INPUT_DATA: the line was not silent then, it did not exist in this system yet, and a
+    Grafana panel cannot tell those two apart. A unit with no samples at all gets nothing, and
+    both kinds of skip are counted so the decision is visible.
+    """
+    settled = [
+        window
+        for window in shift_windows(unit.schedule, now - timedelta(days=backfill_days), now)
+        if window.is_closed_at(now, settle_minutes)
+    ]
+    if earliest_input_at is None:
+        return BackfillPlan(skipped_no_history=len(settled))
+    kept = tuple(window for window in settled if window.end > earliest_input_at)
+    return BackfillPlan(windows=kept, skipped_predates_data=len(settled) - len(kept))
+
+
+def request_windows(
+    unit: UnitMasterData,
+    ranges: Sequence[tuple[datetime, datetime]],
+    now: datetime,
+    *,
+    settle_minutes: int,
+) -> list[ShiftWindow]:
+    """Settled shifts inside the requested ranges, with no late window applied.
+
+    The late window exists because a machine does not amend last month's data by itself. A
+    human reassigning a reason code is exactly the case it was never meant to block.
+    """
+    windows: list[ShiftWindow] = []
+    for start, end in ranges:
+        windows.extend(
+            window
+            for window in shift_windows(unit.schedule, start, end)
+            if window.is_closed_at(now, settle_minutes)
+        )
+    return windows
+
+
+def ranges_for(
+    unit_id: int, claimed: Sequence[ClaimedRange]
+) -> tuple[tuple[datetime, datetime], ...]:
+    """The claimed ranges that apply to one unit, including the unit-less ones."""
+    return tuple(
+        (item.start, item.end) for item in claimed if item.unit_id in (None, unit_id)
+    )
+
+
+def ordered_unique(windows: Sequence[ShiftWindow]) -> list[ShiftWindow]:
+    """One window per shift start, earliest first.
+
+    Keyed on `start` because that is what `uq_shift_result_unit_start` is keyed on: two
+    sources offering the same shift are the same row, and computing it twice in one pass would
+    write a revision whose only change is the revision number.
+    """
+    seen: set[datetime] = set()
+    unique: list[ShiftWindow] = []
+    for window in sorted(windows, key=lambda item: item.start):
+        if window.start in seen:
+            continue
+        seen.add(window.start)
+        unique.append(window)
+    return unique
+
+
+async def retention_days(database: Database, table: str) -> float | None:
+    """The hypertable's retention policy in days, or None if it has none.
+
+    The interval is parsed by Postgres rather than by this module: `1 year` and `365 days` are
+    both legitimate policy values and only the server knows what the first one means.
+    """
+    async with database.begin() as connection:
+        row = (await connection.execute(text(_RETENTION_SQL), {"table": table})).first()
+    if row is None or row[0] is None:
+        return None
+    return float(row[0])
+
+
+async def claim_requests(
+    database: Database, at: datetime, *, limit: int = REQUEST_CLAIM_LIMIT
+) -> list[ClaimedRange]:
+    """Take up to `limit` unclaimed requests, stamping `claimed_at`.
+
+    `FOR UPDATE SKIP LOCKED` inside the subquery is what makes a second engine instance a
+    no-op rather than a duplicate writer: it takes the rows the first instance did not, and
+    `claimed_at` keeps them taken across restarts.
+    """
+    pending = (
+        select(RecomputeRequest.id)
+        .where(RecomputeRequest.claimed_at.is_(None))
+        .order_by(RecomputeRequest.requested_at)
+        .limit(limit)
+        .with_for_update(skip_locked=True)
+        .scalar_subquery()
+    )
+    statement = (
+        update(RecomputeRequest)
+        .where(RecomputeRequest.id.in_(pending))
+        .values(claimed_at=at)
+        .returning(
+            RecomputeRequest.id,
+            RecomputeRequest.oee_unit_id,
+            RecomputeRequest.range_start,
+            RecomputeRequest.range_end,
+        )
+    )
+    async with database.begin() as connection:
+        rows = (await connection.execute(statement)).fetchall()
+    return [
+        ClaimedRange(request_id=row[0], unit_id=row[1], start=row[2], end=row[3]) for row in rows
+    ]
+
+
+async def complete_requests(
+    database: Database,
+    request_ids: Sequence[int],
+    at: datetime,
+    *,
+    error: str | None = None,
+) -> None:
+    """Close the claimed requests. Coarse by design: one verdict for the whole pass.
+
+    A request names a range, and a range spans shifts across units, so attributing one
+    window's failure to one request would be a guess. `error` records that the pass which
+    drained these requests was not clean, and the operator re-runs it from `recompute_cli`.
+    """
+    if not request_ids:
+        return
+    statement = (
+        update(RecomputeRequest)
+        .where(RecomputeRequest.id.in_(list(request_ids)))
+        .values(completed_at=at, error=error)
+    )
+    async with database.begin() as connection:
+        await connection.execute(statement)
+
+
+class ShiftScheduler:
+    """One pass over every active unit, computing what is due.
+
+    `claim`, `retention` and `complete` are injected with real defaults. They are this
+    module's only SQL, against tables `ResultStore` does not own, and keeping them behind
+    parameters is what lets the scheduling decisions be tested without a database.
+    """
+
+    def __init__(
+        self,
+        config: OeeConfig,
+        database: Database,
+        source: MetricSource,
+        master: MasterDataLoader,
+        pipeline: ShiftPipeline,
+        *,
+        claim: Callable = claim_requests,
+        retention: Callable = retention_days,
+        complete: Callable = complete_requests,
+    ) -> None:
+        self._config = config
+        self._database = database
+        self._source = source
+        self._master = master
+        self._pipeline = pipeline
+        self._claim = claim
+        self._retention = retention
+        self._complete = complete
+        self._backfill_days: int | None = None
+        self._backfilled = False
+
+    async def run_pass(self, now: datetime) -> PassSummary:
+        """Compute every due shift for every active unit. Never raises for one unit's sake.
+
+        A failure is counted and logged, and the pass continues: one line's historian gap must
+        not cost the other lines their shift reports. The failure count is what makes the
+        outage visible on `uns_oee_compute_failures_total`.
+        """
+        await self._bound_backfill()
+        units = await self._master.active_units()
+        claimed = await self._claim(self._database, now, limit=REQUEST_CLAIM_LIMIT)
+        backfilling = not self._backfilled
+
+        outcomes: list[ShiftOutcome] = []
+        tallies: list[BackfillTally] = []
+        windows_seen = 0
+        failures = 0
+        for unit in units:
+            windows, tally = await self._windows_for(unit, now, claimed, backfilling)
+            if tally is not None:
+                tallies.append(tally)
+            windows_seen += len(windows)
+            for window in windows:
+                try:
+                    # Monotonic, so an NTP step during a pass cannot produce a negative
+                    # histogram sample. Never stored - `computed_at` is the recorded time.
+                    started = time.monotonic()
+                    outcome = await self._pipeline.run_shift(unit, window, now)
+                    outcomes.append(
+                        replace(outcome, compute_seconds=time.monotonic() - started)
+                    )
+                except Exception:
+                    failures += 1
+                    LOGGER.exception(
+                        "OEE compute failed for %s shift starting %s",
+                        unit.asset_path,
+                        window.start.isoformat(),
+                    )
+
+        if claimed:
+            summary = None if failures == 0 else f"{failures} window(s) failed in this pass"
+            await self._complete(
+                self._database, [item.request_id for item in claimed], now, error=summary
+            )
+
+        # A backfill that half failed is not a backfill, so the next pass enumerates it again.
+        # The re-enumeration is cheap - an unchanged shift costs two indexed queries - and the
+        # alternative is losing history silently to a transient outage.
+        if backfilling and failures == 0:
+            self._backfilled = True
+
+        return PassSummary(
+            outcomes=tuple(outcomes),
+            units=len(units),
+            windows=windows_seen,
+            failures=failures,
+            backfilled=backfilling,
+            backfill=tuple(tallies),
+        )
+
+    async def _bound_backfill(self) -> None:
+        """Resolve `backfill_days` against the retention policy, once, and say so."""
+        if self._backfill_days is not None:
+            return
+        retention = await self._retention(self._database, self._config.metrics_table)
+        self._backfill_days = clamp_backfill_days(self._config.backfill_days, retention)
+        if self._backfill_days != self._config.backfill_days:
+            LOGGER.warning(
+                "OEE backfill of %d days reduced to %d days: %s retains %s days",
+                self._config.backfill_days,
+                self._backfill_days,
+                self._config.metrics_table,
+                f"{retention:.0f}" if retention is not None else "unknown",
+            )
+        else:
+            LOGGER.info(
+                "OEE backfill bounded to %d days; %s retains %s days",
+                self._backfill_days,
+                self._config.metrics_table,
+                f"{retention:.0f}" if retention is not None else "no policy",
+            )
+
+    async def _windows_for(
+        self,
+        unit: UnitMasterData,
+        now: datetime,
+        claimed: Sequence[ClaimedRange],
+        backfilling: bool,
+    ) -> tuple[list[ShiftWindow], BackfillTally | None]:
+        """This unit's due shifts from all sources, deduped and ordered oldest first.
+
+        Oldest first because a revision supersedes the row before it: computing September 9
+        before September 1 would still be correct, but the revision history would read
+        backwards to anyone auditing it.
+
+        The tally is None on every pass but the first: there is no backfill to report.
+        """
+        windows = recheck_windows(
+            unit,
+            now,
+            settle_minutes=self._config.settle_minutes,
+            late_window_hours=self._config.late_window_hours,
+        )
+        windows.extend(
+            request_windows(
+                unit,
+                ranges_for(unit.unit_id, claimed),
+                now,
+                settle_minutes=self._config.settle_minutes,
+            )
+        )
+        if not backfilling:
+            return ordered_unique(windows), None
+
+        earliest = await self._source.earliest_sample_at(unit.refs)
+        plan = backfill_windows(
+            unit,
+            now,
+            settle_minutes=self._config.settle_minutes,
+            backfill_days=self._backfill_days or 0,
+            earliest_input_at=earliest,
+        )
+        windows.extend(plan.windows)
+        tally = BackfillTally(
+            unit_id=unit.unit_id,
+            asset_path=unit.asset_path,
+            computed=len(plan.windows),
+            skipped_no_history=plan.skipped_no_history,
+            skipped_predates_data=plan.skipped_predates_data,
+        )
+        return ordered_unique(windows), tally
+
+
+__all__ = [
+    "REQUEST_CLAIM_LIMIT",
+    "SKIP_NO_HISTORY",
+    "SKIP_PREDATES_DATA",
+    "BackfillPlan",
+    "BackfillTally",
+    "ClaimedRange",
+    "PassSummary",
+    "ShiftScheduler",
+    "backfill_windows",
+    "claim_requests",
+    "clamp_backfill_days",
+    "complete_requests",
+    "ordered_unique",
+    "ranges_for",
+    "recheck_windows",
+    "request_windows",
+    "retention_days",
+]
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `uv run pytest 12_uns_oee/test/test_scheduler.py -v -n 0`
+Expected: PASS (28 passed).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add 12_uns_oee/src/uns_oee/scheduler.py 12_uns_oee/test/test_scheduler.py
+git commit -m "feat(oee): schedule settled shifts, late re-checks and a bounded backfill"
+```
+
+---
+
+### Task 14: Metrics on port 9095
+
+**Files:**
+- Create: `12_uns_oee/src/uns_oee/prometheus_metrics.py`
+- Create: `12_uns_oee/test/test_prometheus_metrics.py`
+
+**Interfaces:**
+- Consumes: `uns_model.engine.Database`; `uns_model.oee_tables.{RecomputeRequest, ShiftResult}` (Task 2); `ACTION_REVISED`, `ACTION_UNCHANGED`, `ShiftOutcome` (Task 12); `PassSummary`, `SKIP_NO_HISTORY`, `SKIP_PREDATES_DATA` (Task 13).
+- Produces: `METRIC_PREFIX = "uns_oee"`; `COMPUTE_BUCKETS`; `Readings(recompute_queue_depth, unpublished_results, database_up)`; `async read_gauges(database) -> Readings`; `OeeMetrics(registry=None)` with attributes for all 22 series and methods `observe_pass(summary: PassSummary) -> None`, `apply(readings: Readings) -> None`, `serve(port: int) -> None`.
+
+Spec §14 names 21 series on port 9095 with the prefix `uns_oee_`. This module exposes those 21 plus one addition, `uns_oee_compute_failures_total`, which the spec's list omits: §13 requires a unit whose master data is missing to be "skipped with a counted log", and `PassSummary.failures` is that count. It is unlabelled because a failure is caught around one `run_shift` call and the pass records only how many there were.
+
+**Why its own registry.** The default registry also carries the Python process and GC collectors. Port 9095 exists to answer one question — is this engine still closing shifts — and the simulator made the same call for the same reason (`99_simulator/src/uns_simulator/metrics.py:36`–`:43`).
+
+**Why instance attributes instead of module-level Counters.** The historian declares its metrics at module scope (`04_uns_historian/src/uns_historian/prometheus_metrics.py:5`), which works for a process that has exactly one of each. Here the tests build several `OeeMetrics` in one session, and module-level objects on a shared registry would raise `Duplicated timeseries in CollectorRegistry` on the second import. An instance holding its own registry has no such problem, and the test can assert the exposed text.
+
+**Why an UNCHANGED shift records nothing.** Nothing was computed, so `shifts_computed_total` must not move — otherwise the counter measures how often Prometheus was scraped rather than how many shifts were closed. `_last_shift_close_timestamp` is likewise already at the right value from the pass that computed it.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `12_uns_oee/test/test_prometheus_metrics.py`:
+
+```python
+"""Tests for uns_oee.prometheus_metrics.
+
+The exposed text is what is asserted, not the Python attributes. Spec section 14 is a promise
+about metric names, and prometheus_client renames things - a Counter declared as `x` is
+exposed as `x_total`. Only `generate_latest` can tell whether the promise was kept.
+"""
+
+from datetime import datetime, timedelta, timezone
+
+import pytest
+from prometheus_client import generate_latest
+
+from uns_oee.oee_calc import ShiftMetrics
+from uns_oee.pipeline import (
+    ACTION_COMPUTED,
+    ACTION_REVISED,
+    ACTION_UNCHANGED,
+    ShiftOutcome,
+)
+from uns_oee.prometheus_metrics import OeeMetrics, Readings, read_gauges
+from uns_oee.scheduler import BackfillTally, PassSummary
+from uns_oee.shift_calendar import ShiftWindow
+
+LINE = "CovestroAG/Dormagen/Production/Line1"
+WINDOW = ShiftWindow(
+    start=datetime(2026, 9, 7, 6, tzinfo=timezone.utc),
+    end=datetime(2026, 9, 7, 14, tzinfo=timezone.utc),
+    label="A",
+)
+
+#: Every series spec section 14 promises, as the names Prometheus actually scrapes.
+EXPECTED_SERIES = (
+    "uns_oee_shifts_computed_total",
+    "uns_oee_shift_compute_seconds_bucket",
+    "uns_oee_revisions_total",
+    "uns_oee_late_data_detected_total",
+    "uns_oee_input_rows",
+    "uns_oee_shift_oee",
+    "uns_oee_availability",
+    "uns_oee_performance",
+    "uns_oee_quality",
+    "uns_oee_performance_over_unity_total",
+    "uns_oee_counter_resets_total",
+    "uns_oee_missing_ideal_cycle_time_total",
+    "uns_oee_unclassified_downtime_seconds_total",
+    "uns_oee_recompute_queue_depth",
+    "uns_oee_unpublished_results",
+    "uns_oee_publish_total",
+    "uns_oee_publish_errors_total",
+    "uns_oee_last_shift_close_timestamp",
+    "uns_oee_db_up",
+    "uns_oee_backfill_shifts_total",
+    "uns_oee_backfill_shifts_skipped_total",
+    "uns_oee_compute_failures_total",
+)
+
+
+def good_metrics(**overrides) -> ShiftMetrics:
+    values = {
+        "loading_time_s": 27000.0,
+        "run_time_s": 24084.0,
+        "good_count": 12840.0,
+        "reject_count": 182.0,
+        "total_count": 13022.0,
+        "availability": 0.892,
+        "performance": 0.841,
+        "quality": 0.952,
+        "oee": 0.714,
+        "status": "OK",
+    }
+    values.update(overrides)
+    return ShiftMetrics(**values)
+
+
+def outcome(**overrides) -> ShiftOutcome:
+    values = {
+        "unit_id": 1,
+        "asset_path": LINE,
+        "window": WINDOW,
+        "action": ACTION_COMPUTED,
+        "metrics": good_metrics(),
+        "revision": 1,
+        "published": True,
+        "input_rows": 2880,
+        "counter_resets": 0,
+        "unclassified_seconds": 0.0,
+        "compute_seconds": 0.4,
+    }
+    values.update(overrides)
+    return ShiftOutcome(**values)
+
+
+def exposed(metrics: OeeMetrics) -> str:
+    return generate_latest(metrics.registry).decode("utf-8")
+
+
+def series(text: str, name: str, labels: str = "") -> float | None:
+    """The value of one sample line, or None if the series is absent."""
+    needle = f"{name}{labels} "
+    for line in text.splitlines():
+        if line.startswith(needle):
+            return float(line.rsplit(" ", 1)[1])
+    return None
+
+
+# --- the promise ---------------------------------------------------------------------
+
+
+def test_every_series_the_spec_names_is_exposed():
+    metrics = OeeMetrics()
+    metrics.observe_pass(
+        PassSummary(
+            outcomes=(outcome(),),
+            units=1,
+            windows=1,
+            failures=1,
+            backfilled=True,
+            backfill=(
+                BackfillTally(
+                    unit_id=1,
+                    asset_path=LINE,
+                    computed=2,
+                    skipped_no_history=0,
+                    skipped_predates_data=28,
+                ),
+            ),
+        )
+    )
+    metrics.apply(Readings(recompute_queue_depth=3, unpublished_results=1, database_up=True))
+    text = exposed(metrics)
+    missing = [name for name in EXPECTED_SERIES if name not in text]
+    assert missing == []
+
+
+def test_the_registry_carries_nothing_but_this_engines_series():
+    text = exposed(OeeMetrics())
+    # Not the default registry: no process or GC collectors on this port.
+    assert "python_gc_objects_collected_total" not in text
+    assert "process_virtual_memory_bytes" not in text
+
+
+def test_two_instances_do_not_collide_on_one_registry():
+    # Module-level Counters would raise "Duplicated timeseries" here.
+    first, second = OeeMetrics(), OeeMetrics()
+    assert first.registry is not second.registry
+
+
+# --- what one shift records ----------------------------------------------------------
+
+
+def test_a_computed_shift_records_its_factors_and_its_close_time():
+    metrics = OeeMetrics()
+    metrics.observe_pass(PassSummary(outcomes=(outcome(),)))
+    text = exposed(metrics)
+
+    label = f'{{unit="{LINE}"}}'
+    assert series(text, "uns_oee_shift_oee", label) == 0.714
+    assert series(text, "uns_oee_availability", label) == 0.892
+    assert series(text, "uns_oee_performance", label) == 0.841
+    assert series(text, "uns_oee_quality", label) == 0.952
+    assert series(text, "uns_oee_input_rows", label) == 2880.0
+    assert series(text, "uns_oee_last_shift_close_timestamp", label) == WINDOW.end.timestamp()
+    assert series(text, "uns_oee_shifts_computed_total", f'{{status="OK",unit="{LINE}"}}') == 1.0
+
+
+def test_a_null_factor_is_not_exposed_as_zero():
+    metrics = OeeMetrics()
+    silent = good_metrics(
+        availability=None, performance=None, quality=None, oee=None, status="NO_INPUT_DATA"
+    )
+    metrics.observe_pass(PassSummary(outcomes=(outcome(metrics=silent),)))
+    text = exposed(metrics)
+
+    label = f'{{unit="{LINE}"}}'
+    # A zero OEE and an undefined OEE are different facts, and a trend that plots the second
+    # as the first invents a catastrophic shift. Absent is the only honest rendering.
+    assert series(text, "uns_oee_shift_oee", label) is None
+    assert series(text, "uns_oee_availability", label) is None
+    # The shift is still counted, with the status that says why there are no factors.
+    assert series(text, "uns_oee_shifts_computed_total", f'{{status="NO_INPUT_DATA",unit="{LINE}"}}') == 1.0
+
+
+def test_an_unchanged_shift_records_nothing():
+    metrics = OeeMetrics()
+    metrics.observe_pass(
+        PassSummary(outcomes=(outcome(action=ACTION_UNCHANGED, metrics=None),))
+    )
+    text = exposed(metrics)
+    assert series(text, "uns_oee_shifts_computed_total", f'{{status="OK",unit="{LINE}"}}') is None
+    assert series(text, "uns_oee_shift_compute_seconds_count") == 0.0
+
+
+def test_a_revision_counts_as_a_revision_and_as_late_data():
+    metrics = OeeMetrics()
+    metrics.observe_pass(
+        PassSummary(outcomes=(outcome(action=ACTION_REVISED, revision=2, late_data=True),))
+    )
+    text = exposed(metrics)
+    label = f'{{unit="{LINE}"}}'
+    assert series(text, "uns_oee_revisions_total", label) == 1.0
+    assert series(text, "uns_oee_late_data_detected_total", label) == 1.0
+
+
+def test_a_reassignment_is_a_revision_but_not_late_data():
+    metrics = OeeMetrics()
+    metrics.observe_pass(
+        PassSummary(outcomes=(outcome(action=ACTION_REVISED, revision=2, late_data=False),))
+    )
+    text = exposed(metrics)
+    label = f'{{unit="{LINE}"}}'
+    assert series(text, "uns_oee_revisions_total", label) == 1.0
+    assert series(text, "uns_oee_late_data_detected_total", label) == 0.0
+
+
+def test_the_data_quality_signals_are_counted():
+    metrics = OeeMetrics()
+    flawed = good_metrics(missing_ideal_cycle_time=True, performance_over_unity=True)
+    metrics.observe_pass(
+        PassSummary(
+            outcomes=(outcome(metrics=flawed, counter_resets=2, unclassified_seconds=3600.0),)
+        )
+    )
+    text = exposed(metrics)
+    label = f'{{unit="{LINE}"}}'
+    assert series(text, "uns_oee_missing_ideal_cycle_time_total", label) == 1.0
+    assert series(text, "uns_oee_performance_over_unity_total", label) == 1.0
+    assert series(text, "uns_oee_counter_resets_total", label) == 2.0
+    assert series(text, "uns_oee_unclassified_downtime_seconds_total", label) == 3600.0
+
+
+def test_a_failed_publish_is_an_error_not_a_publish():
+    metrics = OeeMetrics()
+    metrics.observe_pass(PassSummary(outcomes=(outcome(published=False),)))
+    text = exposed(metrics)
+    assert series(text, "uns_oee_publish_total") == 0.0
+    assert series(text, "uns_oee_publish_errors_total") == 1.0
+
+
+def test_the_two_kinds_of_skipped_backfill_are_labelled_apart():
+    metrics = OeeMetrics()
+    metrics.observe_pass(
+        PassSummary(
+            backfill=(
+                BackfillTally(1, LINE, computed=2, skipped_no_history=0, skipped_predates_data=28),
+                BackfillTally(2, "Line2", computed=0, skipped_no_history=30, skipped_predates_data=0),
+            )
+        )
+    )
+    text = exposed(metrics)
+    assert series(text, "uns_oee_backfill_shifts_total", f'{{unit="{LINE}"}}') == 2.0
+    assert (
+        series(
+            text,
+            "uns_oee_backfill_shifts_skipped_total",
+            f'{{reason="PREDATES_DATA",unit="{LINE}"}}',
+        )
+        == 28.0
+    )
+    assert (
+        series(
+            text, "uns_oee_backfill_shifts_skipped_total", '{reason="NO_HISTORY",unit="Line2"}'
+        )
+        == 30.0
+    )
+
+
+def test_a_pass_failure_is_counted():
+    metrics = OeeMetrics()
+    metrics.observe_pass(PassSummary(failures=3))
+    assert series(exposed(metrics), "uns_oee_compute_failures_total") == 3.0
+
+
+def test_the_readings_land_on_their_gauges():
+    metrics = OeeMetrics()
+    metrics.apply(Readings(recompute_queue_depth=4, unpublished_results=7, database_up=True))
+    text = exposed(metrics)
+    assert series(text, "uns_oee_recompute_queue_depth") == 4.0
+    assert series(text, "uns_oee_unpublished_results") == 7.0
+    assert series(text, "uns_oee_db_up") == 1.0
+
+
+def test_a_database_that_is_down_reads_as_zero():
+    metrics = OeeMetrics()
+    metrics.apply(Readings(database_up=False))
+    assert series(exposed(metrics), "uns_oee_db_up") == 0.0
+
+
+# --- the two counts that come from the database --------------------------------------
+
+
+class FakeResult:
+    def __init__(self, value):
+        self._value = value
+
+    def scalar_one(self):
+        return self._value
+
+
+class FakeConnection:
+    def __init__(self, results, raises=False):
+        self._results = list(results)
+        self._raises = raises
+        self.calls: list[str] = []
+
+    async def execute(self, statement, parameters=None):
+        if self._raises:
+            raise RuntimeError("could not connect to server")
+        self.calls.append(str(statement).lower())
+        return self._results.pop(0)
+
+
+class FakeDatabase:
+    def __init__(self, *results, raises=False):
+        self.connection = FakeConnection(results, raises=raises)
+
+    def begin(self):
+        connection = self.connection
+
+        class _Ctx:
+            async def __aenter__(self):
+                return connection
+
+            async def __aexit__(self, *_exc):
+                return False
+
+        return _Ctx()
+
+
+@pytest.mark.asyncio
+async def test_the_queue_depth_and_the_backlog_are_read_together():
+    database = FakeDatabase(FakeResult(3), FakeResult(11))
+    readings = await read_gauges(database)
+
+    assert readings == Readings(recompute_queue_depth=3, unpublished_results=11, database_up=True)
+    queue_sql, backlog_sql = database.connection.calls
+    assert "recompute_request" in queue_sql and "claimed_at is null" in queue_sql
+    assert "shift_result" in backlog_sql and "published_at is null" in backlog_sql
+
+
+@pytest.mark.asyncio
+async def test_a_database_that_refuses_the_query_reads_as_down():
+    readings = await read_gauges(FakeDatabase(raises=True))
+    # Nothing invented: the counts stay at zero and `database_up` is what the alert fires on.
+    assert readings == Readings(recompute_queue_depth=0, unpublished_results=0, database_up=False)
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `uv run pytest 12_uns_oee/test/test_prometheus_metrics.py -v -n 0`
+Expected: FAIL — `ModuleNotFoundError: No module named 'uns_oee.prometheus_metrics'`.
+
+- [ ] **Step 3: Write the implementation**
+
+Create `12_uns_oee/src/uns_oee/prometheus_metrics.py`:
+
+```python
+"""Platform Observability for the OEE engine: spec section 14's series on port 9095.
+
+Twenty-two series, twenty-one of them named in the spec and one - `_compute_failures_total` -
+added because section 13 asks for a counted skip and `PassSummary.failures` is that count.
+
+Everything here is fed from a `PassSummary` and a `Readings`, never read from the database by
+the collector itself. A scrape must not be able to start a query: Prometheus scrapes on its
+own HTTP thread, and a gauge that lazily queried Timescale would put an unbounded, unpooled
+database call on a path whose only failure mode should be a stale number.
+"""
+
+import logging
+from dataclasses import dataclass
+
+from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, start_http_server
+from sqlalchemy import func, select
+
+from uns_model.engine import Database
+from uns_model.oee_tables import RecomputeRequest, ShiftResult
+from uns_oee.pipeline import ACTION_REVISED, ShiftOutcome
+from uns_oee.scheduler import SKIP_NO_HISTORY, SKIP_PREDATES_DATA, PassSummary
+
+LOGGER = logging.getLogger(__name__)
+
+#: prometheus_client appends `_total` to every Counter, so the names declared below are one
+#: suffix short of the names spec section 14 promises. The test asserts the exposed text.
+METRIC_PREFIX = "uns_oee"
+
+#: A shift is a handful of indexed queries plus arithmetic over one shift's samples. Anything
+#: past ten seconds means the historian is struggling, which is worth its own bucket.
+COMPUTE_BUCKETS = (0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0)
+
+_UNIT = "unit"
+_STATUS = "status"
+_REASON = "reason"
+
+
+@dataclass(frozen=True, slots=True)
+class Readings:
+    """The three numbers that come from the database rather than from a pass.
+
+    `database_up` defaults to False so a failed read cannot be mistaken for a healthy one by
+    omission - the caller has to have succeeded to set it.
+    """
+
+    recompute_queue_depth: int = 0
+    unpublished_results: int = 0
+    database_up: bool = False
+
+
+async def read_gauges(database: Database) -> Readings:
+    """The queue depth and the publication backlog, in one transaction.
+
+    Both are `count(*)` over an indexed partial predicate, so they are cheap enough to read
+    once per pass. Any failure returns `database_up=False` with the counts left at zero: a
+    stale non-zero backlog would be worse than an obvious outage.
+    """
+    queued = (
+        select(func.count())
+        .select_from(RecomputeRequest)
+        .where(RecomputeRequest.claimed_at.is_(None))
+    )
+    unpublished = (
+        select(func.count()).select_from(ShiftResult).where(ShiftResult.published_at.is_(None))
+    )
+    try:
+        async with database.begin() as connection:
+            depth = (await connection.execute(queued)).scalar_one()
+            backlog = (await connection.execute(unpublished)).scalar_one()
+    except Exception:
+        LOGGER.exception("OEE could not read its observability counts")
+        return Readings(database_up=False)
+    return Readings(
+        recompute_queue_depth=int(depth or 0),
+        unpublished_results=int(backlog or 0),
+        database_up=True,
+    )
+
+
+class OeeMetrics:
+    """The engine's series, on their own registry.
+
+    Instance attributes rather than module-level objects: several of these are built in one
+    test session, and module-level Counters sharing a registry raise on the second import.
+    """
+
+    def __init__(self, registry: CollectorRegistry | None = None) -> None:
+        self.registry = registry if registry is not None else CollectorRegistry()
+        registry_ = self.registry
+
+        self.shifts_computed = Counter(
+            f"{METRIC_PREFIX}_shifts_computed",
+            "Shifts whose result was computed, by unit and result status.",
+            [_UNIT, _STATUS],
+            registry=registry_,
+        )
+        self.compute_seconds = Histogram(
+            f"{METRIC_PREFIX}_shift_compute_seconds",
+            "Wall time to compute, store and publish one shift.",
+            buckets=COMPUTE_BUCKETS,
+            registry=registry_,
+        )
+        self.revisions = Counter(
+            f"{METRIC_PREFIX}_revisions",
+            "Stored results superseded by a recomputation, from any cause.",
+            [_UNIT],
+            registry=registry_,
+        )
+        self.late_data = Counter(
+            f"{METRIC_PREFIX}_late_data_detected",
+            "Revisions caused by historian rows arriving after the shift settled.",
+            [_UNIT],
+            registry=registry_,
+        )
+        self.input_rows = Gauge(
+            f"{METRIC_PREFIX}_input_rows",
+            "Historian rows behind the most recently computed shift.",
+            [_UNIT],
+            registry=registry_,
+        )
+        self.shift_oee = Gauge(
+            f"{METRIC_PREFIX}_shift_oee",
+            "OEE of the most recently computed shift, 0 to 1.",
+            [_UNIT],
+            registry=registry_,
+        )
+        self.availability = Gauge(
+            f"{METRIC_PREFIX}_availability",
+            "Availability of the most recently computed shift, 0 to 1.",
+            [_UNIT],
+            registry=registry_,
+        )
+        self.performance = Gauge(
+            f"{METRIC_PREFIX}_performance",
+            "Performance of the most recently computed shift, clamped to 1.",
+            [_UNIT],
+            registry=registry_,
+        )
+        self.quality = Gauge(
+            f"{METRIC_PREFIX}_quality",
+            "Quality of the most recently computed shift, 0 to 1.",
+            [_UNIT],
+            registry=registry_,
+        )
+        self.performance_over_unity = Counter(
+            f"{METRIC_PREFIX}_performance_over_unity",
+            "Shifts whose raw Performance exceeded 1.0 and was clamped.",
+            [_UNIT],
+            registry=registry_,
+        )
+        self.counter_resets = Counter(
+            f"{METRIC_PREFIX}_counter_resets",
+            "Production counter resets or rollovers detected inside a shift.",
+            [_UNIT],
+            registry=registry_,
+        )
+        self.missing_ideal_cycle_time = Counter(
+            f"{METRIC_PREFIX}_missing_ideal_cycle_time",
+            "Shifts with a product segment that had no ideal cycle time authored.",
+            [_UNIT],
+            registry=registry_,
+        )
+        self.unclassified_downtime_seconds = Counter(
+            f"{METRIC_PREFIX}_unclassified_downtime_seconds",
+            "Downtime with no state_reason_map rule behind it. A master-data hole.",
+            [_UNIT],
+            registry=registry_,
+        )
+        self.compute_failures = Counter(
+            f"{METRIC_PREFIX}_compute_failures",
+            "Shift computations that raised and were skipped so the pass could continue.",
+            registry=registry_,
+        )
+        self.backfill_shifts = Counter(
+            f"{METRIC_PREFIX}_backfill_shifts",
+            "Shifts the first pass enumerated for the bounded backfill.",
+            [_UNIT],
+            registry=registry_,
+        )
+        self.backfill_shifts_skipped = Counter(
+            f"{METRIC_PREFIX}_backfill_shifts_skipped",
+            "Backfill shifts declined, by reason.",
+            [_UNIT, _REASON],
+            registry=registry_,
+        )
+        self.publishes = Counter(
+            f"{METRIC_PREFIX}_publish",
+            "Shift results published to the namespace.",
+            registry=registry_,
+        )
+        self.publish_errors = Counter(
+            f"{METRIC_PREFIX}_publish_errors",
+            "Publish attempts that failed, leaving published_at NULL for the next pass.",
+            registry=registry_,
+        )
+        self.last_shift_close = Gauge(
+            f"{METRIC_PREFIX}_last_shift_close_timestamp",
+            "Unix time of the end of the last shift closed for this unit.",
+            [_UNIT],
+            registry=registry_,
+        )
+        self.recompute_queue_depth = Gauge(
+            f"{METRIC_PREFIX}_recompute_queue_depth",
+            "Unclaimed rows in oee.recompute_request.",
+            registry=registry_,
+        )
+        self.unpublished_results = Gauge(
+            f"{METRIC_PREFIX}_unpublished_results",
+            "Stored results whose published_at is still NULL. The broker backlog.",
+            registry=registry_,
+        )
+        self.db_up = Gauge(
+            f"{METRIC_PREFIX}_db_up",
+            "1 when the engine's last database read succeeded, 0 otherwise.",
+            registry=registry_,
+        )
+
+    def observe_pass(self, summary: PassSummary) -> None:
+        """Record everything one pass produced."""
+        self.compute_failures.inc(summary.failures)
+        for tally in summary.backfill:
+            # `.inc(0)` on purpose: the series exists at zero, so a Grafana panel shows a
+            # backfill that skipped nothing rather than a gap that could mean anything.
+            self.backfill_shifts.labels(tally.asset_path).inc(tally.computed)
+            self.backfill_shifts_skipped.labels(tally.asset_path, SKIP_NO_HISTORY).inc(
+                tally.skipped_no_history
+            )
+            self.backfill_shifts_skipped.labels(tally.asset_path, SKIP_PREDATES_DATA).inc(
+                tally.skipped_predates_data
+            )
+        for outcome in summary.outcomes:
+            self._observe_shift(outcome)
+
+    def apply(self, readings: Readings) -> None:
+        """Set the three gauges that come from the database."""
+        self.recompute_queue_depth.set(readings.recompute_queue_depth)
+        self.unpublished_results.set(readings.unpublished_results)
+        self.db_up.set(1.0 if readings.database_up else 0.0)
+
+    def serve(self, port: int) -> None:
+        """Expose the registry on `port` in a background thread."""
+        start_http_server(port, registry=self.registry)
+        LOGGER.info("OEE metrics available on port %d", port)
+
+    def _observe_shift(self, outcome: ShiftOutcome) -> None:
+        """One shift's contribution. An UNCHANGED shift contributes nothing.
+
+        `metrics is None` is the test rather than the action name, because it is the honest
+        one: without a `ShiftMetrics` there is no status to label and no factor to set.
+        """
+        if outcome.metrics is None:
+            return
+        metrics = outcome.metrics
+        unit = outcome.asset_path
+
+        self.compute_seconds.observe(outcome.compute_seconds)
+        self.shifts_computed.labels(unit, metrics.status).inc()
+        self.input_rows.labels(unit).set(outcome.input_rows)
+        self.last_shift_close.labels(unit).set(outcome.window.end.timestamp())
+        self.counter_resets.labels(unit).inc(outcome.counter_resets)
+        self.unclassified_downtime_seconds.labels(unit).inc(outcome.unclassified_seconds)
+
+        if outcome.action == ACTION_REVISED:
+            self.revisions.labels(unit).inc()
+            # Zeroed rather than skipped, so the series exists for every unit that has ever
+            # been revised and a rate() over it is not a gap.
+            self.late_data.labels(unit).inc(1 if outcome.late_data else 0)
+        if metrics.performance_over_unity:
+            self.performance_over_unity.labels(unit).inc()
+        if metrics.missing_ideal_cycle_time:
+            self.missing_ideal_cycle_time.labels(unit).inc()
+        if outcome.published:
+            self.publishes.inc()
+        else:
+            self.publish_errors.inc()
+
+        # A null factor is left unset. `_scalar_to_metric` makes the same choice on the MQTT
+        # side (04_uns_historian/src/uns_historian/metric_flattener.py): an undefined
+        # Availability rendered as 0.0 would read as a catastrophic shift instead of no shift.
+        self._set_if_known(self.shift_oee, unit, metrics.oee)
+        self._set_if_known(self.availability, unit, metrics.availability)
+        self._set_if_known(self.performance, unit, metrics.performance)
+        self._set_if_known(self.quality, unit, metrics.quality)
+
+    @staticmethod
+    def _set_if_known(gauge: Gauge, unit: str, value: float | None) -> None:
+        if value is not None:
+            gauge.labels(unit).set(value)
+
+
+__all__ = ["COMPUTE_BUCKETS", "METRIC_PREFIX", "OeeMetrics", "Readings", "read_gauges"]
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `uv run pytest 12_uns_oee/test/test_prometheus_metrics.py -v -n 0`
+Expected: PASS (16 passed).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add 12_uns_oee/src/uns_oee/prometheus_metrics.py 12_uns_oee/test/test_prometheus_metrics.py
+git commit -m "feat(oee): expose the engine's 22 series on port 9095"
+```
+
+---
+
+### Task 15: The supervisor loop and the container's health check
+
+**Files:**
+- Create: `12_uns_oee/src/uns_oee/main.py`
+- Create: `12_uns_oee/src/uns_oee/health_check.py`
+- Create: `12_uns_oee/test/test_main.py`
+- Create: `12_uns_oee/test/test_health_check.py`
+
+**Interfaces:**
+- Consumes: `uns_model.engine.Database`; `OeeConfig`, `OEE_ENV` (Task 1); `MetricSource` (Task 8); `MasterDataLoader` (Task 9); `ResultStore` (Task 10); `ResultPublisher` (Task 11); `ShiftPipeline` (Task 12); `ShiftScheduler`, `PassSummary` (Task 13); `OeeMetrics`, `read_gauges` (Task 14).
+- Produces: `utc_now() -> datetime`; `build_scheduler(config, database, publisher) -> ShiftScheduler`; `OeeService(config, database, scheduler, metrics, *, clock=utc_now, gauges=read_gauges)` with `run_once()`, `run_forever()`, `request_stop()`; `run(config=None)`; `main()`. In `health_check.py`: `HEALTH_SERIES`, `check_metrics_endpoint(port, *, timeout=..., opener=urlopen) -> bool`, `main()`.
+
+**This module is the only clock reader in the engine.** Global Constraint Rule 1 makes every layer below take its timestamp as an argument, which is what lets `recompute_cli` reproduce a historical result exactly. `utc_now` exists so the one remaining `datetime.now` in the module has a name a test can replace.
+
+**Why the loop catches everything.** `run_pass` already isolates one unit's failure from the others, but the work it does *before* the units — bounding the backfill, loading master data, claiming requests — is against the database, and a restarting Postgres must not kill the engine. A pass that raises is logged, the gauges are read anyway, and the next pass computes the same shifts: nothing was committed, so nothing was lost.
+
+**Why a failed pass does not increment a counter.** `uns_oee_compute_failures_total` means "a shift raised and the pass carried on", and reusing it for a whole-pass failure would make the two indistinguishable. The signals that catch a stalled engine already exist: `uns_oee_db_up` goes to 0 for the common cause, and `uns_oee_last_shift_close_timestamp` stops advancing for every other cause. Alert on the second — `time() - uns_oee_last_shift_close_timestamp{unit=...}` exceeding two shift lengths — because it is true regardless of *why* the engine stopped producing.
+
+**Why the health check is an HTTP scrape and not a database probe.** Docker restarts an unhealthy container. A container whose only problem is that Timescale is restarting would be restarted repeatedly, which fixes nothing and loses the in-memory backfill flag each time. So liveness here means "the process is up and serving its own registry", which the metrics endpoint answers and which strictly implies the process check the other modules do with `psutil`. Readiness of the database belongs to `uns_oee_db_up` and an alert, not to a restart policy.
+
+- [ ] **Step 1: Write the failing test for the supervisor loop**
+
+Create `12_uns_oee/test/test_main.py`:
+
+```python
+"""Tests for uns_oee.main.
+
+The service is constructed with its scheduler, its metrics and its clock passed in, so every
+test here runs without a database, a broker or a wall clock. Only the two waits use real time,
+and both are milliseconds.
+"""
+
+import asyncio
+from datetime import datetime, timezone
+
+import pytest
+
+from uns_oee.main import OeeService, build_scheduler, utc_now
+from uns_oee.oee_config import OeeConfig
+from uns_oee.prometheus_metrics import OeeMetrics, Readings
+from uns_oee.scheduler import PassSummary
+
+NOW = datetime(2026, 9, 9, 15, tzinfo=timezone.utc)
+
+
+def config(**overrides) -> OeeConfig:
+    values = {"mqtt_host": "localhost", "scan_interval_seconds": 0.01}
+    values.update(overrides)
+    return OeeConfig(**values)
+
+
+class FakeScheduler:
+    """Records the timestamps it was passed and can be told to fail."""
+
+    def __init__(self, *, failures: int = 0, on_pass=None) -> None:
+        self.calls: list[datetime] = []
+        self._failures = failures
+        self._on_pass = on_pass
+
+    async def run_pass(self, now: datetime) -> PassSummary:
+        self.calls.append(now)
+        if self._on_pass is not None:
+            self._on_pass()
+        if self._failures > 0:
+            self._failures -= 1
+            raise RuntimeError("connection refused")
+        return PassSummary(units=2, windows=3)
+
+
+async def fake_gauges(_database) -> Readings:
+    return Readings(recompute_queue_depth=5, unpublished_results=0, database_up=True)
+
+
+def service(scheduler, *, metrics=None, gauges=fake_gauges, **config_overrides) -> OeeService:
+    return OeeService(
+        config(**config_overrides),
+        database=object(),
+        scheduler=scheduler,
+        metrics=metrics if metrics is not None else OeeMetrics(),
+        clock=lambda: NOW,
+        gauges=gauges,
+    )
+
+
+# --- one pass ------------------------------------------------------------------------
+
+
+def test_utc_now_is_timezone_aware():
+    # A naive timestamp would silently become "UTC" three layers down, where the shift
+    # calendar is doing DST arithmetic with it.
+    assert utc_now().tzinfo is not None
+
+
+@pytest.mark.asyncio
+async def test_a_pass_stamps_the_clock_the_service_was_given():
+    scheduler = FakeScheduler()
+    summary = await service(scheduler).run_once()
+    assert scheduler.calls == [NOW]
+    assert summary == PassSummary(units=2, windows=3)
+
+
+@pytest.mark.asyncio
+async def test_a_pass_reads_the_database_gauges_afterwards():
+    metrics = OeeMetrics()
+    await service(FakeScheduler(), metrics=metrics).run_once()
+    from prometheus_client import generate_latest
+
+    text = generate_latest(metrics.registry).decode("utf-8")
+    assert "uns_oee_recompute_queue_depth 5.0" in text
+    assert "uns_oee_db_up 1.0" in text
+
+
+@pytest.mark.asyncio
+async def test_a_pass_that_raises_still_reads_the_gauges():
+    metrics = OeeMetrics()
+    # The pass failed, so there is no summary - but the queue depth is exactly the number an
+    # operator wants during an outage, so it is read either way.
+    assert await service(FakeScheduler(failures=1), metrics=metrics).run_once() is None
+    from prometheus_client import generate_latest
+
+    assert "uns_oee_recompute_queue_depth 5.0" in generate_latest(metrics.registry).decode("utf-8")
+
+
+# --- the loop ------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_stop_before_the_first_pass_runs_nothing():
+    scheduler = FakeScheduler()
+    engine = service(scheduler, scan_interval_seconds=30.0)
+    engine.request_stop()
+    await asyncio.wait_for(engine.run_forever(), timeout=1.0)
+    assert scheduler.calls == []
+
+
+@pytest.mark.asyncio
+async def test_a_stop_during_a_pass_ends_the_loop_without_serving_out_the_interval():
+    holder: dict[str, OeeService] = {}
+    scheduler = FakeScheduler(on_pass=lambda: holder["engine"].request_stop())
+    holder["engine"] = service(scheduler, scan_interval_seconds=30.0)
+    # A 30 second interval and a one second timeout: if the stop only took effect after the
+    # sleep, `docker stop` would kill the container instead of it exiting.
+    await asyncio.wait_for(holder["engine"].run_forever(), timeout=1.0)
+    assert scheduler.calls == [NOW]
+
+
+@pytest.mark.asyncio
+async def test_the_loop_keeps_going_after_a_failed_pass():
+    calls = 0
+
+    def stop_after_two():
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            holder["engine"].request_stop()
+
+    holder: dict[str, OeeService] = {}
+    scheduler = FakeScheduler(failures=1, on_pass=stop_after_two)
+    holder["engine"] = service(scheduler)
+    await asyncio.wait_for(holder["engine"].run_forever(), timeout=2.0)
+    # Two passes: the first raised, and the loop did not treat that as a reason to stop.
+    assert len(scheduler.calls) == 2
+
+
+# --- wiring --------------------------------------------------------------------------
+
+
+def test_build_scheduler_rejects_a_metrics_table_that_is_not_an_identifier():
+    # The table name reaches SQL by interpolation, so the guard in MetricSource must fire at
+    # startup rather than on the first query of the first shift.
+    with pytest.raises(ValueError, match="not a plain SQL identifier"):
+        build_scheduler(config(metrics_table="uns_metrics; DROP TABLE oee.shift_result"), object(), None)
+
+
+def test_build_scheduler_returns_a_scheduler_for_a_sane_configuration():
+    from uns_oee.scheduler import ShiftScheduler
+
+    assert isinstance(build_scheduler(config(), object(), None), ShiftScheduler)
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `uv run pytest 12_uns_oee/test/test_main.py -v -n 0`
+Expected: FAIL — `ModuleNotFoundError: No module named 'uns_oee.main'`.
+
+- [ ] **Step 3: Write the supervisor loop**
+
+Create `12_uns_oee/src/uns_oee/main.py`:
+
+```python
+"""Entry point: wire the engine together and run one pass every `scan_interval_seconds`.
+
+The only module in `uns_oee` that reads a clock. Everything below takes its timestamp as an
+argument (Global Constraint Rule 1), which is what makes a pass replayable and lets
+`recompute_cli` reproduce a historical result exactly.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import signal
+import sys
+from collections.abc import Callable
+from datetime import datetime, timezone
+from typing import Any
+
+from uns_model.engine import Database
+from uns_oee.master_data import MasterDataLoader
+from uns_oee.oee_config import OEE_ENV, OeeConfig
+from uns_oee.pipeline import ShiftPipeline
+from uns_oee.prometheus_metrics import OeeMetrics, read_gauges
+from uns_oee.publisher import ResultPublisher
+from uns_oee.scheduler import PassSummary, ShiftScheduler
+from uns_oee.sources import MetricSource
+from uns_oee.store import ResultStore
+
+LOGGER = logging.getLogger(__name__)
+
+
+def utc_now() -> datetime:
+    """The pass timestamp. Named so a test can replace it."""
+    return datetime.now(timezone.utc)
+
+
+def configure_asyncio_for_mqtt() -> None:
+    """Windows needs the selector loop for the MQTT client, exactly as the simulator does
+    (`99_simulator/src/uns_simulator/main.py`). Harmless everywhere else."""
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+
+def build_scheduler(
+    config: OeeConfig, database: Database, publisher: ResultPublisher | None
+) -> ShiftScheduler:
+    """Assemble the engine's read, compute, store and publish layers.
+
+    One `MetricSource` and one `MasterDataLoader` shared between the scheduler and the
+    pipeline: both hold nothing but their connection source, and a thirty-day backfill would
+    otherwise build sixty of them.
+    """
+    source = MetricSource(database, metrics_table=config.metrics_table)
+    master = MasterDataLoader(database)
+    pipeline = ShiftPipeline(source, master, ResultStore(database), publisher)
+    return ShiftScheduler(config, database, source, master, pipeline)
+
+
+class OeeService:
+    """The supervisor loop.
+
+    Takes its scheduler, metrics, clock and gauge reader as arguments so the loop's behaviour -
+    what it does when a pass fails, when it stops - is testable without a database or a broker.
+    """
+
+    def __init__(
+        self,
+        config: OeeConfig,
+        database: Any,
+        scheduler: Any,
+        metrics: OeeMetrics,
+        *,
+        clock: Callable[[], datetime] = utc_now,
+        gauges: Callable[[Any], Any] = read_gauges,
+    ) -> None:
+        self._config = config
+        self._database = database
+        self._scheduler = scheduler
+        self._metrics = metrics
+        self._clock = clock
+        self._gauges = gauges
+        self._stop = asyncio.Event()
+
+    def request_stop(self) -> None:
+        """Ask the loop to finish the current pass and return. Signal-handler safe."""
+        self._stop.set()
+
+    async def run_once(self) -> PassSummary | None:
+        """One pass, then the database gauges. None means the pass failed.
+
+        The gauges are read whether or not the pass succeeded: during an outage the recompute
+        queue depth and the unpublished backlog are the two numbers worth having.
+        """
+        try:
+            summary = await self._scheduler.run_pass(self._clock())
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # Nothing was committed, so the next pass recomputes the same shifts. See the
+            # module note: this is not counted, because `_last_shift_close_timestamp` going
+            # stale is the honest alert for an engine that has stopped producing.
+            LOGGER.exception("OEE pass failed; the next pass will pick up the same shifts")
+            summary = None
+        else:
+            self._metrics.observe_pass(summary)
+            LOGGER.info(
+                "OEE pass over %d unit(s) computed %d shift(s) with %d failure(s)",
+                summary.units,
+                len(summary.outcomes),
+                summary.failures,
+            )
+        self._metrics.apply(await self._gauges(self._database))
+        return summary
+
+    async def run_forever(self) -> None:
+        """Pass, wait, repeat, until `request_stop`."""
+        LOGGER.info(
+            "OEE engine started; a pass every %.0fs, settling %d minutes after each shift",
+            self._config.scan_interval_seconds,
+            self._config.settle_minutes,
+        )
+        while not self._stop.is_set():
+            await self.run_once()
+            await self._wait_for_next_pass()
+        LOGGER.info("OEE engine stopped")
+
+    async def _wait_for_next_pass(self) -> None:
+        """Sleep the scan interval, or less if asked to stop.
+
+        `wait_for` on the stop event rather than `sleep`, so SIGTERM is acted on immediately
+        instead of up to five minutes later - long enough for Docker to escalate to SIGKILL.
+        """
+        try:
+            await asyncio.wait_for(
+                self._stop.wait(), timeout=self._config.scan_interval_seconds
+            )
+        except TimeoutError:
+            return
+
+
+def _install_signal_handlers(service: OeeService) -> None:
+    """Route SIGINT and SIGTERM to a clean stop where the platform allows it."""
+    loop = asyncio.get_running_loop()
+    for name in ("SIGINT", "SIGTERM"):
+        handled = getattr(signal, name, None)
+        if handled is None:
+            continue
+        try:
+            loop.add_signal_handler(handled, service.request_stop)
+        except NotImplementedError:
+            # Windows asyncio has no add_signal_handler. `docker stop` sends SIGTERM to a
+            # Linux container, which is the case that matters; on Windows the
+            # KeyboardInterrupt path in `main` is the stop.
+            LOGGER.debug("No asyncio handler for %s on this platform", name)
+
+
+async def run(config: OeeConfig | None = None) -> None:
+    """Start the metrics server, run the loop, and close the broker and the pool."""
+    config = config if config is not None else OeeConfig.from_settings()
+    if not config.is_valid():
+        raise SystemExit("OEE engine is not configured; see conf/settings.yaml")
+
+    database = Database.shared(OEE_ENV)
+    publisher = ResultPublisher(config)
+    metrics = OeeMetrics()
+    # Before the first pass, so a scrape during startup returns zeros rather than a refused
+    # connection - which is also what makes the container's health check pass immediately.
+    metrics.serve(config.metrics_port)
+
+    service = OeeService(config, database, build_scheduler(config, database, publisher), metrics)
+    _install_signal_handlers(service)
+    try:
+        await service.run_forever()
+    finally:
+        # The publisher first: it holds a broker connection that a clean DISCONNECT closes,
+        # and it needs nothing from the database to do it.
+        await publisher.aclose()
+        await Database.close_shared()
+
+
+def main() -> None:
+    """Console entry point `uns_oee`."""
+    configure_asyncio_for_mqtt()
+    try:
+        asyncio.run(run())
+    except KeyboardInterrupt:
+        LOGGER.info("OEE engine interrupted")
+
+
+if __name__ == "__main__":
+    main()
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `uv run pytest 12_uns_oee/test/test_main.py -v -n 0`
+Expected: PASS (9 passed).
+
+- [ ] **Step 5: Write the failing test for the health check**
+
+Create `12_uns_oee/test/test_health_check.py`:
+
+```python
+"""Tests for uns_oee.health_check.
+
+The opener is injected, so no test binds a port. What is being tested is the decision -
+which answers count as healthy - not urllib.
+"""
+
+from urllib.error import URLError
+
+import pytest
+
+from uns_oee.health_check import HEALTH_SERIES, check_metrics_endpoint, main
+
+
+class FakeResponse:
+    def __init__(self, body: str, status: int = 200) -> None:
+        self._body = body
+        self.status = status
+
+    def read(self) -> bytes:
+        return self._body.encode("utf-8")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+
+def opener(response):
+    def _open(url, timeout=None):  # noqa: ARG001
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+    return _open
+
+
+def test_an_endpoint_serving_the_engines_registry_is_healthy():
+    body = f"# HELP {HEALTH_SERIES} up\n# TYPE {HEALTH_SERIES} gauge\n{HEALTH_SERIES} 0.0\n"
+    assert check_metrics_endpoint(9095, opener=opener(FakeResponse(body)))
+
+
+def test_an_endpoint_serving_someone_elses_registry_is_not_healthy():
+    # A port answering with the historian's series means this container is not the process
+    # the health check was asked about.
+    assert not check_metrics_endpoint(9095, opener=opener(FakeResponse("uns_historian_up 1.0\n")))
+
+
+def test_a_non_200_answer_is_not_healthy():
+    assert not check_metrics_endpoint(9095, opener=opener(FakeResponse("", status=503)))
+
+
+def test_a_refused_connection_is_not_healthy():
+    assert not check_metrics_endpoint(9095, opener=opener(URLError("connection refused")))
+
+
+def test_main_exits_zero_when_healthy(monkeypatch):
+    monkeypatch.setattr("uns_oee.health_check.check_metrics_endpoint", lambda port: True)
+    with pytest.raises(SystemExit) as exit_info:
+        main()
+    assert exit_info.value.code == 0
+
+
+def test_main_exits_one_when_not(monkeypatch):
+    monkeypatch.setattr("uns_oee.health_check.check_metrics_endpoint", lambda port: False)
+    with pytest.raises(SystemExit) as exit_info:
+        main()
+    assert exit_info.value.code == 1
+```
+
+- [ ] **Step 6: Run the test to verify it fails**
+
+Run: `uv run pytest 12_uns_oee/test/test_health_check.py -v -n 0`
+Expected: FAIL — `ModuleNotFoundError: No module named 'uns_oee.health_check'`.
+
+- [ ] **Step 7: Write the health check**
+
+Create `12_uns_oee/src/uns_oee/health_check.py`:
+
+```python
+"""Docker health check for the OEE engine: `uns_oee_health`.
+
+One question - is this process up and serving its own registry - answered by scraping
+127.0.0.1 on the metrics port. That strictly implies the `psutil` process check the other
+modules perform, and needs no dependency beyond the standard library.
+
+Deliberately does not probe Postgres or MQTT. Docker restarts an unhealthy container, and
+restarting this one because Timescale is rebooting would fix nothing while discarding the
+backfill state. Database health is `uns_oee_db_up` plus an alert, not a restart policy.
+"""
+
+import logging
+import sys
+from collections.abc import Callable
+from typing import Any
+from urllib.request import urlopen
+
+from uns_oee.oee_config import OeeConfig
+
+logging.basicConfig(level=logging.INFO)
+LOGGER = logging.getLogger(__name__)
+
+#: The series whose presence proves the endpoint belongs to this engine. Unlabelled, so it is
+#: exposed from construction onwards and a container that has not yet run a pass is healthy.
+HEALTH_SERIES = "uns_oee_db_up"
+
+#: Shorter than Docker's default 30s healthcheck timeout, so a hung endpoint is reported as
+#: unhealthy rather than as a timed-out check.
+DEFAULT_TIMEOUT_S = 5.0
+
+
+def check_metrics_endpoint(
+    port: int,
+    *,
+    timeout: float = DEFAULT_TIMEOUT_S,
+    opener: Callable[..., Any] = urlopen,
+) -> bool:
+    """Whether the local metrics endpoint answers with this engine's series."""
+    url = f"http://127.0.0.1:{port}/metrics"
+    try:
+        with opener(url, timeout=timeout) as response:
+            if getattr(response, "status", 200) != 200:
+                LOGGER.error("Metrics endpoint %s answered %s", url, response.status)
+                return False
+            body = response.read().decode("utf-8", errors="replace")
+    except Exception as ex:
+        LOGGER.error("Metrics endpoint %s did not answer: %s", url, ex)
+        return False
+    if HEALTH_SERIES not in body:
+        LOGGER.error("Metrics endpoint %s is not serving %s", url, HEALTH_SERIES)
+        return False
+    return True
+
+
+def main() -> None:
+    """Console entry point `uns_oee_health`. Exit 0 healthy, 1 not."""
+    config = OeeConfig.from_settings()
+    if not check_metrics_endpoint(config.metrics_port):
+        sys.exit(1)
+    LOGGER.info("Health check passed.")
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
+```
+
+- [ ] **Step 8: Run the test to verify it passes**
+
+Run: `uv run pytest 12_uns_oee/test/test_health_check.py -v -n 0`
+Expected: PASS (6 passed).
+
+- [ ] **Step 9: Run the whole module's tests**
+
+Run: `uv run pytest 12_uns_oee/test -q`
+Expected: PASS. Every unit test in `12_uns_oee` passes; nothing here needs a database or a broker.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add 12_uns_oee/src/uns_oee/main.py 12_uns_oee/src/uns_oee/health_check.py \
+        12_uns_oee/test/test_main.py 12_uns_oee/test/test_health_check.py \
+        12_uns_oee/pyproject.toml
+git commit -m "feat(oee): run the engine as a supervised loop with a health check"
+```
+
+---
+
+### Task 16: The recompute CLI
+
+**Files:**
+- Create: `12_uns_oee/src/uns_oee/recompute_cli.py`
+- Create: `12_uns_oee/test/test_recompute_cli.py`
+
+**Interfaces:**
+- Consumes: `uns_model.engine.Database`; `uns_model.oee_tables.RecomputeRequest` (Task 2); `OeeConfig`, `OEE_ENV` (Task 1); `MasterDataLoader` (Task 9); `ResultPublisher` (Task 11); `build_scheduler`, `utc_now`, `configure_asyncio_for_mqtt` (Task 15).
+- Produces: `as_utc(text) -> datetime`; `build_parser() -> ArgumentParser`; `parse_args(argv) -> Namespace`; `async resolve_unit_id(master, asset_path) -> int`; `async enqueue(database, unit_id, start, end, *, reason, requested_by) -> int`; `async run(argv) -> int`; `main()`.
+
+Spec §9.1 keeps this CLI for two jobs the backfill cannot do: a range older than `backfill_days`, and a deliberate recomputation after master data changed — a corrected ideal cycle time moves Performance for every shift that ran that product, and no fingerprint of historian rows will ever notice.
+
+**Why it writes to the queue instead of computing.** The engine is the only writer of results (§10), and two writers would race on `UNIQUE (oee_unit_id, shift_start)`. Enqueuing means the CLI works identically whether the engine is running or not, and an operator who runs it twice queues two rows that the second `claim_requests` finds already claimed.
+
+**Why `--now` enqueues first and then runs a pass.** The alternative — a second code path that computes an arbitrary range in-process — would be the one path never exercised in production, and it is the path that writes to the database. So `--now` inserts the same row and then runs one ordinary pass, which claims it through `claim_requests` like any other. There is no second way to compute a shift in this codebase.
+
+**What `--now` also does.** A pass is a pass: it re-checks every shift still inside `late_window_hours` and, on a fresh results table, runs the bounded backfill. That is logged before it starts. It is not a side effect worth suppressing — those shifts either have an unchanged fingerprint and cost two indexed queries each, or they needed computing anyway.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `12_uns_oee/test/test_recompute_cli.py`:
+
+```python
+"""Tests for uns_oee.recompute_cli.
+
+Argument handling is pure and gets tested directly. The one database call, `enqueue`, is
+tested against a fake connection that records the compiled statement - what matters is that
+the row lands pending, with the range the operator asked for.
+"""
+
+from datetime import datetime, timedelta, timezone
+
+import pytest
+
+from uns_oee.recompute_cli import as_utc, enqueue, parse_args, resolve_unit_id, run
+
+FROM = "2026-08-01T00:00:00+00:00"
+TO = "2026-09-01T00:00:00+00:00"
+LINE = "CovestroAG/Dormagen/Production/Line1"
+
+
+class FakeResult:
+    def __init__(self, value):
+        self._value = value
+
+    def scalar_one(self):
+        return self._value
+
+
+class FakeConnection:
+    def __init__(self, results):
+        self._results = list(results)
+        self.statements: list = []
+
+    async def execute(self, statement, parameters=None):
+        self.statements.append(statement)
+        return self._results.pop(0)
+
+
+class FakeDatabase:
+    def __init__(self, *results):
+        self.connection = FakeConnection(results)
+
+    def begin(self):
+        connection = self.connection
+
+        class _Ctx:
+            async def __aenter__(self):
+                return connection
+
+            async def __aexit__(self, *_exc):
+                return False
+
+        return _Ctx()
+
+
+class FakeUnit:
+    def __init__(self, unit_id: int, asset_path: str) -> None:
+        self.unit_id = unit_id
+        self.asset_path = asset_path
+
+
+class FakeMaster:
+    def __init__(self, units) -> None:
+        self._units = units
+
+    async def active_units(self):
+        return self._units
+
+
+# --- timestamps ----------------------------------------------------------------------
+
+
+def test_a_naive_timestamp_is_read_as_utc():
+    # A bare date is what an operator types. It is a range filter, not a shift boundary -
+    # the shift calendar resolves local boundaries from the pattern's own timezone - so
+    # reading it as UTC cannot shift a shift into the wrong day.
+    assert as_utc("2026-08-01") == datetime(2026, 8, 1, tzinfo=timezone.utc)
+
+
+def test_an_offset_is_honoured_rather_than_overwritten():
+    parsed = as_utc("2026-08-01T02:00:00+02:00")
+    assert parsed == datetime(2026, 8, 1, tzinfo=timezone.utc)
+    assert parsed.tzinfo is not None
+
+
+def test_an_unparsable_timestamp_is_a_usage_error():
+    with pytest.raises(SystemExit) as exit_info:
+        parse_args(["--asset-path", LINE, "--from", "last tuesday", "--to", TO])
+    assert exit_info.value.code == 2
+
+
+# --- arguments -----------------------------------------------------------------------
+
+
+def test_a_unit_and_a_range_are_enough():
+    args = parse_args(["--asset-path", LINE, "--from", FROM, "--to", TO])
+    assert args.asset_path == LINE
+    assert args.all_units is False
+    assert args.now is False
+    assert args.range_start == datetime(2026, 8, 1, tzinfo=timezone.utc)
+
+
+def test_a_target_is_required():
+    with pytest.raises(SystemExit) as exit_info:
+        parse_args(["--from", FROM, "--to", TO])
+    assert exit_info.value.code == 2
+
+
+def test_a_unit_and_all_units_cannot_both_be_asked_for():
+    with pytest.raises(SystemExit) as exit_info:
+        parse_args(["--asset-path", LINE, "--all-units", "--from", FROM, "--to", TO])
+    assert exit_info.value.code == 2
+
+
+def test_a_backwards_range_is_refused_before_anything_is_written():
+    # The table's CHECK would refuse it too, but as an IntegrityError traceback rather than
+    # a usage message.
+    with pytest.raises(SystemExit) as exit_info:
+        parse_args(["--all-units", "--from", TO, "--to", FROM])
+    assert exit_info.value.code == 2
+
+
+# --- the unit -------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_an_asset_path_resolves_to_its_unit_id():
+    master = FakeMaster([FakeUnit(1, LINE), FakeUnit(2, "Other/Line2")])
+    assert await resolve_unit_id(master, LINE) == 1
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_asset_path_names_the_paths_that_do_exist():
+    master = FakeMaster([FakeUnit(1, LINE)])
+    with pytest.raises(SystemExit) as exit_info:
+        await resolve_unit_id(master, "Typo/Line9")
+    # The message, not just the exit code: an operator with a typo needs the list.
+    assert LINE in str(exit_info.value)
+
+
+# --- the row --------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_enqueue_writes_one_pending_request_and_returns_its_id():
+    database = FakeDatabase(FakeResult(42))
+    start = datetime(2026, 8, 1, tzinfo=timezone.utc)
+    request_id = await enqueue(
+        database, 1, start, start + timedelta(days=31), reason="cycle time fixed", requested_by="ops"
+    )
+    assert request_id == 42
+    sql = str(database.connection.statements[0]).lower()
+    assert "insert into oee.recompute_request" in sql
+    # claimed_at and completed_at are left NULL: pending is the whole point of the row.
+    assert "claimed_at" not in sql
+    assert "returning" in sql
+
+
+@pytest.mark.asyncio
+async def test_all_units_enqueues_one_row_with_no_unit():
+    database = FakeDatabase(FakeResult(7))
+    exit_code = await run(["--all-units", "--from", FROM, "--to", TO], database=database, master=FakeMaster([]))
+    assert exit_code == 0
+    parameters = database.connection.statements[0].compile().params
+    assert parameters["oee_unit_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_a_queued_request_does_not_run_a_pass():
+    database = FakeDatabase(FakeResult(7))
+    ran = []
+    await run(
+        ["--asset-path", LINE, "--from", FROM, "--to", TO],
+        database=database,
+        master=FakeMaster([FakeUnit(1, LINE)]),
+        pass_runner=lambda: ran.append(True),
+    )
+    # Without --now the CLI's job is done when the row is committed; the engine's next pass
+    # picks it up. Running a pass here would make the CLI a second writer of results.
+    assert ran == []
+
+
+@pytest.mark.asyncio
+async def test_now_runs_one_pass_after_enqueuing():
+    database = FakeDatabase(FakeResult(7))
+    ran = []
+
+    async def pass_runner():
+        ran.append(True)
+
+    exit_code = await run(
+        ["--asset-path", LINE, "--from", FROM, "--to", TO, "--now"],
+        database=database,
+        master=FakeMaster([FakeUnit(1, LINE)]),
+        pass_runner=pass_runner,
+    )
+    assert exit_code == 0
+    assert ran == [True]
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `uv run pytest 12_uns_oee/test/test_recompute_cli.py -v -n 0`
+Expected: FAIL — `ModuleNotFoundError: No module named 'uns_oee.recompute_cli'`.
+
+- [ ] **Step 3: Write the implementation**
+
+Create `12_uns_oee/src/uns_oee/recompute_cli.py`:
+
+```python
+"""`uns_oee_recompute` - queue a range for recomputation (spec sections 9.1 and 10).
+
+Two jobs the automatic backfill cannot do: a range older than `backfill_days`, and a
+deliberate recomputation after master data changed. A corrected ideal cycle time moves
+Performance for every shift that ran that product, and no fingerprint of historian rows will
+ever notice, because not one sample changed.
+
+Writes a row to `oee.recompute_request` and stops there. The engine is the only writer of
+results, so this process never computes one: `--now` enqueues the same row and then runs one
+ordinary pass, which claims it through `claim_requests` like any other request.
+
+    uns_oee_recompute --asset-path Enterprise/Site/Area/Line1 --from 2026-08-01 --to 2026-09-01
+    uns_oee_recompute --all-units --from 2026-08-01 --to 2026-09-01 --now --reason "cycle times"
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import getpass
+import logging
+import sys
+from collections.abc import Callable, Sequence
+from datetime import datetime, timezone
+from typing import Any
+
+from sqlalchemy import insert
+
+from uns_model.engine import Database
+from uns_model.oee_tables import RecomputeRequest
+from uns_oee.main import build_scheduler, configure_asyncio_for_mqtt, utc_now
+from uns_oee.master_data import MasterDataLoader
+from uns_oee.oee_config import OEE_ENV, OeeConfig
+from uns_oee.publisher import ResultPublisher
+
+logging.basicConfig(level=logging.INFO)
+LOGGER = logging.getLogger(__name__)
+
+
+def as_utc(text: str) -> datetime:
+    """An ISO-8601 timestamp as an aware UTC datetime.
+
+    A naive value is read as UTC rather than refused. The range is a filter over shift
+    boundaries, not a boundary itself - the shift calendar resolves those from each pattern's
+    own timezone - so `2026-08-01` cannot move a shift into the wrong day.
+    """
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError as ex:
+        raise argparse.ArgumentTypeError(f"{text!r} is not an ISO-8601 timestamp") from ex
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """The command line. One target, one range, two optional flags."""
+    parser = argparse.ArgumentParser(
+        prog="uns_oee_recompute",
+        description="Queue a shift range for recomputation by the OEE engine.",
+    )
+    target = parser.add_mutually_exclusive_group(required=True)
+    target.add_argument("--asset-path", help="ISA-95 path of the OEE unit, e.g. Enterprise/Site/Area/Line1")
+    target.add_argument(
+        "--all-units",
+        action="store_true",
+        help="Every active unit. Written as a single request with no unit, which is how the table spells it.",
+    )
+    parser.add_argument("--from", dest="range_start", required=True, type=as_utc, help="Start of the range")
+    parser.add_argument("--to", dest="range_end", required=True, type=as_utc, help="End of the range, exclusive")
+    parser.add_argument("--reason", default="", help="Why. Stored on the request and read by the next engineer.")
+    parser.add_argument("--requested-by", default=None, help="Defaults to the invoking OS user.")
+    parser.add_argument(
+        "--now",
+        action="store_true",
+        help="Run one engine pass in this process after enqueuing, instead of waiting for the engine's next scan.",
+    )
+    return parser
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    """Parsed arguments, with the range validated. Exits 2 on a usage error."""
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.range_end <= args.range_start:
+        # The table's CHECK would refuse this too, as an IntegrityError traceback. A usage
+        # message is the better answer to a transposed pair of dates.
+        parser.error("--to must be after --from")
+    if args.requested_by is None:
+        args.requested_by = _invoking_user()
+    return args
+
+
+def _invoking_user() -> str:
+    """Who to record. `getuser` raises in a container with no passwd entry."""
+    try:
+        return getpass.getuser()
+    except Exception:
+        return "cli"
+
+
+async def resolve_unit_id(master: Any, asset_path: str) -> int:
+    """The `oee_unit.id` for an asset path. Exits 1 with the valid paths if there is none."""
+    units = await master.active_units()
+    for unit in units:
+        if unit.asset_path == asset_path:
+            return unit.unit_id
+    known = ", ".join(sorted(unit.asset_path for unit in units)) or "none configured"
+    raise SystemExit(f"No active OEE unit at {asset_path!r}. Active units: {known}")
+
+
+async def enqueue(
+    database: Any,
+    unit_id: int | None,
+    start: datetime,
+    end: datetime,
+    *,
+    reason: str,
+    requested_by: str,
+) -> int:
+    """Insert one pending request and return its id.
+
+    `claimed_at`, `completed_at` and `error` are left unset: a pending row is the entire
+    message, and `requested_at` comes from the server's `now()` so the queue is ordered by one
+    clock rather than by whichever machine ran the CLI.
+    """
+    statement = (
+        insert(RecomputeRequest)
+        .values(
+            oee_unit_id=unit_id,
+            range_start=start,
+            range_end=end,
+            reason=reason,
+            requested_by=requested_by,
+        )
+        .returning(RecomputeRequest.id)
+    )
+    async with database.begin() as connection:
+        return (await connection.execute(statement)).scalar_one()
+
+
+async def run(
+    argv: Sequence[str] | None = None,
+    *,
+    database: Any | None = None,
+    master: Any | None = None,
+    pass_runner: Callable[[], Any] | None = None,
+) -> int:
+    """Enqueue the request, and run one pass if asked. Returns the process exit code.
+
+    `database`, `master` and `pass_runner` are injected so the argument and SQL behaviour can
+    be tested without a database; production leaves all three unset.
+    """
+    args = parse_args(argv)
+    config = OeeConfig.from_settings()
+    owned = database is None
+    database = database if database is not None else Database.shared(OEE_ENV)
+    master = master if master is not None else MasterDataLoader(database)
+
+    try:
+        unit_id = None if args.all_units else await resolve_unit_id(master, args.asset_path)
+        request_id = await enqueue(
+            database,
+            unit_id,
+            args.range_start,
+            args.range_end,
+            reason=args.reason,
+            requested_by=args.requested_by,
+        )
+        LOGGER.info(
+            "Queued recompute request %d for %s from %s to %s",
+            request_id,
+            args.asset_path if unit_id is not None else "every active unit",
+            args.range_start.isoformat(),
+            args.range_end.isoformat(),
+        )
+        if args.now:
+            await _run_one_pass(config, database, pass_runner)
+        else:
+            LOGGER.info("The engine will claim it within %.0fs", config.scan_interval_seconds)
+        return 0
+    finally:
+        if owned:
+            await Database.close_shared()
+
+
+async def _run_one_pass(config: OeeConfig, database: Any, pass_runner: Callable[[], Any] | None) -> None:
+    """One ordinary engine pass in this process.
+
+    Ordinary means ordinary: it also re-checks every shift still inside `late_window_hours`
+    and, against an empty results table, runs the bounded backfill. Said out loud rather than
+    suppressed - an unchanged shift costs two indexed queries, and the rest needed computing.
+    """
+    LOGGER.info("Running one pass here. It will also re-check recent shifts and, on an empty table, backfill.")
+    if pass_runner is not None:
+        await pass_runner()
+        return
+    publisher = ResultPublisher(config)
+    try:
+        summary = await build_scheduler(config, database, publisher).run_pass(utc_now())
+        LOGGER.info(
+            "Pass computed %d shift(s) with %d failure(s)", len(summary.outcomes), summary.failures
+        )
+    finally:
+        await publisher.aclose()
+
+
+def main() -> None:
+    """Console entry point `uns_oee_recompute`."""
+    configure_asyncio_for_mqtt()
+    sys.exit(asyncio.run(run()))
+
+
+if __name__ == "__main__":
+    main()
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `uv run pytest 12_uns_oee/test/test_recompute_cli.py -v -n 0`
+Expected: PASS (13 passed).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add 12_uns_oee/src/uns_oee/recompute_cli.py 12_uns_oee/test/test_recompute_cli.py
+git commit -m "feat(oee): add uns_oee_recompute to queue a range for recomputation"
+```
+
+---
+
+### Task 17: Retire the simulator's fabricated OEE
+
+**Files:**
+- Modify: `conf/simulator/production.yaml` — delete five signals from the `MES-01` template
+- Modify: `99_simulator/src/uns_simulator/models.py:41`–`:48` — add `KPI` to `ParameterType`
+- Modify: `99_simulator/test/test_conf_files.py:46`, `:290`–`:292` — the signal count and the map assertions
+
+**Interfaces:**
+- Consumes: nothing from the engine. This task is deletion plus one enum member.
+- Produces: `ParameterType.KPI` with value `"KPI"`, matching `KPI_PARAMETER_TYPE` in `uns_oee.publisher` (Task 11).
+
+Spec §12. The simulator publishes `Availability`, `Performance`, `Quality`, `Oee` and `DowntimeReason` as instantaneous derived expressions. Two publishers on one concept, one of them fabricated, is worse than having no OEE at all: it makes the pilot's headline number unfalsifiable. Nothing consumes them — no dashboard, no alert rule, no test outside the conf-file tables.
+
+**What stays, and why the engine needs no new simulator behaviour.** `GoodCount`, `RejectCount`, `TotalCount`, `CycleTime`, `PackMlState`, `PackMlStateCode`, `RecipeId` and `BatchId` are honest machine signals and are exactly the engine's inputs. `ctx.state` already cycles through PackML, so stops occur; `RecipeId` already carries `dwell_s: 7200`, so a product change happens inside a long shift and the per-product path is exercised by the shipped configuration.
+
+**Why `KPI` is added to an enum this module no longer emits.** `ParameterType` in `models.py` is the only place in the repository where the topic hierarchy's sixth segment is enumerated, so it is where the vocabulary is declared and reviewed. `uns_oee.publisher` deliberately does not import it — a runtime dependency from the engine onto the simulator would be backwards — and Step 4 pins the two spellings together with a test instead.
+
+- [ ] **Step 1: Write the failing tests**
+
+In `99_simulator/test/test_conf_files.py`, add `ParameterType` to the imports:
+
+```python
+from uns_simulator.models import ParameterType
+from uns_simulator.plant import PACKML_STATES
+from uns_simulator.profiles import load_profile, read_simulator_conf
+```
+
+Add the two vocabularies below `CONF_DIR`:
+
+```python
+# Spec 12. Deleted because `12_uns_oee` computes these from historised samples, and a
+# fabricated second answer to the same question makes the real one unfalsifiable.
+RETIRED_MES_SIGNALS = ("Availability", "Performance", "Quality", "Oee", "DowntimeReason")
+
+# Kept, because these are honest machine signals and they are the engine's inputs. Asserted
+# rather than assumed: deleting one of these would leave the OEE engine computing
+# NO_INPUT_DATA for every shift, with nothing in the simulator's own suite to say why.
+CONSUMED_MES_SIGNALS = (
+    "GoodCount",
+    "RejectCount",
+    "TotalCount",
+    "CycleTime",
+    "PackMlState",
+    "PackMlStateCode",
+    "RecipeId",
+    "BatchId",
+)
+```
+
+Change the production signal count on line 46 from 15 to 10:
+
+```python
+    "production": {"MES-01": 10, "QA-01": 6, "LAB-01": 6, "001": 2, "002": 1},
+```
+
+Replace `test_packml_state_code_maps_every_state` and append the three new tests:
+
+```python
+def _mes_signals(raw) -> dict:
+    return next(item for item in raw["production"]["devices"] if item["id"] == "MES-01")["signals"]
+
+
+def test_packml_state_code_maps_every_state(raw):
+    """A state missing from the map publishes its own name where an integer is expected.
+
+    SteppedSignal._translate falls through to the raw value on a miss, so an incomplete map
+    fails as a type surprise on a consumer rather than at load time. Only this test catches it.
+    """
+    assert set(_mes_signals(raw)["PackMlStateCode"]["map"]) == set(PACKML_STATES)
+
+
+def test_the_simulator_publishes_no_fabricated_oee(raw):
+    """Spec 12. The OEE engine is the only publisher of these numbers."""
+    signals = _mes_signals(raw)
+    assert [name for name in RETIRED_MES_SIGNALS if name in signals] == []
+
+
+def test_the_signals_the_oee_engine_reads_are_still_published(raw):
+    signals = _mes_signals(raw)
+    assert [name for name in CONSUMED_MES_SIGNALS if name not in signals] == []
+
+
+def test_kpi_is_a_parameter_type_no_simulated_device_claims(raw):
+    """The sixth ParameterType exists, and nothing here publishes under it.
+
+    A simulated device claiming `KPI` would put a fabricated number back on the topic the
+    engine writes to, which is the whole thing spec 12 removes.
+    """
+    assert ParameterType("KPI") is ParameterType.KPI
+    for family in EXPECTED_SIGNAL_COUNT:
+        for template in raw[family]["devices"]:
+            for name, signal in template["signals"].items():
+                claimed = (signal or {}).get("param_type")
+                assert claimed != "KPI", f"{family}.yaml {template['id']}/{name} claims KPI"
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `uv run pytest 99_simulator/test/test_conf_files.py -v -n 0`
+Expected: FAIL — `test_kpi_is_a_parameter_type_no_simulated_device_claims` raises `ValueError: 'KPI' is not a valid ParameterType`, `test_the_simulator_publishes_no_fabricated_oee` reports all five names, and the parametrised `MES-01` count fails with 15 != 10.
+
+- [ ] **Step 3: Add the enum member**
+
+In `99_simulator/src/uns_simulator/models.py`, extend `ParameterType`:
+
+```python
+class ParameterType(Enum):
+    """Types of industrial parameters following ISA-95 standards"""
+
+    PROCESS_VALUE = "ProcessValue"  # Measured values from sensors
+    SETPOINT = "Setpoint"  # Target values for control
+    STATUS = "Status"  # Equipment status information
+    ALARM = "Alarm"  # Alarm and warning conditions
+    EVENT = "EVENT"  # EVENT STATUS
+    KPI = "KPI"  # Computed over a closed period, not measured at an instant
+```
+
+The comment earns its place: `KPI` differs from the other five in *when* it is true. A `ProcessValue` is a reading at a timestamp; a KPI is an assertion about a window that has ended, which is why the OEE engine publishes one per shift rather than continuously.
+
+- [ ] **Step 4: Delete the five signals**
+
+In `conf/simulator/production.yaml`, remove these five blocks from the `MES-01` template, leaving everything else — including the comment header and the other ten signals — untouched:
+
+- `Availability` (the `100.0 * ctx.running` square wave)
+- `Performance` (`100.0 * ctx.production_rate`, with its `limits`)
+- `Quality` (the counter ratio, with its `limits`)
+- `Oee` (the product of the three, with its `limits` **and its `export_metric: true`**)
+- `DowntimeReason` (the 17-entry PackML-to-reason map)
+
+`MES-01` should be left with exactly these ten, in this order: `PackMlState`, `PackMlStateCode`, `ProductionRate`, `ThroughputTph`, `GoodCount`, `RejectCount`, `TotalCount`, `CycleTime`, `BatchId`, `RecipeId`.
+
+Add a note to the file's header comment, after the `NOTE the ctx path` paragraph, so the next reader does not re-add them:
+
+```yaml
+# OEE is NOT published here. Availability, Performance, Quality, Oee and DowntimeReason were
+# removed per the OEE engine design section 12: `12_uns_oee` computes them from historised
+# samples over a closed shift, and an instantaneous square wave named "Availability" competing
+# with a real one is worse than no number at all. The signals that engine reads - the two
+# counters, TotalCount, CycleTime, both PackML signals, RecipeId and BatchId - stay.
+```
+
+- [ ] **Step 5: Run the tests to verify they pass**
+
+Run: `uv run pytest 99_simulator/test/test_conf_files.py -v -n 0`
+Expected: PASS.
+
+- [ ] **Step 6: Run the simulator's whole suite**
+
+Run: `uv run pytest 99_simulator/test -q`
+Expected: PASS. `test_metrics.py` builds its own `SignalSpec` objects rather than reading `production.yaml`, so losing `Oee`'s `export_metric: true` changes no expectation there; `test_conf_files.py` is the only suite that reads the shipped files.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add conf/simulator/production.yaml 99_simulator/src/uns_simulator/models.py \
+        99_simulator/test/test_conf_files.py
+git commit -m "refactor(simulator): retire fabricated OEE signals and declare the KPI parameter type"
 ```
 
 ---
