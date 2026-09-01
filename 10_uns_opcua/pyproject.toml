@@ -1,0 +1,76 @@
+[project]
+name = "uns_opcua"
+version = "0.1.0"
+description = "Read-only OPC UA edge connector that publishes into a UNS setup"
+authors = [{ name = "Ashwin Krishnan", email = "mkashwin@gmail.com" }]
+requires-python = ">=3.14, <4"
+readme = "README.md"
+license = { text = "MIT" }
+keywords = ["uns", "mqtt", "opcua", "edge", "store-and-forward"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Intended Audience :: Manufacturing",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Development Status :: 3 - Alpha",
+    "Topic :: Communications",
+]
+dependencies = [
+    "logger~=1.4",
+    "uns_config",
+    "uns_model",
+    "asyncua>=2.0.1,<3",
+    "aiomqtt>=2.5.1,<3",
+    "dynaconf~=3.2",
+    "psutil>=6.1.1,<8",
+    "prometheus-client>=0.21.0,<1",
+    # model_check.py imports sqlalchemy directly, so it is declared rather than relied
+    # on transitively through uns_model. asyncpg arrives with uns_model's own pin.
+    "sqlalchemy[asyncio]>=2.0.36,<3",
+]
+
+[project.urls]
+Repository = "https://github.com/mkashwin/unifiednamespace/tree/main/10_uns_opcua"
+
+[project.scripts]
+uns_opcua = "uns_opcua.main:main"
+uns_opcua_healthcheck = "uns_opcua.health_check:main"
+uns_opcua_validate = "uns_opcua.model_check:main"
+
+[dependency-groups]
+test = [
+    "pytest>=9.0.3,<10",
+    "pytest-asyncio>=1.3.0,<1.5",
+    "pytest-xdist>=3.8.0,<4",
+    "pytest-timeout>=2.4.0,<3",
+    "pytest-cov>=7.1.0,<8",
+]
+
+# Relative paths, matching every other module. This is also what makes the Dockerfile
+# work: the module sits at /app and its siblings are copied to /00_uns_config and
+# /09_uns_model, so `../00_uns_config` resolves inside the image as well as in the
+# workspace.
+[tool.uv.sources]
+uns_config = { path = "../00_uns_config", editable = true }
+uns_model = { path = "../09_uns_model", editable = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.sdist]
+include = ["src/uns_opcua"]
+
+[tool.hatch.build.targets.wheel]
+include = ["src/uns_opcua"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src/uns_opcua" = "uns_opcua"
+
+[tool.pytest.ini_options]
+norecursedirs = [".git", "build", "node_modules", "env*", "tmp*"]
+testpaths = ["test"]
+
+[tool.ruff]
+# Extend the `pyproject.toml` file in the parent directory
+extend = "../pyproject.toml"

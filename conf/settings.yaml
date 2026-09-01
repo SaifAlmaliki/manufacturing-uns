@@ -82,6 +82,23 @@ default:
     metrics_table: "uns_metrics"
     metrics_port: 9091
 
+  opcua:
+    client_id: "uns_opcua_client"
+    model_check: true
+    metrics_port: 9093
+    queue_maxsize: 50000
+    forward_batch_size: 200
+    reconnect_backoff_max_s: 60
+    spool:
+      path: "/var/lib/uns_opcua/spool.db"
+      max_rows: 5000000
+      max_bytes: 2000000000
+      max_age_hours: 168
+      synchronous: "NORMAL"
+    # No servers by default: the connector exits cleanly when none are configured,
+    # so a stock checkout does not try to reach a PLC that is not there.
+    servers: []
+
   simulator:
     # Prometheus scrapes this. 9091 is the historian's and 9092 the graph database's.
     metrics_port: 9093
@@ -107,6 +124,12 @@ graphdb:
 historian:
   mqtt:
     topics: ["test/uns/#", "CovestroAG/#", "spBv1.0/#"]
+
+opcua:
+  opcua:
+    # Replace with the plant's servers. node_id, asset and metric_path are all required;
+    # the published topic is asset + "/" + metric_path.
+    servers: []
 
 kafka_mapper:
   mqtt:
