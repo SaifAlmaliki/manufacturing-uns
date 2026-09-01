@@ -154,7 +154,7 @@ New workspace member `12_uns_oee`, package `uns_oee`:
 │   ├── classifier.py          # stop interval → reason code
 │   ├── store.py               # idempotent write, revision bump, input fingerprint
 │   ├── publisher.py           # one long-lived aiomqtt connection
-│   ├── scheduler.py           # boundary wake, late re-check, recompute queue drain
+│   ├── scheduler.py           # startup backfill, boundary wake, late re-check, queue drain
 │   ├── recompute_cli.py       # --recompute <asset-path> <from> <to>
 │   ├── prometheus_metrics.py
 │   ├── health_check.py
@@ -629,11 +629,14 @@ genuine dependency, not a startup-order convenience.
 2. **Performance uses Total Count** (Rule 2). Some plants define it on Good Count. Changing
    it is a one-line change in `oee_calc.py`, but it makes this platform's OEE
    incomparable with the standard definition, so it is a rule rather than a setting.
-3. **`settle_minutes` = 15 and `late_window_hours` = 48** (section 9). Both are
-   configuration; the defaults suit a site whose worst expected spool replay is under two
-   days.
+3. **`settle_minutes` = 15, `late_window_hours` = 48, `backfill_days` = 30** (sections 9 and
+   9.1). All configuration; the defaults suit a site whose worst expected spool replay is
+   under two days and whose pilot wants a month of trend on day one.
 4. **Clamping `Performance` at 1.0** (section 8.1). Publishing an OEE above 100% would be
    more honest about the input error and less usable in every downstream average.
 5. **Deleting the simulator's derived signals** (section 12) rather than renaming them to
    `SimulatedOee`. Renaming would keep a demo-friendly live number at the cost of two OEE
    vocabularies in one namespace.
+6. **Binding the OEE unit at the `LINE`** (section 7.1). A plant whose real constraint is a
+   single machine may want machine-level units as well, which is a roll-up definition this
+   spec deliberately does not carry.
