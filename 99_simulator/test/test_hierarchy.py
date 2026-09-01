@@ -6,7 +6,7 @@ from uns_simulator.simulator import UnifiedNamespaceSimulator
 
 
 class DummyClient:
-    def __init__(self, *args, **kwargs):  # ruff: ignore[unused-method-argument]
+    def __init__(self, *args, **kwargs):
         self.published = []
 
     async def __aenter__(self):

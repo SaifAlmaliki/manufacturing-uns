@@ -15,7 +15,7 @@ from uns_simulator.signals import SignalSpec
 
 # Dummy replacements to avoid external dependencies and network I/O
 class DummyClient:
-    def __init__(self, *args, **kwargs):  # ruff: ignore[unused-method-argument]
+    def __init__(self, *args, **kwargs):
         self.published: list[tuple[str, dict]] = []
         self.enter_count = 0
         self.fail_on_enter = 0
@@ -31,7 +31,7 @@ class DummyClient:
     async def __aexit__(self, exc_type, exc, tb):
         return False
 
-    async def publish(self, topic, payload, **kwargs):  # ruff: ignore[unused-method-argument]
+    async def publish(self, topic, payload, **kwargs):
         if self.fail_on_publish:
             raise OSError("broker went away")
         self.published.append((topic, json.loads(payload)))

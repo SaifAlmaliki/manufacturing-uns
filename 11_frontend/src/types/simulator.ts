@@ -206,3 +206,9 @@ export interface SimulatorApiError {
 export type SimulatorResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: SimulatorApiError }
+
+export function isSimulatorFailure<T>(
+  result: SimulatorResult<T>,
+): result is { ok: false; error: SimulatorApiError } {
+  return result.ok === false
+}

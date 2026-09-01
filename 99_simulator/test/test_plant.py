@@ -478,7 +478,7 @@ def test_a_failing_callback_does_not_stop_the_clock():
     clock = PlantClock(context, tick_s=1.0)
     calls: list[str] = []
 
-    def explode(site, line, state):  # ruff: ignore[unused-function-argument]
+    def explode(site, line, state):
         calls.append("boom")
         raise RuntimeError("broker down")
 

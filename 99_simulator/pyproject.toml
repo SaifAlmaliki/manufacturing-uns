@@ -89,4 +89,5 @@ extend = "../pyproject.toml"
 extend-ignore = ["RUF069", "RUF105"]
 
 [tool.ruff.lint.per-file-ignores]
-"test/*.py" = ["RUF043", "RUF029", "S311", "PERF401", "RUF007"]
+"test/*.py" = ["RUF043", "RUF029", "S311", "PERF401", "RUF007", "ARG001", "ARG002", "ARG005", "S105", "S106", "RUF012", "UP037", "PGH004"]
+"src/uns_simulator/api.py" = ["C901"]

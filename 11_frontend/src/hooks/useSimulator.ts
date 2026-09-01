@@ -24,6 +24,7 @@ import type {
   SimulatorSignal,
   SimulatorStatus,
 } from '../types/simulator'
+import { isSimulatorFailure } from '../types/simulator'
 import type { MqttMessage } from '../types/uns'
 
 const POLL_INTERVAL_MS = 2000
@@ -54,7 +55,7 @@ export function useSimulator() {
 
   const refreshStatus = useCallback(async () => {
     const result = await simulatorClient.getStatus()
-    if (!result.ok) {
+    if (isSimulatorFailure(result)) {
       if (result.error.kind === 'offline') {
         setOffline(true)
         return
@@ -68,41 +69,47 @@ export function useSimulator() {
 
   const refreshPlant = useCallback(async () => {
     const result = await simulatorClient.getPlant()
-    if (result.ok) {
+    if (!isSimulatorFailure(result)) {
       setPlant(result.data)
     }
   }, [])
 
   const refreshConfig = useCallback(async () => {
     const result = await simulatorClient.getConfig()
-    if (result.ok) {
-      setConfig(result.data)
-    } else if (result.error.kind !== 'offline') {
-      setLastError(result.error)
+    if (isSimulatorFailure(result)) {
+      if (result.error.kind !== 'offline') {
+        setLastError(result.error)
+      }
+      return
     }
+    setConfig(result.data)
   }, [])
 
   const refreshDevices = useCallback(async () => {
     const result = await simulatorClient.getDevices()
-    if (result.ok) {
-      setDevices(result.data.devices)
-    } else if (result.error.kind !== 'offline') {
-      setLastError(result.error)
+    if (isSimulatorFailure(result)) {
+      if (result.error.kind !== 'offline') {
+        setLastError(result.error)
+      }
+      return
     }
+    setDevices(result.data.devices)
   }, [])
 
   const refreshDiagnostics = useCallback(async () => {
     const result = await simulatorClient.getDiagnostics()
-    if (result.ok) {
-      setDiagnostics(result.data)
-    } else if (result.error.kind !== 'offline') {
-      setLastError(result.error)
+    if (isSimulatorFailure(result)) {
+      if (result.error.kind !== 'offline') {
+        setLastError(result.error)
+      }
+      return
     }
+    setDiagnostics(result.data)
   }, [])
 
   const signals = useCallback(async (deviceId: string): Promise<SimulatorSignal[]> => {
     const result = await simulatorClient.getSignals(deviceId)
-    return result.ok ? result.data.signals : []
+    return isSimulatorFailure(result) ? [] : result.data.signals
   }, [])
 
   // Poll status and plant together. Two requests rather than one wider endpoint, because
@@ -166,7 +173,7 @@ export function useSimulator() {
       setLastError(null)
       try {
         const result = await action()
-        if (!result.ok) {
+        if (isSimulatorFailure(result)) {
           setLastError(result.error)
           setOffline(result.error.kind === 'offline')
           return false

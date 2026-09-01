@@ -112,16 +112,16 @@ export class SimulatorClient {
         } catch {
           parsed = null
         }
-        return { ok: false, error: this.parseError(response.status, parsed) }
+        return { ok: false as const, error: this.parseError(response.status, parsed) }
       }
 
-      return { ok: true, data: (await response.json()) as T }
+      return { ok: true as const, data: (await response.json()) as T }
     } catch {
       // Refused, DNS failure, timeout, or a body that was not JSON. From the console's
       // point of view these are one condition: there is no simulator answering here.
       return {
-        ok: false,
-        error: { kind: 'offline', message: 'No simulator is answering on /simulator' },
+        ok: false as const,
+        error: { kind: 'offline' as const, message: 'No simulator is answering on /simulator' },
       }
     }
   }
