@@ -1602,7 +1602,6 @@ name = "uns-historian"
 version = "0.9.38"
 source = { editable = "04_uns_historian" }
 dependencies = [
-    { name = "asyncpg" },
     { name = "dynaconf" },
     { name = "logger" },
     { name = "prometheus-client" },
@@ -1613,7 +1612,6 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "asyncpg", specifier = ">=0.31.0,<0.32" },
     { name = "dynaconf", specifier = "~=3.2" },
     { name = "logger", specifier = "~=1.4" },
     { name = "prometheus-client", specifier = ">=0.21.0,<1" },
@@ -1730,20 +1728,29 @@ source = { editable = "99_simulator" }
 dependencies = [
     { name = "aiomqtt" },
     { name = "dynaconf" },
+    { name = "fastapi" },
     { name = "logger" },
+    { name = "prometheus-client" },
+    { name = "pyyaml" },
     { name = "uns-config" },
+    { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "aiomqtt", specifier = ">=2.5.1,<3" },
     { name = "dynaconf", specifier = "~=3.2" },
+    { name = "fastapi", specifier = ">=0.115,<1" },
     { name = "logger", specifier = "~=1.4" },
+    { name = "prometheus-client", specifier = ">=0.21.0,<1" },
+    { name = "pyyaml", specifier = "~=6.0" },
     { name = "uns-config", editable = "00_uns_config" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.34,<0.53" },
 ]
 
 [package.metadata.requires-dev]
 test = [
+    { name = "httpx", specifier = ">=0.28,<1" },
     { name = "pytest", specifier = ">=9.0.3,<10" },
     { name = "pytest-asyncio", specifier = ">=1.3.0,<1.5" },
     { name = "pytest-cov", specifier = ">=6.0.0,<8" },

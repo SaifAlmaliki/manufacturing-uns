@@ -1507,3 +1507,1432 @@ git commit -m "feat(oee): add OEE master-data and result tables with migration 0
 ```
 
 ---
+
+### Task 3: Authored master data — `conf/oee/*.yaml` and the importer
+
+**Files:**
+- Create: `conf/oee/shifts.yaml`
+- Create: `conf/oee/units.yaml`
+- Create: `conf/oee/products.yaml`
+- Create: `conf/oee/reasons.yaml`
+- Create: `09_uns_model/src/uns_model/oee_master_data.py`
+- Create: `09_uns_model/src/uns_model/oee_seed.py`
+- Create: `09_uns_model/test/test_oee_seed.py`
+- Modify: `09_uns_model/src/uns_model/cli.py` (add `oee_import`, chain it from `main`)
+- Modify: `09_uns_model/pyproject.toml` (add `pyyaml` and the `uns_model_oee_import` script)
+
+**Interfaces:**
+- Consumes: `uns_config.resolve_conf_dir`, `uns_model.engine.Database`, `uns_model.oee_tables.*`.
+- Produces:
+  - Specs in `oee_master_data.py`: `ProductSpec(code, name="")`, `ShiftSlotSpec(day_of_week, start_time, duration_minutes, label="")`, `ShiftPatternSpec(name, timezone, asset_path=None, slots=())`, `ShiftExceptionSpec(starts_at, ends_at, kind="PLANNED_DOWN", asset_path=None, note="")`, `DowntimeReasonSpec(code, display_name, category="", is_planned=False)`, `OeeUnitSpec(asset_path, shift_pattern_name, state_metric_key, good_count_metric_key, reject_count_metric_key=None, product_metric_key=None, producing_states=("EXECUTE",))`, `IdealCycleTimeSpec(asset_path, seconds_per_unit, product_code=None)`, `StateReasonRuleSpec(state_value, reason_code, asset_path=None)`. Every spec has `validate() -> None`.
+  - `OeeMasterDataRepository(database)` with `async save_product`, `save_shift_pattern`, `save_shift_exception`, `save_downtime_reason`, `save_oee_unit`, `save_ideal_cycle_time`, `save_state_reason_rule`, `counts`.
+  - In `oee_seed.py`: `OeeSeedPlan` with `.describe()`, `read_oee_conf(conf_dir=None) -> dict`, `plan_from_oee_config(mapping) -> OeeSeedPlan`, `async apply_plan(repository, plan) -> dict[str, int]`.
+
+- [ ] **Step 1: Write the four configuration files**
+
+`conf/oee/products.yaml` — the recipe codes the simulator actually publishes on `Status/RecipeId`:
+
+```yaml
+# conf/oee/products.yaml
+# What the plant makes. `code` must equal the value published on the unit's
+# product_metric_key topic, because that is how a shift's counts are split by product.
+
+products:
+  - code: "R-100-STD"
+    name: "Resin 100 standard"
+  - code: "R-100-HIGH"
+    name: "Resin 100 high-flow"
+  - code: "R-220-STD"
+    name: "Resin 220 standard"
+  - code: "R-330-LOW"
+    name: "Resin 330 low-viscosity"
+```
+
+`conf/oee/shifts.yaml`:
+
+```yaml
+# conf/oee/shifts.yaml
+# Weekly shift patterns. `start` is local wall-clock time in `timezone`, so 06:00 stays
+# 06:00 to the operator across a daylight-saving change - which means the shift containing
+# the spring-forward gap really is 7 hours long, and the autumn one 9.
+#
+# `duration_minutes` rather than an end time: a shift crossing midnight then needs no
+# second row and no end-before-start special case.
+
+patterns:
+  - name: "Dormagen 3-shift"
+    timezone: "Europe/Berlin"
+    asset: "CovestroAG/Dormagen/Production/Line1"
+    slots:
+      # Monday (0) to Friday (4), three eight-hour shifts.
+      - {days: [0, 1, 2, 3, 4], start: "06:00", duration_minutes: 480, label: "A"}
+      - {days: [0, 1, 2, 3, 4], start: "14:00", duration_minutes: 480, label: "B"}
+      - {days: [0, 1, 2, 3, 4], start: "22:00", duration_minutes: 480, label: "C"}
+
+exceptions:
+  # No `asset` means every Asset: a plant holiday is one row, not one per line.
+  - starts_at: "2026-12-24T00:00:00+01:00"
+    ends_at: "2026-12-27T00:00:00+01:00"
+    kind: "HOLIDAY"
+    note: "Christmas shutdown"
+  - asset: "CovestroAG/Dormagen/Production/Line1"
+    starts_at: "2026-09-14T06:00:00+02:00"
+    ends_at: "2026-09-14T14:00:00+02:00"
+    kind: "PLANNED_DOWN"
+    note: "Annual overhaul, Line 1"
+```
+
+`conf/oee/units.yaml`:
+
+```yaml
+# conf/oee/units.yaml
+# Which Assets OEE is reported for, and where their inputs come from.
+#
+# The subject is the Line, because that is the number a plant manages. The metric keys are
+# paths relative to the Line's topic prefix, so they can name a descendant machine without
+# a second Asset row: state_metric_key below resolves to the historian metric
+# 'CovestroAG/Dormagen/Production/Line1/Cell1/MES-01/Status/PackMlState'.
+
+units:
+  - asset: "CovestroAG/Dormagen/Production/Line1"
+    shift_pattern: "Dormagen 3-shift"
+    state_metric_key: "Cell1/MES-01/Status/PackMlState/value"
+    good_count_metric_key: "Cell1/MES-01/ProcessValue/GoodCount/value"
+    reject_count_metric_key: "Cell1/MES-01/ProcessValue/RejectCount/value"
+    product_metric_key: "Cell1/MES-01/Status/RecipeId/value"
+    # EXECUTE is the only PackML state that makes parts. Everything else is a stop.
+    producing_states: ["EXECUTE"]
+    ideal_cycle_times:
+      # No `product` is the fallback used when the published recipe has no row of its own.
+      - seconds_per_unit: 3.0
+      - {product: "R-100-STD", seconds_per_unit: 3.0}
+      - {product: "R-100-HIGH", seconds_per_unit: 2.4}
+      - {product: "R-220-STD", seconds_per_unit: 4.5}
+      - {product: "R-330-LOW", seconds_per_unit: 6.0}
+```
+
+`conf/oee/reasons.yaml`:
+
+```yaml
+# conf/oee/reasons.yaml
+# Downtime reason codes, and the rules that attribute a published state to one.
+#
+# `is_planned` is an input to the calculation, not a label: a planned stop is subtracted
+# from Loading Time, an unplanned one from Run Time. Getting it wrong moves the OEE number.
+#
+# Migration 0003 already seeded UNCLASSIFIED, PLANNED_MAINTENANCE, CHANGEOVER,
+# PLANNED_BREAK, BREAKDOWN, MINOR_STOP, MATERIAL_SHORTAGE, OPERATOR_ABSENT and
+# QUALITY_HOLD. These are the additions this plant needs for the PackML state set.
+
+reasons:
+  - {code: "NO_ORDER", display_name: "No order", category: "Organisational", is_planned: true}
+  - {code: "ORDER_FINISHING", display_name: "Order finishing", category: "Organisational", is_planned: true}
+  - {code: "STARTUP", display_name: "Startup / ramp-up", category: "Setup", is_planned: false}
+  - {code: "PROCESS_HOLD", display_name: "Process hold", category: "Technical", is_planned: false}
+  - {code: "UPSTREAM_BLOCKED", display_name: "Blocked or starved", category: "Supply", is_planned: false}
+  - {code: "OPERATOR_STOP", display_name: "Operator stop", category: "Organisational", is_planned: false}
+
+# No `asset` means the rule is the platform default for every unit. A rule naming an asset
+# wins over the default for that unit. EXECUTE is deliberately absent: it is a producing
+# state, so it never becomes a stop and never needs a reason.
+state_rules:
+  - {state: "IDLE", reason: "NO_ORDER"}
+  - {state: "STARTING", reason: "STARTUP"}
+  - {state: "HOLDING", reason: "PROCESS_HOLD"}
+  - {state: "HELD", reason: "MATERIAL_SHORTAGE"}
+  - {state: "UNHOLDING", reason: "STARTUP"}
+  - {state: "SUSPENDING", reason: "UPSTREAM_BLOCKED"}
+  - {state: "SUSPENDED", reason: "UPSTREAM_BLOCKED"}
+  - {state: "UNSUSPENDING", reason: "STARTUP"}
+  - {state: "COMPLETING", reason: "ORDER_FINISHING"}
+  - {state: "COMPLETE", reason: "NO_ORDER"}
+  - {state: "RESETTING", reason: "CHANGEOVER"}
+  - {state: "ABORTING", reason: "BREAKDOWN"}
+  - {state: "ABORTED", reason: "BREAKDOWN"}
+  - {state: "CLEARING", reason: "BREAKDOWN"}
+  - {state: "STOPPING", reason: "OPERATOR_STOP"}
+  - {state: "STOPPED", reason: "OPERATOR_STOP"}
+```
+
+- [ ] **Step 2: Write the failing test**
+
+`09_uns_model/test/test_oee_seed.py`:
+
+```python
+"""Tests for the conf/oee/*.yaml importer.
+
+`plan_from_oee_config` is a pure function of a mapping, so these need no database and no
+files - which is the point of splitting planning from applying.
+"""
+
+from datetime import time
+
+import pytest
+
+from uns_model.oee_seed import plan_from_oee_config
+
+
+CONFIG = {
+    "products": {"products": [{"code": "R-100-STD", "name": "Resin 100 standard"}]},
+    "shifts": {
+        "patterns": [
+            {
+                "name": "Dormagen 3-shift",
+                "timezone": "Europe/Berlin",
+                "asset": "CovestroAG/Dormagen/Production/Line1",
+                "slots": [
+                    {"days": [0, 1], "start": "06:00", "duration_minutes": 480, "label": "A"},
+                    {"days": [0], "start": "22:00", "duration_minutes": 480, "label": "C"},
+                ],
+            }
+        ],
+        "exceptions": [
+            {
+                "starts_at": "2026-12-24T00:00:00+01:00",
+                "ends_at": "2026-12-27T00:00:00+01:00",
+                "kind": "HOLIDAY",
+                "note": "Christmas shutdown",
+            }
+        ],
+    },
+    "units": {
+        "units": [
+            {
+                "asset": "CovestroAG/Dormagen/Production/Line1",
+                "shift_pattern": "Dormagen 3-shift",
+                "state_metric_key": "Cell1/MES-01/Status/PackMlState/value",
+                "good_count_metric_key": "Cell1/MES-01/ProcessValue/GoodCount/value",
+                "reject_count_metric_key": "Cell1/MES-01/ProcessValue/RejectCount/value",
+                "product_metric_key": "Cell1/MES-01/Status/RecipeId/value",
+                "producing_states": ["EXECUTE"],
+                "ideal_cycle_times": [
+                    {"seconds_per_unit": 3.0},
+                    {"product": "R-100-STD", "seconds_per_unit": 2.4},
+                ],
+            }
+        ]
+    },
+    "reasons": {
+        "reasons": [{"code": "NO_ORDER", "display_name": "No order", "is_planned": True}],
+        "state_rules": [{"state": "IDLE", "reason": "NO_ORDER"}],
+    },
+}
+
+
+def test_a_slot_is_expanded_once_per_day_it_names():
+    plan = plan_from_oee_config(CONFIG)
+    slots = plan.patterns[0].slots
+    assert [(slot.day_of_week, slot.start_time, slot.label) for slot in slots] == [
+        (0, time(6, 0), "A"),
+        (1, time(6, 0), "A"),
+        (0, time(22, 0), "C"),
+    ]
+    assert all(slot.duration_minutes == 480 for slot in slots)
+
+
+def test_ideal_cycle_times_carry_the_units_asset_and_an_optional_product():
+    plan = plan_from_oee_config(CONFIG)
+    assert [(spec.product_code, spec.seconds_per_unit) for spec in plan.cycle_times] == [
+        (None, 3.0),
+        ("R-100-STD", 2.4),
+    ]
+    assert all(
+        spec.asset_path == "CovestroAG/Dormagen/Production/Line1" for spec in plan.cycle_times
+    )
+
+
+def test_exception_without_an_asset_applies_to_every_asset():
+    plan = plan_from_oee_config(CONFIG)
+    assert plan.exceptions[0].asset_path is None
+    assert plan.exceptions[0].kind == "HOLIDAY"
+    assert plan.exceptions[0].starts_at.utcoffset().total_seconds() == 3600
+
+
+def test_state_rule_without_an_asset_is_the_platform_default():
+    plan = plan_from_oee_config(CONFIG)
+    assert plan.state_reason_rules[0].asset_path is None
+    assert plan.state_reason_rules[0].state_value == "IDLE"
+
+
+def test_an_unknown_shift_pattern_name_is_rejected_before_the_database_sees_it():
+    broken = {**CONFIG, "units": {"units": [{**CONFIG["units"]["units"][0], "shift_pattern": "Nope"}]}}
+    with pytest.raises(ValueError, match="Nope"):
+        plan_from_oee_config(broken)
+
+
+def test_a_producing_state_must_not_also_have_a_reason_rule():
+    broken = {
+        **CONFIG,
+        "reasons": {
+            "reasons": CONFIG["reasons"]["reasons"],
+            "state_rules": [{"state": "EXECUTE", "reason": "NO_ORDER"}],
+        },
+    }
+    with pytest.raises(ValueError, match="EXECUTE"):
+        plan_from_oee_config(broken)
+
+
+def test_describe_lists_what_would_be_written():
+    described = plan_from_oee_config(CONFIG).describe()
+    assert "Dormagen 3-shift" in described
+    assert "CovestroAG/Dormagen/Production/Line1" in described
+    assert "NO_ORDER" in described
+```
+
+- [ ] **Step 3: Run the test to verify it fails**
+
+Run: `uv run pytest 09_uns_model/test/test_oee_seed.py -v -n 0`
+Expected: FAIL — `ModuleNotFoundError: No module named 'uns_model.oee_seed'`.
+
+- [ ] **Step 4: Write the specs**
+
+`09_uns_model/src/uns_model/oee_master_data.py`, first half:
+
+```python
+"""Authoring access to the OEE master data in schema `model`.
+
+Follows `alert_rules.py`: a frozen dataclass spec per table with a `validate()` that
+produces a readable error before Postgres gets a chance to produce an unreadable one, and
+one repository that owns every write. Reads used by the engine live in the second half of
+this file, added in Task 8.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime, time
+from typing import Any
+
+from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.postgresql import insert
+
+from uns_model.engine import Database
+from uns_model.oee_tables import (
+    DEFAULT_PRODUCING_STATES,
+    SHIFT_EXCEPTION_KINDS,
+    DowntimeReason,
+    IdealCycleTime,
+    OeeUnit,
+    Product,
+    ShiftException,
+    ShiftPattern,
+    ShiftPatternSlot,
+    StateReasonMap,
+)
+from uns_model.tables import Asset
+
+
+def _require_one_of(what: str, value: str, allowed: tuple[str, ...]) -> None:
+    if value not in allowed:
+        raise ValueError(f"{what} must be one of {', '.join(allowed)}, got {value!r}")
+
+
+def _require_non_empty(what: str, value: str) -> None:
+    if not value or not value.strip():
+        raise ValueError(f"{what} must not be empty")
+
+
+@dataclass(frozen=True, slots=True)
+class ProductSpec:
+    """Something the plant makes."""
+
+    code: str
+    name: str = ""
+
+    def validate(self) -> None:
+        _require_non_empty("product code", self.code)
+
+
+@dataclass(frozen=True, slots=True)
+class ShiftSlotSpec:
+    """One shift on one weekday, as local wall-clock start plus duration."""
+
+    day_of_week: int
+    start_time: time
+    duration_minutes: int
+    label: str = ""
+
+    def validate(self) -> None:
+        if not 0 <= self.day_of_week <= 6:
+            raise ValueError(f"day_of_week must be 0 (Monday) to 6 (Sunday), got {self.day_of_week}")
+        if not 0 < self.duration_minutes <= 1440:
+            raise ValueError(f"duration_minutes must be 1 to 1440, got {self.duration_minutes}")
+
+
+@dataclass(frozen=True, slots=True)
+class ShiftPatternSpec:
+    """A named weekly schedule in one timezone."""
+
+    name: str
+    timezone: str
+    asset_path: str | None = None
+    slots: tuple[ShiftSlotSpec, ...] = ()
+
+    def validate(self) -> None:
+        _require_non_empty("shift pattern name", self.name)
+        _require_non_empty("shift pattern timezone", self.timezone)
+        if not self.slots:
+            raise ValueError(f"shift pattern {self.name!r} declares no slots, so no shift ever closes")
+        for slot in self.slots:
+            slot.validate()
+
+
+@dataclass(frozen=True, slots=True)
+class ShiftExceptionSpec:
+    """A window that is not available for production."""
+
+    starts_at: datetime
+    ends_at: datetime
+    kind: str = "PLANNED_DOWN"
+    asset_path: str | None = None
+    note: str = ""
+
+    def validate(self) -> None:
+        _require_one_of("shift exception kind", self.kind, SHIFT_EXCEPTION_KINDS)
+        if self.starts_at.tzinfo is None or self.ends_at.tzinfo is None:
+            raise ValueError("shift exception timestamps must be timezone-aware")
+        if self.ends_at <= self.starts_at:
+            raise ValueError(f"shift exception ends_at {self.ends_at} is not after starts_at {self.starts_at}")
+
+
+@dataclass(frozen=True, slots=True)
+class DowntimeReasonSpec:
+    """A reason code and whether it counts as planned."""
+
+    code: str
+    display_name: str
+    category: str = ""
+    is_planned: bool = False
+
+    def validate(self) -> None:
+        _require_non_empty("downtime reason code", self.code)
+        _require_non_empty("downtime reason display_name", self.display_name)
+
+
+@dataclass(frozen=True, slots=True)
+class OeeUnitSpec:
+    """An Asset OEE is reported for, and where its inputs come from."""
+
+    asset_path: str
+    shift_pattern_name: str
+    state_metric_key: str
+    good_count_metric_key: str
+    reject_count_metric_key: str | None = None
+    product_metric_key: str | None = None
+    producing_states: tuple[str, ...] = DEFAULT_PRODUCING_STATES
+
+    def validate(self) -> None:
+        _require_non_empty("unit asset path", self.asset_path)
+        _require_non_empty("unit shift_pattern", self.shift_pattern_name)
+        _require_non_empty("unit state_metric_key", self.state_metric_key)
+        _require_non_empty("unit good_count_metric_key", self.good_count_metric_key)
+        if not self.producing_states:
+            raise ValueError(
+                f"unit {self.asset_path!r} declares no producing states, so Run Time would always be zero"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class IdealCycleTimeSpec:
+    """Seconds per unit at the designed rate. `product_code` None is the fallback."""
+
+    asset_path: str
+    seconds_per_unit: float
+    product_code: str | None = None
+
+    def validate(self) -> None:
+        _require_non_empty("ideal cycle time asset path", self.asset_path)
+        if self.seconds_per_unit <= 0:
+            raise ValueError(
+                f"ideal cycle time for {self.asset_path!r} must be greater than zero, "
+                f"got {self.seconds_per_unit}"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class StateReasonRuleSpec:
+    """Attributes a published state value to a reason code. None asset is the default."""
+
+    state_value: str
+    reason_code: str
+    asset_path: str | None = None
+
+    def validate(self) -> None:
+        _require_non_empty("state rule state", self.state_value)
+        _require_non_empty("state rule reason", self.reason_code)
+```
+
+- [ ] **Step 5: Write the repository into the same file**
+
+Append to `09_uns_model/src/uns_model/oee_master_data.py`:
+
+```python
+class OeeMasterDataRepository:
+    """Every write to the OEE master data.
+
+    Idempotent by natural key throughout - product code, pattern name, (asset, product),
+    (unit, state) - so re-importing an edited `conf/oee/` updates rather than duplicates.
+    """
+
+    def __init__(self, database: Database) -> None:
+        self._database = database
+
+    # ---- writes -------------------------------------------------------------------
+
+    async def save_product(self, spec: ProductSpec) -> int:
+        spec.validate()
+        statement = (
+            insert(Product)
+            .values(code=spec.code, name=spec.name)
+            .on_conflict_do_update(index_elements=[Product.code], set_={"name": spec.name})
+            .returning(Product.id)
+        )
+        async with self._database.session() as session:
+            return (await session.execute(statement)).scalar_one()
+
+    async def save_downtime_reason(self, spec: DowntimeReasonSpec) -> str:
+        spec.validate()
+        statement = (
+            insert(DowntimeReason)
+            .values(
+                code=spec.code,
+                display_name=spec.display_name,
+                category=spec.category,
+                is_planned=spec.is_planned,
+            )
+            .on_conflict_do_update(
+                index_elements=[DowntimeReason.code],
+                set_={
+                    "display_name": spec.display_name,
+                    "category": spec.category,
+                    "is_planned": spec.is_planned,
+                },
+            )
+            .returning(DowntimeReason.code)
+        )
+        async with self._database.session() as session:
+            return (await session.execute(statement)).scalar_one()
+
+    async def save_shift_pattern(self, spec: ShiftPatternSpec) -> int:
+        """Upsert the pattern, then replace its slots wholesale.
+
+        Replace rather than merge: the pattern is authored as one document, so a slot
+        deleted from the YAML has to disappear from the database too.
+        """
+        spec.validate()
+        async with self._database.session() as session:
+            asset_id = await self._asset_id(session, spec.asset_path)
+            pattern_id = (
+                await session.execute(
+                    insert(ShiftPattern)
+                    .values(name=spec.name, timezone=spec.timezone, asset_id=asset_id)
+                    .on_conflict_do_update(
+                        index_elements=[ShiftPattern.name],
+                        set_={"timezone": spec.timezone, "asset_id": asset_id},
+                    )
+                    .returning(ShiftPattern.id)
+                )
+            ).scalar_one()
+            await session.execute(
+                delete(ShiftPatternSlot).where(ShiftPatternSlot.shift_pattern_id == pattern_id)
+            )
+            if spec.slots:
+                await session.execute(
+                    insert(ShiftPatternSlot),
+                    [
+                        {
+                            "shift_pattern_id": pattern_id,
+                            "day_of_week": slot.day_of_week,
+                            "start_time": slot.start_time,
+                            "duration_minutes": slot.duration_minutes,
+                            "label": slot.label,
+                        }
+                        for slot in spec.slots
+                    ],
+                )
+            return pattern_id
+
+    async def save_shift_exception(self, spec: ShiftExceptionSpec) -> int:
+        """Insert an exception, skipping an identical one.
+
+        Keyed on the whole window rather than a surrogate id, so re-importing the same
+        holiday does not add a second row - and two genuinely different overlapping
+        exceptions are still both kept, because union arithmetic makes that harmless.
+        """
+        spec.validate()
+        async with self._database.session() as session:
+            asset_id = await self._asset_id(session, spec.asset_path)
+            existing = (
+                await session.execute(
+                    select(ShiftException.id).where(
+                        ShiftException.asset_id.is_not_distinct_from(asset_id),
+                        ShiftException.starts_at == spec.starts_at,
+                        ShiftException.ends_at == spec.ends_at,
+                        ShiftException.kind == spec.kind,
+                    )
+                )
+            ).scalar_one_or_none()
+            if existing is not None:
+                return existing
+            return (
+                await session.execute(
+                    insert(ShiftException)
+                    .values(
+                        asset_id=asset_id,
+                        starts_at=spec.starts_at,
+                        ends_at=spec.ends_at,
+                        kind=spec.kind,
+                        note=spec.note,
+                    )
+                    .returning(ShiftException.id)
+                )
+            ).scalar_one()
+
+    async def save_oee_unit(self, spec: OeeUnitSpec) -> int:
+        spec.validate()
+        async with self._database.session() as session:
+            asset_id = await self._require_asset_id(session, spec.asset_path)
+            pattern_id = (
+                await session.execute(
+                    select(ShiftPattern.id).where(ShiftPattern.name == spec.shift_pattern_name)
+                )
+            ).scalar_one_or_none()
+            if pattern_id is None:
+                raise ValueError(
+                    f"unit {spec.asset_path!r} names shift pattern {spec.shift_pattern_name!r}, "
+                    f"which does not exist"
+                )
+            values = {
+                "asset_id": asset_id,
+                "shift_pattern_id": pattern_id,
+                "state_metric_key": spec.state_metric_key,
+                "good_count_metric_key": spec.good_count_metric_key,
+                "reject_count_metric_key": spec.reject_count_metric_key,
+                "product_metric_key": spec.product_metric_key,
+                "producing_states": list(spec.producing_states),
+            }
+            statement = (
+                insert(OeeUnit)
+                .values(**values)
+                .on_conflict_do_update(
+                    index_elements=[OeeUnit.asset_id],
+                    set_={**values, "updated_at": func.now()},
+                )
+                .returning(OeeUnit.id)
+            )
+            return (await session.execute(statement)).scalar_one()
+
+    async def save_ideal_cycle_time(self, spec: IdealCycleTimeSpec) -> int:
+        spec.validate()
+        async with self._database.session() as session:
+            asset_id = await self._require_asset_id(session, spec.asset_path)
+            product_id = None
+            if spec.product_code is not None:
+                product_id = (
+                    await session.execute(select(Product.id).where(Product.code == spec.product_code))
+                ).scalar_one_or_none()
+                if product_id is None:
+                    raise ValueError(
+                        f"ideal cycle time on {spec.asset_path!r} names product "
+                        f"{spec.product_code!r}, which does not exist"
+                    )
+            statement = (
+                insert(IdealCycleTime)
+                .values(asset_id=asset_id, product_id=product_id, seconds_per_unit=spec.seconds_per_unit)
+                .on_conflict_do_update(
+                    constraint="uq_ideal_cycle_time_asset_product",
+                    set_={"seconds_per_unit": spec.seconds_per_unit, "updated_at": func.now()},
+                )
+                .returning(IdealCycleTime.id)
+            )
+            return (await session.execute(statement)).scalar_one()
+
+    async def save_state_reason_rule(self, spec: StateReasonRuleSpec) -> int:
+        spec.validate()
+        async with self._database.session() as session:
+            unit_id = None
+            if spec.asset_path is not None:
+                asset_id = await self._require_asset_id(session, spec.asset_path)
+                unit_id = (
+                    await session.execute(select(OeeUnit.id).where(OeeUnit.asset_id == asset_id))
+                ).scalar_one_or_none()
+                if unit_id is None:
+                    raise ValueError(
+                        f"state rule names asset {spec.asset_path!r}, which is not an OEE unit"
+                    )
+            statement = (
+                insert(StateReasonMap)
+                .values(oee_unit_id=unit_id, state_value=spec.state_value, reason_code=spec.reason_code)
+                .on_conflict_do_update(
+                    constraint="uq_state_reason_map_unit_state",
+                    set_={"reason_code": spec.reason_code},
+                )
+                .returning(StateReasonMap.id)
+            )
+            return (await session.execute(statement)).scalar_one()
+
+    # ---- reads --------------------------------------------------------------------
+
+    async def counts(self) -> dict[str, int]:
+        """Row counts, for the importer's closing log line."""
+        tables = {
+            "products": Product,
+            "shift_patterns": ShiftPattern,
+            "shift_pattern_slots": ShiftPatternSlot,
+            "shift_exceptions": ShiftException,
+            "downtime_reasons": DowntimeReason,
+            "oee_units": OeeUnit,
+            "ideal_cycle_times": IdealCycleTime,
+            "state_reason_rules": StateReasonMap,
+        }
+        async with self._database.session() as session:
+            return {
+                name: (await session.execute(select(func.count()).select_from(model))).scalar_one()
+                for name, model in tables.items()
+            }
+
+    # ---- helpers ------------------------------------------------------------------
+
+    async def _asset_id(self, session: Any, asset_path: str | None) -> int | None:
+        """None path means every Asset, which is stored as a NULL asset_id."""
+        if asset_path is None:
+            return None
+        return await self._require_asset_id(session, asset_path)
+
+    async def _require_asset_id(self, session: Any, asset_path: str) -> int:
+        asset_id = (
+            await session.execute(select(Asset.id).where(Asset.path == asset_path))
+        ).scalar_one_or_none()
+        if asset_id is None:
+            raise ValueError(
+                f"Asset {asset_path!r} is not in the Asset Model. Run `uns_model_seed` first."
+            )
+        return asset_id
+
+
+__all__ = [
+    "DowntimeReasonSpec",
+    "IdealCycleTimeSpec",
+    "OeeMasterDataRepository",
+    "OeeUnitSpec",
+    "ProductSpec",
+    "ShiftExceptionSpec",
+    "ShiftPatternSpec",
+    "ShiftSlotSpec",
+    "StateReasonRuleSpec",
+]
+```
+
+- [ ] **Step 6: Write the importer**
+
+`09_uns_model/src/uns_model/oee_seed.py`:
+
+```python
+"""Read `conf/oee/*.yaml` into a plan, then apply the plan.
+
+Split for the same reason as `seed.py`: planning is a pure function of a mapping, so every
+validation error is reachable from a unit test with no database and no files, and
+`--dry-run` prints exactly what the write would do.
+
+Not routed through `uns_config.get_settings()`: that hardcodes
+`settings_files=["settings.yaml", ".secrets.yaml"]` for all modules, so widening it for the
+OEE module's benefit would change config loading platform-wide.
+"""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
+from datetime import datetime, time
+from pathlib import Path
+from typing import Any
+
+import yaml
+from uns_config import resolve_conf_dir
+
+from uns_model.oee_master_data import (
+    DowntimeReasonSpec,
+    IdealCycleTimeSpec,
+    OeeMasterDataRepository,
+    OeeUnitSpec,
+    ProductSpec,
+    ShiftExceptionSpec,
+    ShiftPatternSpec,
+    ShiftSlotSpec,
+    StateReasonRuleSpec,
+)
+from uns_model.oee_tables import DEFAULT_PRODUCING_STATES
+
+LOGGER = logging.getLogger(__name__)
+
+OEE_CONF_SUBDIR = "oee"
+OEE_CONF_FILES = ("products", "shifts", "units", "reasons")
+
+
+@dataclass(slots=True)
+class OeeSeedPlan:
+    """Everything an import would write, before anything is written."""
+
+    products: list[ProductSpec] = field(default_factory=list)
+    reasons: list[DowntimeReasonSpec] = field(default_factory=list)
+    patterns: list[ShiftPatternSpec] = field(default_factory=list)
+    exceptions: list[ShiftExceptionSpec] = field(default_factory=list)
+    units: list[OeeUnitSpec] = field(default_factory=list)
+    cycle_times: list[IdealCycleTimeSpec] = field(default_factory=list)
+    state_reason_rules: list[StateReasonRuleSpec] = field(default_factory=list)
+
+    def describe(self) -> str:
+        """The plan as text, for `--dry-run`."""
+        lines: list[str] = ["Products:"]
+        lines += [f"  {spec.code}  {spec.name}" for spec in self.products]
+        lines.append("Downtime reasons:")
+        lines += [
+            f"  {spec.code}  {'planned' if spec.is_planned else 'unplanned'}  {spec.display_name}"
+            for spec in self.reasons
+        ]
+        lines.append("Shift patterns:")
+        for spec in self.patterns:
+            lines.append(f"  {spec.name}  [{spec.timezone}]  {len(spec.slots)} slot(s)")
+            lines += [
+                f"    day {slot.day_of_week} {slot.start_time} +{slot.duration_minutes}m  {slot.label}"
+                for slot in spec.slots
+            ]
+        lines.append("Shift exceptions:")
+        lines += [
+            f"  {spec.kind}  {spec.starts_at} .. {spec.ends_at}  "
+            f"{spec.asset_path or '(all Assets)'}  {spec.note}"
+            for spec in self.exceptions
+        ]
+        lines.append("OEE units:")
+        for spec in self.units:
+            lines.append(f"  {spec.asset_path}  pattern={spec.shift_pattern_name}")
+            lines.append(f"    state      {spec.state_metric_key}")
+            lines.append(f"    good       {spec.good_count_metric_key}")
+            lines.append(f"    reject     {spec.reject_count_metric_key or '(none)'}")
+            lines.append(f"    product    {spec.product_metric_key or '(single product)'}")
+            lines.append(f"    producing  {', '.join(spec.producing_states)}")
+        lines.append("Ideal cycle times:")
+        lines += [
+            f"  {spec.asset_path}  {spec.product_code or '(any product)'}  {spec.seconds_per_unit}s/unit"
+            for spec in self.cycle_times
+        ]
+        lines.append("State reason rules:")
+        lines += [
+            f"  {spec.state_value} -> {spec.reason_code}  {spec.asset_path or '(all units)'}"
+            for spec in self.state_reason_rules
+        ]
+        return "\n".join(lines)
+
+
+def _read_yaml_mapping(path: Path) -> dict[str, Any] | None:
+    if not path.is_file():
+        return None
+    loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if loaded is None:
+        return {}
+    if not isinstance(loaded, Mapping):
+        raise ValueError(f"{path.name}: expected a YAML mapping at the top level, got {type(loaded).__name__}")
+    return dict(loaded)
+
+
+def read_oee_conf(conf_dir: Path | None = None) -> dict[str, Any]:
+    """Read `conf/oee/*.yaml` into the mapping `plan_from_oee_config` consumes.
+
+    Absent files are skipped rather than defaulted, so a deployment can land shifts before
+    it has decided its reason codes.
+    """
+    directory = (conf_dir if conf_dir is not None else resolve_conf_dir()) / OEE_CONF_SUBDIR
+    raw: dict[str, Any] = {}
+    for name in OEE_CONF_FILES:
+        if (document := _read_yaml_mapping(directory / f"{name}.yaml")) is not None:
+            raw[name] = document
+    LOGGER.info("Read OEE configuration from %s: %s", directory, ", ".join(sorted(raw)) or "nothing")
+    return raw
+
+
+def _section(config: Mapping[str, Any], file: str, key: str) -> list[Mapping[str, Any]]:
+    document = config.get(file) or {}
+    entries = document.get(key) or []
+    if not isinstance(entries, Sequence) or isinstance(entries, str):
+        raise ValueError(f"{file}.yaml: '{key}' must be a list, got {type(entries).__name__}")
+    return [dict(entry) for entry in entries]
+
+
+def _parse_time(raw: Any, where: str) -> time:
+    """Accept both a YAML time and a 'HH:MM' string.
+
+    PyYAML turns an unquoted 06:00 into the integer 360 (sexagesimal), so a bare number is
+    an authoring mistake worth naming rather than silently accepting.
+    """
+    if isinstance(raw, time):
+        return raw
+    if isinstance(raw, str):
+        return time.fromisoformat(raw)
+    raise ValueError(f"{where}: 'start' must be a quoted 'HH:MM' string, got {raw!r}")
+
+
+def _parse_datetime(raw: Any, where: str) -> datetime:
+    value = raw if isinstance(raw, datetime) else datetime.fromisoformat(str(raw))
+    if value.tzinfo is None:
+        raise ValueError(f"{where}: timestamp {raw!r} has no timezone offset")
+    return value
+
+
+def plan_from_oee_config(config: Mapping[str, Any]) -> OeeSeedPlan:
+    """Turn the `conf/oee/` mapping into a plan, validating every cross-reference."""
+    plan = OeeSeedPlan()
+
+    for entry in _section(config, "products", "products"):
+        plan.products.append(ProductSpec(code=str(entry["code"]), name=str(entry.get("name", ""))))
+
+    for entry in _section(config, "reasons", "reasons"):
+        plan.reasons.append(
+            DowntimeReasonSpec(
+                code=str(entry["code"]),
+                display_name=str(entry.get("display_name", entry["code"])),
+                category=str(entry.get("category", "")),
+                is_planned=bool(entry.get("is_planned", False)),
+            )
+        )
+
+    for entry in _section(config, "shifts", "patterns"):
+        name = str(entry["name"])
+        slots: list[ShiftSlotSpec] = []
+        for raw_slot in entry.get("slots") or []:
+            start = _parse_time(raw_slot.get("start"), f"shifts.yaml pattern {name!r}")
+            for day in raw_slot.get("days") or []:
+                slots.append(
+                    ShiftSlotSpec(
+                        day_of_week=int(day),
+                        start_time=start,
+                        duration_minutes=int(raw_slot["duration_minutes"]),
+                        label=str(raw_slot.get("label", "")),
+                    )
+                )
+        plan.patterns.append(
+            ShiftPatternSpec(
+                name=name,
+                timezone=str(entry.get("timezone", "UTC")),
+                asset_path=entry.get("asset"),
+                slots=tuple(slots),
+            )
+        )
+
+    for entry in _section(config, "shifts", "exceptions"):
+        plan.exceptions.append(
+            ShiftExceptionSpec(
+                starts_at=_parse_datetime(entry["starts_at"], "shifts.yaml exception"),
+                ends_at=_parse_datetime(entry["ends_at"], "shifts.yaml exception"),
+                kind=str(entry.get("kind", "PLANNED_DOWN")),
+                asset_path=entry.get("asset"),
+                note=str(entry.get("note", "")),
+            )
+        )
+
+    pattern_names = {spec.name for spec in plan.patterns}
+    product_codes = {spec.code for spec in plan.products}
+    producing_states: set[str] = set()
+
+    for entry in _section(config, "units", "units"):
+        asset_path = str(entry["asset"])
+        pattern_name = str(entry["shift_pattern"])
+        if pattern_name not in pattern_names:
+            raise ValueError(
+                f"units.yaml: unit {asset_path!r} names shift pattern {pattern_name!r}, "
+                f"which shifts.yaml does not define"
+            )
+        states = tuple(str(state) for state in entry.get("producing_states") or DEFAULT_PRODUCING_STATES)
+        producing_states.update(states)
+        plan.units.append(
+            OeeUnitSpec(
+                asset_path=asset_path,
+                shift_pattern_name=pattern_name,
+                state_metric_key=str(entry["state_metric_key"]),
+                good_count_metric_key=str(entry["good_count_metric_key"]),
+                reject_count_metric_key=entry.get("reject_count_metric_key"),
+                product_metric_key=entry.get("product_metric_key"),
+                producing_states=states,
+            )
+        )
+        for raw_cycle in entry.get("ideal_cycle_times") or []:
+            product_code = raw_cycle.get("product")
+            if product_code is not None and str(product_code) not in product_codes:
+                raise ValueError(
+                    f"units.yaml: ideal cycle time on {asset_path!r} names product "
+                    f"{product_code!r}, which products.yaml does not define"
+                )
+            plan.cycle_times.append(
+                IdealCycleTimeSpec(
+                    asset_path=asset_path,
+                    seconds_per_unit=float(raw_cycle["seconds_per_unit"]),
+                    product_code=None if product_code is None else str(product_code),
+                )
+            )
+
+    reason_codes = {spec.code for spec in plan.reasons}
+    for entry in _section(config, "reasons", "state_rules"):
+        state_value = str(entry["state"])
+        if state_value in producing_states:
+            raise ValueError(
+                f"reasons.yaml: {state_value!r} is a producing state, so it can never be a stop "
+                f"and must not have a reason rule"
+            )
+        plan.state_reason_rules.append(
+            StateReasonRuleSpec(
+                state_value=state_value,
+                reason_code=str(entry["reason"]),
+                asset_path=entry.get("asset"),
+            )
+        )
+        LOGGER.debug("state rule %s -> %s", state_value, entry["reason"])
+
+    for spec in (
+        *plan.products,
+        *plan.reasons,
+        *plan.patterns,
+        *plan.exceptions,
+        *plan.units,
+        *plan.cycle_times,
+        *plan.state_reason_rules,
+    ):
+        spec.validate()
+
+    # Reason codes not declared here may still be seeded by migration 0003, so an unknown
+    # code is a warning at plan time and a foreign-key error at write time - which names
+    # the offending code either way.
+    for rule in plan.state_reason_rules:
+        if rule.reason_code not in reason_codes:
+            LOGGER.info(
+                "state rule %s -> %s relies on a reason code seeded by migration 0003",
+                rule.state_value,
+                rule.reason_code,
+            )
+    return plan
+
+
+async def apply_plan(repository: OeeMasterDataRepository, plan: OeeSeedPlan) -> dict[str, int]:
+    """Write a plan to the OEE master data.
+
+    Order matters: products before their cycle times, patterns before the units that name
+    them, units before the unit-scoped reason rules, reasons before the rules that
+    reference them.
+    """
+    for product in plan.products:
+        await repository.save_product(product)
+    for reason in plan.reasons:
+        await repository.save_downtime_reason(reason)
+    for pattern in plan.patterns:
+        await repository.save_shift_pattern(pattern)
+    for exception in plan.exceptions:
+        await repository.save_shift_exception(exception)
+    for unit in plan.units:
+        await repository.save_oee_unit(unit)
+    for cycle_time in plan.cycle_times:
+        await repository.save_ideal_cycle_time(cycle_time)
+    for rule in plan.state_reason_rules:
+        await repository.save_state_reason_rule(rule)
+    return {
+        "products": len(plan.products),
+        "downtime_reasons": len(plan.reasons),
+        "shift_patterns": len(plan.patterns),
+        "shift_exceptions": len(plan.exceptions),
+        "oee_units": len(plan.units),
+        "ideal_cycle_times": len(plan.cycle_times),
+        "state_reason_rules": len(plan.state_reason_rules),
+    }
+
+
+__all__ = ["OeeSeedPlan", "apply_plan", "plan_from_oee_config", "read_oee_conf"]
+```
+
+- [ ] **Step 7: Run the test to verify it passes**
+
+Run: `uv run pytest 09_uns_model/test/test_oee_seed.py -v -n 0`
+Expected: PASS (7 passed).
+
+- [ ] **Step 8: Add the CLI entry point**
+
+In `09_uns_model/pyproject.toml`, add `"pyyaml>=6.0.2,<7"` to `dependencies` and this to `[project.scripts]`:
+
+```toml
+uns_model_oee_import = "uns_model.cli:oee_import"
+```
+
+In `09_uns_model/src/uns_model/cli.py`, import the importer beside the existing seed imports:
+
+```python
+from uns_model.oee_master_data import OeeMasterDataRepository
+from uns_model.oee_seed import OeeSeedPlan, apply_plan as apply_oee_plan, plan_from_oee_config, read_oee_conf
+```
+
+and add, after `seed`:
+
+```python
+def oee_import(argv: list[str] | None = None) -> int:
+    """Import conf/oee/*.yaml into the OEE master data."""
+    parser = argparse.ArgumentParser(
+        prog="uns_model_oee_import",
+        description="Import conf/oee/*.yaml (shift patterns, units, products, reason codes).",
+    )
+    parser.add_argument("--dry-run", action="store_true", help="Print what would be written and exit")
+    parser.add_argument("-v", "--verbose", action="store_true")
+    args = parser.parse_args(argv)
+    _configure_logging(args.verbose)
+
+    plan = plan_from_oee_config(read_oee_conf())
+    if args.dry_run:
+        sys.stdout.write(plan.describe() + "\n")
+        return 0
+    return asyncio.run(_oee_import(plan))
+
+
+async def _oee_import(plan: OeeSeedPlan) -> int:
+    database = Database.from_config(ModelConfig.from_settings())
+    try:
+        repository = OeeMasterDataRepository(database)
+        written = await apply_oee_plan(repository, plan)
+        LOGGER.info(
+            "Imported %s OEE unit(s), %s shift pattern(s), %s ideal cycle time(s), %s reason rule(s)",
+            written["oee_units"],
+            written["shift_patterns"],
+            written["ideal_cycle_times"],
+            written["state_reason_rules"],
+        )
+        for name, count in sorted((await repository.counts()).items()):
+            LOGGER.info("OEE master data now holds %s %s", count, name)
+    finally:
+        await database.dispose()
+    return 0
+```
+
+In `main()`, after the seed step and guarded the same way, add an OEE import step so the
+`asset_model_setup` container lands master data in one run. Add the flag beside
+`--skip-seed`:
+
+```python
+    parser.add_argument(
+        "--skip-oee-import",
+        action="store_true",
+        help="Do not import conf/oee/*.yaml after seeding",
+    )
+```
+
+and after the seed call:
+
+```python
+    if not args.skip_oee_import:
+        # Absent conf/oee/ is not an error: a deployment that does not report OEE has
+        # nothing to import, and the tables stay empty rather than half-populated.
+        if read_oee_conf():
+            if (code := oee_import(forwarded)) != 0:
+                return code
+        else:
+            LOGGER.info("No conf/oee/ directory, skipping the OEE master-data import")
+```
+
+where `forwarded` is the same `["-v"]`-or-`[]` list already built for the seed call.
+
+- [ ] **Step 9: Verify the CLI parses and dry-runs**
+
+Run: `uv run uns_model_oee_import --dry-run -v`
+Expected: the plan printed — 4 products, 6 reasons, 1 pattern with 15 slots, 2 exceptions, 1 unit, 5 ideal cycle times, 16 state rules — and exit 0 without touching a database.
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add conf/oee 09_uns_model/src/uns_model/oee_master_data.py 09_uns_model/src/uns_model/oee_seed.py \
+        09_uns_model/src/uns_model/cli.py 09_uns_model/pyproject.toml 09_uns_model/test/test_oee_seed.py
+git commit -m "feat(oee): author OEE master data from conf/oee and import it"
+```
+
+---
+
+### Task 4: The shift calendar
+
+**Files:**
+- Create: `12_uns_oee/src/uns_oee/shift_calendar.py`
+- Create: `12_uns_oee/test/test_shift_calendar.py`
+- Modify: `12_uns_oee/pyproject.toml` (add `tzdata`)
+
+**Interfaces:**
+- Consumes: nothing from earlier tasks. Pure standard library.
+- Produces: `ShiftSlot(day_of_week: int, start_time: time, duration_minutes: int, label: str = "")`; `ShiftSchedule(name: str, timezone: str, slots: tuple[ShiftSlot, ...])` with `.zone -> ZoneInfo`; `ShiftWindow(start: datetime, end: datetime, label: str)` with `.duration_s -> float` and `.is_closed_at(at: datetime, settle_minutes: int) -> bool`; `resolve_local(zone: ZoneInfo, day: date, at: time) -> datetime`; `shift_windows(schedule: ShiftSchedule, from_utc: datetime, to_utc: datetime) -> list[ShiftWindow]`.
+
+Named `ShiftSchedule`, not `ShiftPatternSpec`: `uns_model.oee_master_data.ShiftPatternSpec` already owns that name for the authoring side, and two dataclasses with one name in one pipeline is how the wrong one gets imported.
+
+`tzdata` is a hard dependency, not a nicety. Windows ships no IANA database, so `ZoneInfo("Europe/Berlin")` raises `ZoneInfoNotFoundError` on a developer machine without it — verified in this repository's interpreter. The Alpine image needs it too.
+
+- [ ] **Step 1: Write the failing test**
+
+`12_uns_oee/test/test_shift_calendar.py`:
+
+```python
+"""Tests for shift-window generation.
+
+The DST cases are the point of this module. A shift is authored as a local wall-clock start
+plus a duration in minutes, and the operator's 22:00-to-06:00 shift really is seven hours
+long on the spring-forward night and nine on the autumn one. Getting this wrong moves
+Loading Time by an hour twice a year, in opposite directions, which is exactly the kind of
+error that shows up as an unexplained OEE step and never as a bug report.
+"""
+
+from datetime import date, datetime, time, timezone
+from zoneinfo import ZoneInfo
+
+import pytest
+
+from uns_oee.shift_calendar import ShiftSchedule, ShiftSlot, resolve_local, shift_windows
+
+BERLIN = ZoneInfo("Europe/Berlin")
+
+
+def utc(*args: int) -> datetime:
+    return datetime(*args, tzinfo=timezone.utc)
+
+
+NIGHTS = ShiftSchedule(
+    name="every night",
+    timezone="Europe/Berlin",
+    slots=tuple(ShiftSlot(day, time(22, 0), 480, "C") for day in range(7)),
+)
+
+WEEKDAY_MORNINGS = ShiftSchedule(
+    name="weekday mornings",
+    timezone="Europe/Berlin",
+    slots=tuple(ShiftSlot(day, time(6, 0), 480, "A") for day in range(5)),
+)
+
+
+def test_a_plain_shift_is_its_nominal_length():
+    windows = shift_windows(WEEKDAY_MORNINGS, utc(2026, 9, 7), utc(2026, 9, 8))
+    assert len(windows) == 1
+    assert windows[0].start == utc(2026, 9, 7, 4, 0)
+    assert windows[0].end == utc(2026, 9, 7, 12, 0)
+    assert windows[0].duration_s == 8 * 3600
+    assert windows[0].label == "A"
+
+
+def test_the_spring_forward_night_shift_is_seven_hours():
+    windows = shift_windows(NIGHTS, utc(2026, 3, 28, 12), utc(2026, 3, 29, 12))
+    starts = [window.start for window in windows]
+    assert utc(2026, 3, 28, 21, 0) in starts
+    window = next(w for w in windows if w.start == utc(2026, 3, 28, 21, 0))
+    assert window.end == utc(2026, 3, 29, 4, 0)
+    assert window.duration_s == 7 * 3600
+
+
+def test_the_fall_back_night_shift_is_nine_hours():
+    windows = shift_windows(NIGHTS, utc(2026, 10, 24, 12), utc(2026, 10, 25, 12))
+    window = next(w for w in windows if w.start == utc(2026, 10, 24, 20, 0))
+    assert window.end == utc(2026, 10, 25, 5, 0)
+    assert window.duration_s == 9 * 3600
+
+
+@pytest.mark.parametrize(
+    ("day", "at", "expected"),
+    [
+        # Ambiguous: 02:30 happens twice on the fall-back night. fold=0 takes the first.
+        (date(2026, 10, 25), time(2, 30), utc(2026, 10, 25, 0, 30)),
+        # Non-existent: 02:30 is skipped on the spring-forward night. fold=0 interprets it
+        # with the offset in force before the transition, landing on a real later instant.
+        (date(2026, 3, 29), time(2, 30), utc(2026, 3, 29, 1, 30)),
+    ],
+)
+def test_resolve_local_never_raises_on_a_dst_boundary(day, at, expected):
+    assert resolve_local(BERLIN, day, at) == expected
+
+
+def test_windows_are_sorted_and_bounded_by_start():
+    windows = shift_windows(WEEKDAY_MORNINGS, utc(2026, 9, 7), utc(2026, 9, 12))
+    assert windows == sorted(windows, key=lambda window: window.start)
+    assert len(windows) == 5
+    assert all(utc(2026, 9, 7) <= window.start < utc(2026, 9, 12) for window in windows)
+
+
+def test_a_shift_is_closed_only_after_the_settle_window():
+    window = shift_windows(WEEKDAY_MORNINGS, utc(2026, 9, 7), utc(2026, 9, 8))[0]
+    assert not window.is_closed_at(utc(2026, 9, 7, 12, 10), settle_minutes=15)
+    assert window.is_closed_at(utc(2026, 9, 7, 12, 15), settle_minutes=15)
+
+
+def test_an_unknown_timezone_is_named_in_the_error():
+    schedule = ShiftSchedule(name="broken", timezone="Mars/Olympus", slots=NIGHTS.slots)
+    with pytest.raises(ValueError, match="Mars/Olympus"):
+        shift_windows(schedule, utc(2026, 9, 7), utc(2026, 9, 8))
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `uv run pytest 12_uns_oee/test/test_shift_calendar.py -v -n 0`
+Expected: FAIL — `ModuleNotFoundError: No module named 'uns_oee.shift_calendar'`.
+
+- [ ] **Step 3: Add the `tzdata` dependency**
+
+In `12_uns_oee/pyproject.toml`, add to `dependencies`:
+
+```toml
+    "tzdata>=2025.2",
+```
+
+- [ ] **Step 4: Write the implementation**
+
+`12_uns_oee/src/uns_oee/shift_calendar.py`:
+
+```python
+"""Which UTC windows a shift pattern produces.
+
+Pure: a schedule and a UTC range in, a list of windows out. No clock read, no database, no
+configuration - which is what makes every DST case reachable from a unit test.
+
+A shift is authored as (weekday, local wall-clock start, duration in minutes) because that
+is how a plant describes it. The duration is wall-clock, not elapsed: an eight-hour night
+shift is eight hours on the operator's clock, so on the spring-forward night it occupies
+seven real hours and on the fall-back night nine. Loading Time has to agree with the clock
+on the wall, because that is the clock the shift was staffed against.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date, datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+#: Widened by a day at each end when walking local dates, so a shift that starts the day
+#: before `from_utc` in local time - or the day after `to_utc` - is still considered.
+_EDGE_DAYS = 1
+
+
+@dataclass(frozen=True, slots=True)
+class ShiftSlot:
+    """One shift on one weekday. `day_of_week` is 0 = Monday, as `date.weekday()`."""
+
+    day_of_week: int
+    start_time: time
+    duration_minutes: int
+    label: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class ShiftSchedule:
+    """A named weekly pattern in one IANA timezone.
+
+    Distinct from `uns_model.oee_master_data.ShiftPatternSpec`, which is the authoring
+    shape. This is the calculation shape: it carries a resolved zone and nothing else.
+    """
+
+    name: str
+    timezone: str
+    slots: tuple[ShiftSlot, ...] = ()
+
+    @property
+    def zone(self) -> ZoneInfo:
+        """The pattern's zone.
+
+        Raises `ValueError` naming the zone, because `ZoneInfoNotFoundError` alone does not
+        say which pattern is misconfigured - and on a host with no IANA database (Windows
+        without `tzdata`) every zone fails, which is worth stating plainly.
+        """
+        try:
+            return ZoneInfo(self.timezone)
+        except ZoneInfoNotFoundError as error:
+            raise ValueError(
+                f"shift pattern {self.name!r} names timezone {self.timezone!r}, which this host "
+                f"cannot resolve. Install the `tzdata` package or correct the zone name."
+            ) from error
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class ShiftWindow:
+    """One closed-ended UTC interval a shift occupies. `end` is exclusive."""
+
+    start: datetime
+    end: datetime
+    label: str = ""
+
+    @property
+    def duration_s(self) -> float:
+        """Real elapsed seconds, which is not the nominal length across a DST change."""
+        return (self.end - self.start).total_seconds()
+
+    def is_closed_at(self, at: datetime, settle_minutes: int) -> bool:
+        """True once enough time has passed after `end` for in-flight data to have landed.
+
+        Computing at `end` exactly would read a window the historian has not finished
+        receiving, and produce a first revision that is wrong for a knowable reason.
+        """
+        return at >= self.end + timedelta(minutes=settle_minutes)
+
+
+def resolve_local(zone: ZoneInfo, day: date, at: time) -> datetime:
+    """The instant a local wall-clock time names, as an aware datetime.
+
+    `fold=0` throughout, which is one rule covering both awkward cases: for a local time
+    that happens twice it takes the earlier instant, and for one that never happens it
+    applies the offset in force before the transition, landing on a real instant. Either
+    way it never raises, and two runs over the same shift agree - which Rule 1 requires.
+    """
+    return datetime.combine(day, at).replace(tzinfo=zone, fold=0)
+
+
+def shift_windows(schedule: ShiftSchedule, from_utc: datetime, to_utc: datetime) -> list[ShiftWindow]:
+    """Every window of `schedule` whose start lies in `[from_utc, to_utc)`, earliest first.
+
+    Bounded by start, not by overlap: a shift belongs to the instant it began, so a caller
+    asking for a day gets that day's shifts and not the tail of the previous night's.
+    """
+    if to_utc <= from_utc:
+        return []
+    zone = schedule.zone
+    windows: list[ShiftWindow] = []
+    first_day = (from_utc.astimezone(zone) - timedelta(days=_EDGE_DAYS)).date()
+    last_day = (to_utc.astimezone(zone) + timedelta(days=_EDGE_DAYS)).date()
+
+    for slot in schedule.slots:
+        day = first_day
+        while day <= last_day:
+            if day.weekday() == slot.day_of_week:
+                windows.append(_window(zone, day, slot))
+            day += timedelta(days=1)
+
+    return sorted(
+        window for window in windows if from_utc <= window.start < to_utc
+    )
+
+
+def _window(zone: ZoneInfo, day: date, slot: ShiftSlot) -> ShiftWindow:
+    """One window, with both ends resolved as local wall-clock times.
+
+    The end is the local start plus the duration, re-resolved through the zone - not the
+    start instant plus the duration. Adding to the instant would keep the shift eight real
+    hours long and slide its wall-clock end by an hour across a DST change, which is the
+    opposite of what the roster says.
+    """
+    naive_start = datetime.combine(day, slot.start_time)
+    naive_end = naive_start + timedelta(minutes=slot.duration_minutes)
+    start = resolve_local(zone, naive_start.date(), naive_start.time())
+    end = resolve_local(zone, naive_end.date(), naive_end.time())
+    return ShiftWindow(
+        start=start.astimezone(timezone.utc),
+        end=end.astimezone(timezone.utc),
+        label=slot.label,
+    )
+
+
+__all__ = ["ShiftSchedule", "ShiftSlot", "ShiftWindow", "resolve_local", "shift_windows"]
+```
+
+- [ ] **Step 5: Run the test to verify it passes**
+
+Run: `uv sync && uv run pytest 12_uns_oee/test/test_shift_calendar.py -v -n 0`
+Expected: PASS (8 passed — the parametrised test counts twice).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add 12_uns_oee/src/uns_oee/shift_calendar.py 12_uns_oee/test/test_shift_calendar.py \
+        12_uns_oee/pyproject.toml
+git commit -m "feat(oee): resolve shift patterns into DST-correct UTC windows"
+```
+
+---
