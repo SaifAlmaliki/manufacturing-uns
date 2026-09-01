@@ -40,6 +40,11 @@ export function hasNoTelemetryClock(node: Pick<UnsNode, 'lastUpdated'>): boolean
   return new Date(node.lastUpdated).getTime() <= 0
 }
 
+/** Placeholder or authored nodes that have no live payload in the graph database yet. */
+export function isSyntheticUnsNode(node: Pick<UnsNode, 'lastUpdated'>): boolean {
+  return hasNoTelemetryClock(node)
+}
+
 export function getNodeRoleLabel(role: NodeRole): string {
   switch (role) {
     case 'structural':

@@ -12,7 +12,7 @@ import {
 } from '../types/uns';
 import { unsGraphQLClient } from '../services/graphql/client';
 import { DEFAULT_APP_SETTINGS, STORAGE_KEYS } from '../config/branding';
-import { getNodeRole, hasNoTelemetryClock, isStaleCandidate, isNodeStale } from '../lib/uns/node-meta';
+import { getNodeRole, hasNoTelemetryClock, isStaleCandidate, isNodeStale, isSyntheticUnsNode } from '../lib/uns/node-meta';
 import { isSparkplugTopic } from '../lib/uns/sparkplug';
 
 function httpToWs(httpUrl: string): string {
@@ -153,10 +153,16 @@ export const UNSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (isSyntheticUnsNode(node)) return;
 
-    void unsGraphQLClient.getUnsNodes([node.topic]).then((nodes) => {
+    void Promise.all([
+      unsGraphQLClient.getUnsNodes([node.topic]),
+      unsGraphQLClient.getTopicEnrichment(node.topic),
+    ]).then(([nodes, enrichment]) => {
       if (!nodes[0]) return;
       const hydrated = nodes[0];
-      applyNodePatch(hydrated.topic, hydrated);
+      applyNodePatch(hydrated.topic, {
+        ...hydrated,
+        properties: { ...enrichment, ...(hydrated.properties ?? {}) },
+      });
     });
   }, [applyNodePatch]);
   const [treeLoading, setTreeLoading] = useState<boolean>(false);
@@ -234,7 +240,7 @@ export const UNSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const fetchRoots = useCallback(async () => {
     setTreeLoading(true);
     try {
-      const roots = await unsGraphQLClient.getUnsNodes([childrenTopic('')]);
+      const roots = await unsGraphQLClient.getUnsRootNodes();
       setRootNodes(roots);
       setSelectedNode((prev) => prev ?? (roots.length > 0 ? roots[0] : null));
     } finally {

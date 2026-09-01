@@ -239,7 +239,7 @@ async def apply_plan(repository: AssetModelRepository, plan: SeedPlan) -> dict[s
     derived from the tree, so writing the tree leaves them stale (ADR-0003).
     """
     for branch in plan.branches:
-        await repository.ensure_branch(branch)
+        await repository.ensure_branch(branch, rebind=False)
     for spec in plan.metrics:
         await repository.define_metric(
             spec.metric_key,
@@ -247,6 +247,7 @@ async def apply_plan(repository: AssetModelRepository, plan: SeedPlan) -> dict[s
             unit_of_measure=spec.unit_of_measure,
             display_name=spec.display_name,
             description=spec.description,
+            announce=False,
         )
     rebound = await repository.rebind_all()
     return {

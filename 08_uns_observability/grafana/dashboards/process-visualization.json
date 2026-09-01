@@ -25,11 +25,11 @@
         {
           "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
           "format": "time_series",
-          "rawSql": "SELECT bucket AS time, avg_value_double AS value, topic || '/' || metric_name AS metric FROM uns_metrics_1m WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name LIKE '%$metric%' ORDER BY 1",
+          "rawSql": "SELECT bucket AS time, avg_value_double AS value, COALESCE(line, '—') || ' / ' || COALESCE(machine, topic) || ' / ' || metric_name || COALESCE(' (' || unit_of_measure || ')', '') AS metric FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name LIKE '%$metric%' ORDER BY 1",
           "refId": "A"
         }
       ],
-      "title": "Process Metrics (1m aggregate)",
+      "title": "Process Metrics (1m enriched)",
       "type": "timeseries"
     }
   ],

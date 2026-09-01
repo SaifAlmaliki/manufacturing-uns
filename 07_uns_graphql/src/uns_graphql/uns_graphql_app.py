@@ -41,6 +41,11 @@ LOGGER = logging.getLogger(__name__)
 @strawberry.type(description="Query the UNS for current or historic Nodes/Events ")
 class Query(historian.Query, graph.Query, asset.Query, alert_rule.Query):
     @classmethod
+    async def on_startup(cls):
+        """Start background tasks for query modules."""
+        await asset.Query.on_startup()
+
+    @classmethod
     async def on_shutdown(cls):
         """
         Clean up connections, db pools etc.
@@ -97,6 +102,7 @@ class UNSGraphql:
         """
         lifespan manager to ensure cleanup
         """
+        await Query.on_startup()
         try:
             yield
         finally:

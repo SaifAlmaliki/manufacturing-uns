@@ -193,7 +193,7 @@ class RecordingRepository:
         self.metrics: list[str] = []
         self.rebinds = 0
 
-    async def ensure_branch(self, specs):
+    async def ensure_branch(self, specs, **kwargs):  # noqa: ARG002
         self.branches.append([spec.segment for spec in specs])
         return None
 

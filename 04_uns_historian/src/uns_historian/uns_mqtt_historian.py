@@ -24,6 +24,7 @@ import random
 import time
 
 from uns_model.engine import Database
+from uns_model.notifications import AssetModelChangeListener
 from uns_model.repositories import AssetModelRepository
 from uns_model.topic_binder import TopicBinder
 from uns_mqtt.mqtt_listener import UnsMQTTClient
@@ -65,6 +66,12 @@ class UnsMqttHistorian:
         # Resolves each new topic to its Asset once, so that the enriched views can
         # join on equality instead of matching prefixes per row (ADR-0003).
         self.topic_binder = TopicBinder(AssetModelRepository(Database.shared("historian")))
+        self._asset_model_listener = AssetModelChangeListener(
+            Database.shared("historian"),
+            on_change=self._on_asset_model_changed,
+            module_env="historian",
+        )
+        asyncio.run_coroutine_threadsafe(self._start_asset_model_listener(), self.loop)
         self.uns_client.run(
             host=MQTTConfig.host,
             port=MQTTConfig.port,
@@ -140,6 +147,12 @@ class UnsMqttHistorian:
                 stack_info=True,
                 exc_info=True,
             )
+
+    async def _start_asset_model_listener(self) -> None:
+        await self._asset_model_listener.start()
+
+    async def _on_asset_model_changed(self) -> None:
+        self.topic_binder.forget()
 
     def on_disconnect(
         self,

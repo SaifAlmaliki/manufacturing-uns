@@ -28,6 +28,8 @@ safe to run against a database that already holds a seeded Asset Model.
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 import pytest_asyncio
 from sqlalchemy import text
@@ -36,6 +38,7 @@ from uns_model.alert_rules import AlertRuleRepository, AlertRuleSpec
 from uns_model.asset_context import TopicContextResolver
 from uns_model.engine import Database
 from uns_model.model_config import ModelConfig
+from uns_model.notifications import AssetModelChangeListener
 from uns_model.repositories import AssetModelRepository, AssetSpec
 
 # Nothing outside this Enterprise is touched, which is what makes these tests
@@ -294,10 +297,8 @@ async def test_rebind_all_moves_topics_when_a_deeper_asset_appears(repository: A
     await repository.bind_topic(topic)
     assert (await _binding(database, topic))["asset_path"] == CELL_PATH
 
-    await repository.ensure_branch(MIXER_BRANCH)  # the Machine is commissioned
-    moved = await repository.rebind_all()
+    await repository.ensure_branch(MIXER_BRANCH)  # the Machine is commissioned; rebinds automatically
 
-    assert moved >= 1
     assert await _binding(database, topic) == {
         "topic": topic,
         "metric_path": "ProcessValue/Temperature",
@@ -625,3 +626,25 @@ async def test_deleting_a_site_removes_its_branch_and_unbinds_its_topics(
     # The binding survives with no Asset rather than taking the measurement with it,
     # which is exactly what makes it an Unmodelled Topic again.
     assert (await _binding(database, topic))["asset_path"] is None
+
+
+@pytest.mark.integrationtest
+@pytest.mark.asyncio(loop_scope="session")
+async def test_asset_model_change_listener_hears_a_notify(repository: AssetModelRepository, database: Database):
+    received = asyncio.Event()
+
+    async def on_change() -> None:
+        received.set()
+
+    listener = AssetModelChangeListener(database, on_change=on_change)
+    await listener.start()
+    try:
+        await repository.ensure_branch(
+            _branch((TEST_ROOT, "ENTERPRISE"), ("NotifyPlant", "SITE")),
+            rebind=False,
+        )
+        await repository.rebind_all()
+        await asyncio.wait_for(received.wait(), timeout=5.0)
+    finally:
+        await listener.stop()
+        await _clean(database)

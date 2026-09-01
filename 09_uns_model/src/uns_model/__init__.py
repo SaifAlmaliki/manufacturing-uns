@@ -9,6 +9,7 @@ from uns_model.asset_context import MetricInfo, TopicContext, TopicContextResolv
 from uns_model.engine import Database
 from uns_model.model_config import ModelConfig
 from uns_model.repositories import AssetModelRepository, AssetSpec
+from uns_model.notifications import ASSET_MODEL_CHANGED_CHANNEL, AssetModelChangeListener, announce_asset_model_changed
 from uns_model.topic_binder import TopicBinder
 
 __all__ = [
@@ -22,4 +23,7 @@ __all__ = [
     "TopicBinder",
     "TopicContext",
     "TopicContextResolver",
+    "ASSET_MODEL_CHANGED_CHANNEL",
+    "AssetModelChangeListener",
+    "announce_asset_model_changed",
 ]

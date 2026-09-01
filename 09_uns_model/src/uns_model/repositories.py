@@ -32,6 +32,7 @@ from sqlalchemy import delete, func, select, text
 from sqlalchemy.dialects.postgresql import insert
 
 from uns_model.engine import Database
+from uns_model.notifications import announce_asset_model_changed
 from uns_model.tables import Asset, AssetLevel, MetricDefinition, TopicBinding
 from uns_model.topic_path import SEPARATOR, ancestor_paths, split_topic
 
@@ -124,13 +125,17 @@ class AssetModelRepository:
 
     # ------------------------------------------------------------------ writes
 
-    async def ensure_branch(self, specs: Sequence[AssetSpec]) -> Asset:
+    async def ensure_branch(self, specs: Sequence[AssetSpec], *, rebind: bool = True) -> Asset:
         """
         Create or update a whole branch from the root down, returning its leaf.
 
         Every level is upserted by path, so re-running a seed is a no-op and a
         renamed display name is picked up. Levels must get coarser-to-finer: a
         child may skip levels but may not sit above its parent.
+
+        Rebinds Topic Bindings by default because they are derived from the tree
+        (ADR-0003). Pass `rebind=False` when writing many branches in one batch,
+        then call `rebind_all()` once at the end.
         """
         if not specs:
             raise ValueError("A branch needs at least one AssetSpec")
@@ -179,7 +184,11 @@ class AssetModelRepository:
                 parent_id = (await session.execute(statement)).scalar_one()
 
             # parent_id now holds the leaf's id: the loop ran at least once.
-            return (await session.execute(select(Asset).where(Asset.id == parent_id))).scalar_one()
+            asset = (await session.execute(select(Asset).where(Asset.id == parent_id))).scalar_one()
+
+        if rebind:
+            await self.rebind_all()
+        return asset
 
     async def define_metric(
         self,
@@ -193,6 +202,7 @@ class AssetModelRepository:
         max_value: float | None = None,
         deadband: float | None = None,
         description: str | None = None,
+        announce: bool = True,
     ) -> MetricDefinition:
         """
         Author a Metric Definition, replacing any existing one for the same key.
@@ -229,15 +239,23 @@ class AssetModelRepository:
                 .returning(MetricDefinition.id)
             )
             definition_id = (await session.execute(statement)).scalar_one()
-            return (
+            definition = (
                 await session.execute(select(MetricDefinition).where(MetricDefinition.id == definition_id))
             ).scalar_one()
 
-    async def delete_asset(self, path: str) -> int:
+        if announce:
+            await announce_asset_model_changed(self._database)
+        return definition
+
+    async def delete_asset(self, path: str, *, rebind: bool = True) -> int:
         """Delete an Asset and everything under it. Returns the number of Assets removed."""
         async with self._database.session() as session:
             result = await session.execute(delete(Asset).where(Asset.path == path))
-            return result.rowcount or 0
+            removed = result.rowcount or 0
+
+        if rebind:
+            await self.rebind_all()
+        return removed
 
     # ---------------------------------------------------------------- bindings
 
@@ -265,6 +283,7 @@ class AssetModelRepository:
             moved = result.rowcount or 0
         if moved:
             LOGGER.info("Rebound %s topic(s) after an Asset Model change", moved)
+        await announce_asset_model_changed(self._database)
         return moved
 
     async def unmodelled_topics(self, limit: int = 100) -> list[str]:

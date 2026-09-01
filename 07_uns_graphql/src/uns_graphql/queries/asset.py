@@ -27,6 +27,7 @@ import logging
 import strawberry
 from uns_model.asset_context import TopicContextResolver
 from uns_model.engine import Database
+from uns_model.notifications import AssetModelChangeListener
 from uns_model.repositories import AssetModelRepository
 
 from uns_graphql.type.asset import AssetModelSummary, AssetNode, TopicContextType
@@ -37,6 +38,7 @@ DEFAULT_UNMODELLED_LIMIT = 100
 
 
 _resolver: TopicContextResolver | None = None
+_listener: AssetModelChangeListener | None = None
 
 
 def _repository() -> AssetModelRepository:
@@ -120,6 +122,27 @@ class Query:
         )
 
     @classmethod
+    async def on_startup(cls) -> None:
+        """Drop cached Enrichment when the Asset Model is edited elsewhere."""
+        global _listener  # noqa: PLW0603
+        if _listener is not None:
+            return
+
+        async def refresh() -> None:
+            _context_resolver().refresh()
+
+        _listener = AssetModelChangeListener(
+            Database.shared("graphql"),
+            on_change=refresh,
+            module_env="graphql",
+        )
+        await _listener.start()
+
+    @classmethod
     async def on_shutdown(cls):
-        """Dispose the shared engine."""
+        """Stop listening and dispose the shared engine."""
+        global _listener  # noqa: PLW0603
+        if _listener is not None:
+            await _listener.stop()
+            _listener = None
         await Database.close_shared()
