@@ -37,12 +37,9 @@ class MQTTConfig:
     Read the MQTT configurations required to connect to the MQTT broker
     """
 
-    transport: Literal["tcp", "websockets"] = settings.get(
-        "mqtt.transport", "tcp")
-    version: ProtocolVersion = ProtocolVersion(
-        settings.get("mqtt.version", ProtocolVersion.V5))
-    properties: Properties = Properties(
-        PacketTypes.CONNECT) if version == ProtocolVersion.V5 else None
+    transport: Literal["tcp", "websockets"] = settings.get("mqtt.transport", "tcp")
+    version: ProtocolVersion = ProtocolVersion(settings.get("mqtt.version", ProtocolVersion.V5))
+    properties: Properties = Properties(PacketTypes.CONNECT) if version == ProtocolVersion.V5 else None
     qos: Literal[0, 1, 2] = settings.get("mqtt.qos", 1)
     clean_session: bool | None = settings.get("mqtt.clean_session", None)
 
@@ -65,8 +62,7 @@ class MQTTConfig:
         else None
     )
 
-    tls_insecure: bool | None = tls.get(
-        "insecure_cert") if tls is not None else None
+    tls_insecure: bool | None = tls.get("insecure_cert") if tls is not None else None
 
     keep_alive: int = settings.get("mqtt.keep_alive", 60)
     retry_interval: int = settings.get("mqtt.retry_interval", 10)

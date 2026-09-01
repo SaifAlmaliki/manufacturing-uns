@@ -43,9 +43,7 @@ class DeviceSpec:
 
     @property
     def topic_prefix(self) -> str:
-        return "/".join(
-            (self.path.enterprise, self.path.site, self.path.area, self.path.line, self.path.cell, self.equipment)
-        )
+        return "/".join((self.path.enterprise, self.path.site, self.path.area, self.path.line, self.path.cell, self.equipment))
 
 
 def matches_target(path: ISA95Hierarchy, target: Mapping[str, Any] | None) -> bool:
@@ -93,8 +91,7 @@ def expand_template(template: Mapping[str, Any], paths: Sequence[ISA95Hierarchy]
         # unambiguous.
         if "unit" not in raw or str(raw["unit"]).strip() == "":
             raise ValueError(
-                f"device template {device_id!r} signal {name!r}: 'unit' is required "
-                f"(use \"1\" for a dimensionless ratio)"
+                f"device template {device_id!r} signal {name!r}: 'unit' is required (use \"1\" for a dimensionless ratio)"
             )
         specs.append(spec_from_config(name, {"tier": tier, **raw}))
     try:
@@ -178,7 +175,6 @@ class LoadedProfile:
     context: PlantContext
     report: LoadReport
 
-
     def messages_per_second(self) -> dict[str, float]:
         """Periodic publish rate per cadence tier, for the volume guard and the control API.
 
@@ -217,8 +213,7 @@ def filter_paths(
         available = {path.site for path in paths}
         if unknown := [name for name in wanted if name not in available]:
             raise ValueError(
-                f"profile site(s) {', '.join(unknown)} are not in the hierarchy "
-                f"(available: {', '.join(sorted(available))})"
+                f"profile site(s) {', '.join(unknown)} are not in the hierarchy (available: {', '.join(sorted(available))})"
             )
         paths = [path for path in paths if path.site in set(wanted)]
 
@@ -283,8 +278,7 @@ def validate_line_overrides(paths: Sequence[ISA95Hierarchy], raw_plant: Mapping[
     known = {f"{path.site}/{path.area}/{path.line}" for path in paths if path.kind == PRODUCTION_KIND}
     if stale := sorted(set(raw_plant.get("lines") or {}) - known):
         raise ValueError(
-            f"plant.lines override(s) {', '.join(stale)} name no production line in the "
-            f"hierarchy; expected Site/Area/Line"
+            f"plant.lines override(s) {', '.join(stale)} name no production line in the hierarchy; expected Site/Area/Line"
         )
 
 
@@ -295,8 +289,7 @@ def _resolve_families(profile_name: str, selection: Mapping[str, Any]) -> dict[s
         raw_families = []
     if isinstance(raw_families, Mapping) or isinstance(raw_families, str):
         raise ValueError(
-            f"profile {profile_name!r}: 'families' must be a list of family names, "
-            f"got {type(raw_families).__name__}"
+            f"profile {profile_name!r}: 'families' must be a list of family names, got {type(raw_families).__name__}"
         )
     named = [str(name) for name in raw_families]
     if unknown := sorted(set(named) - set(FAMILIES)):
@@ -326,9 +319,7 @@ def _resolve_tiers(raw: Mapping[str, Any], tier_scale: float) -> dict[str, float
     return {name: interval * tier_scale for name, interval in tiers.items()}
 
 
-def load_profile(
-    raw: Mapping[str, Any], profile_name: str = "full", *, seed: int | None = None
-) -> LoadedProfile:
+def load_profile(raw: Mapping[str, Any], profile_name: str = "full", *, seed: int | None = None) -> LoadedProfile:
     """Resolve a profile into devices, a plant context and a load report.
 
     `raw` is the merged conf/simulator mapping. Every validation error names the offending

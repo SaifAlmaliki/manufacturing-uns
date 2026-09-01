@@ -1,5 +1,4 @@
 import ast
-import math
 
 import pytest
 
@@ -7,7 +6,7 @@ from uns_simulator.expressions import ExpressionError, compile_expression
 
 
 def test_arithmetic_and_precedence():
-    assert compile_expression("2 + 3 * 4").evaluate({}) == 14  # noqa: PLR2004
+    assert compile_expression("2 + 3 * 4").evaluate({}) == 14
 
 
 def test_reads_names_from_namespace():
@@ -48,9 +47,9 @@ def test_rejects_unknown_name_at_evaluation():
 
 
 def test_whitelisted_helpers_work():
-    assert compile_expression("clamp(120, 0, 100)").evaluate({}) == 100  # noqa: PLR2004
+    assert compile_expression("clamp(120, 0, 100)").evaluate({}) == 100
     assert compile_expression("sqrt(x)").evaluate({"x": 9.0}) == pytest.approx(3.0)
-    assert compile_expression("a if a > b else b").evaluate({"a": 1, "b": 5}) == 5  # noqa: PLR2004
+    assert compile_expression("a if a > b else b").evaluate({"a": 1, "b": 5}) == 5
 
 
 def test_attribute_access_on_context_object_works():
@@ -67,10 +66,6 @@ def test_module_source_contains_no_eval_or_exec():
 
     source = Path(module.__file__).read_text(encoding="utf-8")
     tree = ast.parse(source)
-    called = {
-        node.func.id
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-    }
+    called = {node.func.id for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)}
     assert "eval" not in called
     assert "exec" not in called

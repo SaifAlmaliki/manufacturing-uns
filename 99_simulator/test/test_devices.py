@@ -15,7 +15,7 @@ from uns_simulator.signals import SignalSpec
 
 # Dummy replacements to avoid external dependencies and network I/O
 class DummyClient:
-    def __init__(self, *args, **kwargs):  # noqa: ARG002
+    def __init__(self, *args, **kwargs):  # ruff: ignore[unused-method-argument]
         self.published: list[tuple[str, dict]] = []
         self.enter_count = 0
         self.fail_on_enter = 0
@@ -28,10 +28,10 @@ class DummyClient:
             raise OSError("broker refused the connection")
         return self
 
-    async def __aexit__(self, exc_type, exc, tb):  # noqa: ARG002
+    async def __aexit__(self, exc_type, exc, tb):
         return False
 
-    async def publish(self, topic, payload, **kwargs):  # noqa: ARG002
+    async def publish(self, topic, payload, **kwargs):  # ruff: ignore[unused-method-argument]
         if self.fail_on_publish:
             raise OSError("broker went away")
         self.published.append((topic, json.loads(payload)))
@@ -65,8 +65,7 @@ async def test_publish_parameter_enriches_and_publishes():
     hierarchy = FakeHierarchy()
     mqtt_conf = {}
     # Create a PLC instance but we will call publish_parameter directly
-    plc = devices.PLC("T1", hierarchy, mqtt_conf, equipment_config={
-                      "name": "Boiler1", "sensors": {}})
+    plc = devices.PLC("T1", hierarchy, mqtt_conf, equipment_config={"name": "Boiler1", "sensors": {}})
     # Replace instance client with our DummyClient (constructed by patched aiomqtt.Client)
     plc.client = DummyClient()
 
@@ -101,8 +100,7 @@ async def test_plc_generate_sensor_status_and_alarm(monkeypatch):
     # ensure deterministic randint used for operating_hours initial value
     monkeypatch.setattr(random, "randint", lambda a, _b: a)
 
-    plc = devices.PLC("T2", hierarchy, mqtt_conf, equipment_config={
-                      "name": "Unit1", "sensors": sensors_cfg})
+    plc = devices.PLC("T2", hierarchy, mqtt_conf, equipment_config={"name": "Unit1", "sensors": sensors_cfg})
     # Test sensor data generation
     sensors = await plc.generate_sensor_data()
     assert isinstance(sensors, list)
@@ -165,8 +163,17 @@ async def test_scada_system_status_sync():
     # generate_system_status is async in implementation; call via asyncio.run if needed
     status = await scada.generate_system_status()
     assert isinstance(status, dict)
-    expected_keys = {"system_name", "system_status", "connected_devices", "data_points_per_second",
-                     "system_uptime_hours", "cpu_usage_percent", "memory_usage_percent", "alarms_active", "version"}
+    expected_keys = {
+        "system_name",
+        "system_status",
+        "connected_devices",
+        "data_points_per_second",
+        "system_uptime_hours",
+        "cpu_usage_percent",
+        "memory_usage_percent",
+        "alarms_active",
+        "version",
+    }
     assert expected_keys.issubset(set(status.keys()))
     assert status["system_name"] == "TestSCADA"
 
@@ -176,7 +183,7 @@ async def test_scada_reports_the_real_connected_device_count():
     scada = devices.SCADA(FakeHierarchy(), {})
     scada.connected_devices = 47
     status = await scada.generate_system_status()
-    assert status["connected_devices"] == 47  # noqa: PLR2004
+    assert status["connected_devices"] == 47
 
 
 @pytest.mark.asyncio
@@ -194,9 +201,9 @@ async def test_the_connection_is_opened_once_for_many_publishes():
     for index in range(20):
         assert await device.publish_parameter("G1", ParameterType.PROCESS_VALUE, f"S{index}", {"value": index})
     assert device.client.enter_count == 1, "one connection, not one per message"
-    assert len(device.client.published) == 20  # noqa: PLR2004
+    assert len(device.client.published) == 20
     assert device.connected is True
-    assert device.publish_ok == 20  # noqa: PLR2004
+    assert device.publish_ok == 20
     assert device.publish_fail == 0
 
 
@@ -213,7 +220,7 @@ async def test_connect_retries_with_backoff_and_counts_reconnects(monkeypatch):
     assert await device.connect() is True
     assert device.connected is True
     assert sleeps == [1.0, 2.0, 4.0], "backoff must double"
-    assert device.reconnects == 3  # noqa: PLR2004
+    assert device.reconnects == 3
 
 
 @pytest.mark.asyncio
@@ -228,8 +235,8 @@ async def test_backoff_is_capped_at_the_configured_retry_interval(monkeypatch):
     device = AsyncMQTTDevice("dev", FakeHierarchy(), {})
     device.client.fail_on_enter = 6
     await device.connect()
-    assert max(sleeps) == 5.0  # noqa: PLR2004
-    assert sleeps[-1] == 5.0  # noqa: PLR2004
+    assert max(sleeps) == 5.0
+    assert sleeps[-1] == 5.0
 
 
 @pytest.mark.asyncio
@@ -251,7 +258,7 @@ async def test_a_publish_failure_is_followed_by_a_reconnect_on_the_next_attempt(
     await device.publish_parameter("G1", ParameterType.PROCESS_VALUE, "S", {"value": 1})
     device.client.fail_on_publish = False
     assert await device.publish_parameter("G1", ParameterType.PROCESS_VALUE, "S", {"value": 2}) is True
-    assert device.client.enter_count == 2  # noqa: PLR2004
+    assert device.client.enter_count == 2
 
 
 @pytest.mark.asyncio
@@ -325,7 +332,9 @@ def test_a_derived_signal_sees_this_tick_not_the_last_one():
 
 def test_a_derived_signal_reads_the_plant_through_ctx():
     """Spec 6.3's name is `served_production`; the served line sits in EXECUTE at 0.85-1.0."""
-    device = _device(SignalSpec(name="ChillerLoad", shape="derived", precision=2, params={"expr": "ctx.served_production * 200"}))
+    device = _device(
+        SignalSpec(name="ChillerLoad", shape="derived", precision=2, params={"expr": "ctx.served_production * 200"})
+    )
     assert device.evaluate(1.0)["ChillerLoad"] == pytest.approx(185.0, abs=20.0)
 
 
@@ -378,7 +387,9 @@ def test_a_none_valued_signal_is_not_published():
 
 def test_an_event_tier_signal_publishes_only_when_its_value_changes():
     device = _device(
-        SignalSpec(name="Door", shape="stepped", tier="event", param_type="EVENT", params={"choices": ["Closed"], "dwell_s": 1e9}),
+        SignalSpec(
+            name="Door", shape="stepped", tier="event", param_type="EVENT", params={"choices": ["Closed"], "dwell_s": 1e9}
+        ),
     )
     for _ in range(5):
         device.evaluate(1.0)
@@ -422,5 +433,4 @@ async def test_run_tier_publishes_then_sleeps_and_stops():
     await asyncio.sleep(0.05)
     await device.stop()
     await asyncio.wait_for(task, timeout=1.0)
-    assert len(device.client.published) >= 2  # noqa: PLR2004
-
+    assert len(device.client.published) >= 2

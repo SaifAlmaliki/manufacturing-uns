@@ -103,10 +103,15 @@ def compile_expression(source: str) -> CompiledExpression:
         if isinstance(node, ast.Attribute):
             # Spec 5.4: attribute access is permitted on the `ctx` root only. Allowing it
             # anywhere would reopen the `().__class__.__bases__` route to arbitrary objects.
-            if not (isinstance(node.value, ast.Name) and node.value.id == ATTRIBUTE_ROOT):
+            # Nested hops (`ctx.line.production_rate`) are allowed so long as the chain
+            # bottoms out at `ctx` and no private attribute is named.
+            current = node
+            while isinstance(current, ast.Attribute):
+                if current.attr.startswith("_"):
+                    raise ExpressionError(f"private attribute {current.attr!r} is not allowed in {source!r}")
+                current = current.value
+            if not (isinstance(current, ast.Name) and current.id == ATTRIBUTE_ROOT):
                 raise ExpressionError(f"attribute access is only allowed on {ATTRIBUTE_ROOT!r} in {source!r}")
-            if node.attr.startswith("_"):
-                raise ExpressionError(f"private attribute {node.attr!r} is not allowed in {source!r}")
         if isinstance(node, ast.Call):
             if not isinstance(node.func, ast.Name):
                 raise ExpressionError(f"only direct calls to whitelisted functions are allowed in {source!r}")
@@ -117,7 +122,7 @@ def compile_expression(source: str) -> CompiledExpression:
     return CompiledExpression(source, tree, frozenset(names))
 
 
-def _eval_node(node: ast.AST, ns: Mapping[str, Any]) -> Any:  # noqa: PLR0911
+def _eval_node(node: ast.AST, ns: Mapping[str, Any]) -> Any:  # ruff: ignore[complex-structure]
     match node:
         case ast.Constant(value=value):
             return value

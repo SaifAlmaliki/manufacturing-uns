@@ -76,9 +76,7 @@ EXPECTED_DEVICE_COUNT = {
 }
 
 FAMILY_TEMPLATES = [
-    (family, template_id, count)
-    for family, table in EXPECTED_SIGNAL_COUNT.items()
-    for template_id, count in table.items()
+    (family, template_id, count) for family, table in EXPECTED_SIGNAL_COUNT.items() for template_id, count in table.items()
 ]
 
 
@@ -97,7 +95,7 @@ def test_plant_yaml_supplies_the_hierarchy_at_the_top_level(raw):
 
 def test_both_shipped_profiles_are_declared(raw):
     assert set(raw["profiles"]) == {"small", "full"}
-    assert raw["profiles"]["small"]["tier_scale"] == 6.0  # noqa: PLR2004
+    assert raw["profiles"]["small"]["tier_scale"] == 6.0
     assert raw["profiles"]["small"]["sites"] == ["Dormagen"]
     assert raw["profiles"]["small"]["max_cells_per_line"] == 1
     assert raw["profiles"]["full"]["sites"] == ["Dormagen", "Krefeld"]
@@ -218,7 +216,7 @@ def test_asset_health_is_excluded_from_the_small_profile(raw):
     small = load_profile(raw, "small")
     assert "asset_health" not in small.report.per_family
     assert small.families["asset_health"] is False
-    assert load_profile(raw, "full").report.per_family["asset_health"] == 7  # noqa: PLR2004
+    assert load_profile(raw, "full").report.per_family["asset_health"] == 7
 
 
 def test_every_asset_health_signal_is_on_a_deliberate_tier(raw):
@@ -292,4 +290,3 @@ def test_packml_state_code_maps_every_state(raw):
     signals = next(item for item in raw["production"]["devices"] if item["id"] == "MES-01")["signals"]
     assert set(signals["PackMlStateCode"]["map"]) == set(PACKML_STATES)
     assert set(signals["DowntimeReason"]["map"]) == set(PACKML_STATES)
-

@@ -92,7 +92,7 @@ class Signal:
     def __init__(self, spec: SignalSpec, topic: str, global_seed: int) -> None:
         self.spec = spec
         self.topic = topic
-        self.rng = random.Random(signal_seed(global_seed, topic))
+        self.rng = random.Random(signal_seed(global_seed, topic))  # ruff: ignore[suspicious-non-cryptographic-random-usage]
         self.value: float | str | None = None
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
@@ -141,7 +141,7 @@ class NoiseSignal(Signal):
 
     shape_name = "noise"
 
-    def next(self, dt: float, view: Any, siblings: Mapping[str, Any]) -> float:  # noqa: ARG002
+    def next(self, dt: float, view: Any, siblings: Mapping[str, Any]) -> float:  # ruff: ignore[unused-method-argument]
         self.value = self._clamp(self.spec.base_value + self.rng.uniform(-self.spec.variation, self.spec.variation))
         return self.value
 
@@ -157,7 +157,7 @@ class ConstantSignal(Signal):
         # `shape: constant` alone, without also renaming its value key.
         self._fixed = float(spec.params.get("value", spec.base_value))
 
-    def next(self, dt: float, view: Any, siblings: Mapping[str, Any]) -> float:  # noqa: ARG002
+    def next(self, dt: float, view: Any, siblings: Mapping[str, Any]) -> float:  # ruff: ignore[unused-method-argument]
         self.value = self._clamp(self._fixed)
         return self.value
 
@@ -182,7 +182,7 @@ class OUWalkSignal(Signal):
         self._sigma = float(spec.params.get("sigma", spec.variation or 1.0))
         self._state = self._mean
 
-    def next(self, dt: float, view: Any, siblings: Mapping[str, Any]) -> float:  # noqa: ARG002
+    def next(self, dt: float, view: Any, siblings: Mapping[str, Any]) -> float:  # ruff: ignore[unused-method-argument]
         ratio = dt / self._tau
         self._state += (self._mean - self._state) * ratio + self._sigma * math.sqrt(ratio) * self.rng.gauss(0.0, 1.0)
         if self.spec.value_range is not None:
@@ -206,7 +206,7 @@ class DiurnalSignal(Signal):
         self._phase_s = float(spec.params.get("phase_s", 0.0))
         self._noise = float(spec.params.get("noise", 0.0))
 
-    def next(self, dt: float, view: Any, siblings: Mapping[str, Any]) -> float:  # noqa: ARG002
+    def next(self, dt: float, view: Any, siblings: Mapping[str, Any]) -> float:  # ruff: ignore[unused-method-argument]
         angle = 2.0 * math.pi * ((self.elapsed_s + self._phase_s) % self._period_s) / self._period_s
         value = self._mean + self._amplitude * math.sin(angle)
         if self._noise:
@@ -235,7 +235,7 @@ class SawtoothSignal(Signal):
         self._state = float(spec.params.get("start", self._low))
         self._filling = True
 
-    def next(self, dt: float, view: Any, siblings: Mapping[str, Any]) -> float:  # noqa: ARG002
+    def next(self, dt: float, view: Any, siblings: Mapping[str, Any]) -> float:  # ruff: ignore[unused-method-argument]
         if self._filling:
             self._state += self._fill_rate * dt
             if self._state >= self._high:
@@ -315,7 +315,7 @@ class WindowAggSignal(Signal):
         self._agg = _AGGREGATES[agg]
         self._samples: deque[tuple[float, float]] = deque()
 
-    def next(self, dt: float, view: Any, siblings: Mapping[str, Any]) -> float | None:  # noqa: ARG002
+    def next(self, dt: float, view: Any, siblings: Mapping[str, Any]) -> float | None:  # ruff: ignore[unused-method-argument]
         self.elapsed_s += dt
         sample = siblings.get(self._source)
         if isinstance(sample, int | float) and not isinstance(sample, bool):
@@ -380,7 +380,7 @@ class SteppedSignal(Signal):
             return self.rng.choices(self._choices, weights=self._weights, k=1)[0]
         return self.rng.choice(self._choices)
 
-    def next(self, dt: float, view: Any, siblings: Mapping[str, Any]) -> Any:  # noqa: ARG002
+    def next(self, dt: float, view: Any, siblings: Mapping[str, Any]) -> Any:  # ruff: ignore[unused-method-argument]
         if self._source:
             self.value = self._translate(resolve_ctx_path(view, str(self._source)))
             return self.value
@@ -410,7 +410,7 @@ class BernoulliEventSignal(Signal):
         self._p = float(spec.params.get("p", 0.0))
         self._choices = list(spec.params.get("choices") or [True])
 
-    def next(self, dt: float, view: Any, siblings: Mapping[str, Any]) -> Any:  # noqa: ARG002
+    def next(self, dt: float, view: Any, siblings: Mapping[str, Any]) -> Any:  # ruff: ignore[unused-method-argument]
         self.value = self.rng.choice(self._choices) if self.rng.random() < self._p else None
         return self.value
 

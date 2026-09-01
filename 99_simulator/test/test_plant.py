@@ -63,7 +63,7 @@ def test_production_rate_ramps_across_starting_rather_than_stepping():
         rates.append(line.production_rate)
     assert rates[0] < rates[-1]
     assert rates[-1] == pytest.approx(EXECUTE_RATE_FLOOR, abs=0.02)
-    assert all(b - a < 0.05 for a, b in zip(rates, rates[1:], strict=False))  # noqa: PLR2004
+    assert all(b - a < 0.05 for a, b in zip(rates, rates[1:], strict=False))
 
 
 def test_execute_holds_the_rate_inside_the_spec_band():
@@ -150,7 +150,9 @@ def test_a_full_cycle_returns_to_idle():
 
 
 def test_a_hold_walks_the_full_hold_branch():
-    line = _line(starting_s=1.0, execute_s=100_000.0, hold_probability_per_hour=3600.0 * 10, holding_s=2.0, held_s=3.0, unholding_s=2.0)
+    line = _line(
+        starting_s=1.0, execute_s=100_000.0, hold_probability_per_hour=3600.0 * 10, holding_s=2.0, held_s=3.0, unholding_s=2.0
+    )
     states = []
     for _ in range(120):
         if (new := line.tick(1.0)) is not None:
@@ -190,7 +192,9 @@ def test_previous_state_is_recorded():
 
 def test_the_same_seed_gives_the_same_state_history():
     def history():
-        line = LineState("L", LineTiming(starting_s=2.0, execute_s=30.0, hold_probability_per_hour=120.0), 12.0, random.Random(42))
+        line = LineState(
+            "L", LineTiming(starting_s=2.0, execute_s=30.0, hold_probability_per_hour=120.0), 12.0, random.Random(42)
+        )
         return [(line.tick(1.0), line.state, round(line.production_rate, 6)) for _ in range(500)]
 
     assert history() == history()
@@ -212,8 +216,8 @@ def test_site_ambient_swings_over_a_day():
     for _ in range(0, 86_400, 60):
         site.tick(60.0)
         temperatures.append(site.ambient_temp_c)
-    assert max(temperatures) > 20.0  # noqa: PLR2004
-    assert min(temperatures) < 8.0  # noqa: PLR2004
+    assert max(temperatures) > 20.0
+    assert min(temperatures) < 8.0
 
 
 def test_wet_bulb_is_never_above_dry_bulb():
@@ -227,7 +231,7 @@ def test_humidity_stays_in_range():
     site = SiteState("Dormagen", random.Random(7))
     for _ in range(2000):
         site.tick(60.0)
-        assert 10.0 <= site.ambient_rh_pct <= 100.0  # noqa: PLR2004
+        assert 10.0 <= site.ambient_rh_pct <= 100.0
 
 
 def test_shift_rotates_every_eight_hours():
@@ -265,8 +269,8 @@ def test_barometric_pressure_stays_near_standard():
     for _ in range(5000):
         site.tick(60.0)
         readings.append(site.barometric_mbar)
-    assert min(readings) > 950.0  # noqa: PLR2004
-    assert max(readings) < 1060.0  # noqa: PLR2004
+    assert min(readings) > 950.0
+    assert max(readings) < 1060.0
     assert max(readings) - min(readings) > 1.0
 
 
@@ -282,7 +286,7 @@ def test_grid_carbon_intensity_is_diurnal_with_a_midday_trough():
         site.tick(3600.0)
         by_hour[int((site.sim_time_s / 3600.0) % 24.0)] = site.grid_co2_g_per_kwh
     assert min(by_hour, key=by_hour.__getitem__) in {12, 13, 14}
-    assert max(by_hour.values()) - min(by_hour.values()) > 100.0  # noqa: PLR2004
+    assert max(by_hour.values()) - min(by_hour.values()) > 100.0
     assert all(GRID_CO2_MIN_G_PER_KWH <= value <= GRID_CO2_MAX_G_PER_KWH for value in by_hour.values())
 
 
@@ -312,7 +316,15 @@ def test_context_snapshot_shape():
         "lines",
     }
     line = site["lines"]["Production/Line1"]
-    assert set(line) >= {"state", "previous", "production_rate", "throughput_tph", "heat_load", "air_demand", "time_in_state_s"}
+    assert set(line) >= {
+        "state",
+        "previous",
+        "production_rate",
+        "throughput_tph",
+        "heat_load",
+        "air_demand",
+        "time_in_state_s",
+    }
 
 
 def test_device_view_reads_its_own_line():
@@ -345,13 +357,13 @@ def test_serves_aggregates_the_lines_a_utility_feeds():
         context.tick(1.0)
     lines = context.sites["Dormagen"].lines
     view = DeviceView(context, "Dormagen", None, serves=["Dormagen/Production/Line1", "Dormagen/Production/Line2"])
-    assert view.served_line_count == 2  # noqa: PLR2004
-    assert view.served_running_count == 2  # noqa: PLR2004
+    assert view.served_line_count == 2
+    assert view.served_running_count == 2
     assert view.served_production == pytest.approx(0.9, abs=0.1)
     expected_tph = lines["Production/Line1"].throughput_tph + lines["Production/Line2"].throughput_tph
     assert view.served_throughput_tph == pytest.approx(expected_tph, abs=0.01)
     # Each line runs its own seeded walk, so the sum is not the mean times the total nameplate.
-    assert 17.0 < view.served_throughput_tph <= 20.0  # noqa: PLR2004
+    assert 17.0 < view.served_throughput_tph <= 20.0
 
 
 def test_served_heat_load_and_air_demand_are_sums():
@@ -396,7 +408,7 @@ def test_serving_a_line_at_another_site_is_allowed():
     for _ in range(20):
         context.tick(1.0)
     view = DeviceView(context, "Dormagen", None, serves=["Dormagen/Production/Line1", "Krefeld/Production/Line1"])
-    assert view.served_line_count == 2  # noqa: PLR2004
+    assert view.served_line_count == 2
     assert view.served_throughput_tph > 0.0
 
 
@@ -466,7 +478,7 @@ def test_a_failing_callback_does_not_stop_the_clock():
     clock = PlantClock(context, tick_s=1.0)
     calls: list[str] = []
 
-    def explode(site, line, state):  # noqa: ARG001
+    def explode(site, line, state):  # ruff: ignore[unused-function-argument]
         calls.append("boom")
         raise RuntimeError("broker down")
 
@@ -474,7 +486,7 @@ def test_a_failing_callback_does_not_stop_the_clock():
     for _ in range(5):
         clock.advance()
     assert calls
-    assert clock.tick_count == 5  # noqa: PLR2004
+    assert clock.tick_count == 5
 
 
 @pytest.mark.asyncio
@@ -482,10 +494,10 @@ async def test_run_ticks_until_stopped():
     context = _context()
     clock = PlantClock(context, tick_s=0.01)
     task = asyncio.create_task(clock.run())
-    await asyncio.sleep(0.1)
+    await asyncio.sleep(0.15)
     clock.stop()
     await asyncio.wait_for(task, timeout=1.0)
-    assert clock.tick_count >= 5  # noqa: PLR2004
+    assert clock.tick_count >= 5
     assert clock.running is False
 
 

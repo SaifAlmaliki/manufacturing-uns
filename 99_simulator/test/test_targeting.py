@@ -2,19 +2,20 @@ import pytest
 
 from uns_simulator import devices
 from uns_simulator.models import ISA95Hierarchy, ParameterType, expand_hierarchy_paths
-from uns_simulator.profiles import DeviceSpec, expand_template, matches_target
+from uns_simulator.profiles import expand_template, matches_target
 from uns_simulator.simulator import UnifiedNamespaceSimulator
 
 
 class DummyClient:
-    def __init__(self, *args, **kwargs):  # noqa: ARG002
+    def __init__(self, *args, **kwargs):  # ruff: ignore[unused-method-argument]
         self.published = []
 
     async def __aenter__(self):
         return self
 
-    async def __aexit__(self, exc_type, exc, tb):  # noqa: ARG002
+    async def __aexit__(self, exc_type, exc, tb):
         return False
+
 
 PRODUCTION = ISA95Hierarchy("CovestroAG", "Dormagen", "Production", "Line1", "Cell1", nameplate_tph=12.0)
 PRODUCTION_2 = ISA95Hierarchy("CovestroAG", "Dormagen", "Production", "Line2", "Cell1", nameplate_tph=8.0)
@@ -151,7 +152,9 @@ def test_serves_is_carried_onto_the_device():
 
 
 def test_a_template_matching_nothing_returns_an_empty_list():
-    assert expand_template({"id": "X", "equipment": "E", "target": {"site": "Nowhere"}, "signals": {}}, ALL_PATHS, "energy") == []
+    assert (
+        expand_template({"id": "X", "equipment": "E", "target": {"site": "Nowhere"}, "signals": {}}, ALL_PATHS, "energy") == []
+    )
 
 
 def test_a_template_without_an_id_or_equipment_is_rejected():
@@ -234,7 +237,11 @@ LEGACY_PLC = [
             "Pressure": {"base_value": 150.0, "variation": 5.0, "unit": "psi"},
         },
     },
-    {"id": "002", "equipment": "FillingMachine", "sensors": {"FlowRate": {"base_value": 450.0, "variation": 20.0, "unit": "L/min"}}},
+    {
+        "id": "002",
+        "equipment": "FillingMachine",
+        "sensors": {"FlowRate": {"base_value": 450.0, "variation": 20.0, "unit": "L/min"}},
+    },
 ]
 
 LEGACY_MIXER_TANK = {
@@ -278,13 +285,13 @@ def test_the_legacy_plc_config_still_produces_todays_eight_devices(monkeypatch):
     monkeypatch.setattr(devices.aiomqtt, "Client", DummyClient)
     plcs = _legacy_simulator(LEGACY_PLC, None).create_plc()
 
-    assert len(plcs) == 8  # noqa: PLR2004
+    assert len(plcs) == 8
     prefixes = {
         plc.hierarchy.get_parameter_topic(plc.equipment.name, ParameterType.PROCESS_VALUE, "x").rsplit("/", 2)[0]
         for plc in plcs
     }
     assert prefixes == TODAYS_LEGACY_TOPIC_PREFIXES
-    assert len({plc.plc_id for plc in plcs}) == 8, "device ids stay unique per cell"  # noqa: PLR2004
+    assert len({plc.plc_id for plc in plcs}) == 8, "device ids stay unique per cell"
 
 
 def test_the_mixer_tank_fallback_is_still_honoured_when_no_templates_resolve(monkeypatch):
@@ -297,7 +304,7 @@ def test_the_mixer_tank_fallback_is_still_honoured_when_no_templates_resolve(mon
     monkeypatch.setattr(devices.aiomqtt, "Client", DummyClient)
     plcs = _legacy_simulator([], LEGACY_MIXER_TANK).create_plc()
 
-    assert len(plcs) == 8  # noqa: PLR2004
+    assert len(plcs) == 8
     assert {plc.equipment.name for plc in plcs} == {"MixerTank"}
 
 

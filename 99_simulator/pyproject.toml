@@ -78,3 +78,11 @@ asyncio_default_fixture_loop_scope = "function"
 [tool.ruff]
 # Extend the `pyproject.toml` file in the parent directory...
 extend = "../pyproject.toml"
+
+[tool.ruff.lint]
+# RUF069 (float ==) is new preview and would flag every plan test; RUF105 wants
+# `ruff: ignore` instead of the repo-wide `noqa` style.
+extend-ignore = ["RUF069", "RUF105"]
+
+[tool.ruff.lint.per-file-ignores]
+"test/*.py" = ["RUF043", "RUF029", "S311", "PERF401", "RUF007"]

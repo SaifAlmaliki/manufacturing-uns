@@ -2,6 +2,10 @@ import asyncio
 
 import pytest
 
+from uns_simulator import devices as devices_module
+from uns_simulator.models import expand_hierarchy_paths
+from uns_simulator.plant import PlantClock
+from uns_simulator.profiles import TIER_DEFAULTS, load_profile
 from uns_simulator.simulator import (
     UnifiedNamespaceSimulator,
     resolve_simulation_duration,
@@ -17,15 +21,15 @@ def test_resolve_duration_keeps_string_zero():
 
 
 def test_resolve_duration_uses_explicit_value():
-    assert resolve_simulation_duration(12, {"duration": 5}) == 12  # noqa: PLR2004
+    assert resolve_simulation_duration(12, {"duration": 5}) == 12
 
 
 def test_resolve_duration_falls_back_to_config():
-    assert resolve_simulation_duration(None, {"duration": 5}) == 5  # noqa: PLR2004
+    assert resolve_simulation_duration(None, {"duration": 5}) == 5
 
 
 def test_resolve_duration_falls_back_to_duration_minutes():
-    assert resolve_simulation_duration(None, {"duration_minutes": 3}) == 3  # noqa: PLR2004
+    assert resolve_simulation_duration(None, {"duration_minutes": 3}) == 3
 
 
 @pytest.mark.asyncio
@@ -51,11 +55,6 @@ async def test_run_until_positive_sleeps_minutes(monkeypatch):
     await sim._run_until(5)
     assert sleeps == [300]
 
-
-from uns_simulator import devices as devices_module
-from uns_simulator.models import expand_hierarchy_paths
-from uns_simulator.plant import PlantClock
-from uns_simulator.profiles import TIER_DEFAULTS, load_profile
 
 HIERARCHY = {
     "enterprise": "CovestroAG",
@@ -116,7 +115,7 @@ RAW = {
 @pytest.fixture(autouse=True)
 def _dummy_broker(monkeypatch):
     """Same pattern as test_devices.py: never touch a real broker."""
-    from test.test_devices import DummyClient  # noqa: PLC0415
+    from test.test_devices import DummyClient
 
     monkeypatch.setattr(devices_module.aiomqtt, "Client", DummyClient)
 
@@ -163,7 +162,7 @@ def test_tick_evaluates_every_device():
     sim = _sim()
     sim.tick(1.0)
     values = sim.signal_devices[0].values
-    assert values["ActivePower"] >= 80.0  # noqa: PLR2004
+    assert values["ActivePower"] >= 80.0
     assert values["EnergyTotal"] > 0.0
 
 
@@ -197,9 +196,9 @@ def test_status_reports_the_loaded_profile():
     sim = _sim()
     status = sim.status()
     assert status["profile"] == "full"
-    assert status["seed"] == 1234  # noqa: PLR2004
+    assert status["seed"] == 1234
     assert status["device_count"] == 1
-    assert status["signal_count"] == 2  # noqa: PLR2004
+    assert status["signal_count"] == 2
     # `full` leaves `tier_scale` at its 1.0 default, so the pre-scaled tiers are the defaults.
     assert status["tiers"]["meter"] == TIER_DEFAULTS["meter"]
     assert status["families"] == {
@@ -265,4 +264,3 @@ def test_scada_is_told_the_real_device_count():
     scada = [d for d in sim.devices if isinstance(d, devices_module.SCADA)]
     assert scada
     assert scada[0].connected_devices == len(sim.signal_devices)
-

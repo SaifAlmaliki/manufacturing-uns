@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+
 from uns_simulator.profiles import TIER_DEFAULTS, load_profile, read_simulator_conf
 
 CONF_DIR = Path(__file__).resolve().parents[2] / "conf"

@@ -180,11 +180,18 @@ the deadband is what makes this report-by-exception (the memo's Key Principle 2)
 than polling in disguise. If a server rejects the filter the collector retries without one,
 logs once, counts it, and optionally applies a client-side deadband.
 
-Reconnect is the subtle part. An OPC UA subscription reports changes only *while
-subscribed*, so after a session drop the collector must **re-resolve, re-subscribe, and
-then read every monitored node once**. Without that single read, a tag that changed during
-the outage is never reported and the namespace holds a stale value indefinitely. That read
-is what makes a gap self-healing rather than permanent.
+Reconnect is the subtle part, and verification simplified it. An OPC UA subscription
+reports changes only *while subscribed*, so a tag that changes during an outage would
+otherwise never be reported. But **creating a monitored item delivers its current value
+immediately** as the first notification — confirmed empirically against `asyncua` 2.0.1,
+where subscribing produced a `datachange_notification` before any write occurred. So
+**reconnect → re-resolve → re-subscribe is sufficient**; no explicit read pass is needed.
+
+This is better than an explicit read, because the initial notification carries the server's
+real `SourceTimestamp` — the moment the value actually changed — rather than the time we
+happened to read it. Rule 1 is preserved. And if the value did *not* change during the
+outage, the re-delivered notification is byte-identical in its significant fields, so the
+historian's dedupe (finding 1) absorbs it. The gap heals either way.
 
 **Spool writer — one task.** Drains the queue in batches (≤500 rows or 50 ms, whichever
 comes first) into one transaction. Batching is what lets SQLite keep up; a single writer
@@ -283,7 +290,7 @@ was chosen over an Asset-Model-driven one.
 | Failure | Behaviour |
 | --- | --- |
 | OPC UA server down at start | Task retries with backoff + jitter; other servers unaffected; `server_up` = 0 |
-| Session drops | Reconnect → re-resolve → re-subscribe → read-all-once to recover the gap |
+| Session drops | Reconnect → re-resolve → re-subscribe; the monitored item's initial notification recovers the gap |
 | Server rejects deadband filter | Retry without filter, log once, count; optional client-side deadband |
 | `node_id` unresolvable | Log once, skip that tag, count; the rest of that server keeps running |
 | Broker down | Forwarder backs off; spool grows; collection continues |
@@ -314,7 +321,7 @@ actually needs: how far behind is this edge node.
   occurs and that the historian's dedupe absorbs it.
 - **OPC UA integration** (`@pytest.mark.integrationtest`). `asyncua` ships an in-process
   `Server`, so tests start one, expose nodes, and assert subscription, deadband, and
-  reconnect-then-read-once behaviour. No external dependency for this half.
+  reconnect behaviour. No external dependency for this half.
 - **End to end** (`@pytest.mark.integrationtest`, `xdist_group`). asyncua server →
   connector → Compose broker → assert topics and payloads.
 

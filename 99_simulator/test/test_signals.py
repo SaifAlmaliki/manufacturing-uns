@@ -42,7 +42,7 @@ def test_legacy_sensor_config_still_parses_as_noise():
     assert spec.variation == pytest.approx(2.0)
     assert spec.unit == "°C"
     assert spec.tier == "process"
-    assert spec.precision == 2  # noqa: PLR2004
+    assert spec.precision == 2
 
 
 def test_seed_is_stable_for_the_same_topic():
@@ -56,7 +56,7 @@ def test_seed_differs_by_topic_and_by_global_seed():
 
 def test_seed_is_stable_across_processes():
     """A literal, not a recomputation: `hash()` would make this value vary per process."""
-    assert signal_seed(0, "CovestroAG/Dormagen/Production/Line1/Cell1/G1/ProcessValue/Temperature") == 6842570927962973474
+    assert signal_seed(0, "CovestroAG/Dormagen/Production/Line1/Cell1/G1/ProcessValue/Temperature") == 5432699124154044131
 
 
 def test_noise_stays_within_variation_band():
@@ -145,9 +145,7 @@ def test_status_heuristic_matches_the_pre_existing_thresholds():
 
 
 def test_value_range_clamps():
-    signal = build_signal(
-        SignalSpec(name="T", base_value=75.0, variation=50.0, value_range=(70.0, 80.0)), "t/T", 7
-    )
+    signal = build_signal(SignalSpec(name="T", base_value=75.0, variation=50.0, value_range=(70.0, 80.0)), "t/T", 7)
     for _ in range(200):
         assert 70.0 <= signal.next(1.0, None, {}) <= 80.0
 
@@ -197,14 +195,12 @@ def test_ou_walk_reverts_to_its_mean():
     signal._state = 300.0
     for _ in range(200):
         signal.next(1.0, None, {})
-    assert abs(signal.value - 150.0) < 20.0  # noqa: PLR2004
+    assert abs(signal.value - 150.0) < 20.0
 
 
 def test_ou_walk_falls_back_to_base_value_and_variation():
     """A legacy entry gains a trend line by adding `shape: ou_walk` and nothing else."""
-    signal = build_signal(
-        SignalSpec(name="P", shape="ou_walk", base_value=150.0, variation=5.0), "t/P", 7
-    )
+    signal = build_signal(SignalSpec(name="P", shape="ou_walk", base_value=150.0, variation=5.0), "t/P", 7)
     assert signal._mean == pytest.approx(150.0)
     assert signal._sigma == pytest.approx(5.0)
 
@@ -247,7 +243,7 @@ def test_diurnal_is_smooth():
         7,
     )
     values = _run(signal, 200)
-    assert all(abs(b - a) < 0.5 for a, b in zip(values, values[1:], strict=False))  # noqa: PLR2004
+    assert all(abs(b - a) < 0.5 for a, b in zip(values, values[1:], strict=False))
 
 
 def test_sawtooth_fills_slowly_and_drains_quickly():
@@ -479,7 +475,7 @@ def test_stepped_translates_through_map():
         "t/Code",
         7,
     )
-    assert signal.next(1.0, FakeView(line=FakeLine(state="EXECUTE")), {}) == 6  # noqa: PLR2004
+    assert signal.next(1.0, FakeView(line=FakeLine(state="EXECUTE")), {}) == 6
     assert signal.next(1.0, FakeView(line=FakeLine(state="IDLE")), {}) == 1
 
 
@@ -512,7 +508,7 @@ def test_bernoulli_event_fires_at_roughly_the_declared_rate():
         7,
     )
     fires = sum(1 for _ in range(360_000) if signal.next(1.0, None, {}) == "Fault")
-    assert 70 <= fires <= 130, f"expected ~100 fires in 100 simulated hours, got {fires}"  # noqa: PLR2004
+    assert 70 <= fires <= 130, f"expected ~100 fires in 100 simulated hours, got {fires}"
 
 
 def test_bernoulli_event_publishes_nothing_on_a_quiet_tick():
@@ -522,7 +518,7 @@ def test_bernoulli_event_publishes_nothing_on_a_quiet_tick():
         7,
     )
     values = [signal.next(1.0, None, {}) for _ in range(1000)]
-    assert values.count(None) > 990  # noqa: PLR2004
+    assert values.count(None) > 990
     assert set(values) <= {None, "Opened", "Closed"}
 
 
@@ -630,13 +626,11 @@ def test_counter_rate_expression_can_read_ctx_and_params():
 def test_dependencies_are_found_for_every_shape_that_reads_siblings():
     assert signal_dependencies(SignalSpec(name="a", shape="derived", params={"expr": "b + c"})) == frozenset({"b", "c"})
     assert signal_dependencies(SignalSpec(name="a", shape="counter", params={"rate": "Power"})) == frozenset({"Power"})
-    assert signal_dependencies(
-        SignalSpec(name="a", shape="counter", params={"rate": "Power / 3600.0"})
-    ) == frozenset({"Power"})
+    assert signal_dependencies(SignalSpec(name="a", shape="counter", params={"rate": "Power / 3600.0"})) == frozenset(
+        {"Power"}
+    )
     assert signal_dependencies(SignalSpec(name="a", shape="counter", params={"rate": 2.0})) == frozenset()
-    assert signal_dependencies(
-        SignalSpec(name="a", shape="window_agg", params={"source": "T"})
-    ) == frozenset({"T"})
+    assert signal_dependencies(SignalSpec(name="a", shape="window_agg", params={"source": "T"})) == frozenset({"T"})
     assert signal_dependencies(SignalSpec(name="a")) == frozenset()
 
 

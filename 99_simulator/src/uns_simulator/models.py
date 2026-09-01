@@ -18,6 +18,7 @@
 Data models for ISA-95 hierarchy and equipment definitions.
 Defines the structure for MQTT topics and industrial equipment.
 """
+
 from enum import Enum
 from typing import Any
 
@@ -39,11 +40,12 @@ def _node_name(node: Any) -> str:
 
 class ParameterType(Enum):
     """Types of industrial parameters following ISA-95 standards"""
-    PROCESS_VALUE = "ProcessValue"    # Measured values from sensors
-    SETPOINT = "Setpoint"             # Target values for control
-    STATUS = "Status"                 # Equipment status information
-    ALARM = "Alarm"                   # Alarm and warning conditions
-    EVENT = "EVENT"                   # EVENT STATUS
+
+    PROCESS_VALUE = "ProcessValue"  # Measured values from sensors
+    SETPOINT = "Setpoint"  # Target values for control
+    STATUS = "Status"  # Equipment status information
+    ALARM = "Alarm"  # Alarm and warning conditions
+    EVENT = "EVENT"  # EVENT STATUS
 
 
 class ISA95Hierarchy:
@@ -104,29 +106,26 @@ def expand_hierarchy_paths(raw: Any) -> list[ISA95Hierarchy]:
                 area_kind = str(area.get("kind", "production")) if hasattr(area, "get") else "production"
                 if area_kind not in AREA_KINDS:
                     raise ValueError(
-                        f"Area {site_name}/{area_name} has kind {area_kind!r}; "
-                        f"expected one of {sorted(AREA_KINDS)}"
+                        f"Area {site_name}/{area_name} has kind {area_kind!r}; expected one of {sorted(AREA_KINDS)}"
                     )
                 for line in area.get("lines") or []:
                     line_name = _node_name(line)
                     nameplate_tph = float(line.get("nameplate_tph", 0.0)) if hasattr(line, "get") else 0.0
                     cells = line.get("cells") or []
                     if not cells:
-                        raise ValueError(
-                            f"Line {site_name}/{area_name}/{line_name} has no cells"
+                        raise ValueError(f"Line {site_name}/{area_name}/{line_name} has no cells")
+                    paths.extend(
+                        ISA95Hierarchy(
+                            enterprise=str(enterprise),
+                            site=site_name,
+                            area=area_name,
+                            line=line_name,
+                            cell=_node_name(cell),
+                            kind=area_kind,
+                            nameplate_tph=nameplate_tph,
                         )
-                    for cell in cells:
-                        paths.append(
-                            ISA95Hierarchy(
-                                enterprise=str(enterprise),
-                                site=site_name,
-                                area=area_name,
-                                line=line_name,
-                                cell=_node_name(cell),
-                                kind=area_kind,
-                                nameplate_tph=nameplate_tph,
-                            )
-                        )
+                        for cell in cells
+                    )
         if not paths:
             raise ValueError("simulator.hierarchy.sites did not produce any cells")
         return paths

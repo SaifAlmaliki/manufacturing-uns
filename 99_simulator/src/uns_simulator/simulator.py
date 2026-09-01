@@ -53,9 +53,7 @@ def load_simulator_config(settings_obj: Any, conf_dir: Path | None = None) -> di
     }
     for family in FAMILIES:
         raw[family] = settings_obj.get(family) or {}
-    for key, value in read_simulator_conf(conf_dir).items():
-        if value:
-            raw[key] = value
+    raw.update({key: value for key, value in read_simulator_conf(conf_dir).items() if value})
     return raw
 
 
@@ -144,10 +142,7 @@ class UnifiedNamespaceSimulator:
                     equipment_config = _plc_equipment_config(plc_cfg)
                     if not equipment_config["name"]:
                         continue
-                    plc_id = (
-                        f"{plc_cfg.get('id', 'plc')}-"
-                        f"{path.site}-{path.line}-{path.cell}"
-                    )
+                    plc_id = f"{plc_cfg.get('id', 'plc')}-{path.site}-{path.line}-{path.cell}"
                     plc_list.append(
                         PLC(
                             plc_id=plc_id,
@@ -161,15 +156,15 @@ class UnifiedNamespaceSimulator:
             if not self.equipment_fallback:
                 continue
             plc_count = self.simulation_config.get("plc_count", 2)
-            for i in range(plc_count):
-                plc_list.append(
-                    PLC(
-                        plc_id=f"{i + 1:03d}-{path.site}-{path.line}-{path.cell}",
-                        hierarchy=path,
-                        mqtt_config=self.mqtt_config,
-                        equipment_config=self.equipment_fallback,
-                    )
+            plc_list.extend(
+                PLC(
+                    plc_id=f"{i + 1:03d}-{path.site}-{path.line}-{path.cell}",
+                    hierarchy=path,
+                    mqtt_config=self.mqtt_config,
+                    equipment_config=self.equipment_fallback,
                 )
+                for i in range(plc_count)
+            )
 
         return plc_list
 
@@ -193,11 +188,7 @@ class UnifiedNamespaceSimulator:
     def create_hmi(self, count: int | None = None) -> list[HMI]:
         """One HMI per line (first cell of that line)."""
         if count is not None:
-            return [
-                HMI(hmi_id=f"{i:02d}", hierarchy=self.hierarchy,
-                    mqtt_config=self.mqtt_config)
-                for i in range(count)
-            ]
+            return [HMI(hmi_id=f"{i:02d}", hierarchy=self.hierarchy, mqtt_config=self.mqtt_config) for i in range(count)]
         seen_lines: set[tuple[str, str, str]] = set()
         hmis: list[HMI] = []
         for path in self.hierarchies:
@@ -206,8 +197,7 @@ class UnifiedNamespaceSimulator:
                 continue
             seen_lines.add(key)
             hmi_id = f"{path.site}-{path.line}"
-            hmis.append(HMI(hmi_id=hmi_id, hierarchy=path,
-                            mqtt_config=self.mqtt_config))
+            hmis.append(HMI(hmi_id=hmi_id, hierarchy=path, mqtt_config=self.mqtt_config))
         return hmis
 
     async def _run_until(self, duration: int) -> None:
@@ -236,15 +226,12 @@ class UnifiedNamespaceSimulator:
 
     async def run_simulation(self, duration_minutes: int | None = None):
         """Run the complete simulation"""
-        duration = resolve_simulation_duration(
-            duration_minutes, self.simulation_config)
+        duration = resolve_simulation_duration(duration_minutes, self.simulation_config)
 
         LOGGER.info("Starting Unified Namespace Simulator")
         LOGGER.info(
             "Hierarchy cells: %s",
-            ", ".join(
-                f"{p.site}/{p.area}/{p.line}/{p.cell}" for p in self.hierarchies
-            ),
+            ", ".join(f"{p.site}/{p.area}/{p.line}/{p.cell}" for p in self.hierarchies),
         )
 
         self.devices = [
@@ -257,9 +244,7 @@ class UnifiedNamespaceSimulator:
 
         # The clock is a task of its own: it advances the world, and self.tick evaluates
         # every signal on that same advance. Publishing is scheduled separately, per tier.
-        self.clock.on_transition(
-            lambda site, line, state: LOGGER.info("Plant %s/%s -> %s", site, line, state)
-        )
+        self.clock.on_transition(lambda site, line, state: LOGGER.info("Plant %s/%s -> %s", site, line, state))
         self.tasks.append(asyncio.create_task(self._run_clock()))
 
         for device in self.signal_devices:

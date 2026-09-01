@@ -1,18 +1,18 @@
 import pytest
 
+from uns_simulator import devices
 from uns_simulator.models import AREA_KINDS, ISA95Hierarchy, ParameterType, expand_hierarchy_paths
 from uns_simulator.simulator import UnifiedNamespaceSimulator
-from uns_simulator import devices
 
 
 class DummyClient:
-    def __init__(self, *args, **kwargs):  # noqa: ARG002
+    def __init__(self, *args, **kwargs):  # ruff: ignore[unused-method-argument]
         self.published = []
 
     async def __aenter__(self):
         return self
 
-    async def __aexit__(self, exc_type, exc, tb):  # noqa: ARG002
+    async def __aexit__(self, exc_type, exc, tb):
         return False
 
 
@@ -45,12 +45,9 @@ def test_expand_nested_sites_areas_lines_cells():
     }
 
     paths = expand_hierarchy_paths(raw)
-    topics = [
-        p.get_parameter_topic("G1", ParameterType.PROCESS_VALUE, "Temperature")
-        for p in paths
-    ]
+    topics = [p.get_parameter_topic("G1", ParameterType.PROCESS_VALUE, "Temperature") for p in paths]
 
-    assert [ (p.enterprise, p.site, p.area, p.line, p.cell) for p in paths ] == [
+    assert [(p.enterprise, p.site, p.area, p.line, p.cell) for p in paths] == [
         ("CovestroAG", "Dormagen", "Production", "Line1", "Cell1"),
         ("CovestroAG", "Dormagen", "Production", "Line1", "Cell2"),
         ("CovestroAG", "Dormagen", "Production", "Line2", "Cell1"),
@@ -61,13 +58,15 @@ def test_expand_nested_sites_areas_lines_cells():
 
 
 def test_expand_flat_hierarchy_still_works():
-    paths = expand_hierarchy_paths({
-        "enterprise": "CovestroAG",
-        "site": "Dormagen",
-        "area": "Production",
-        "line": "Line1",
-        "cell": "Cell1",
-    })
+    paths = expand_hierarchy_paths(
+        {
+            "enterprise": "CovestroAG",
+            "site": "Dormagen",
+            "area": "Production",
+            "line": "Line1",
+            "cell": "Cell1",
+        }
+    )
     assert len(paths) == 1
     assert paths[0].site == "Dormagen"
     assert paths[0].cell == "Cell1"
@@ -89,10 +88,7 @@ def test_create_plc_spawns_one_device_per_cell_and_template(monkeypatch):
 
     plcs = sim.create_plc()
     assert len(plcs) == 4
-    topics = {
-        plc.hierarchy.get_parameter_topic(plc.equipment.name, ParameterType.PROCESS_VALUE, "x")
-        for plc in plcs
-    }
+    topics = {plc.hierarchy.get_parameter_topic(plc.equipment.name, ParameterType.PROCESS_VALUE, "x") for plc in plcs}
     assert any("Line1/Cell1/G1/" in t for t in topics)
     assert any("Line1/Cell2/FillingMachine/" in t for t in topics)
 
@@ -122,7 +118,7 @@ def test_area_kind_and_nameplate_flow_through_expansion():
     )
     by_area = {path.area: path for path in paths}
     assert by_area["Production"].kind == "production"
-    assert by_area["Production"].nameplate_tph == 12.5  # noqa: PLR2004
+    assert by_area["Production"].nameplate_tph == 12.5
     assert by_area["Utilities"].kind == "utilities"
     assert by_area["Utilities"].nameplate_tph == 0.0
 

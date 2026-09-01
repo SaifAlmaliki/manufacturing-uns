@@ -157,7 +157,7 @@ class LineState:
         noisy = self.production_rate + self.rng.gauss(0.0, self.timing.air_noise)
         self.air_demand = min(1.0, max(0.0, noisy))
 
-    def _next_state(self) -> str | None:
+    def _next_state(self) -> str | None:  # ruff: ignore[complex-structure]
         elapsed = self.time_in_state_s
         timing = self.timing
         match self.state:
@@ -330,7 +330,7 @@ class SiteState:
         }
 
 
-def _mean_reverting(  # noqa: PLR0913
+def _mean_reverting(
     value: float,
     mean: float,
     tau_s: float,
@@ -376,7 +376,7 @@ class PlantContext:
         self.sim_time_s = 0.0
 
     def add_site(self, name: str, **kwargs: Any) -> SiteState:
-        site = SiteState(name, random.Random(f"{self.global_seed}:{name}"), **kwargs)
+        site = SiteState(name, random.Random(f"{self.global_seed}:{name}"), **kwargs)  # ruff: ignore[suspicious-non-cryptographic-random-usage]
         self.sites[name] = site
         return site
 
@@ -384,14 +384,14 @@ class PlantContext:
         if site not in self.sites:
             raise KeyError(f"cannot add line {area}/{line!r}: site {site!r} is not in the plant context")
         path = f"{area}/{line}"
-        state = LineState(line, timing, nameplate_tph, random.Random(f"{self.global_seed}:{site}/{path}"))
+        state = LineState(line, timing, nameplate_tph, random.Random(f"{self.global_seed}:{site}/{path}"))  # ruff: ignore[suspicious-non-cryptographic-random-usage]
         self.sites[site].lines[path] = state
         return state
 
     def resolve_line(self, path: str) -> LineState:
         """Look up a fully-qualified `<Site>/<Area>/<Line>`. Raises `KeyError` if absent."""
         segments = path.split("/")
-        if len(segments) != 3:  # noqa: PLR2004
+        if len(segments) != 3:
             raise KeyError(f"line path {path!r} must have exactly three segments, Site/Area/Line")
         site_name, area, line = segments
         site = self.sites.get(site_name)
