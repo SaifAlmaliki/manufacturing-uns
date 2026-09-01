@@ -100,6 +100,37 @@ async def run_connector(
             await asyncio.gather(*tasks, return_exceptions=True)
 
 
+async def _idle_when_no_servers() -> None:
+    """Stay alive so a stock container still serves /metrics with nothing to collect."""
+    LOGGER.warning("No opcua.servers are configured; idling so /metrics remains available")
+    await asyncio.Event().wait()
+
+
+async def run_connector_keeping_metrics_alive(
+    servers: Sequence[ServerConfig],
+    spool_config: SpoolConfig,
+    client_id: str,
+    qos: int,
+    queue_maxsize: int,
+    forward_batch_size: int,
+    backoff_max_s: float,
+    model_check: bool,
+) -> None:
+    """Run the connector; if there are no servers, idle until cancelled."""
+    await run_connector(
+        servers=servers,
+        spool_config=spool_config,
+        client_id=client_id,
+        qos=qos,
+        queue_maxsize=queue_maxsize,
+        forward_batch_size=forward_batch_size,
+        backoff_max_s=backoff_max_s,
+        model_check=model_check,
+    )
+    if not servers:
+        await _idle_when_no_servers()
+
+
 def main() -> None:
     """`uns_opcua` entry point."""
     logging.basicConfig(level=logging.INFO)
@@ -114,7 +145,7 @@ def main() -> None:
     metrics.start_metrics_server(OpcUaConfig.metrics_port)
     try:
         asyncio.run(
-            run_connector(
+            run_connector_keeping_metrics_alive(
                 servers=OpcUaConfig.servers,
                 spool_config=OpcUaConfig.spool,
                 client_id=OpcUaConfig.client_id,

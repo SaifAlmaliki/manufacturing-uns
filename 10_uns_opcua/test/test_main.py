@@ -3,7 +3,12 @@
 import asyncio
 
 import pytest
-from uns_opcua.main import build_bindings_for_all, run_connector
+from uns_opcua.main import (
+    _idle_when_no_servers,
+    build_bindings_for_all,
+    run_connector,
+    run_connector_keeping_metrics_alive,
+)
 from uns_opcua.opcua_config import ServerConfig, SpoolConfig, TagConfig
 
 pytestmark = pytest.mark.asyncio
@@ -20,6 +25,16 @@ def _server(name: str, node_id: str, metric_path: str) -> ServerConfig:
     )
 
 
+def _spool_config(tmp_path) -> SpoolConfig:
+    return SpoolConfig(
+        path=str(tmp_path / "spool.db"),
+        max_rows=10,
+        max_bytes=1_000_000,
+        max_age_hours=1,
+        synchronous="OFF",
+    )
+
+
 async def test_build_bindings_for_all_flattens_every_server():
     servers = (_server("plc01", "ns=2;i=5", "ProcessValue/Temperature"), _server("plc02", "ns=2;i=6", "ProcessValue/Pressure"))
     bindings = build_bindings_for_all(servers)
@@ -31,17 +46,10 @@ async def test_build_bindings_for_all_flattens_every_server():
 
 
 async def test_run_connector_exits_cleanly_when_no_servers_are_configured(tmp_path):
-    spool_config = SpoolConfig(
-        path=str(tmp_path / "spool.db"),
-        max_rows=10,
-        max_bytes=1_000_000,
-        max_age_hours=1,
-        synchronous="OFF",
-    )
     # A stock checkout has no servers. That must be a clean exit, not a crash loop.
     await run_connector(
         servers=(),
-        spool_config=spool_config,
+        spool_config=_spool_config(tmp_path),
         client_id="c",
         qos=1,
         queue_maxsize=10,
@@ -49,6 +57,37 @@ async def test_run_connector_exits_cleanly_when_no_servers_are_configured(tmp_pa
         backoff_max_s=1.0,
         model_check=False,
     )
+
+
+async def test_idle_when_no_servers_keeps_running_until_cancelled():
+    """Stock checkout must keep the process up so /metrics stays scrapeable."""
+    task = asyncio.create_task(_idle_when_no_servers())
+    await asyncio.sleep(0)
+    assert not task.done()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+async def test_run_connector_keeping_metrics_alive_idles_when_no_servers(tmp_path):
+    """main()'s post-run path must idle after run_connector's empty-server return."""
+    task = asyncio.create_task(
+        run_connector_keeping_metrics_alive(
+            servers=(),
+            spool_config=_spool_config(tmp_path),
+            client_id="c",
+            qos=1,
+            queue_maxsize=10,
+            forward_batch_size=10,
+            backoff_max_s=1.0,
+            model_check=False,
+        )
+    )
+    await asyncio.sleep(0.05)
+    assert not task.done()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
 
 
 async def test_run_connector_cancels_every_task_on_shutdown(tmp_path, monkeypatch):
