@@ -15,21 +15,56 @@
 *    -
 *******************************************************************************
 
-Encapsulate logic of persisting messages to the historian database
+Persist MQTT messages to the historian hypertables.
+
+Uses SQLAlchemy Core on the shared `uns_model.engine.Database`, not a separate
+asyncpg pool (ADR-0004). The ORM is deliberately not involved: each message is one
+raw row plus N metric rows, written once and never updated in the same transaction.
 """
+
+from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Mapping
 from datetime import UTC, datetime
+from typing import Any
 
-import asyncpg
-from asyncpg import Pool
-from asyncpg.connection import Connection
+from sqlalchemy import TIMESTAMP, Text, bindparam, text
+from sqlalchemy.dialects.postgresql import JSONB
+from uns_model.engine import Database
 
 from uns_historian.historian_config import HistorianConfig
 from uns_historian.metric_flattener import flatten_payload_to_metrics
 
 LOGGER = logging.getLogger(__name__)
+
+_RAW_INSERT = text(
+    f"INSERT INTO {HistorianConfig.table} (time, topic, client_id, mqtt_msg) "  # noqa: S608
+    "VALUES (:time, :topic, :client_id, :mqtt_msg) "
+    "ON CONFLICT DO NOTHING "
+    "RETURNING time, topic, client_id, mqtt_msg"
+).bindparams(
+    bindparam("time", type_=TIMESTAMP(timezone=True)),
+    bindparam("topic", type_=Text),
+    bindparam("client_id", type_=Text),
+    bindparam("mqtt_msg", type_=JSONB),
+)
+
+_METRICS_INSERT = text(
+    f"INSERT INTO {HistorianConfig.metrics_table} "  # noqa: S608
+    "(time, topic, metric_name, value_double, value_text) "
+    "VALUES (:time, :topic, :metric_name, :value_double, :value_text)"
+)
+
+
+def _asyncpg_params_to_sqlalchemy(query: str, args: tuple[object, ...]) -> tuple[str, dict[str, object]]:
+    """Tests still pass `$1` SQL from the asyncpg era; Core wants `:p1` binds."""
+    params = {f"p{i}": arg for i, arg in enumerate(args, start=1)}
+    converted = query
+    for index in range(len(args), 0, -1):
+        converted = converted.replace(f"${index}", f":p{index}")
+    return converted, params
 
 
 class HistorianHandler:
@@ -37,109 +72,55 @@ class HistorianHandler:
     Class to encapsulate logic of persisting messages to the historian database
     """
 
-    # Class variable to hold the shared pool
-    _shared_pool: Pool = None
+    _database: Database | None = None
 
     @classmethod
-    async def get_shared_pool(cls) -> Pool:
-        """
-        Retrieves the shared connection pool.
-        Creates a new pool if it doesn't exist.
-
-        Returns:
-            Pool: The shared connection pool.
-        """
-        try:
-            LOGGER.debug("DB Shared connection pool requested")
-            if cls._shared_pool is None:
-                cls._shared_pool = await cls.create_pool()
-            return cls._shared_pool
-        except Exception as ex:
-            LOGGER.error(f"Error while getting shared pool: {ex}")
-            raise
+    def _shared_database(cls) -> Database:
+        if cls._database is None:
+            cls._database = Database.shared("historian")
+        return cls._database
 
     @classmethod
-    async def create_pool(cls) -> Pool:
-        """
-        Creates a connection pool.
-        Returns:
-            Pool: The created connection pool.
-        Raises:
-            asyncpg.PostgresError: If there's an error creating the pool.
-        """
-        try:
-            pool: Pool = await asyncpg.create_pool(
-                host=HistorianConfig.hostname,
-                user=HistorianConfig.user,
-                password=HistorianConfig.password,
-                database=HistorianConfig.database,
-                port=HistorianConfig.port,
-                ssl=HistorianConfig.get_ssl_context(),
-            )
-            LOGGER.info("Connection pool created successfully")
-            return pool
-        except asyncpg.PostgresError as e:
-            LOGGER.error(f"Error creating connection pool: {e}")
-            raise
+    async def warm(cls) -> Database:
+        """Ensure the shared engine exists. Called once at startup."""
+        return cls._shared_database()
 
     @classmethod
-    async def close_pool(cls):
-        """
-        Close the connection pool
-        """
-        if cls._shared_pool is not None and not cls._shared_pool.is_closing():
-            await cls._shared_pool.close()
-            cls._shared_pool = None
-            LOGGER.info("Connection pool closed successfully")
-        else:
-            LOGGER.warning("Connection pool was already closed ")
+    async def get_shared_pool(cls) -> Database:
+        """Backward-compatible alias for startup warm-up."""
+        return await cls.warm()
 
-    async def __aenter__(self):
-        # Acquire the shared pool directly
-        self._pool: Pool = await self.get_shared_pool()
-        # Acquire a connection from the pool
-        self._conn: Connection = await self._pool.acquire()
+    @classmethod
+    async def close_pool(cls) -> None:
+        """Dispose the shared engine."""
+        await cls.close()
+
+    @classmethod
+    async def close(cls) -> None:
+        cls._database = None
+        await Database.close_shared()
+
+    def __init__(self, database: Database | None = None) -> None:
+        self._database = database or self._shared_database()
+
+    async def __aenter__(self) -> HistorianHandler:
         return self
 
-    async def __aexit__(self, exc_type, exc, tb):
-        await self._pool.release(self._conn)  # Release the acquired connection
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
 
-    async def __aiter__(self):
+    async def execute_prepared(self, query: str, *args: object) -> list[Mapping[str, Any]]:
         """
-        Allow usage in asynchronous for loops.
+        Run a parameterised SQL statement and return any rows.
+
+        Accepts legacy `$1` placeholders for integration tests written against asyncpg.
         """
-        self._conn: Connection = await self.get_shared_pool().acquire()
-        return self
-
-    async def __anext__(self) -> Connection:
-        """
-        Use with asynchronous for loops.
-        """
-        return self._conn
-
-    async def execute_prepared(self, query: str, *args) -> list:
-        """
-        Executes a prepared query to fetch historical events.
-        Returns a list of Records
-
-        Args:
-            query (str): The SQL query to execute.
-            *args: Query parameters.
-
-        Returns:
-            list[HistoricalUNSEvent]: list of historical events.
-
-        Raises:
-            asyncpg.PostgresError: If there's an error executing the prepared statement.
-        """
-        try:
-            if self._conn is None or self._conn.is_closed():
-                self._conn = await self._pool.acquire()
-            return await self._conn.fetch(query, *args)
-
-        except asyncpg.PostgresError as ex:
-            LOGGER.error(f"Error executing prepared statement: {ex}")
-            raise
+        converted, params = _asyncpg_params_to_sqlalchemy(query, args)
+        async with self._database.begin() as connection:
+            result = await connection.execute(text(converted), params)
+            if result.returns_rows:
+                return result.mappings().all()
+            return []
 
     @staticmethod
     def to_utc_datetime(timestamp: float | None) -> datetime:
@@ -161,13 +142,27 @@ class HistorianHandler:
         db_timestamp: datetime,
         topic: str,
         message: dict,
-    ) -> list[tuple[datetime, str, str, float | None, str | None]]:
-        rows: list[tuple[datetime, str, str, float | None, str | None]] = []
+    ) -> list[dict[str, object]]:
+        rows: list[dict[str, object]] = []
         for metric_name, value_double, value_text in flatten_payload_to_metrics(message):
-            rows.append((db_timestamp, topic, metric_name, value_double, value_text))
+            rows.append(
+                {
+                    "time": db_timestamp,
+                    "topic": topic,
+                    "metric_name": metric_name,
+                    "value_double": value_double,
+                    "value_text": value_text,
+                }
+            )
         return rows
 
-    async def persist_mqtt_msg(self, client_id: str, topic: str, timestamp: float | None, message: dict):
+    async def persist_mqtt_msg(
+        self,
+        client_id: str,
+        topic: str,
+        timestamp: float | None,
+        message: dict,
+    ) -> list[Mapping[str, Any]]:
         """
         Persists all mqtt message in the historian
         ----------
@@ -181,33 +176,20 @@ class HistorianHandler:
             The MQTT message. String is expected to be JSON formatted
         """
         db_timestamp = self.to_utc_datetime(timestamp)
+        stored_payload = message if isinstance(message, dict) else json.loads(json.dumps(message))
         metric_rows = self._metrics_insert_rows(db_timestamp, topic, message)
 
-        # sometimes when qos is not 2, the mqtt message may be delivered multiple times. in such case avoid duplicate inserts
-        raw_sql = (
-            f"INSERT INTO {HistorianConfig.table} ( time, topic, client_id, mqtt_msg ) \n"  # noqa:S608:
-            + "VALUES ($1,$2,$3,$4) \n"
-            + "ON CONFLICT DO NOTHING \n"
-            + "RETURNING *;"
-        )
-        metrics_sql = (
-            f"INSERT INTO {HistorianConfig.metrics_table} "  # noqa:S608:
-            + "( time, topic, metric_name, value_double, value_text ) \n"
-            + "VALUES ($1,$2,$3,$4,$5);"
-        )
-
-        try:
-            async with self._conn.transaction():
-                raw_result = await self._conn.fetch(
-                    raw_sql,
-                    db_timestamp,
-                    topic,
-                    client_id,
-                    json.dumps(message),
-                )
-                if raw_result and metric_rows:
-                    await self._conn.executemany(metrics_sql, metric_rows)
-                return raw_result
-        except asyncpg.PostgresError as ex:
-            LOGGER.error(f"Error persisting message in transaction: {ex}")
-            raise
+        async with self._database.begin() as connection:
+            raw_result = await connection.execute(
+                _RAW_INSERT,
+                {
+                    "time": db_timestamp,
+                    "topic": topic,
+                    "client_id": client_id,
+                    "mqtt_msg": stored_payload,
+                },
+            )
+            inserted = raw_result.mappings().all()
+            if inserted and metric_rows:
+                await connection.execute(_METRICS_INSERT, metric_rows)
+            return inserted

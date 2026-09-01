@@ -17,10 +17,10 @@
 
 The one place a connection to the Asset Model database is made.
 
-Replaces the two hand-rolled asyncpg pool classes that `uns_historian` and
-`uns_graphql` each carried (ADR-0004). Exposes both halves of SQLAlchemy
-deliberately: `session()` for the authored tables, `begin()` for the ingest path,
-which must not pay for a unit of work per MQTT message.
+Replaces the hand-rolled asyncpg pool that `uns_graphql` used to carry (ADR-0004).
+The historian ingest path uses the same engine via SQLAlchemy Core. Exposes both
+halves of SQLAlchemy deliberately: `session()` for the authored tables, `begin()`
+for the ingest path, which must not pay for a unit of work per MQTT message.
 """
 
 from __future__ import annotations

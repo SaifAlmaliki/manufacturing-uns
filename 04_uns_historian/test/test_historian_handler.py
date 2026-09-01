@@ -21,44 +21,36 @@ Test cases for historian_handler
 import asyncio
 import json
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
-import asyncpg
 import pytest
+from sqlalchemy.exc import DBAPIError
 
 from uns_historian.historian_config import HistorianConfig
 from uns_historian.historian_handler import HistorianHandler
 
 
 @pytest.fixture(scope="function")
-def mock_asyncpg():
+def mock_database():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    # Mock asyncpg module and its functions)
-    with patch("asyncpg.create_pool") as create_pool_mock:
-        create_pool_mock.return_value = asyncio.Future()
-        pool_instance = AsyncMock(spec=asyncpg.Pool)
-        pool_instance.is_closing.return_value = False
-        create_pool_mock.return_value.set_result(pool_instance)
-
-        yield create_pool_mock
+    with patch("uns_historian.historian_handler.Database.shared") as shared_mock:
+        yield shared_mock
     loop.close()
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_shared_pool(mock_asyncpg):
-    """
-    @FIXME This test is executing fine individually but fails when run in the test suite with xdist
-    work around is to run the test with -n 4
-    """
-    pool1 = await HistorianHandler.get_shared_pool()
-    pool2 = await HistorianHandler.get_shared_pool()
+async def test_warm_reuses_the_shared_database(mock_database):
+    database = object()
+    mock_database.return_value = database
 
-    assert pool1 is pool2
-    mock_asyncpg.assert_called_once()
+    first = await HistorianHandler.warm()
+    second = await HistorianHandler.warm()
 
-    # Clean up the shared pool so subsequent tests don't use the mock
-    await HistorianHandler.close_pool()
+    assert first is second
+    mock_database.assert_called_once_with("historian")
+
+    await HistorianHandler.close()
 
 
 @pytest.mark.parametrize(
@@ -131,7 +123,7 @@ async def test_persist_mqtt_msg(
         result[0]["client_id"], "client_id stored is not what was received"
         result[0]["mqtt_msg"], "message payload  stored is not what was received"
 
-    except asyncpg.PostgresError as ex:
+    except DBAPIError as ex:
         if is_error:
             assert True  # Error was expected because of incorrect params
         else:
@@ -148,8 +140,9 @@ async def test_persist_mqtt_msg(
                                         mqtt_msg = $3
                                         RETURNING *;"""  # noqa: S608
                 await uns_historian_handler_cleaner.execute_prepared(delete_metrics_sql, *[topic])
+                stored = message if isinstance(message, dict) else json.loads(json.dumps(message))
                 await uns_historian_handler_cleaner.execute_prepared(
-                    delete_sql_cmd, *[topic, publisher, json.dumps(message)]
+                    delete_sql_cmd, *[topic, publisher, json.dumps(stored)]
                 )
 
 
@@ -244,7 +237,7 @@ async def test_execute_prepared(
         async with HistorianHandler() as uns_historian_handler:
             result = await uns_historian_handler.execute_prepared(query, *params)
             assert result is not None
-    except asyncpg.PostgresError as ex:
+    except DBAPIError as ex:
         if is_error:
             assert True  # Error was expected because of incorrect params
         else:

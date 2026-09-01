@@ -62,7 +62,7 @@ class UnsMqttHistorian:
         self.uns_client.on_message = self.on_message
         self.uns_client.on_disconnect = self.on_disconnect
         self.loop = loop or asyncio.get_event_loop()
-        self.loop.run_until_complete(HistorianHandler.get_shared_pool())
+        self.loop.run_until_complete(HistorianHandler.warm())
         # Resolves each new topic to its Asset once, so that the enriched views can
         # join on equality instead of matching prefixes per row (ADR-0003).
         self.topic_binder = TopicBinder(AssetModelRepository(Database.shared("historian")))
@@ -190,8 +190,7 @@ def main():
         if uns_mqtt_historian is not None:
             uns_mqtt_historian.uns_client.loop_stop()
             uns_mqtt_historian.uns_client.disconnect()
-        loop.run_until_complete(HistorianHandler.close_pool())
-        loop.run_until_complete(Database.close_shared())
+        loop.run_until_complete(HistorianHandler.close())
         loop.close()
 
 

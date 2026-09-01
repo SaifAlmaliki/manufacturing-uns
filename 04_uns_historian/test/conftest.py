@@ -27,12 +27,11 @@ from uns_historian.historian_handler import HistorianHandler
 @pytest_asyncio.fixture(loop_scope="session", scope="session")
 async def historian_pool():
     """
-    Initialize a shared connection pool based on the pytest marker integrationtest
+    Warm the shared database engine for integration tests.
     """
-    pool = await HistorianHandler.get_shared_pool()
-    yield pool
-    # Close the connection pool after all tests are completed
-    await HistorianHandler.close_pool()
+    database = await HistorianHandler.warm()
+    yield database
+    await HistorianHandler.close()
 
 
 def pytest_collection_modifyitems(config, items):

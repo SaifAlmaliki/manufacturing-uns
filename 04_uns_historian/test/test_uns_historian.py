@@ -22,7 +22,7 @@ import asyncio
 import json
 import random
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
@@ -48,6 +48,8 @@ def mock_historian_handler():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     with patch("uns_historian.uns_mqtt_historian.HistorianHandler", autospec=True) as mock_handler:
+        mock_handler.warm = AsyncMock(return_value=MagicMock())
+        mock_handler.close = AsyncMock()
         yield mock_handler
     loop.close()
 
@@ -63,7 +65,7 @@ def test_uns_mqtt_disconnect_historian_close_pool(mock_uns_client, mock_historia
         properties=None,
     )
     # verify the pool was closed
-    mock_historian_handler.close_pool.assert_not_called()
+    mock_historian_handler.close.assert_not_called()
 
 
 @pytest.mark.usefixtures("mock_uns_client")
@@ -74,7 +76,7 @@ def test_uns_mqtt_historian_main_positive_pool_closure(mock_historian_handler):
         main()
 
         mock_loop.run_forever.assert_called_once()
-        mock_historian_handler.close_pool.assert_called_once()
+        mock_historian_handler.close.assert_called_once()
 
 
 @pytest.mark.usefixtures("mock_uns_client")
@@ -87,7 +89,7 @@ def test_uns_mqtt_historian_main_negative_pool_closure(mock_historian_handler):
         with pytest.raises(RuntimeError):
             main()
 
-        mock_historian_handler.close_pool.assert_called_once()
+        mock_historian_handler.close.assert_called_once()
 
 
 # test data_list :  [{topic,[messages]}]
