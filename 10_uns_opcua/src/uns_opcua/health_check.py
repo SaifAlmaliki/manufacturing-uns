@@ -1,8 +1,10 @@
 """Container health check for the OPC UA connector."""
 
 import logging
+import os
 import socket
 import sys
+from collections.abc import Iterable, Sequence
 
 import psutil
 
@@ -11,12 +13,42 @@ from uns_opcua.opcua_config import MQTTConfig
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+ProcessSnapshot = tuple[int, Sequence[str]]
 
-def check_process(name: str) -> bool:
-    """Check if the process is running."""
-    for proc in psutil.process_iter(["pid", "name", "cmdline"]):
-        cmdline = proc.info.get("cmdline") or []
-        if name in " ".join(cmdline):
+
+def _cmdline_has_connector(cmdline: Sequence[str], name: str) -> bool:
+    """True when a cmdline token is the connector entry point, not a sibling script."""
+    for token in cmdline:
+        base = token.replace("\\", "/").rsplit("/", 1)[-1]
+        if base == name or base == f"{name}.exe":
+            return True
+    return False
+
+
+def check_process(
+    name: str,
+    *,
+    processes: Iterable[ProcessSnapshot] | None = None,
+    current_pid: int | None = None,
+) -> bool:
+    """Check if the connector process is running.
+
+    Excludes ``current_pid`` (defaults to this process) so the healthcheck never
+    matches itself. Matching is token-based: a cmdline entry that is exactly
+    ``name``, ``name.exe``, or ends with ``/name`` / ``\\name`` — not sibling
+    scripts such as ``uns_opcua_healthcheck`` or ``uns_opcua_validate``.
+    """
+    if current_pid is None:
+        current_pid = os.getpid()
+    if processes is None:
+        processes = (
+            (proc.info["pid"], proc.info.get("cmdline") or [])
+            for proc in psutil.process_iter(["pid", "name", "cmdline"])
+        )
+    for pid, cmdline in processes:
+        if pid == current_pid:
+            continue
+        if _cmdline_has_connector(cmdline, name):
             return True
     return False
 
