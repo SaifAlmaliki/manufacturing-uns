@@ -70,6 +70,7 @@ include = ["src/uns_opcua"]
 [tool.pytest.ini_options]
 norecursedirs = [".git", "build", "node_modules", "env*", "tmp*"]
 testpaths = ["test"]
+markers = ["integrationtest: mark a test as an integration test"]
 
 [tool.ruff]
 # Extend the `pyproject.toml` file in the parent directory

@@ -206,6 +206,32 @@ services:
       asset_model_setup:
         condition: service_completed_successfully
 
+  # Read-only OPC UA edge connector. Not started by default in a stock checkout: with no
+  # opcua.servers configured it logs that there is nothing to collect and exits.
+  opcua_client:
+    build:
+      context: .
+      dockerfile: ./10_uns_opcua/Dockerfile
+    volumes:
+      - ./conf:/app/conf
+      # The spool must outlive the container - that is the whole point of it.
+      - opcua_spool:/var/lib/uns_opcua
+    ports:
+      - "9093:9093"
+    environment:
+      UNS_CONF_DIR: /app/conf
+      UNS_MODULE: 10_uns_opcua
+      UNS_mqtt__host: uns_mqtt_broker
+      UNS_opcua__metrics_port: 9093
+      # The Asset Model shares the historian's database, so model_check reads these.
+      UNS_historian__hostname: uns_timescale_db
+      UNS_historian__database: "uns_historian"
+      UNS_historian__username: uns_dbuser
+      UNS_historian__password: ${UNS_historian__password}
+    depends_on:
+      uns_mqtt_broker:
+        condition: service_healthy
+
   spb_mapper_client:
     build:
       context: .
@@ -325,6 +351,7 @@ services:
       - historian_client
       - graphdb_client
       - uns_simulator
+      - opcua_client
 
   uns_grafana:
     image: "grafana/grafana:latest"
@@ -354,3 +381,6 @@ services:
         condition: service_completed_successfully
       uns_prometheus:
         condition: service_started
+
+volumes:
+  opcua_spool:

@@ -112,6 +112,7 @@ uv run uns_simulator
 | `uns_kafka_broker` | Kafka broker for streaming UNS messages to other systems. Host port: `9092`. |
 | `graphdb_client` | MQTT subscriber that writes live namespace messages into Neo4j (current state / tree). |
 | `historian_client` | MQTT subscriber that writes events into TimescaleDB (history) and binds each distinct topic to the Asset Model after a successful persist. Shares one Postgres engine with `09_uns_model` (ADR-0004). |
+| `opcua_client` | Read-only OPC UA edge connector: subscribes to PLC/SCADA nodes and publishes into the UNS with a disk-backed store-and-forward spool. Host port: `9093` (Prometheus metrics). With no `opcua.servers` configured it logs and exits cleanly. |
 | `spb_mapper_client` | Sparkplug B translator: listens on Sparkplug topics, decodes protobuf, republishes JSON on the ISA-95 UNS topics. |
 | `kafka_mapper_client` | MQTT-to-Kafka bridge: copies UNS MQTT messages onto Kafka topics. |
 | `uns_simulator` | Synthetic PLC / HMI / SCADA publisher used for local demos. Not for production. |
@@ -266,6 +267,7 @@ Since I did not have the enterprise version of the MQTT brokers, I decided to de
 - A module which connects with all the data sources; Neo4j, TimescaleDB, Kafka and MQTT to provide GraphQL apis to query the UNS [07_uns_graphql](./07_uns_graphql/README.md)
 - Prometheus and Grafana configuration for Process Visualization and Platform Observability [08_uns_observability](./08_uns_observability/README.md)
 - The authored Asset Model in Postgres, which contextualizes and enriches everything the historian stores [09_uns_model](./09_uns_model/README.md)
+- The read-only OPC UA edge connector that publishes PLC/SCADA tags into the UNS [10_uns_opcua](./10_uns_opcua/README.md)
 - A simulator for test purposes [99_simulator](./99_simulator/README.md)
 
 I choose to write the client in Python even thought Python is not as performant as Go, C or Rust primarily because
@@ -322,6 +324,20 @@ Two constraints are worth knowing before you extend this:
   in the abandoned `99_simulator/notes` sketch, only `grafana-mqtt-datasource` exists — which is
   why that sketch never started.
 
+### OPC UA client: [asyncua](https://github.com/FreeOpcUa/opcua-asyncio)
+
+The only actively maintained pure-Python OPC UA stack with a native asyncio API, which
+matters because the connector runs one session per server in one event loop. It also
+ships an in-process `Server`, so the connector's subscription and deadband behaviour is
+tested for real rather than mocked.
+
+### Edge buffer: SQLite
+
+The store-and-forward spool must survive a container restart and a week-long WAN outage,
+which rules out an in-memory queue. SQLite in WAL mode is already on every Python
+install, needs no daemon on the edge node, and its `AUTOINCREMENT` rowid gives FIFO —
+and therefore per-topic ordering — for free.
+
 ## **Setting up the development environment**
 
 The current project contains the following microservices
@@ -335,6 +351,7 @@ The current project contains the following microservices
 1. [07_uns_graphql](./07_uns_graphql/README.md): GraphQL server over MQTT (live), Neo4j (current tree), TimescaleDB (history), Postgres `model` / `console` (authored Asset Model and Alert Rules), and Kafka
 1. [08_uns_observability](./08_uns_observability/README.md): Prometheus scrape configuration and Grafana provisioning (data sources + dashboards). Configuration only — no Python package, so it is not part of the `uv` workspace and has no tests
 1. [09_uns_model](./09_uns_model/README.md): Python project holding the authored Asset Model (the ISA-95 hierarchy, equipment facts and units of measure) in Postgres via SQLAlchemy and Alembic, plus the views that enrich time-series rows with it at read time
+1. [10_uns_opcua](./10_uns_opcua/README.md): Read-only OPC UA edge connector that subscribes to PLC/SCADA nodes and publishes them into the Unified Namespace with disk-backed store-and-forward
 1. [11_frontend](./11_frontend/README.md): React console that talks only to GraphQL — Asset Model–first tree, payload inspector with read-time enrichment, live feed, search, and historian
 1. [99_simulator](./99_simulator/README.md): Python project for simulating data creation to the UNS. _*NOT TO BE USED IN PRODUCTION*_
 
