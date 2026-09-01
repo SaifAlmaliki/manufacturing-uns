@@ -11,6 +11,7 @@ import asyncio
 import pytest
 import pytest_asyncio
 from asyncua import Server, ua
+from prometheus_client import REGISTRY
 from uns_opcua.collector import Collector
 from uns_opcua.opcua_config import Deadband, ServerConfig, TagConfig
 from uns_opcua.spool import SpoolRow
@@ -76,6 +77,30 @@ async def _collect(server_config, queue) -> asyncio.Task:
     return task
 
 
+async def _wait_until(predicate, timeout: float = 8.0) -> None:
+    """Poll until `predicate()` is true, or fail the test by timing out."""
+    async with asyncio.timeout(timeout):
+        while not predicate():
+            await asyncio.sleep(0.05)
+
+
+async def _start_mixer_server(endpoint: str, initial: float = 75.0):
+    """A start/stop-able server so a session-loss test can kill and revive it."""
+    server = Server()
+    await server.init()
+    server.set_endpoint(endpoint)
+    namespace = await server.register_namespace("http://uns/reconnect")
+    device = await server.nodes.objects.add_object(namespace, "Mixer")
+    temperature = await device.add_variable(ua.NodeId("Temp_PV", namespace), "Temp_PV", initial)
+    await temperature.set_writable()
+    await server.start()
+    return server, temperature
+
+
+def _server_up(name: str) -> float | None:
+    return REGISTRY.get_sample_value("uns_opcua_server_up", {"server": name})
+
+
 async def test_subscribing_delivers_the_current_value_immediately(opcua_server):
     """This is what recovers the gap after a session drop - no explicit read needed."""
     _, temperature = opcua_server
@@ -116,6 +141,52 @@ async def test_server_side_deadband_suppresses_sub_threshold_changes(opcua_serve
     finally:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_collector_reconnects_after_the_opcua_session_is_lost():
+    """
+    A dead transport must drop SERVER_UP and the reconnect loop must re-subscribe
+    when the server returns. Sleeping forever after connect_once would never notice.
+    """
+    endpoint = "opc.tcp://127.0.0.1:48403/uns/reconnect/"
+    server_name = "reconnect-plc"
+    server, temperature = await _start_mixer_server(endpoint)
+    node_id = temperature.nodeid.to_string()
+    server_config = ServerConfig(
+        name=server_name,
+        url=endpoint,
+        publishing_interval_ms=50,
+        tags=(TagConfig(node_id=node_id, asset=ASSET, metric_path="ProcessValue/Temperature"),),
+    )
+    queue: asyncio.Queue[SpoolRow] = asyncio.Queue()
+    collector = Collector(
+        server=server_config,
+        bindings=build_bindings(server_config),
+        queue=queue,
+        client_id="uns_opcua_test",
+        qos=1,
+        backoff_max_s=1.0,
+        keepalive_interval_s=0.2,
+    )
+    task = asyncio.create_task(collector.run())
+    try:
+        await _drain(queue, expected=1)
+        await _wait_until(lambda: _server_up(server_name) == 1)
+
+        await server.stop()
+        await _wait_until(lambda: _server_up(server_name) == 0)
+
+        server, _ = await _start_mixer_server(endpoint, initial=81.0)
+        await _wait_until(lambda: _server_up(server_name) == 1)
+        rows = await _drain(queue, expected=1)
+        assert b'"value":81.0' in rows[0].payload
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        try:
+            await server.stop()
+        except Exception:
+            pass
 
 
 async def test_an_unparsable_node_id_does_not_stop_the_rest_of_the_server(opcua_server):

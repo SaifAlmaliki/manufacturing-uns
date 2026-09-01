@@ -51,6 +51,11 @@ def test_parse_deadband_rejects_unknown_type():
         parse_deadband({"type": "sigma", "value": 3})
 
 
+def test_parse_deadband_requires_value():
+    with pytest.raises(ValueError, match="value"):
+        parse_deadband({"type": "absolute"})
+
+
 def test_security_string_matches_asyncua_format():
     security = parse_security(
         {

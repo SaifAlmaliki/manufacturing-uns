@@ -30,17 +30,30 @@ def test_every_documented_metric_is_registered():
 
 
 def test_labelled_metrics_accept_their_labels():
-    prometheus_metrics.SERVER_UP.labels(server="plc01").set(1)
-    prometheus_metrics.MONITORED_ITEMS.labels(server="plc01").set(3)
-    prometheus_metrics.DATACHANGES.labels(server="plc01").inc()
-    prometheus_metrics.DEADBAND_REJECTED.labels(server="plc01").inc()
-    prometheus_metrics.UNRESOLVED_NODES.labels(server="plc01").inc()
+    # Counters are process-global, so collector tests that already incremented
+    # server="plc01" would make an absolute "== 1" assertion fail. Use a label
+    # no other test uses, and a before/after delta like the unlabelled test.
+    prometheus_metrics.SERVER_UP.labels(server="metrics-plc").set(1)
+    prometheus_metrics.MONITORED_ITEMS.labels(server="metrics-plc").set(3)
+    before_datachanges = (
+        REGISTRY.get_sample_value("uns_opcua_datachanges_total", {"server": "metrics-plc"}) or 0
+    )
+    prometheus_metrics.DATACHANGES.labels(server="metrics-plc").inc()
+    prometheus_metrics.DEADBAND_REJECTED.labels(server="metrics-plc").inc()
+    prometheus_metrics.UNRESOLVED_NODES.labels(server="metrics-plc").inc()
+    before_fallback = (
+        REGISTRY.get_sample_value("uns_opcua_timestamp_fallback_total", {"reason": "server_timestamp"}) or 0
+    )
     prometheus_metrics.TIMESTAMP_FALLBACK.labels(reason="server_timestamp").inc()
 
-    assert REGISTRY.get_sample_value("uns_opcua_server_up", {"server": "plc01"}) == 1
-    assert REGISTRY.get_sample_value("uns_opcua_datachanges_total", {"server": "plc01"}) == 1
+    assert REGISTRY.get_sample_value("uns_opcua_server_up", {"server": "metrics-plc"}) == 1
     assert (
-        REGISTRY.get_sample_value("uns_opcua_timestamp_fallback_total", {"reason": "server_timestamp"}) == 1
+        REGISTRY.get_sample_value("uns_opcua_datachanges_total", {"server": "metrics-plc"})
+        == before_datachanges + 1
+    )
+    assert (
+        REGISTRY.get_sample_value("uns_opcua_timestamp_fallback_total", {"reason": "server_timestamp"})
+        == before_fallback + 1
     )
 
 

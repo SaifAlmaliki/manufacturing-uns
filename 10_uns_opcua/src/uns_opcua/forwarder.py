@@ -36,11 +36,14 @@ class SpoolWriter:
         queue: asyncio.Queue[SpoolRow],
         batch_size: int = 500,
         flush_interval_s: float = 0.05,
+        trim_interval_s: float = 5.0,
     ) -> None:
         self._spool = spool
         self._queue = queue
         self._batch_size = batch_size
         self._flush_interval_s = flush_interval_s
+        self._trim_interval_s = trim_interval_s
+        self._last_trim_at: float | None = None
 
     async def drain_once(self, now: float) -> int:
         """Write whatever is already queued, up to one batch, then enforce the bounds."""
@@ -62,10 +65,12 @@ class SpoolWriter:
             LOGGER.exception("Failed to write %s rows to the spool", len(rows))
             return 0
 
-        dropped = await asyncio.to_thread(self._spool.trim, now)
-        if dropped:
-            metrics.SPOOL_DROPPED.inc(dropped)
-        await self._publish_gauges(now)
+        if self._last_trim_at is None or (now - self._last_trim_at) >= self._trim_interval_s:
+            dropped = await asyncio.to_thread(self._spool.trim, now)
+            if dropped:
+                metrics.SPOOL_DROPPED.inc(dropped)
+            await self._publish_gauges(now)
+            self._last_trim_at = now
         return written
 
     async def _publish_gauges(self, now: float) -> None:
@@ -117,7 +122,7 @@ class Forwarder:
         acknowledged_through: int | None = None
         try:
             for row_id, row in batch:
-                await publisher.publish(row.topic, row.payload, row.qos or self._qos)
+                await publisher.publish(row.topic, row.payload, row.qos)
                 metrics.PUBLISH_TOTAL.inc()
                 acknowledged_through = row_id
         except Exception:

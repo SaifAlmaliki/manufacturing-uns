@@ -1,6 +1,5 @@
 """Configuration reader for the read-only OPC UA edge connector."""
 
-import logging
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -8,8 +7,6 @@ from aiomqtt import ProtocolVersion, TLSParameters
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 from uns_config import get_settings
-
-LOGGER = logging.getLogger(__name__)
 
 settings = get_settings("opcua")
 
@@ -85,6 +82,8 @@ def parse_deadband(raw: Any) -> Deadband | None:
         raise ValueError(f"Unsupported deadband type {db_type!r}; expected one of {sorted(DEADBAND_TYPES)}")
     if db_type == "none":
         return None
+    if "value" not in raw or raw["value"] is None:
+        raise ValueError("deadband is missing 'value'")
     return Deadband(type=db_type, value=float(raw["value"]))
 
 
@@ -169,11 +168,6 @@ class OpcUaConfig:
     forward_batch_size: int = int(settings.get("opcua.forward_batch_size", 200))
     spool: SpoolConfig = parse_spool(settings.get("opcua.spool", {}))
     servers: tuple[ServerConfig, ...] = parse_servers(settings.get("opcua.servers", []))
-
-    @classmethod
-    def is_config_valid(cls) -> bool:
-        """Mandatory configuration is present. Does not validate the values themselves."""
-        return bool(cls.client_id) and bool(cls.servers)
 
 
 class MQTTConfig:

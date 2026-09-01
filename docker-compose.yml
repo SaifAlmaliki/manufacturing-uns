@@ -206,9 +206,10 @@ services:
       asset_model_setup:
         condition: service_completed_successfully
 
-  # Read-only OPC UA edge connector. Not started by default in a stock checkout: with no
-  # opcua.servers configured it logs that there is nothing to collect, stays up serving
-  # /metrics on 9093, and does not connect to a PLC.
+  # Read-only OPC UA edge connector. Started with the default compose stack (no
+  # profiles; prometheus depends_on it). With no opcua.servers configured it logs
+  # that there is nothing to collect, stays up serving /metrics on 9093, and does
+  # not connect to a PLC.
   opcua_client:
     build:
       context: .

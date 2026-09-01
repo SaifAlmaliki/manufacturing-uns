@@ -21,6 +21,13 @@ def test_check_process_counts_connector_script():
     assert check_process("uns_opcua", processes=processes, current_pid=1) is True
 
 
+def test_check_process_default_current_pid_excludes_matching_self():
+    import os
+
+    processes = ((os.getpid(), ["python", "uns_opcua"]),)
+    assert check_process("uns_opcua", processes=processes) is False
+
+
 def test_main_passes_without_mqtt_when_no_servers_configured(monkeypatch):
     # Idle stock checkout never opens MQTT; process-up alone is healthy.
     monkeypatch.setattr("uns_opcua.health_check.check_process", lambda *a, **k: True)

@@ -209,3 +209,11 @@ def test_enqueue_does_not_leave_a_partial_batch_when_an_insert_fails(tmp_path):
         assert [row.topic for _, row in spool.peek(limit=10)] == ["kept"]
     finally:
         spool.close()
+
+
+def test_open_creates_an_index_on_spooled_at(spool):
+    names = [
+        row[0]
+        for row in spool._db.execute("SELECT name FROM sqlite_master WHERE type='index'").fetchall()
+    ]
+    assert any("spooled_at" in name for name in names)

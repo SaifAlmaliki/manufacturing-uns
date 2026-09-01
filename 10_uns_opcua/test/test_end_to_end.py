@@ -120,7 +120,7 @@ async def test_data_collected_during_an_outage_is_published_when_the_broker_retu
         spool.close()
 
 
-async def test_a_crash_between_publish_and_delete_replays_rather_than_loses(tmp_path):
+async def test_a_crash_during_publish_leaves_the_row_to_replay(tmp_path):
     """
     The spool deletes only after the broker acknowledges, so an interruption replays.
     At-least-once is safe because the historian inserts ON CONFLICT DO NOTHING.

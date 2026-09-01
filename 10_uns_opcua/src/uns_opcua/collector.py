@@ -143,6 +143,7 @@ class Collector:
         client_id: str,
         qos: int,
         backoff_max_s: float = 60.0,
+        keepalive_interval_s: float = 1.0,
     ) -> None:
         self._server = server
         self._bindings = tuple(bindings)
@@ -150,6 +151,7 @@ class Collector:
         self._client_id = client_id
         self._qos = qos
         self._backoff_max_s = backoff_max_s
+        self._keepalive_interval_s = keepalive_interval_s
 
     async def connect_once(self, client: Client) -> int:
         """
@@ -228,17 +230,28 @@ class Collector:
         ]
         for index, result in enumerate(results):
             if isinstance(result, ua.StatusCode):
+                node_id = requests[index].ItemToMonitor.NodeId
                 LOGGER.warning(
                     "%s: server rejected monitored item for %s (%s)",
                     self._server.name,
-                    requests[index].ItemToMonitor.NodeId,
+                    node_id.to_string(),
                     result,
                 )
-                metrics.DEADBAND_REJECTED.labels(server=self._server.name).inc()
+                if deadbands[index] is not None:
+                    metrics.DEADBAND_REJECTED.labels(server=self._server.name).inc()
 
         if retries:
             retry_results = await subscription.create_monitored_items(retries)
-            accepted += sum(1 for result in retry_results if not isinstance(result, ua.StatusCode))
+            for request, result in zip(retries, retry_results, strict=True):
+                if isinstance(result, ua.StatusCode):
+                    LOGGER.warning(
+                        "%s: server rejected monitored item for %s even without a deadband (%s)",
+                        self._server.name,
+                        request.ItemToMonitor.NodeId.to_string(),
+                        result,
+                    )
+                else:
+                    accepted += 1
         return accepted
 
     async def run(self) -> None:
@@ -253,9 +266,14 @@ class Collector:
                     await self.connect_once(client)
                     metrics.SERVER_UP.labels(server=self._server.name).set(1)
                     backoff = 1.0
-                    # The subscription runs on the client's own task; keep the session open.
+                    # The subscription runs on the client's own task. Probe the session
+                    # so a dead transport raises into the reconnect loop instead of
+                    # leaving SERVER_UP at 1 forever. check_connection is a state
+                    # check (raises once asyncua has marked the client disconnected);
+                    # the client's supervisor is what detects the dead socket.
                     while True:
-                        await asyncio.sleep(3600)
+                        await asyncio.sleep(self._keepalive_interval_s)
+                        await client.check_connection()
             except asyncio.CancelledError:
                 metrics.SERVER_UP.labels(server=self._server.name).set(0)
                 raise

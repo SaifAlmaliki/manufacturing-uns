@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS spool (
   qos        INTEGER NOT NULL DEFAULT 1,
   spooled_at REAL NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_spool_spooled_at ON spool(spooled_at);
 """
 
 _INSERT = "INSERT INTO spool (topic, payload, qos, spooled_at) VALUES (?, ?, ?, ?)"
@@ -135,7 +136,7 @@ class Spool:
         them. A crash between publish and delete replays on restart, which the
         historian's ON CONFLICT DO NOTHING absorbs.
         """
-        with self._lock, self._db:
+        with self._lock:
             cursor = self._db.execute("DELETE FROM spool WHERE id <= ?", (max_id,))
         return cursor.rowcount
 
@@ -160,19 +161,17 @@ class Spool:
 
     def _trim_by_age(self, now: float) -> int:
         cutoff = now - self._config.max_age_hours * 3600
-        with self._db:
-            cursor = self._db.execute("DELETE FROM spool WHERE spooled_at < ?", (cutoff,))
+        cursor = self._db.execute("DELETE FROM spool WHERE spooled_at < ?", (cutoff,))
         return cursor.rowcount
 
     def _trim_by_rows(self) -> int:
         excess = self.row_count() - self._config.max_rows
         if excess <= 0:
             return 0
-        with self._db:
-            cursor = self._db.execute(
-                "DELETE FROM spool WHERE id IN (SELECT id FROM spool ORDER BY id LIMIT ?)",
-                (excess,),
-            )
+        cursor = self._db.execute(
+            "DELETE FROM spool WHERE id IN (SELECT id FROM spool ORDER BY id LIMIT ?)",
+            (excess,),
+        )
         return cursor.rowcount
 
     def _trim_by_bytes(self) -> int:
@@ -180,11 +179,10 @@ class Spool:
         # Delete in chunks and re-measure: page_count only falls once pages are freed,
         # so a single computed delete count would not converge.
         while self.byte_size() > self._config.max_bytes and self.row_count() > 0:
-            with self._db:
-                cursor = self._db.execute(
-                    "DELETE FROM spool WHERE id IN (SELECT id FROM spool ORDER BY id LIMIT ?)",
-                    (max(1, self.row_count() // 10),),
-                )
+            cursor = self._db.execute(
+                "DELETE FROM spool WHERE id IN (SELECT id FROM spool ORDER BY id LIMIT ?)",
+                (max(1, self.row_count() // 10),),
+            )
             if not cursor.rowcount:
                 break
             dropped += cursor.rowcount

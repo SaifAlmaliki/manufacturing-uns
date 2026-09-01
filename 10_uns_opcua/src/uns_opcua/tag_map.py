@@ -1,13 +1,10 @@
 """Maps configured OPC UA nodes onto Unified Namespace topics."""
 
-import logging
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 
 from uns_opcua.opcua_config import Deadband, ServerConfig
-
-LOGGER = logging.getLogger(__name__)
 
 PAYLOAD_LEAF = "value"
 """The payload key this connector always publishes its scalar under."""

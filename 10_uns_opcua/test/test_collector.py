@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 from asyncua import ua
 from uns_opcua.collector import (
+    Collector,
     SubscriptionHandler,
     build_monitored_item_request,
     enqueue_drop_oldest,
@@ -148,3 +149,68 @@ async def test_enqueue_drop_oldest_discards_the_oldest_when_full():
     assert enqueue_drop_oldest(queue, rows[2]) is False  # something had to go
 
     assert [queue.get_nowait().topic for _ in range(2)] == ["t1", "t2"]
+
+
+def _collector(name: str = "plc01") -> Collector:
+    server = ServerConfig(
+        name=name,
+        url="opc.tcp://host:4840/",
+        publishing_interval_ms=200,
+        tags=(TagConfig(node_id=NODE_ID_STRING, asset=ASSET, metric_path="ProcessValue/Temperature"),),
+    )
+    return Collector(
+        server=server,
+        bindings=build_bindings(server),
+        queue=asyncio.Queue(),
+        client_id="c",
+        qos=1,
+    )
+
+
+def _request(node_id: str, handle: int, deadband: Deadband | None) -> ua.MonitoredItemCreateRequest:
+    return build_monitored_item_request(
+        node_id=ua.NodeId.from_string(node_id),
+        client_handle=handle,
+        sampling_interval_ms=200.0,
+        deadband=deadband,
+    )
+
+
+@pytest.mark.asyncio
+async def test_retry_rejected_counts_only_items_that_had_a_deadband(caplog):
+    """DEADBAND_REJECTED is for a rejected filter, not for every rejected item."""
+    from prometheus_client import REGISTRY
+
+    collector = _collector("deadband-plc")
+    deadband = Deadband(type="absolute", value=0.2)
+    rejected = ua.StatusCode(ua.StatusCodes.BadFilterNotAllowed)
+    still_rejected = ua.StatusCode(ua.StatusCodes.BadNodeIdUnknown)
+
+    class FakeSubscription:
+        def __init__(self) -> None:
+            self.retried: list = []
+
+        async def create_monitored_items(self, requests):
+            self.retried = list(requests)
+            return [still_rejected] * len(requests)
+
+    subscription = FakeSubscription()
+    before = (
+        REGISTRY.get_sample_value("uns_opcua_deadband_rejected_total", {"server": "deadband-plc"}) or 0
+    )
+    accepted = await collector._retry_rejected(
+        subscription,
+        [
+            _request("ns=2;i=5", 1, deadband),
+            _request("ns=2;i=6", 2, None),
+        ],
+        [deadband, None],
+        [rejected, rejected],
+    )
+
+    after = REGISTRY.get_sample_value("uns_opcua_deadband_rejected_total", {"server": "deadband-plc"})
+    assert after == before + 1
+    assert accepted == 0
+    assert len(subscription.retried) == 1
+    assert "even without a deadband" in caplog.text
+    assert "ns=2;i=6" in caplog.text or "i=6" in caplog.text

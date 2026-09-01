@@ -93,6 +93,46 @@ async def test_spool_writer_enforces_the_bounds_after_writing(tmp_path):
         spool.close()
 
 
+async def test_spool_writer_throttles_trim_across_rapid_drains(tmp_path):
+    """Bounds still apply, but not on every 50ms write — a full-table scan at 20 Hz
+    would walk a multi-GB spool on the hot path."""
+    spool = Spool(
+        SpoolConfig(
+            path=str(tmp_path / "spool.db"),
+            max_rows=2,
+            max_bytes=100_000_000,
+            max_age_hours=168,
+            synchronous="OFF",
+        )
+    )
+    spool.open()
+    try:
+        queue: asyncio.Queue[SpoolRow] = asyncio.Queue()
+        for topic in ("a", "b", "c", "d"):
+            queue.put_nowait(_row(topic))
+        writer = SpoolWriter(
+            spool=spool,
+            queue=queue,
+            batch_size=500,
+            flush_interval_s=0.01,
+            trim_interval_s=5.0,
+        )
+        await writer.drain_once(now=NOW)
+        assert spool.row_count() == 2
+
+        for topic in ("e", "f"):
+            queue.put_nowait(_row(topic))
+        await writer.drain_once(now=NOW + 0.05)
+        assert spool.row_count() == 4
+
+        queue.put_nowait(_row("g"))
+        await writer.drain_once(now=NOW + 10.0)
+        assert spool.row_count() == 2
+        assert [row.topic for _, row in spool.peek(limit=10)] == ["f", "g"]
+    finally:
+        spool.close()
+
+
 async def test_forward_batch_publishes_then_deletes(spool):
     spool.enqueue([_row("a"), _row("b")], now=NOW)
     publisher = FakePublisher()
@@ -131,6 +171,15 @@ async def test_forward_batch_on_an_empty_spool_publishes_nothing(spool):
     forwarder = Forwarder(spool=spool, client_id="c", qos=1, batch_size=10)
     assert await forwarder.forward_batch(publisher) == 0
     assert publisher.published == []
+
+
+async def test_forward_batch_publishes_with_the_row_qos_including_zero(spool):
+    spool.enqueue([SpoolRow(topic="t", payload=b"{}", qos=0)], now=NOW)
+    publisher = FakePublisher()
+    forwarder = Forwarder(spool=spool, client_id="c", qos=1, batch_size=10)
+
+    await forwarder.forward_batch(publisher)
+    assert publisher.published[0][2] == 0
 
 
 async def test_forward_batch_preserves_per_topic_order_across_batches(spool):
