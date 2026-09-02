@@ -30,7 +30,8 @@ from strawberry.subscriptions import GRAPHQL_TRANSPORT_WS_PROTOCOL, GRAPHQL_WS_P
 
 from uns_graphql.graphql_config import PlatformConfig
 from uns_graphql.mutations.alert_rule import Mutation as AlertRuleMutation
-from uns_graphql.queries import alert_rule, asset, graph, historian
+from uns_graphql.mutations.oee import Mutation as OeeMutation
+from uns_graphql.queries import alert_rule, asset, graph, historian, oee
 from uns_graphql.subscriptions.kafka import KAFKASubscription
 from uns_graphql.subscriptions.mqtt import MQTTSubscription
 from uns_graphql.type.basetype import Int64
@@ -39,7 +40,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 @strawberry.type(description="Query the UNS for current or historic Nodes/Events ")
-class Query(historian.Query, graph.Query, asset.Query, alert_rule.Query):
+class Query(historian.Query, graph.Query, asset.Query, alert_rule.Query, oee.Query):
     @classmethod
     async def on_startup(cls):
         """Start background tasks for query modules."""
@@ -56,21 +57,23 @@ class Query(historian.Query, graph.Query, asset.Query, alert_rule.Query):
             try:
                 await graph.Query.on_shutdown()
             finally:
-                # Last: this disposes the engine that the Asset Model and the Alert
-                # Rules share.
+                # Last: this disposes the engine that the Asset Model, the Alert Rules
+                # and the OEE results share.
                 await alert_rule.Query.on_shutdown()
+                await oee.Query.on_shutdown()
                 await asset.Query.on_shutdown()
 
 
 @strawberry.type(description="Write configuration to the UNS platform")
-class Mutation(AlertRuleMutation):
+class Mutation(AlertRuleMutation, OeeMutation):
     """
     The only mutations this service exposes.
 
     Deliberately narrow: process data is written by publishing to the broker, and the
     Asset Model is authored in `conf/settings.yaml`. What is left is the console's own
     configuration, which has nowhere else to live because the console is a static
-    bundle (ADR-0005).
+    bundle (ADR-0005), and one correction to plant data that no machine can make - which
+    reason a stop is attributed to.
     """
 
     @classmethod
@@ -79,6 +82,7 @@ class Mutation(AlertRuleMutation):
         Clean up connections, db pools etc.
         """
         await AlertRuleMutation.on_shutdown()
+        await OeeMutation.on_shutdown()
 
 
 @strawberry.type(description="Subscribe to UNS Events or Streams")
