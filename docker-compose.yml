@@ -417,6 +417,11 @@ services:
         condition: service_completed_successfully
       uns_prometheus:
         condition: service_started
+      # The OEE dashboard's panels read the `oee` schema. `asset_model_setup` creates it,
+      # so this is not about the tables existing - it is so that a stack brought up for a
+      # demo has the engine running before anybody opens the dashboard.
+      oee_client:
+        condition: service_started
 
 volumes:
   opcua_spool:

@@ -120,7 +120,7 @@ uv run uns_simulator
 | `graphql_server` | GraphQL API over MQTT (live), Neo4j (current tree), TimescaleDB (history), Postgres `model` / `console` (Asset Model and Alert Rules), and Kafka. Host port: **`8000`** (`http://localhost:8000/graphql`). |
 | `uns_frontend` | Web console for the namespace tree, payload inspector, live feed, search, and historian. Host port: **`8088`** (`http://localhost:8088`). The browser calls GraphQL on port `8000`. |
 | `uns_prometheus` | Scrapes the `/metrics` endpoints exposed by the mapper clients. Host port: `9090`. |
-| `uns_grafana` | Dashboards for Process Visualization (plant measurements from `uns_metrics_1m_enriched`) and Platform Observability (platform health). Host port: **`3000`** (`http://localhost:3000`). Anonymous access is enabled — see [Known Limitations](#known-limitations--workarounds). |
+| `uns_grafana` | Dashboards for Process Visualization (plant measurements from `uns_metrics_1m_enriched`), OEE (shift results and downtime from the `oee` schema), and Platform Observability (platform health). Host port: **`3000`** (`http://localhost:3000`). Anonymous access is enabled — see [Known Limitations](#known-limitations--workarounds). |
 
 Typical flow: **simulator or plant devices → MQTT → mapper clients → Neo4j / Timescale / Kafka → GraphQL → UI**,
 with **mapper clients → Prometheus → Grafana** alongside it for platform health.

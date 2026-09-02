@@ -1,0 +1,269 @@
+{
+  "annotations": { "list": [] },
+  "description": "Availability x Performance x Quality per closed shift, computed by 12_uns_oee (ADR-0008). Shows closed shifts only: a partial shift has no Loading Time and therefore no Availability.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+      "description": "Most recent closed shift in the selected range. Blank means no shift has closed yet.",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "mappings": [],
+          "max": 1,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 0.5 },
+              { "color": "green", "value": 0.75 }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+          "format": "table",
+          "rawSql": "SELECT r.oee FROM oee.shift_result r JOIN model.oee_unit u ON u.id = r.oee_unit_id JOIN model.asset a ON a.id = u.asset_id WHERE a.path = '$asset' AND $__timeFilter(r.shift_start) ORDER BY r.shift_start DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Latest shift OEE",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+      "description": "Mean over the closed shifts in range. Shifts with an undefined factor are excluded rather than counted as zero.",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "max": 1,
+          "min": 0,
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 12, "x": 6, "y": 0 },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+          "format": "table",
+          "rawSql": "SELECT avg(r.availability) AS \"Availability\", avg(r.performance) AS \"Performance\", avg(r.quality) AS \"Quality\", avg(r.oee) AS \"OEE\" FROM oee.shift_result r JOIN model.oee_unit u ON u.id = r.oee_unit_id JOIN model.asset a ON a.id = u.asset_id WHERE a.path = '$asset' AND $__timeFilter(r.shift_start)",
+          "refId": "A"
+        }
+      ],
+      "title": "Average over range",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+      "description": "Shifts whose numbers are not usable, and why. An empty panel is the healthy case.",
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+      "id": 3,
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+          "format": "table",
+          "rawSql": "SELECT r.status AS \"Status\", count(*) AS \"Shifts\" FROM oee.shift_result r JOIN model.oee_unit u ON u.id = r.oee_unit_id JOIN model.asset a ON a.id = u.asset_id WHERE a.path = '$asset' AND r.status <> 'OK' AND $__timeFilter(r.shift_start) GROUP BY r.status ORDER BY 2 DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Unusable shifts",
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+      "description": "One point per closed shift, plotted at the shift's start. A gap is a shift that was not scheduled; a null is a shift whose factor is undefined.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "pointSize": 6,
+            "showPoints": "always",
+            "spanNulls": false
+          },
+          "max": 1,
+          "min": 0,
+          "unit": "percentunit"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "OEE" },
+            "properties": [{ "id": "custom.lineWidth", "value": 3 }]
+          }
+        ]
+      },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 5 },
+      "id": 4,
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+          "format": "time_series",
+          "rawSql": "SELECT r.shift_start AS time, r.oee AS \"OEE\", r.availability AS \"Availability\", r.performance AS \"Performance\", r.quality AS \"Quality\" FROM oee.shift_result r JOIN model.oee_unit u ON u.id = r.oee_unit_id JOIN model.asset a ON a.id = u.asset_id WHERE a.path = '$asset' AND $__timeFilter(shift_start) ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "OEE and its factors, by shift",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+      "description": "Lost time per reason code, largest first. Sums to the window's total downtime: an unmapped state is UNCLASSIFIED, never dropped.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "axisPlacement": "auto", "fillOpacity": 80 },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 15 },
+      "id": 5,
+      "options": {
+        "barWidth": 0.7,
+        "legend": { "displayMode": "hidden", "placement": "bottom" },
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "xTickLabelRotation": 0
+      },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+          "format": "table",
+          "rawSql": "SELECT COALESCE(NULLIF(dr.display_name, ''), e.reason_code) AS \"Reason\", sum(e.duration_s) AS \"Lost seconds\" FROM oee.downtime_event e JOIN model.oee_unit u ON u.id = e.oee_unit_id JOIN model.asset a ON a.id = u.asset_id LEFT JOIN model.downtime_reason dr ON dr.code = e.reason_code WHERE a.path = '$asset' AND $__timeFilter(e.started_at) GROUP BY 1 ORDER BY 2 DESC LIMIT 12",
+          "refId": "A"
+        }
+      ],
+      "title": "Downtime Pareto",
+      "type": "barchart"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+      "description": "The stops behind the numbers above. `Source` is `auto` when the engine classified the stop from its state code and `manual` when a person corrected it; the engine never overwrites a manual reason.",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Duration" },
+            "properties": [{ "id": "unit", "value": "s" }]
+          }
+        ]
+      },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 15 },
+      "id": 6,
+      "options": { "showHeader": true, "sortBy": [{ "desc": true, "displayName": "Duration" }] },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+          "format": "table",
+          "rawSql": "SELECT e.started_at AS \"Started\", e.duration_s AS \"Duration\", e.state_value AS \"State\", COALESCE(NULLIF(dr.display_name, ''), e.reason_code) AS \"Reason\", dr.is_planned AS \"Planned\", e.reason_source AS \"Source\", e.assigned_by AS \"By\", e.note AS \"Note\" FROM oee.downtime_event e JOIN model.oee_unit u ON u.id = e.oee_unit_id JOIN model.asset a ON a.id = u.asset_id LEFT JOIN model.downtime_reason dr ON dr.code = e.reason_code WHERE a.path = '$asset' AND $__timeFilter(e.started_at) ORDER BY e.duration_s DESC LIMIT 200",
+          "refId": "A"
+        }
+      ],
+      "title": "Longest stops",
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+      "description": "Nakajima's time model, summed over the shifts in range: Loading Time less availability loss is Run Time, less performance loss is Net Run Time, less quality loss is Valuable Operating Time. Each bar is what survives the stage before it, so the gaps are the three losses.",
+      "fieldConfig": {
+        "defaults": { "decimals": 0, "unit": "s" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 25 },
+      "id": 8,
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "stacking": "none",
+        "xTickLabelRotation": 0
+      },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+          "format": "table",
+          "rawSql": "WITH s AS (SELECT r.loading_time_s, r.run_time_s, r.performance, r.quality FROM oee.shift_result r JOIN model.oee_unit u ON u.id = r.oee_unit_id JOIN model.asset a ON a.id = u.asset_id WHERE a.path = '$asset' AND $__timeFilter(r.shift_start)), stages AS (SELECT 1 AS step, 'Loading time' AS stage, sum(loading_time_s) AS seconds FROM s UNION ALL SELECT 2, 'Run time', sum(run_time_s) FROM s UNION ALL SELECT 3, 'Net run time', sum(run_time_s * coalesce(performance, 0)) FROM s UNION ALL SELECT 4, 'Valuable time', sum(run_time_s * coalesce(performance, 0) * coalesce(quality, 0)) FROM s) SELECT stage AS \"Stage\", seconds AS \"Seconds\" FROM stages ORDER BY step",
+          "refId": "A"
+        }
+      ],
+      "title": "Loss waterfall",
+      "type": "barchart"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+      "description": "Good and reject counts per product, with the ideal cycle time each shift's Performance was computed against. A null cycle time is what sets MISSING_IDEAL_CYCLE_TIME.",
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 25 },
+      "id": 7,
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+          "format": "table",
+          "rawSql": "SELECT p.product_code AS \"Product\", sum(p.good_count) AS \"Good\", sum(p.reject_count) AS \"Reject\", max(p.ideal_cycle_time_s) AS \"Ideal cycle (s)\" FROM oee.shift_result_product p JOIN oee.shift_result r ON r.id = p.shift_result_id JOIN model.oee_unit u ON u.id = r.oee_unit_id JOIN model.asset a ON a.id = u.asset_id WHERE a.path = '$asset' AND $__timeFilter(r.shift_start) GROUP BY 1 ORDER BY 2 DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Production by product",
+      "type": "table"
+    }
+  ],
+  "refresh": "5m",
+  "schemaVersion": 39,
+  "tags": ["oee", "process-visualization"],
+  "templating": {
+    "list": [
+      {
+        "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+        "definition": "Assets that OEE is computed for",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Asset",
+        "multi": false,
+        "name": "asset",
+        "options": [],
+        "query": "SELECT a.path FROM model.oee_unit u JOIN model.asset a ON a.id = u.asset_id WHERE u.is_active ORDER BY 1",
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-7d", "to": "now" },
+  "timezone": "browser",
+  "title": "OEE",
+  "uid": "uns-oee",
+  "version": 1
+}
