@@ -61,7 +61,7 @@ export const SYSTEM_FEATURES: FeatureDefinition[] = [
   {
     key: 'system_ops',
     label: 'System Health & Ops',
-    description: 'View GraphQL 07_uns_graphql connectivity, subsystem status, and schema matrix',
+    description: 'Grafana dashboards for platform health, process visualization, and OEE',
     category: 'Core Navigation',
   },
   {

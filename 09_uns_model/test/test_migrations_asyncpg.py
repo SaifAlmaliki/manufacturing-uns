@@ -7,13 +7,16 @@ to its COMMENT, or a function glued to its trigger, fails with:
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import re
 from pathlib import Path
 
 import pytest
 
-MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations" / "versions"
+MODEL_DIR = Path(__file__).resolve().parents[1]
+MIGRATIONS = MODEL_DIR / "migrations" / "versions"
+ENV_PY = MODEL_DIR / "migrations" / "env.py"
 
 # Semicolons inside $tag$ ... $tag$ bodies (plpgsql) are not command separators.
 _DOLLAR_BODY = re.compile(r"\$[^$]*\$[\s\S]*?\$[^$]*\$")
@@ -58,3 +61,59 @@ def test_each_migration_sql_constant_is_one_asyncpg_command(path: Path):
         f"{path.name} bundles multiple SQL commands in one string; "
         f"asyncpg will reject them: {bundled}"
     )
+
+
+def _do_run_migrations_source() -> ast.FunctionDef:
+    tree = ast.parse(ENV_PY.read_text(encoding="utf-8"))
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == "do_run_migrations":
+            return node
+    raise AssertionError("migrations/env.py has no do_run_migrations()")
+
+
+def test_online_env_creates_model_schema_inside_alembics_transaction():
+    """CreateSchema before context.configure() autobegins a SQLAlchemy 2.0 transaction.
+
+    Alembic then sets _in_external_transaction and begin_transaction() is a no-op,
+    so upgrade head logs success while the connect() context rolls the DDL back.
+    GitHub Actions then seeds into a database that has no model.asset_level.
+    """
+    func = _do_run_migrations_source()
+    source_order: list[str] = []
+    inside_begin_transaction = False
+
+    def visit(node: ast.AST, *, in_begin: bool) -> None:
+        nonlocal inside_begin_transaction
+        if isinstance(node, ast.With):
+            in_begin = in_begin or any(
+                isinstance(item.context_expr, ast.Call)
+                and isinstance(item.context_expr.func, ast.Attribute)
+                and item.context_expr.func.attr == "begin_transaction"
+                for item in node.items
+            )
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "configure"
+        ):
+            source_order.append("configure")
+        if (isinstance(node, ast.Name) and node.id == "CreateSchema") or (
+            isinstance(node, ast.Attribute) and node.attr == "CreateSchema"
+        ):
+            source_order.append("CreateSchema")
+            inside_begin_transaction = in_begin
+        for child in ast.iter_child_nodes(node):
+            visit(child, in_begin=in_begin)
+
+    visit(func, in_begin=False)
+
+    assert source_order == ["configure", "CreateSchema"], (
+        "CreateSchema must run after context.configure() so Alembic owns the "
+        "transaction and commits it. Executing it first makes SQLAlchemy autobegin, "
+        "Alembic skip the commit, and seed fail with 'relation model.asset_level "
+        f"does not exist'. Saw {source_order}."
+    )
+    assert inside_begin_transaction, (
+        "CreateSchema must run inside context.begin_transaction(), not before it"
+    )
+

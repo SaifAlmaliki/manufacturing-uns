@@ -51,9 +51,6 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection) -> None:
-    # Alembic creates its version table before running any migration, so the
-    # schema that holds it has to exist first.
-    connection.execute(sa.schema.CreateSchema(MODEL_SCHEMA, if_not_exists=True))
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
@@ -63,6 +60,10 @@ def do_run_migrations(connection) -> None:
         compare_type=True,
     )
     with context.begin_transaction():
+        # Inside the Alembic transaction, not before configure(). A SQLAlchemy 2.0
+        # execute autobegins; Alembic then treats that as an external transaction
+        # and never commits, so `upgrade head` logs success and seed finds no tables.
+        connection.execute(sa.schema.CreateSchema(MODEL_SCHEMA, if_not_exists=True))
         context.run_migrations()
 
 

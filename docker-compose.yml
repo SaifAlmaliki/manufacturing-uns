@@ -157,8 +157,8 @@ services:
       dockerfile: ./03_uns_graphdb/Dockerfile
     volumes:
       - ./conf:/app/conf
-    ports:
-      - "9092:9092"
+    # 9092 stays unpublished: it collides with uns_kafka_broker's host port, and Prometheus
+    # scrapes graphdb_client:9092 from inside the network, exactly as it does OEE on 9095.
     environment:
       UNS_CONF_DIR: /app/conf
       UNS_MODULE: 03_uns_graphdb
@@ -371,6 +371,9 @@ services:
       # nginx.conf proxies /simulator to it, and nginx will not start on an unresolvable
       # upstream hostname.
       - uns_simulator
+      # nginx.conf proxies /grafana to it. Without this, System Operations shows the SPA
+      # fallback instead of the dashboards.
+      - uns_grafana
 
   uns_prometheus:
     image: "prom/prometheus:latest"
@@ -387,20 +390,20 @@ services:
 
   uns_grafana:
     image: "grafana/grafana:latest"
-    ports:
-      - "3000:3000"
+    # 3000 stays unpublished: the console proxies /grafana (nginx on 8088, Vite in
+    # development). Publishing 3000 collided with whatever already bound it on the host.
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
       GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_SERVER_ROOT_URL: "http://localhost:8088/grafana/"
       GF_INSTALL_PLUGINS: grafana-mqtt-datasource
       UNS_HISTORIAN_PASSWORD: ${UNS_historian__password}
     volumes:
       - ./08_uns_observability/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
-      - ./08_uns_observability/grafana/provisioning/datasources/datasources.yaml.template:/etc/grafana/provisioning/datasources/datasources.yaml.template:ro
+      - ./08_uns_observability/grafana/provisioning/datasources/datasources.yaml.template:/etc/grafana/provisioning/datasources/datasources.yaml:ro
       - ./08_uns_observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
-      - ./08_uns_observability/grafana/entrypoint.sh:/entrypoint.sh:ro
-    entrypoint: ["/bin/sh", "/entrypoint.sh"]
     depends_on:
       uns_mqtt_broker:
         condition: service_healthy

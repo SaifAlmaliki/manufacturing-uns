@@ -11,6 +11,7 @@ export type PlatformSettings = {
   frontendComposePort: number
   simulatorApiPort: number
   simulatorProxyTarget: string
+  grafanaProxyTarget: string
 }
 
 declare const __UNS_PLATFORM_CONFIG__: PlatformSettings

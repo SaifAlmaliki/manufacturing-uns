@@ -16,6 +16,7 @@ export type PlatformSettings = {
   frontendComposePort: number
   simulatorApiPort: number
   simulatorProxyTarget: string
+  grafanaProxyTarget: string
 }
 
 const platformDir = dirname(fileURLToPath(import.meta.url))
@@ -58,6 +59,7 @@ export function platformSettingsFromConfig(
     frontendComposePort: Number(frontend.compose_port ?? 8088),
     simulatorApiPort,
     simulatorProxyTarget: `http://${simulatorHost}:${simulatorApiPort}`,
+    grafanaProxyTarget: String(urls.grafana_proxy_target ?? 'http://localhost:3000'),
   }
 }
 
