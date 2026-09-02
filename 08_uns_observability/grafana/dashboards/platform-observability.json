@@ -1,8 +1,9 @@
 {
   "annotations": { "list": [] },
+  "description": "Platform Observability: mapper health, simulator publish rate, OEE engine, scrape targets. Process data lives on Process Visualization.",
   "editable": true,
   "fiscalYearStartMonth": 0,
-  "graphTooltip": 0,
+  "graphTooltip": 1,
   "id": null,
   "links": [],
   "panels": [
@@ -10,30 +11,164 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
-          "unit": "ops"
+          "color": { "mode": "thresholds" },
+          "mappings": [{ "options": { "0": { "color": "red", "index": 1, "text": "DOWN" }, "1": { "color": "green", "index": 0, "text": "UP" } }, "type": "value" }],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "gridPos": { "h": 5, "w": 16, "x": 0, "y": 0 },
       "id": 1,
-      "options": {
-        "legend": { "displayMode": "list", "placement": "bottom" },
-        "tooltip": { "mode": "single" }
-      },
+      "options": { "colorMode": "background", "graphMode": "none", "orient": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "value_and_name" },
       "targets": [
         {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "up{job=~\"uns_.+\"}",
+          "legendFormat": "{{job}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Scrape targets",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 0,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 0 },
+      "id": 2,
+      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(increase(uns_historian_persist_failure_total[1h]))",
+          "legendFormat": "historian {{reason}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(increase(uns_graphdb_persist_failure_total[1h]))",
+          "legendFormat": "graphdb {{reason}}",
+          "refId": "B"
+        }
+      ],
+      "title": "Persist failures (1h)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 10, "lineWidth": 2 }, "unit": "ops" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "id": 3,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "rate(uns_historian_persist_success_total[5m])",
           "legendFormat": "historian success/s",
           "refId": "A"
         },
         {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "rate(uns_graphdb_persist_success_total[5m])",
           "legendFormat": "graphdb success/s",
           "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(uns_historian_messages_received_total[5m])",
+          "legendFormat": "historian received/s",
+          "refId": "C"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(uns_graphdb_messages_received_total[5m])",
+          "legendFormat": "graphdb received/s",
+          "refId": "D"
         }
       ],
-      "title": "Mapper Throughput",
+      "title": "Mapper throughput",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 10, "lineWidth": 2 }, "unit": "s" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "id": 4,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(uns_historian_persist_duration_seconds_bucket[5m])))",
+          "legendFormat": "historian p95",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(uns_graphdb_persist_duration_seconds_bucket[5m])))",
+          "legendFormat": "graphdb p95",
+          "refId": "B"
+        }
+      ],
+      "title": "Persist latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 10, "lineWidth": 2 }, "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
+      "id": 5,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (reason) (increase(uns_historian_persist_failure_total[5m]))",
+          "legendFormat": "historian {{reason}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (reason) (increase(uns_graphdb_persist_failure_total[5m]))",
+          "legendFormat": "graphdb {{reason}}",
+          "refId": "B"
+        }
+      ],
+      "title": "Failures by reason",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 10, "lineWidth": 2 }, "unit": "ops" },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 12, "y": 13 },
+      "id": 6,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (family) (rate(uns_simulator_messages_published_total[5m]))",
+          "legendFormat": "{{family}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Simulator publish rate",
       "type": "timeseries"
     },
     {
@@ -41,45 +176,99 @@
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null },
-              { "color": "red", "value": 1 }
-            ]
-          }
+          "decimals": 0,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
         },
         "overrides": []
       },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
-      "id": 2,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
-      },
+      "gridPos": { "h": 8, "w": 4, "x": 20, "y": 13 },
+      "id": 7,
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } },
       "targets": [
         {
-          "expr": "sum(increase(uns_historian_persist_failure_total[1h]))",
-          "legendFormat": "historian failures",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "uns_simulator_devices_connected",
+          "legendFormat": "connected",
           "refId": "A"
-        },
-        {
-          "expr": "sum(increase(uns_graphdb_persist_failure_total[1h]))",
-          "legendFormat": "graphdb failures",
-          "refId": "B"
         }
       ],
-      "title": "Persist Failures (1h)",
+      "title": "Simulator devices",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 6, "lineWidth": 1 }, "unit": "short" },
+        "overrides": []
+      },
+      "gridPos": { "h": 10, "w": 16, "x": 0, "y": 21 },
+      "id": 8,
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "uns_simulator_signal_value",
+          "legendFormat": "{{device}} {{signal}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Simulator exported signals",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 0,
+          "max": 1,
+          "min": 0,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 21 },
+      "id": 9,
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "uns_oee_db_up",
+          "legendFormat": "db",
+          "refId": "A"
+        }
+      ],
+      "title": "OEE database",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "decimals": 1, "max": 1, "min": 0, "unit": "percentunit" },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 26 },
+      "id": 10,
+      "options": { "colorMode": "value", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "value_and_name" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "uns_oee_shift_oee",
+          "legendFormat": "{{unit}} OEE",
+          "refId": "A"
+        }
+      ],
+      "title": "Latest computed OEE",
       "type": "stat"
     }
   ],
-  "refresh": "30s",
+  "refresh": "15s",
   "schemaVersion": 39,
   "tags": ["platform-observability"],
   "templating": { "list": [] },
   "time": { "from": "now-1h", "to": "now" },
+  "timezone": "browser",
   "title": "Platform Observability",
   "uid": "uns-platform-observability",
-  "version": 1
+  "version": 2
 }

@@ -144,6 +144,13 @@ NGINX_FILE = REPO_ROOT / "11_frontend" / "nginx.conf"
 VITE_FILE = REPO_ROOT / "11_frontend" / "vite.config.ts"
 SYSTEM_HEALTH = REPO_ROOT / "11_frontend" / "src" / "components" / "system" / "SystemHealthView.tsx"
 GRAFANA_EMBED = REPO_ROOT / "11_frontend" / "src" / "components" / "common" / "GrafanaEmbed.tsx"
+EXPLORE_VIEW = REPO_ROOT / "11_frontend" / "src" / "components" / "explore" / "ExploreView.tsx"
+PAYLOAD_INSPECTOR = REPO_ROOT / "11_frontend" / "src" / "components" / "home" / "PayloadInspector.tsx"
+SIMULATOR_DIAGNOSTICS = (
+    REPO_ROOT / "11_frontend" / "src" / "components" / "simulator" / "SimulatorDiagnosticsPanel.tsx"
+)
+PROCESS_DASHBOARD = DASHBOARD_DIR / "process-visualization.json"
+PLATFORM_DASHBOARD = DASHBOARD_DIR / "platform-observability.json"
 DASHBOARD_UIDS = (
     "uns-platform-observability",
     "uns-process-visualization",
@@ -181,3 +188,68 @@ def test_the_console_embeds_the_three_provisioned_dashboards():
     sources = GRAFANA_EMBED.read_text(encoding="utf-8") + SYSTEM_HEALTH.read_text(encoding="utf-8")
     for uid in DASHBOARD_UIDS:
         assert uid in sources, f"console does not embed dashboard uid {uid}"
+
+
+def test_every_sql_panel_is_bounded_by_the_dashboard_time_range():
+    """Process Visualization can scan uns_metrics_1m the same way OEE can scan every shift."""
+    for path in DASHBOARD_DIR.glob("*.json"):
+        body = json.loads(path.read_text(encoding="utf-8"))
+        for panel in _panels(body):
+            for query in _queries(panel):
+                assert "$__timeFilter" in query, f"{path.name} panel {panel.get('title')!r} is unbounded"
+
+
+def test_process_visualization_shows_the_plant_the_simulator_publishes():
+    """
+    One Temperature timeseries is not Process Visualization. The simulator publishes
+    production, power, pressure and temperature; the dashboard has to name those series
+    or the System and Historian embeds look empty next to a busy broker.
+    """
+    body = json.loads(PROCESS_DASHBOARD.read_text(encoding="utf-8"))
+    sql = "\n".join(q for panel in _panels(body) for q in _queries(panel))
+    titles = [panel.get("title") for panel in _panels(body)]
+    assert len([t for t in titles if t]) >= 6
+    assert "metric_name = 'value'" in sql
+    assert "metric_name = 'ProductionRate'" not in sql
+    for metric in ("ProductionRate", "ThroughputTph", "ActivePower"):
+        assert f"%/{metric}" in sql or f"%{metric}%" in sql, f"process dashboard never filters topics for {metric}"
+    assert "uns_metrics_1m_enriched" in sql
+    assert "ShiftOee" not in sql
+    assert "'Oee'" not in sql
+
+
+def test_platform_observability_covers_the_scraped_jobs():
+    """Throughput plus a lump of failures is not a health view of this stack."""
+    body = json.loads(PLATFORM_DASHBOARD.read_text(encoding="utf-8"))
+    exprs = " ".join(
+        target.get("expr", "")
+        for panel in _panels(body)
+        for target in panel.get("targets", [])
+    )
+    titles = [panel.get("title") for panel in _panels(body)]
+    assert len([t for t in titles if t]) >= 6
+    for needle in (
+        "uns_historian_messages_received_total",
+        "uns_historian_persist_duration_seconds",
+        "uns_historian_persist_failure_total",
+        "uns_simulator_messages_published",
+        "uns_simulator_devices_connected",
+        "uns_simulator_signal_value",
+        "uns_oee_db_up",
+        'up{',
+    ):
+        assert needle in exprs, f"platform dashboard is missing {needle}"
+    assert "reason" in exprs
+
+
+def test_console_charts_go_through_grafana_not_a_hand_rolled_svg():
+    """ADR-0002: GraphQL does not serve bucketed trends. The console must not fake them."""
+    embed = GRAFANA_EMBED.read_text(encoding="utf-8")
+    assert "vars" in embed
+    explore = EXPLORE_VIEW.read_text(encoding="utf-8")
+    assert "GrafanaEmbed" in explore
+    assert "HistorianTrendChart" not in explore
+    inspector = PAYLOAD_INSPECTOR.read_text(encoding="utf-8")
+    assert "GrafanaEmbed" in inspector
+    diagnostics = SIMULATOR_DIAGNOSTICS.read_text(encoding="utf-8")
+    assert "GrafanaEmbed" in diagnostics

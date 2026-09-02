@@ -15,15 +15,22 @@ import {
 import { useUNS } from '../../context/UNSContext';
 import { HistoricEvent, UnsNode, BinaryOperator } from '../../types/uns';
 import { unsGraphQLClient } from '../../services/graphql/client';
-import { HistorianTrendChart } from './HistorianTrendChart';
 import { HistorianTable } from './HistorianTable';
 import { historianTopic } from '../../lib/uns/topics';
+import { useTheme } from '../../context/ThemeContext';
+import {
+  GRAFANA_DASHBOARDS,
+  GrafanaEmbed,
+  grafanaRangeFromPreset,
+  grafanaTopicFilter,
+} from '../common/GrafanaEmbed';
 
 type QueryMode = 'topic_time' | 'publishers' | 'property_event' | 'property_nodes';
 type TimePreset = '5m' | '15m' | '1h' | '6h' | '24h' | 'all' | 'custom';
 
 export const ExploreView: React.FC = () => {
   const { historianInitialTopic, allLoadedNodes, selectedNode } = useUNS();
+  const { isDark } = useTheme();
 
   const [mode, setMode] = useState<QueryMode>('topic_time');
   const [topicInput, setTopicInput] = useState(
@@ -144,6 +151,15 @@ export const ExploreView: React.FC = () => {
   useEffect(() => {
     runQuery();
   }, [runQuery]);
+
+  const grafanaTime =
+    timePreset === 'custom'
+      ? {
+          from: String(new Date(customStartTime).getTime()),
+          to: String(new Date(customEndTime).getTime()),
+        }
+      : grafanaRangeFromPreset(timePreset);
+  const grafanaTopic = grafanaTopicFilter(topicInput) || 'CovestroAG';
 
   return (
     <div id="explore-historian-view" className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#F8FAFC] dark:bg-[#050505] text-[#0F172A] dark:text-[#F8FAFC] font-mono text-xs transition-colors">
@@ -353,8 +369,22 @@ export const ExploreView: React.FC = () => {
         )}
       </div>
 
-      {/* Visual Numeric Trend (if telemetry events loaded) */}
-      {events.length > 0 && <HistorianTrendChart events={events} selectedTopic={topicInput} />}
+      {/* Grafana Process Visualization — ADR-0002: GraphQL does not serve bucketed trends. */}
+      {mode !== 'property_nodes' && (
+        <div
+          id="historian-grafana-trend"
+          className="h-[520px] rounded-lg overflow-hidden border border-[#E2E8F0] dark:border-[#1E293B] bg-[#111114]"
+        >
+          <GrafanaEmbed
+            uid={GRAFANA_DASHBOARDS.process.uid}
+            theme={isDark ? 'dark' : 'light'}
+            title="Process Visualization"
+            vars={{ topic: grafanaTopic }}
+            from={grafanaTime.from}
+            to={grafanaTime.to}
+          />
+        </div>
+      )}
 
       {/* Historical Data Table with CSV Export */}
       <HistorianTable events={events} isLoading={loading} topicTitle={topicInput} />
