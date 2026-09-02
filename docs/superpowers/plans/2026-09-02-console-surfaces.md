@@ -45,7 +45,7 @@
       StatusPill.tsx                       CREATE  Live/Degraded/Down/Connecting pill
       ValueWithUnit.tsx                    CREATE  value + Unit of Measure, null-safe
       DataTable.tsx                        CREATE  dense table shell with sticky header
-      GrafanaEmbed.tsx                     CREATE  one iframe wrapper, three call sites
+      GrafanaEmbed.tsx                     MODIFY  variables + a real failure state
     plant/
       PlantView.tsx                        CREATE  asset canvas shell + six tabs
       AssetTreeRail.tsx                    CREATE  authored Asset tree, selection
@@ -64,32 +64,61 @@
     assets/
       AssetsView.tsx                       CREATE
       ModelSummaryHeader.tsx               CREATE
-      AssetDetail.tsx                      CREATE
       UnmodelledTopicsList.tsx             CREATE
     namespace/
       NamespaceView.tsx                    CREATE  wraps the existing home/ components
+      FindByProperty.tsx                   CREATE  getUnsNodesByProperty, moved out of explore/
     historian/
-      HistorianView.tsx                    CREATE  wraps explore/, adds CSV
+      HistorianView.tsx                    CREATE  three modes, no per-keystroke query
+      HistorianQueryForm.tsx               CREATE  the form for all three modes
+      HistorianTable.tsx                   MOVE    from explore/, four untruths removed
+      HistorianTrendChart.tsx              MOVE    from explore/, unchanged
     health/
-      HealthView.tsx                       CREATE  four honest sections
+      HealthView.tsx                       CREATE  four panels + the dashboard switcher
+      TransportPanel.tsx                   CREATE  the two transports, URLs, last-seen ages
+      ReadSurfacePanel.tsx                 CREATE  Asset Model + Alert Rule counts
+      NotObservablePanel.tsx               CREATE  the four stores a browser cannot reach
+      HealthRow.tsx                        CREATE  one label/value line, used by both panels
+    alarms/
+      BrowserEvaluationNotice.tsx          CREATE  ADR-0005 stated, not concealed (Task 14)
+      AlarmManagementView.tsx              MODIFY  three honest empty states + the notice
+      AlarmAuditLog.tsx                    MODIFY  export through the shared CSV writer
     home/                                  KEEP    UnsTreeView, LiveMqttFeed, PayloadInspector
-    explore/                               KEEP    HistorianTable, HistorianTrendChart
-    system/HomeView.tsx / SystemHealthView.tsx  DELETE after their replacements land
+    explore/ExploreView.tsx                DELETE  once HistorianView lands (Task 18)
+    home/HomeView.tsx                      DELETE  once NamespaceView lands (Task 17)
+    system/SystemHealthView.tsx            DELETE  once HealthView lands (Task 19)
     landing/LandingView.tsx                MODIFY  fabricated figures removed
     auth/LoginView.tsx                     MODIFY  fabricated claim removed
-    users/UserManagementView.tsx           MODIFY  read-only, labelled not enforced
+    users/UserManagementView.tsx           MODIFY  read-only, labelled not enforced (Task 21)
+    users/CreateUserModal.tsx              DELETE  this console cannot create an account
+    users/EditUserModal.tsx                DELETE  this console cannot grant a permission
   context/
     UNSContext.tsx                         MODIFY  NavigationTab, selectedAsset, jump targets
-    AlarmContext.tsx                       MODIFY  INITIAL_RULES and restoreDefaults deleted
-    AuthContext.tsx                        MODIFY  canAccessTab tab ids and plain names
+    AlarmContext.tsx                       MODIFY  three seeded collections and restoreDefaults deleted
+    AuthContext.tsx                        MODIFY  canAccessTab tab ids and plain names (Task 3);
+                                                   every write method and the audit trail
+                                                   deleted (Task 21)
   lib/
-    csv/to-csv.ts                          CREATE  shared CSV serialiser
+    csv/to-csv.ts                          CREATE  shared CSV serialiser, domain-free
     grafana/dashboards.ts                  CREATE  UIDs and variable names in one place
+    health/relative-age.ts                 CREATE  "4 s ago", pure, clock passed in
+    uns/historian-query.ts                 CREATE  form state, time bounds, /# rewrite
+    uns/historian-csv.ts                   CREATE  the historian's CSV columns
+    uns/tree-search.ts                     CREATE  ancestor expansion, loaded-node matching
+    uns/topic-match.ts                     CREATE  MQTT +/# semantics, one tested matcher
+    uns/isa95-probe.ts                     DELETE  fabricated children (Task 17)
+  services/graphql/
+    client.ts                              MODIFY  two observed timestamps (Task 19)
+  types/
+    uns.ts                                 MODIFY  SystemHealthInfo gains three keys (Task 19)
+    rbac.ts                                MODIFY  AuditLogEntry deleted, no consumer (Task 21)
 ```
 
 `ConnectionChip.tsx` stays in `common/` although spec section 17 lists it under `layout/`. Moving it would touch every import for no behavioural gain; the spec's grouping is descriptive, not a filesystem requirement.
 
-`components/home/` and `components/explore/` keep their leaf components — `NamespaceView` and `HistorianView` are new shells around them, not rewrites. Only the two view files that fabricate data (`HomeView.tsx`, `SystemHealthView.tsx`) are deleted.
+`components/home/` keeps its leaf components — `NamespaceView` is a new shell around them, not a rewrite. `components/explore/` does not survive: once `ExploreView` is deleted the directory holds only the two historian components, so both move to `historian/` with `git mv` and the directory goes. A folder named after a menu item that no longer exists is the same class of untruth as a badge that lies.
+
+Three view shells are deleted, each because something better replaces it: `SystemHealthView.tsx` by `HealthView`, which keeps its dashboard switcher and adds the three things Platform Observability needs around it; `HomeView.tsx` by `NamespaceView`; and `ExploreView.tsx` by `HistorianView`. None of the three is deleted for fabricating data — `SystemHealthView` in particular reads no `health` at all since commit `0812fc6e`, whatever the earlier audit said.
 
 ---
 
@@ -282,7 +311,8 @@ In `11_frontend/src/App.tsx`, replace the protected route block:
           <Route path="/alarms" element={<AlarmManagementView />} />
 
           {/* UNDERSTAND THE DATA */}
-          <Route path="/historian" element={<HistorianView />} />
+          {/* Still the old screen. Task 18 replaces it with historian/HistorianView. */}
+          <Route path="/historian" element={<ExploreView />} />
           <Route path="/assets" element={<AssetsView />} />
           <Route path="/namespace" element={<NamespaceView />} />
 
@@ -320,13 +350,15 @@ export const PlantView: React.FC = () => (
     <h1 className="px-4 py-2 text-[13px] font-semibold text-[#0F172A] dark:text-[#E2E8F0]">Plant</h1>
     <EmptyState
       title="Plant workspace not built yet"
-      detail="Task 7 of the surfaces plan replaces this with the Asset canvas and its six tabs."
+      detail="Task 8 of the surfaces plan replaces this with the Asset canvas and its six tabs."
     />
   </section>
 );
 ```
 
-Repeat with the same shape for `shift/ShiftView.tsx` (heading `Shift & OEE`, Task 13), `assets/AssetsView.tsx` (heading `Assets`, Task 14), `namespace/NamespaceView.tsx` (heading `Namespace`, Task 15) and `health/HealthView.tsx` (heading `Health`, Task 17). Write each one out — do not import a shared placeholder, because each file gets fully replaced and a shared one would linger.
+Repeat with the same shape for `shift/ShiftView.tsx` (heading `Shift & OEE`, Task 15), `assets/AssetsView.tsx` (heading `Assets`, Task 16), `namespace/NamespaceView.tsx` (heading `Namespace`, Task 17) and `health/HealthView.tsx` (heading `Health`, Task 19). Write each one out — do not import a shared placeholder, because each file gets fully replaced and a shared one would linger.
+
+There is deliberately no shell for `/historian`. That route already has a working screen — `explore/ExploreView` — and replacing it with an empty state would take a capability away for seventeen commits. Task 18 rebuilds it in place.
 
 - [ ] **Step 7: Retarget the tab-id map and add the shell test id**
 
@@ -808,6 +840,7 @@ an operator can act on."
 **Files:**
 - Modify: `11_frontend/src/components/landing/LandingView.tsx:68-76`, `:130-158`, `:263-271`, `:589-597`
 - Modify: `11_frontend/src/components/auth/LoginView.tsx:242-248`
+- Modify: `11_frontend/src/context/AuthContext.tsx:73`
 - Test: `11_frontend/src/components/landing/landing-claims.test.tsx`
 
 **Interfaces:**
@@ -953,7 +986,20 @@ Leave `badgeText`, `title`, `titleLine2` and the button copy — they describe t
           </div>
 ```
 
-- [ ] **Step 6: Run the test**
+- [ ] **Step 6: Rename the seeded user's department**
+
+`AuthContext.tsx:73` gives a seeded user the department `ISO/IEC 62443 Compliance`. The
+string is the same claim as the others, just wearing a job title, and it renders in
+`/users` and the session menu. Replace it with a department a plant actually has:
+
+```ts
+    department: 'Plant IT',
+```
+
+Change nothing else about the seeded users — Task 21 reduces `/users`, and the
+authentication cycle replaces the whole list with the realm's.
+
+- [ ] **Step 7: Run the test**
 
 ```bash
 cd 11_frontend && npx vitest run src/components/landing/landing-claims.test.tsx
@@ -961,7 +1007,7 @@ cd 11_frontend && npx vitest run src/components/landing/landing-claims.test.tsx
 
 Expected: PASS.
 
-- [ ] **Step 7: Sweep the whole module for survivors**
+- [ ] **Step 8: Sweep the whole module for survivors**
 
 ```bash
 cd 11_frontend && grep -rn "62443\|99\.999\|TLS 1\.3\|Zero-Trust\|non-repudiable\|Certified" src
@@ -969,10 +1015,10 @@ cd 11_frontend && grep -rn "62443\|99\.999\|TLS 1\.3\|Zero-Trust\|non-repudiable
 
 Expected: no output. If a string survives in a component the test does not render, fix it the same way and add that component to the test.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add 11_frontend/src/components/landing/ 11_frontend/src/components/auth/LoginView.tsx
+git add 11_frontend/src/components/landing/ 11_frontend/src/components/auth/LoginView.tsx   11_frontend/src/context/AuthContext.tsx
 git commit -m "fix(frontend): stop claiming an SLA, a latency and a certification
 
 99.999%, < 5 ms, ISO/IEC 62443, Zero-Trust, TLS 1.3 and the client list were
@@ -1077,19 +1123,16 @@ Expected: FAIL — there is no `connection-chip` test id, and `health.mode` no l
 
 - [ ] **Step 3: Drive the chip from `connectionState()`**
 
-Replace `getStatusColor` and `getStatusDot` (`:12-32`) with one lookup keyed on the four states, and derive everything shown from `connectionState`:
+Replace `getStatusColor` and `getStatusDot` (`:12-32`) with one lookup keyed on `ConnectionStatus`, and derive everything shown from `connectionState`:
 
 ```tsx
 import { connectionState } from '../../lib/health/connection-state';
+import type { ConnectionStatus } from '../../types/uns';
 
-const TONE: Record<string, { chip: string; dot: string }> = {
+const TONE: Record<ConnectionStatus, { chip: string; dot: string }> = {
   LIVE: {
     chip: 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-500/30',
     dot: 'bg-emerald-500 dark:bg-emerald-400',
-  },
-  CONNECTING: {
-    chip: 'bg-sky-50 dark:bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-300 dark:border-sky-500/30',
-    dot: 'bg-sky-500 animate-pulse',
   },
   DEGRADED: {
     chip: 'bg-amber-50 dark:bg-amber-500/10 text-amber-800 dark:text-[#FFC107] border-amber-300 dark:border-amber-500/30',
@@ -1109,7 +1152,7 @@ Inside the component, above the return:
   const tone = TONE[state.status];
 ```
 
-Only `CONNECTING` pulses. A pulsing dot on a Live chip is decoration; a pulsing dot on a chip that is waiting is information.
+`ConnectionStatus` has exactly three members — `LIVE`, `DEGRADED`, `DOWN` — and spec section 12's four rows collapse onto them, so `TONE` is exhaustive and no state pulses. A pulsing dot only carries information when it means "waiting", and none of these three is waiting.
 
 - [ ] **Step 4: Replace the chip face**
 
@@ -1169,7 +1212,7 @@ Only `CONNECTING` pulses. A pulsing dot on a Live chip is decoration; a pulsing 
             <div className="flex items-center justify-between pt-1 text-[12px] text-[#64748B]">
               <span>Round-trip</span>
               <span className="font-semibold tabular-nums text-[#0F172A] dark:text-[#F8FAFC]">
-                {health.lastPingMs === null ? '—' : `${health.lastPingMs} ms`}
+                {health.lastPingMs === 0 ? '—' : `${health.lastPingMs} ms`}
               </span>
             </div>
 
@@ -1554,16 +1597,21 @@ because that distinction is what ADR-0008 is about."
 
 ## Task 6: One Grafana embed, three call sites
 
-PLANT ▸ Trend, SHIFT and HEALTH all embed a dashboard. The sub-path, kiosk parameter, theme and the deep-link variables get decided once. Nothing here invents a variable: `var-asset` exists on `uns-oee`, `var-topic` and `var-metric` on `uns-process-visualization`, and `uns-platform-observability` has none.
+PLANT ▸ Trend, SHIFT and HEALTH all embed a dashboard. The sub-path, kiosk parameter, theme and the deep-link variables get decided once.
+
+**`GrafanaEmbed` already exists.** Commit `0812fc6e` added `src/components/common/GrafanaEmbed.tsx` with `GRAFANA_DASHBOARDS`, `GrafanaDashboardId`, `grafanaKioskPath(uid, theme)` and a plain iframe, and `system/SystemHealthView.tsx` is its one current caller. Read it first. What it cannot do is the reason this task exists: it takes no dashboard variables, so no call site can deep-link to an Asset or a Metric, and it has no failure state, so the ADR-0007 fall-through renders the console inside itself with no explanation. This task rewrites it and moves the URL construction into a tested module.
+
+Nothing here invents a variable: `var-asset` exists on `uns-oee`, `var-topic` and `var-metric` on `uns-process-visualization`, and `uns-platform-observability` has none.
 
 **Files:**
 - Create: `11_frontend/src/lib/grafana/dashboards.ts`
-- Create: `11_frontend/src/components/common/GrafanaEmbed.tsx`
+- Modify: `11_frontend/src/components/common/GrafanaEmbed.tsx` — rewritten body, `GRAFANA_DASHBOARDS` and `grafanaKioskPath` move to `lib/grafana/dashboards.ts`
+- Modify: `11_frontend/src/components/system/SystemHealthView.tsx` — the one existing caller, so it keeps compiling until Task 19 deletes it
 - Test: `11_frontend/src/lib/grafana/dashboards.test.ts`
 - Test: `11_frontend/src/components/common/GrafanaEmbed.test.tsx`
 
 **Interfaces:**
-- Consumes: `grafanaProxyTarget` and the console theme. The foundation plan added `grafanaHost`, `grafanaPort` and `grafanaProxyTarget` to `src/lib/platform/settings.ts` and the `/grafana` proxy to `nginx.conf` and `vite.config.ts`; the browser only ever uses the relative `/grafana` path, so it reads none of those three.
+- Consumes: the console theme, and the `/grafana` proxy that is already in `nginx.conf` and `vite.config.ts`. The browser only ever uses the relative `/grafana` path, so it reads no host or port setting at all. Foundation Task 12 verifies the proxy and configures `urls.grafana_proxy_target`; it adds nothing this component reads.
 - Produces:
   ```ts
   // lib/grafana/dashboards.ts
@@ -1578,6 +1626,9 @@ PLANT ▸ Trend, SHIFT and HEALTH all embed a dashboard. The sub-path, kiosk par
     theme: 'light' | 'dark';
   }
   export function dashboardUrl(options: EmbedOptions): string;
+  /** The switcher's three entries, moved here from GrafanaEmbed.tsx unchanged. */
+  export const GRAFANA_DASHBOARDS: Record<'platform' | 'process' | 'oee', { uid: DashboardUid; label: string }>;
+  export type GrafanaDashboardId = keyof typeof GRAFANA_DASHBOARDS;
 
   // components/common/GrafanaEmbed.tsx
   export const GrafanaEmbed: React.FC<EmbedOptions & { title: string; className?: string }>;
@@ -1673,6 +1724,15 @@ export interface EmbedOptions {
   theme: 'light' | 'dark';
 }
 
+/** Moved from GrafanaEmbed.tsx unchanged, so SystemHealthView's switcher keeps working. */
+export const GRAFANA_DASHBOARDS = {
+  platform: { uid: 'uns-platform-observability', label: 'Platform' },
+  process: { uid: 'uns-process-visualization', label: 'Process' },
+  oee: { uid: 'uns-oee', label: 'OEE' },
+} as const satisfies Record<string, { uid: DashboardUid; label: string }>;
+
+export type GrafanaDashboardId = keyof typeof GRAFANA_DASHBOARDS;
+
 export function dashboardUrl({ uid, variables, from, to, theme }: EmbedOptions): string {
   const allowed = VARIABLES[uid];
   const params = new URLSearchParams({ kiosk: '1', theme });
@@ -1728,7 +1788,16 @@ describe('GrafanaEmbed', () => {
 });
 ```
 
-- [ ] **Step 5: Write `GrafanaEmbed.tsx`**
+- [ ] **Step 5: Rewrite `GrafanaEmbed.tsx`**
+
+Replace the whole body of the existing file. `GRAFANA_DASHBOARDS`, `GrafanaDashboardId` and `grafanaKioskPath` leave this module — `dashboards.ts` owns them now — so `system/SystemHealthView.tsx`, which imports all three plus `GrafanaEmbed` from here, must be updated in the same commit or the build breaks:
+
+```tsx
+import { GRAFANA_DASHBOARDS, type DashboardUid } from '../../lib/grafana/dashboards';
+import { GrafanaEmbed } from '../common/GrafanaEmbed';
+```
+
+and its `<GrafanaEmbed uid={active.uid} theme={…} title={active.label} />` call gains nothing — the new props are a superset of the old three. Keep `GRAFANA_DASHBOARDS` shaped as it is (`{ platform, process, oee }` mapping to label and uid) so that switcher keeps working; Task 19 deletes the view, but not in this commit.
 
 The load-failure state matters because ADR-0007 records that a missing nginx proxy entry returns `index.html` with a 200 — the iframe then renders the console inside itself instead of erroring. An explicit failure panel plus a named cause is the difference between a fixable report and a confusing screen.
 
@@ -7251,3 +7320,5603 @@ The tree rail and the Asset detail are the PLANT components reused, not copies."
 ```
 
 ---
+
+## Task 17: NAMESPACE — what the broker is actually carrying
+
+Spec tests 9 and 10 both live here. This is the integration engineer's destination: the graph of UNS Nodes discovered from traffic, as distinct from the authored Asset Model at `/assets` (spec section 7 — "a machine which has not published yet simply did not exist" in the former, and merging them is how a missing Asset becomes invisible).
+
+Four facts from the repo, two of which are defects this task removes:
+
+1. **The tree already obeys the wildcard rules.** `client.ts:207` resolves roots through `getAssetChildren(null)` then `childrenTopic('')`; `:223` resolves children through the Asset Model then `childrenTopic(parentTopic)`. `childrenTopic` (`lib/uns/topics.ts:6`) returns `+` or `{topic}/+`. No tree path builds a `#`. Nothing to fix; there is something to *prove*, which is spec test 9.
+2. **The tree invents children.** `client.ts:231-246` falls back to `syntheticSensorNodes` and `syntheticParameterGroupNodes` (`lib/uns/isa95-probe.ts`), which return rows named `ProcessValue`, `Setpoint`, `Status`, `Alarm`, `EVENT`, `Temperature`, `Pressure`, `FlowRate`, `Level`, `Humidity` and `EquipmentStatus` under *any* topic deep enough — whether or not the plant publishes them. `lib/uns/map-assets.ts:9-11` already says why that is wrong: "The segments below a machine used to come from a hardcoded list of names the simulator happened to publish, which was wrong for every plant that is not the simulator", and `metricChildNodes` is its replacement. This task finishes that migration by deleting the probe. The honest answer when the Asset Model declares nothing and a `+` query returns nothing is that nothing has been published there.
+3. **The search box filters the tree.** `UnsTreeView.tsx:59-64` returns `null` for any node whose topic does not contain the query and whose loaded children do not either. So typing hides plant structure, which is exactly the behaviour the constraints forbid: matches are a list, and clicking one expands ancestors. `UNSContext.jumpToTopicInTree` (`:299-322`) already does that expansion, so the list needs no new machinery.
+4. **`getUnsNodesByProperty` is a real server-side search, and it is not a topic search.** Its description is "Get all UNSNodes published which have specific attribute name as 'propertyKeys'" — it matches *payload keys*, optionally filtered by topic wildcards, with `excludeTopics` inverting the filter (`queries/graph.py:312-347`). It takes no `AND`/`OR`/`NOT` operator; only `getHistoricEventsByProperty` does. So the panel offers no operator control, because a control that cannot change the result is another untruth. Per the gap table it moves out of the historian, where it is currently the fourth mode of a form otherwise about Historic Events (`ExploreView.tsx:114`). This task adds it to NAMESPACE; Task 18 removes the mode from the historian form. For one commit the query is reachable from two screens, which is better than a broken build in between.
+
+There is no server-side topic-substring search. The tree's text search therefore matches the nodes already loaded in this browser and says so; a server-side topic search is marked **requires backend**.
+
+`components/home/` keeps its three leaf components, per this plan's file table: `NamespaceView` is a shell around them, not a rewrite. The directory name no longer matches a destination, and renaming it is deliberately not done here — it would be a large diff with no behaviour change, and every import in it is about to be read by a reviewer for the changes that matter.
+
+**Files:**
+- Create: `11_frontend/src/lib/uns/tree-search.ts`
+- Test: `11_frontend/src/lib/uns/tree-search.test.ts`
+- Delete: `11_frontend/src/lib/uns/isa95-probe.ts`
+- Modify: `11_frontend/src/services/graphql/client.ts:223-249`
+- Test: `11_frontend/src/services/graphql/client-tree.test.ts`
+- Modify: `11_frontend/src/lib/uns/node-meta.ts:34-46` (comments only)
+- Modify: `11_frontend/src/context/UNSContext.tsx:299-322`
+- Modify: `11_frontend/src/components/home/UnsTreeView.tsx`
+- Test: `11_frontend/src/components/home/UnsTreeView.test.tsx`
+- Create: `11_frontend/src/components/namespace/FindByProperty.tsx`
+- Test: `11_frontend/src/components/namespace/FindByProperty.test.tsx`
+- Create: `11_frontend/src/components/namespace/NamespaceView.tsx`
+- Test: `11_frontend/src/components/namespace/NamespaceView.test.tsx`
+- Modify: `11_frontend/src/App.tsx`
+
+**Interfaces:**
+- Consumes: `unsGraphQLClient.getUnsNodesByProperty(propertyKeys, topics?, excludeTopics?)` (already in the repo at `client.ts:363`), `useUNS()`, `UnsTreeView`, `PayloadInspector`, `LiveMqttFeed`, `EmptyState`, `StatusPill`, `isSparkplugTopic` (`lib/uns/sparkplug.ts`).
+- Produces:
+  ```ts
+  // src/lib/uns/tree-search.ts
+  /** Every ancestor of a topic, shallowest first, excluding the topic itself. */
+  export function ancestorTopics(topic: string): string[];
+  /** Case-insensitive substring match on topic and name, capped, ordered by topic. */
+  export function matchLoadedNodes(nodes: UnsNode[], query: string, limit?: number): UnsNode[];
+  export const MATCH_LIMIT = 50;
+  ```
+  ```tsx
+  export const FindByProperty: React.FC;
+  export const NamespaceView: React.FC;
+  ```
+  Nothing later in this plan consumes these.
+
+- [ ] **Step 1: Write the failing search-helper test**
+
+Create `11_frontend/src/lib/uns/tree-search.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest'
+import type { UnsNode } from '../../types/uns'
+import { ancestorTopics, matchLoadedNodes, MATCH_LIMIT } from './tree-search'
+
+const node = (topic: string, name = topic.split('/').pop() ?? topic): UnsNode => ({
+  topic,
+  name,
+  namespace: topic,
+  lastUpdated: new Date(0).toISOString(),
+  isLeaf: false,
+})
+
+describe('ancestorTopics', () => {
+  it('lists every ancestor shallowest first and excludes the topic itself', () => {
+    expect(ancestorTopics('CovestroAG/Dormagen/Production/Line1')).toEqual([
+      'CovestroAG',
+      'CovestroAG/Dormagen',
+      'CovestroAG/Dormagen/Production',
+    ])
+  })
+
+  it('has no ancestors for a root', () => {
+    expect(ancestorTopics('CovestroAG')).toEqual([])
+  })
+
+  it('ignores empty segments rather than producing a blank ancestor', () => {
+    expect(ancestorTopics('a//b')).toEqual(['a'])
+  })
+})
+
+describe('matchLoadedNodes', () => {
+  const loaded = [
+    node('CovestroAG/Dormagen/Production/Line1'),
+    node('CovestroAG/Dormagen/Utilities/Chiller_02'),
+    node('CovestroAG/Krefeld/Production/Line1'),
+  ]
+
+  it('matches on the topic, case-insensitively', () => {
+    expect(matchLoadedNodes(loaded, 'chiller').map((n) => n.topic)).toEqual([
+      'CovestroAG/Dormagen/Utilities/Chiller_02',
+    ])
+  })
+
+  it('matches on the authored name, which is what the row shows', () => {
+    const named = [node('CovestroAG/Dormagen/Production/Line1/G1', 'Filler 3')]
+    expect(matchLoadedNodes(named, 'filler').map((n) => n.topic)).toEqual([
+      'CovestroAG/Dormagen/Production/Line1/G1',
+    ])
+  })
+
+  it('orders by topic so the same query always lists the same way', () => {
+    expect(matchLoadedNodes(loaded, 'line1').map((n) => n.topic)).toEqual([
+      'CovestroAG/Dormagen/Production/Line1',
+      'CovestroAG/Krefeld/Production/Line1',
+    ])
+  })
+
+  it('returns nothing for a blank query rather than everything', () => {
+    expect(matchLoadedNodes(loaded, '   ')).toEqual([])
+  })
+
+  it('caps the list so a one-letter query cannot render the whole graph', () => {
+    const many = Array.from({ length: MATCH_LIMIT + 10 }, (_, i) =>
+      node(`Plant/Line${String(i).padStart(3, '0')}`),
+    )
+    expect(matchLoadedNodes(many, 'line')).toHaveLength(MATCH_LIMIT)
+  })
+})
+```
+
+- [ ] **Step 2: Run it and watch it fail**
+
+```bash
+cd 11_frontend && npx vitest run src/lib/uns/tree-search.test.ts
+```
+
+Expected: FAIL — `Failed to resolve import "./tree-search"`.
+
+- [ ] **Step 3: Write `tree-search.ts`**
+
+```ts
+/**
+ * Finding a topic in the tree without hiding the tree.
+ *
+ * The graph database has no substring search over topics — getUnsNodes takes exact
+ * topics and MQTT wildcards — so a text query is answered from the nodes this browser
+ * has already loaded. Every caller must say so; a search that silently covers part of
+ * the namespace and looks like it covers all of it is worse than no search.
+ * **requires backend** for a server-side topic search.
+ */
+
+import type { UnsNode } from '../../types/uns'
+
+/** More rows than this is a list nobody reads, and a query that needs narrowing. */
+export const MATCH_LIMIT = 50
+
+/** Every ancestor of a topic, shallowest first, excluding the topic itself. */
+export function ancestorTopics(topic: string): string[] {
+  const segments = topic.split('/').filter(Boolean)
+  const ancestors: string[] = []
+  for (let i = 0; i < segments.length - 1; i += 1) {
+    ancestors.push(segments.slice(0, i + 1).join('/'))
+  }
+  return ancestors
+}
+
+export function matchLoadedNodes(
+  nodes: UnsNode[],
+  query: string,
+  limit: number = MATCH_LIMIT,
+): UnsNode[] {
+  const needle = query.trim().toLowerCase()
+  if (needle === '') return []
+  return nodes
+    .filter(
+      (node) =>
+        node.topic.toLowerCase().includes(needle) || node.name.toLowerCase().includes(needle),
+    )
+    .sort((a, b) => a.topic.localeCompare(b.topic))
+    .slice(0, limit)
+}
+```
+
+- [ ] **Step 4: Write the failing tree-client test**
+
+This is spec test 9. Create `11_frontend/src/services/graphql/client-tree.test.ts`. The harness is the one foundation Task 8 established in `client-assets.test.ts` — copy `silentSocket`, `respond` and `sentBody` from that file rather than inventing a second shape.
+
+```ts
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { UnsGraphQLClient } from './client'
+
+function silentSocket() {
+  vi.stubGlobal(
+    'WebSocket',
+    class {
+      onopen = null
+      onmessage = null
+      onerror = null
+      onclose = null
+      send() {}
+      close() {}
+    },
+  )
+}
+
+/** Replies to every call in order; a shorter list than the calls made is a test bug. */
+function respondInOrder(...payloads: unknown[]) {
+  const fetchMock = vi.fn()
+  for (const data of payloads) {
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ data }) })
+  }
+  vi.stubGlobal('fetch', fetchMock)
+  return fetchMock
+}
+
+function bodies(fetchMock: ReturnType<typeof vi.fn>) {
+  return fetchMock.mock.calls.map((call) => JSON.parse(call[1].body as string))
+}
+
+const graphNode = (topic: string, nodeType = 'DEVICE_depth_1') => ({
+  nodeName: topic.split('/').pop(),
+  nodeType,
+  namespace: topic,
+  payload: { data: '{"value": 1}' },
+  created: '2026-09-01T00:00:00Z',
+  lastUpdated: '2026-09-02T06:00:00Z',
+})
+
+describe('the ISA-95 tree', () => {
+  let client: UnsGraphQLClient
+
+  beforeEach(() => {
+    silentSocket()
+    client = new UnsGraphQLClient('/graphql')
+  })
+
+  // Spec test 9, first half.
+  it('expands one level at a time and never sends a multi-level wildcard', async () => {
+    const fetchMock = respondInOrder(
+      { getAssetChildren: [], getTopicContext: null },
+      { getUnsNodes: [graphNode('CovestroAG/Dormagen/Utilities/Chiller_02')] },
+    )
+
+    await client.getUnsNodeChildren('CovestroAG/Dormagen/Utilities')
+
+    const sent = JSON.stringify(bodies(fetchMock))
+    expect(sent).toContain('CovestroAG/Dormagen/Utilities/+')
+    expect(sent).not.toContain('#')
+  })
+
+  it('asks for roots with a bare + when the Asset Model is empty', async () => {
+    const fetchMock = respondInOrder(
+      { getAssetChildren: [] },
+      { getUnsNodes: [graphNode('CovestroAG', 'ENTERPRISE')] },
+    )
+
+    await client.getUnsRootNodes()
+
+    const sent = JSON.stringify(bodies(fetchMock))
+    expect(sent).toContain('"topic":"+"')
+    expect(sent).not.toContain('#')
+  })
+
+  // Spec test 9, second half.
+  it('keeps Sparkplug out of the ISA-95 tree', async () => {
+    const fetchMock = respondInOrder(
+      { getAssetChildren: [] },
+      { getUnsNodes: [graphNode('CovestroAG', 'ENTERPRISE'), graphNode('spBv1.0', 'ENTERPRISE')] },
+    )
+
+    const roots = await client.getUnsRootNodes()
+
+    expect(roots.map((node) => node.topic)).toEqual(['CovestroAG'])
+    expect(bodies(fetchMock)).toHaveLength(2)
+  })
+
+  it('keeps Sparkplug out of a node’s children too', async () => {
+    respondInOrder(
+      { getAssetChildren: [], getTopicContext: null },
+      { getUnsNodes: [graphNode('spBv1.0/CovestroAG'), graphNode('CovestroAG/Dormagen')] },
+    )
+
+    const children = await client.getUnsNodeChildren('CovestroAG')
+
+    expect(children.map((node) => node.topic)).toEqual(['CovestroAG/Dormagen'])
+  })
+
+  // The probe deletion.
+  it('reports an empty branch as empty instead of inventing sensor names', async () => {
+    respondInOrder(
+      { getAssetChildren: [], getTopicContext: null },
+      { getUnsNodes: [] },
+    )
+
+    const children = await client.getUnsNodeChildren(
+      'CovestroAG/Dormagen/Production/Line1/Cell1/G1/ProcessValue',
+    )
+
+    expect(children).toEqual([])
+  })
+
+  it('does not invent parameter groups below a machine', async () => {
+    respondInOrder(
+      { getAssetChildren: [], getTopicContext: null },
+      { getUnsNodes: [] },
+    )
+
+    const children = await client.getUnsNodeChildren(
+      'CovestroAG/Dormagen/Production/Line1/Cell1/G1',
+    )
+
+    expect(children.map((node) => node.name)).toEqual([])
+  })
+})
+```
+
+Confirm the `graphNode` field names against `graphqlUnsNodeToUnsNode` in `src/services/graphql/mappers.ts` (or wherever `client.ts:5-30` imports it from) before running. If the mapper reads `node_name` rather than `nodeName`, the mapper wins and this fixture is wrong.
+
+- [ ] **Step 5: Run it and watch it fail**
+
+```bash
+cd 11_frontend && npx vitest run src/services/graphql/client-tree.test.ts
+```
+
+Expected: FAIL on the Sparkplug tests and the two empty-branch tests. The wildcard tests should already pass — fact 1 says the behaviour is correct today, and these two tests exist to keep it that way.
+
+- [ ] **Step 6: Delete the probe and filter Sparkplug out of the tree**
+
+Delete `11_frontend/src/lib/uns/isa95-probe.ts`.
+
+In `client.ts`, drop the `isParameterGroupTopic`, `syntheticSensorNodes`, `syntheticParameterGroupNodes` and `topicDepth` imports (check whether `topicDepth` is used anywhere else in the file first; if it is, keep it), and replace `getUnsRootNodes` and `getUnsNodeChildren`:
+
+```ts
+  /**
+   * The roots of the tree: the Asset Model's, or the graph database's when nothing has
+   * been modelled yet.
+   *
+   * An empty Asset Model is a platform that has been deployed but not yet described,
+   * and it must still show the traffic it is receiving.
+   */
+  public async getUnsRootNodes(): Promise<UnsNode[]> {
+    const roots = await this.getAssetChildren(null)
+    if (roots.length > 0) {
+      return roots.map(assetToUnsNode)
+    }
+    return withoutSparkplug(await this.getUnsNodes([childrenTopic('')]))
+  }
+
+  /**
+   * Children of a node: what the Asset Model declares below it, and what has been
+   * published below it where the model does not reach.
+   *
+   * Nothing is guessed. A branch with no authored Metric Definitions and no published
+   * traffic is empty, and the tree says so by not expanding. The hardcoded segment
+   * names that used to fill that gap named sensors the simulator happens to publish
+   * (see lib/uns/map-assets.ts) and were wrong for every other plant.
+   */
+  public async getUnsNodeChildren(parentTopic: string): Promise<UnsNode[]> {
+    const modelled = await this.getModelledChildren(parentTopic)
+    if (modelled.length > 0) {
+      return modelled
+    }
+    return withoutSparkplug(await this.getUnsNodes([childrenTopic(parentTopic)]))
+  }
+```
+
+Add the filter as a module-level function near the top of `client.ts`, beside the other helpers:
+
+```ts
+/**
+ * Sparkplug has its own destination and its own decoder. `spBv1.0/` is not part of the
+ * ISA-95 hierarchy, and `DEVICE` is a label in both the UNS and the Sparkplug node-type
+ * sets (`07_uns_graphql/src/uns_graphql/graphql_config.py:103-106`), so this is a cheap
+ * guarantee rather than a redundant one.
+ */
+function withoutSparkplug(nodes: UnsNode[]): UnsNode[] {
+  return nodes.filter((node) => !isSparkplugTopic(node.topic))
+}
+```
+
+importing `isSparkplugTopic` from `../../lib/uns/sparkplug`.
+
+Then fix the two comments in `lib/uns/node-meta.ts` that refer to the deleted probe — `hasNoTelemetryClock`'s "or a placeholder the tree probed for" and `isSyntheticUnsNode`'s "Placeholder or authored nodes". Both functions stay: `assetToUnsNode` and `metricChildNodes` still produce epoch-`lastUpdated` nodes (`lib/uns/map-assets.ts:31`), which is what `UNSContext.selectNode:137` uses them for.
+
+```ts
+/**
+ * True when a node has never carried telemetry: an Asset or a Metric the Asset Model
+ * declares but nothing has published to yet. Its payload has to be fetched before it
+ * can be shown, and it must not be counted as a stale sensor in the meantime.
+ */
+export function hasNoTelemetryClock(node: Pick<UnsNode, 'lastUpdated'>): boolean {
+  return new Date(node.lastUpdated).getTime() <= 0
+}
+
+/** Authored nodes that have no live payload in the graph database yet. */
+export function isSyntheticUnsNode(node: Pick<UnsNode, 'lastUpdated'>): boolean {
+  return hasNoTelemetryClock(node)
+}
+```
+
+- [ ] **Step 7: Run the tree tests and the whole suite**
+
+```bash
+cd 11_frontend && npx vitest run src/services/graphql && npx tsc --noEmit
+```
+
+Expected: PASS. `tsc` catches any remaining import of the deleted module. If a component imported `ISA95_PARAMETER_GROUPS` or `probeSensorTopics` directly, remove that use rather than reinstating the file — `grep -rn "isa95-probe" src` must print nothing.
+
+- [ ] **Step 8: Write the failing topic-browser test**
+
+This is spec test 10. Create `11_frontend/src/components/home/UnsTreeView.test.tsx`:
+
+```tsx
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { UnsNode } from '../../types/uns';
+
+const node = (topic: string, children?: UnsNode[]): UnsNode => ({
+  topic,
+  name: topic.split('/').pop() ?? topic,
+  namespace: topic,
+  nodeType: children ? 'AREA' : 'DEVICE_depth_1',
+  lastUpdated: '2026-09-02T06:00:00Z',
+  isLeaf: !children,
+  children,
+});
+
+const TREE = [
+  node('CovestroAG', [
+    node('CovestroAG/Dormagen', [
+      node('CovestroAG/Dormagen/Production'),
+      node('CovestroAG/Dormagen/Utilities'),
+    ]),
+  ]),
+];
+
+const LOADED = [
+  TREE[0],
+  TREE[0].children![0],
+  ...TREE[0].children![0].children!,
+  node('CovestroAG/Krefeld/Production/Line1/Cell1/Chiller_02'),
+];
+
+const jumpToTopicInTree = vi.fn();
+const toggleNodeExpanded = vi.fn();
+
+const harness = {
+  rootNodes: TREE,
+  expandedNodes: new Set(['CovestroAG', 'CovestroAG/Dormagen']),
+  toggleNodeExpanded,
+  selectedNode: null,
+  selectNode: vi.fn(),
+  treeLoading: false,
+  refreshTree: vi.fn(),
+  settings: { staleThresholdMinutes: 5 },
+  isBookmarked: () => false,
+  addBookmark: vi.fn(),
+  removeBookmark: vi.fn(),
+  allLoadedNodes: LOADED,
+  jumpToTopicInTree,
+};
+
+vi.mock('../../context/UNSContext', () => ({ useUNS: () => harness }));
+
+import { UnsTreeView } from './UnsTreeView';
+
+const treeRows = () =>
+  within(screen.getByTestId('tree-body'))
+    .queryAllByRole('treeitem')
+    .map((row) => row.getAttribute('data-topic'));
+
+describe('UnsTreeView search', () => {
+  beforeEach(() => {
+    jumpToTopicInTree.mockReset();
+    toggleNodeExpanded.mockReset();
+  });
+
+  // Spec test 10, first half.
+  it('leaves the tree’s rows unchanged while searching', async () => {
+    render(<UnsTreeView />);
+    const before = treeRows();
+    await userEvent.type(screen.getByLabelText(/find a topic/i), 'Chiller');
+    expect(treeRows()).toEqual(before);
+  });
+
+  it('lists the matches separately from the tree', async () => {
+    render(<UnsTreeView />);
+    await userEvent.type(screen.getByLabelText(/find a topic/i), 'Chiller');
+    const matches = screen.getByTestId('tree-matches');
+    expect(within(matches).getByText(/Krefeld\/Production\/Line1\/Cell1\/Chiller_02/)).toBeInTheDocument();
+    expect(within(matches).getByText(/1 match/i)).toBeInTheDocument();
+  });
+
+  // Spec test 10, second half.
+  it('expands the ancestors of a match when it is clicked', async () => {
+    render(<UnsTreeView />);
+    await userEvent.type(screen.getByLabelText(/find a topic/i), 'Chiller');
+    await userEvent.click(
+      within(screen.getByTestId('tree-matches')).getByRole('button', { name: /Chiller_02/ }),
+    );
+    expect(jumpToTopicInTree).toHaveBeenCalledWith(
+      'CovestroAG/Krefeld/Production/Line1/Cell1/Chiller_02',
+    );
+  });
+
+  it('says what the search covers instead of implying it covers the broker', async () => {
+    render(<UnsTreeView />);
+    await userEvent.type(screen.getByLabelText(/find a topic/i), 'Chiller');
+    expect(screen.getByTestId('tree-matches').textContent).toMatch(
+      /5 topics loaded in this browser/i,
+    );
+  });
+
+  it('says nothing matched, and why that is not the same as nothing existing', async () => {
+    render(<UnsTreeView />);
+    await userEvent.type(screen.getByLabelText(/find a topic/i), 'Reactor_01');
+    const matches = screen.getByTestId('tree-matches');
+    expect(within(matches).getByText(/no loaded topic matches/i)).toBeInTheDocument();
+    expect(within(matches).getByText(/expand more of the tree/i)).toBeInTheDocument();
+  });
+
+  it('shows no match list at all until something is typed', () => {
+    render(<UnsTreeView />);
+    expect(screen.queryByTestId('tree-matches')).not.toBeInTheDocument();
+  });
+
+  it('states the wildcard rule the tree follows', () => {
+    render(<UnsTreeView />);
+    const banner = screen.getByTestId('tree-wildcard-note').textContent ?? '';
+    expect(banner).toContain('+');
+    expect(banner).toMatch(/one level at a time/i);
+  });
+});
+```
+
+The `settings` field in the harness only needs `staleThresholdMinutes` because that is all `UnsTreeView` reads from it. If it reads more, widen the harness rather than the component.
+
+- [ ] **Step 9: Run it and watch it fail**
+
+```bash
+cd 11_frontend && npx vitest run src/components/home/UnsTreeView.test.tsx
+```
+
+Expected: FAIL. There is no `tree-body` test id, no `treeitem` role, no `tree-matches`, and the label is `Filter namespace topics...` as a placeholder rather than an accessible label.
+
+- [ ] **Step 10: Rework the tree's search**
+
+Four edits to `11_frontend/src/components/home/UnsTreeView.tsx`.
+
+First, delete the filter block at `:59-64` entirely — the six lines from `// Filter by search query if present` to the closing brace. Nothing replaces it inside `renderNode`.
+
+Second, give each row the tree semantics the test asserts, on the row `div` that already carries the `id`:
+
+```tsx
+          role="treeitem"
+          data-topic={node.topic}
+          aria-expanded={isExpandable ? isExpanded : undefined}
+          aria-selected={isSelected}
+```
+
+Third, replace the search input with a labelled one and add the match list. Pull `allLoadedNodes` and `jumpToTopicInTree` from `useUNS()`, and compute:
+
+```tsx
+  const matches = useMemo(
+    () => matchLoadedNodes(allLoadedNodes, searchQuery),
+    [allLoadedNodes, searchQuery],
+  );
+  const searching = searchQuery.trim() !== '';
+```
+
+The input:
+
+```tsx
+        <div className="relative">
+          <Search className="w-3 h-3 text-[#64748B] absolute left-2 top-2 pointer-events-none" />
+          <label htmlFor="tree-search" className="sr-only">
+            Find a topic
+          </label>
+          <input
+            id="tree-search"
+            type="text"
+            placeholder="Find a topic"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-white dark:bg-[#0B0B0C] border border-[#CBD5E1] dark:border-[#1E293B] rounded pl-7 pr-2 py-1 text-[11px] text-[#0F172A] dark:text-[#F8FAFC] placeholder-[#64748B] focus:outline-none focus:ring-2 focus:ring-sky-500 font-mono"
+          />
+        </div>
+```
+
+The match list, rendered between the header and the tree body so it never displaces plant structure:
+
+```tsx
+      {searching && (
+        <div
+          data-testid="tree-matches"
+          className="max-h-48 shrink-0 overflow-y-auto border-b border-[#E2E8F0] bg-[#F8FAFC] dark:border-[#1E293B] dark:bg-[#111114]"
+        >
+          <div className="flex items-baseline justify-between px-2.5 py-1 text-[11px] text-[#64748B]">
+            <span>
+              {matches.length === MATCH_LIMIT ? `First ${MATCH_LIMIT} matches` : `${matches.length} match${matches.length === 1 ? '' : 'es'}`}
+            </span>
+            <span>of {allLoadedNodes.length} topics loaded in this browser</span>
+          </div>
+
+          {matches.length === 0 ? (
+            <p className="px-2.5 pb-2 text-[11px] text-[#64748B]">
+              No loaded topic matches. Expand more of the tree to search deeper — the graph
+              database has no topic search, so this only covers what has been loaded.
+            </p>
+          ) : (
+            <ul>
+              {matches.map((match) => (
+                <li key={match.topic}>
+                  <button
+                    type="button"
+                    onClick={() => void jumpToTopicInTree(match.topic)}
+                    className="block w-full truncate px-2.5 py-0.5 text-left font-mono text-[11px] text-[#0F172A] hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500 dark:text-[#E2E8F0] dark:hover:bg-[#1E293B]/60"
+                    title={match.topic}
+                  >
+                    {match.topic}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+```
+
+Fourth, replace the query banner at the component's `Query: getUnsNodes(["+"])` block. It is wrong whenever the Asset Model is populated, because roots then come from `getAssetChildren(null)`. State the rule instead of the call:
+
+```tsx
+      <div
+        data-testid="tree-wildcard-note"
+        className="flex items-center justify-between border-b border-[#E2E8F0] bg-slate-100 px-2.5 py-1 font-mono text-[11px] text-[#64748B] dark:border-[#1E293B] dark:bg-[#111114]/70"
+      >
+        <span>Expanded one level at a time (+)</span>
+        <span>Never #</span>
+      </div>
+```
+
+And put `role="tree"` and `data-testid="tree-body"` on the scrolling tree container, so the `treeitem` rows sit inside the role that owns them.
+
+- [ ] **Step 11: Use `ancestorTopics` where the ancestors are expanded**
+
+In `11_frontend/src/context/UNSContext.tsx`, replace the hand-rolled segment loop inside `jumpToTopicInTree` with the tested helper. The behaviour is identical; the point is that the "expands ancestors" half of spec test 10 now rests on something with unit tests.
+
+```ts
+  const jumpToTopicInTree = async (targetTopic: string) => {
+    setActiveTab('namespace');
+    if (window.location.hash !== '#/namespace') {
+      window.location.hash = '#/namespace';
+    }
+
+    const expanded = new Set(expandedNodes);
+    for (const ancestor of ancestorTopics(targetTopic)) {
+      expanded.add(ancestor);
+      const children = await unsGraphQLClient.getUnsNodeChildren(ancestor);
+      setNodeChildrenMap((prev) => new Map(prev).set(ancestor, children));
+    }
+    setExpandedNodes(expanded);
+
+    const nodes = await unsGraphQLClient.getUnsNodes([targetTopic]);
+    if (nodes.length > 0) {
+      setSelectedNode(nodes[0]);
+    }
+  };
+```
+
+Import `ancestorTopics` from `../lib/uns/tree-search`.
+
+- [ ] **Step 12: Run the browser tests**
+
+```bash
+cd 11_frontend && npx vitest run src/components/home/UnsTreeView.test.tsx src/lib/uns
+```
+
+Expected: PASS.
+
+- [ ] **Step 13: Write the failing property-search test**
+
+Create `11_frontend/src/components/namespace/FindByProperty.test.tsx`:
+
+```tsx
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const getUnsNodesByProperty = vi.fn();
+const jumpToTopicInTree = vi.fn();
+
+vi.mock('../../services/graphql/client', () => ({
+  unsGraphQLClient: {
+    getUnsNodesByProperty: (...args: unknown[]) => getUnsNodesByProperty(...args),
+  },
+}));
+vi.mock('../../context/UNSContext', () => ({ useUNS: () => ({ jumpToTopicInTree }) }));
+
+import { FindByProperty } from './FindByProperty';
+
+const MATCH = {
+  topic: 'CovestroAG/Dormagen/Utilities/Chiller_02/temperature',
+  name: 'temperature',
+  namespace: 'CovestroAG/Dormagen/Utilities/Chiller_02/temperature',
+  lastUpdated: '2026-09-02T06:00:00Z',
+  isLeaf: true,
+};
+
+describe('FindByProperty', () => {
+  beforeEach(() => {
+    getUnsNodesByProperty.mockReset().mockResolvedValue([MATCH]);
+    jumpToTopicInTree.mockReset();
+  });
+
+  it('sends the payload keys it was given, splitting on commas', async () => {
+    render(<FindByProperty />);
+    await userEvent.clear(screen.getByLabelText(/payload key/i));
+    await userEvent.type(screen.getByLabelText(/payload key/i), 'temperature, setpoint');
+    await userEvent.click(screen.getByRole('button', { name: /^search$/i }));
+    expect(getUnsNodesByProperty).toHaveBeenCalledWith(
+      ['temperature', 'setpoint'],
+      ['spBv1.0/#'],
+      true,
+    );
+  });
+
+  it('excludes Sparkplug by default and says where it is read instead', () => {
+    render(<FindByProperty />);
+    expect((screen.getByLabelText(/exclude topics/i) as HTMLInputElement).value).toBe('spBv1.0/#');
+    expect(screen.getByText(/decoded on the Sparkplug screen/i)).toBeInTheDocument();
+  });
+
+  it('sends no topic filter when the exclude box is cleared', async () => {
+    render(<FindByProperty />);
+    await userEvent.clear(screen.getByLabelText(/exclude topics/i));
+    await userEvent.click(screen.getByRole('button', { name: /^search$/i }));
+    expect(getUnsNodesByProperty).toHaveBeenCalledWith(['temperature'], undefined, false);
+  });
+
+  it('lists each matching topic and can show it in the tree', async () => {
+    render(<FindByProperty />);
+    await userEvent.click(screen.getByRole('button', { name: /^search$/i }));
+    const row = (await screen.findByText(MATCH.topic)).closest('li')!;
+    await userEvent.click(within(row).getByRole('button', { name: /show in tree/i }));
+    expect(jumpToTopicInTree).toHaveBeenCalledWith(MATCH.topic);
+  });
+
+  it('offers no operator, because the query has none', () => {
+    render(<FindByProperty />);
+    expect(screen.queryByLabelText(/operator/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'AND' })).not.toBeInTheDocument();
+  });
+
+  it('distinguishes no results from not having searched', async () => {
+    getUnsNodesByProperty.mockResolvedValue([]);
+    render(<FindByProperty />);
+    expect(screen.getByText(/enter a payload key/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /^search$/i }));
+    expect(await screen.findByText(/no UNS Node carries/i)).toBeInTheDocument();
+  });
+
+  it('will not search with no key', async () => {
+    render(<FindByProperty />);
+    await userEvent.clear(screen.getByLabelText(/payload key/i));
+    expect(screen.getByRole('button', { name: /^search$/i })).toBeDisabled();
+    expect(getUnsNodesByProperty).not.toHaveBeenCalled();
+  });
+
+  it('shows a failed search rather than an empty list', async () => {
+    getUnsNodesByProperty.mockRejectedValue(new Error('GraphQL endpoint unreachable'));
+    render(<FindByProperty />);
+    await userEvent.click(screen.getByRole('button', { name: /^search$/i }));
+    expect(await screen.findByText(/GraphQL endpoint unreachable/)).toBeInTheDocument();
+  });
+});
+```
+
+- [ ] **Step 14: Run it and watch it fail**
+
+```bash
+cd 11_frontend && npx vitest run src/components/namespace/FindByProperty.test.tsx
+```
+
+Expected: FAIL — `Failed to resolve import "./FindByProperty"`.
+
+- [ ] **Step 15: Write `FindByProperty`**
+
+```tsx
+import React, { useState } from 'react';
+import type { UnsNode } from '../../types/uns';
+import { unsGraphQLClient } from '../../services/graphql/client';
+import { useUNS } from '../../context/UNSContext';
+import { isSparkplugTopic, SPARKPLUG_PREFIX } from '../../lib/uns/sparkplug';
+import { StatusPill } from '../common/StatusPill';
+
+/** The Sparkplug namespace, as an MQTT filter the server turns into a regex. */
+const SPARKPLUG_FILTER = `${SPARKPLUG_PREFIX}#`;
+
+const splitList = (raw: string): string[] =>
+  raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+/**
+ * Which topics carry a given payload key.
+ *
+ * This is getUnsNodesByProperty, whose own description is "Get all UNSNodes published
+ * which have specific attribute name as 'propertyKeys'" — it matches keys inside the
+ * payload, not topic segments, and it takes no AND/OR/NOT operator. The `#` in the
+ * exclude box is legitimate: it is a topic filter the server compiles to a regex, not
+ * a tree expansion.
+ */
+export const FindByProperty: React.FC = () => {
+  const { jumpToTopicInTree } = useUNS();
+  const [keysInput, setKeysInput] = useState('temperature');
+  const [excludeInput, setExcludeInput] = useState(SPARKPLUG_FILTER);
+  const [results, setResults] = useState<UnsNode[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [running, setRunning] = useState(false);
+
+  const keys = splitList(keysInput);
+
+  const search = async () => {
+    const excludes = splitList(excludeInput);
+    setRunning(true);
+    setError(null);
+    try {
+      const found = await unsGraphQLClient.getUnsNodesByProperty(
+        keys,
+        excludes.length ? excludes : undefined,
+        excludes.length > 0,
+      );
+      setResults(found);
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      setResults(null);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0 space-y-2 border-b border-[#E2E8F0] px-3 py-2 dark:border-[#1E293B]">
+        <h2 className="text-[12px] font-bold text-[#0F172A] dark:text-[#E2E8F0]">
+          Find by payload key
+        </h2>
+
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-0.5">
+            <label htmlFor="prop-keys" className="block text-[11px] text-[#64748B]">
+              Payload keys, comma separated
+            </label>
+            <input
+              id="prop-keys"
+              value={keysInput}
+              onChange={(changeEvent) => setKeysInput(changeEvent.target.value)}
+              className="w-64 rounded border border-[#CBD5E1] bg-transparent px-2 py-0.5 font-mono text-[11px] focus:outline-none focus:ring-2 focus:ring-sky-500 dark:border-[#334155]"
+            />
+          </div>
+
+          <div className="space-y-0.5">
+            <label htmlFor="prop-exclude" className="block text-[11px] text-[#64748B]">
+              Exclude topics
+            </label>
+            <input
+              id="prop-exclude"
+              value={excludeInput}
+              onChange={(changeEvent) => setExcludeInput(changeEvent.target.value)}
+              className="w-56 rounded border border-[#CBD5E1] bg-transparent px-2 py-0.5 font-mono text-[11px] focus:outline-none focus:ring-2 focus:ring-sky-500 dark:border-[#334155]"
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={() => void search()}
+            disabled={keys.length === 0 || running}
+            className="rounded bg-sky-600 px-3 py-1 text-[11px] font-medium text-white disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-sky-400"
+          >
+            Search
+          </button>
+        </div>
+
+        <p className="text-[11px] text-[#64748B]">
+          Matches keys inside the published payload, not topic segments. Sparkplug topics are
+          excluded by default — they are decoded on the Sparkplug screen, never here.
+        </p>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {error && <p className="px-3 py-2 text-[12px] text-red-600 dark:text-red-400">{error}</p>}
+
+        {!error && results === null && (
+          <p className="px-3 py-2 text-[12px] text-[#64748B]">
+            Enter a payload key and search. Every UNS Node whose payload carries that key is
+            listed with its topic.
+          </p>
+        )}
+
+        {!error && results !== null && results.length === 0 && (
+          <p className="px-3 py-2 text-[12px] text-[#64748B]">
+            No UNS Node carries {keys.map((key) => `"${key}"`).join(' or ')}. Nothing has
+            published that key, or the exclude filter removed it.
+          </p>
+        )}
+
+        {!error && results !== null && results.length > 0 && (
+          <ul className="divide-y divide-[#E2E8F0] dark:divide-[#1E293B]">
+            {results.map((node) => (
+              <li
+                key={node.topic}
+                className="flex items-center justify-between gap-2 px-3 py-1 text-[11px]"
+              >
+                <span className="truncate font-mono text-[#0F172A] dark:text-[#E2E8F0]">
+                  {node.topic}
+                </span>
+                <span className="flex shrink-0 items-center gap-2">
+                  {isSparkplugTopic(node.topic) && (
+                    <StatusPill
+                      label="Sparkplug"
+                      tone="neutral"
+                      title="Read this on the Sparkplug screen; the console does not decode it here"
+                    />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void jumpToTopicInTree(node.topic)}
+                    className="rounded px-1.5 py-0.5 text-[11px] text-sky-700 hover:bg-sky-500/10 focus:outline-none focus:ring-2 focus:ring-sky-500 dark:text-sky-300"
+                  >
+                    Show in tree
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+};
+```
+
+`StatusPill`'s prop names come from Task 5 — use whatever it actually exports rather than this call shape if they differ.
+
+- [ ] **Step 16: Write the failing view test**
+
+Create `11_frontend/src/components/namespace/NamespaceView.test.tsx`:
+
+```tsx
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('../home/UnsTreeView', () => ({ UnsTreeView: () => <div>topic tree</div> }));
+vi.mock('../home/PayloadInspector', () => ({ PayloadInspector: () => <div>payload</div> }));
+vi.mock('../home/LiveMqttFeed', () => ({ LiveMqttFeed: () => <div>live feed</div> }));
+vi.mock('./FindByProperty', () => ({ FindByProperty: () => <div>property search</div> }));
+
+import { NamespaceView } from './NamespaceView';
+
+describe('NamespaceView', () => {
+  it('shows the tree, the payload and the feed together', () => {
+    render(<NamespaceView />);
+    expect(screen.getByText('topic tree')).toBeInTheDocument();
+    expect(screen.getByText('payload')).toBeInTheDocument();
+    expect(screen.getByText('live feed')).toBeInTheDocument();
+  });
+
+  it('says what this destination shows, and what it does not', () => {
+    render(<NamespaceView />);
+    expect(screen.getByText(/discovered from published traffic/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /assets/i })).toHaveAttribute('href', '#/assets');
+  });
+
+  it('swaps the payload pane for the property search on request', async () => {
+    render(<NamespaceView />);
+    await userEvent.click(screen.getByRole('button', { name: /find by payload key/i }));
+    expect(screen.getByText('property search')).toBeInTheDocument();
+    expect(screen.queryByText('payload')).not.toBeInTheDocument();
+    expect(screen.getByText('topic tree')).toBeInTheDocument();
+  });
+});
+```
+
+- [ ] **Step 17: Run it and watch it fail**
+
+```bash
+cd 11_frontend && npx vitest run src/components/namespace/NamespaceView.test.tsx
+```
+
+Expected: FAIL — `Failed to resolve import "./NamespaceView"`.
+
+- [ ] **Step 18: Write `NamespaceView`**
+
+```tsx
+import React, { useState } from 'react';
+import { UnsTreeView } from '../home/UnsTreeView';
+import { PayloadInspector } from '../home/PayloadInspector';
+import { LiveMqttFeed } from '../home/LiveMqttFeed';
+import { FindByProperty } from './FindByProperty';
+
+/**
+ * The graph of UNS Nodes, discovered from traffic.
+ *
+ * Separate from ASSETS on purpose: the Asset Model is authored and this is observed, so
+ * a machine that has not published yet is absent here and present there. The header says
+ * which of the two a reader is looking at, because the two look alike and mean opposite
+ * things when a row is missing.
+ */
+export const NamespaceView: React.FC = () => {
+  const [pane, setPane] = useState<'payload' | 'property'>('payload');
+
+  return (
+    <div className="flex h-full min-h-0 flex-col" data-testid="namespace-view">
+      <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-[#E2E8F0] px-3 py-2 dark:border-[#1E293B]">
+        <h1 className="text-[13px] font-bold text-[#0F172A] dark:text-[#E2E8F0]">Namespace</h1>
+        <span className="text-[11px] text-[#64748B]">
+          Discovered from published traffic. What is <em>authored</em> is under{' '}
+          <a href="#/assets" className="text-sky-700 underline dark:text-sky-300">
+            Assets
+          </a>
+          .
+        </span>
+        <span className="ml-auto flex items-center gap-1">
+          {(
+            [
+              ['payload', 'Selected payload'],
+              ['property', 'Find by payload key'],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setPane(id)}
+              aria-pressed={pane === id}
+              className={`rounded px-2 py-0.5 text-[11px] focus:outline-none focus:ring-2 focus:ring-sky-500 ${
+                pane === id
+                  ? 'bg-[#1E293B] text-white dark:bg-[#E2E8F0] dark:text-[#0B0B0C]'
+                  : 'text-[#64748B] hover:bg-[#F1F5F9] dark:hover:bg-[#1E293B]/40'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </span>
+      </div>
+
+      <div className="grid min-h-0 flex-1 grid-cols-12">
+        <section
+          aria-label="Topic tree"
+          className="col-span-3 min-h-0 overflow-hidden border-r border-[#E2E8F0] dark:border-[#1E293B]"
+        >
+          <UnsTreeView />
+        </section>
+        <section
+          aria-label={pane === 'payload' ? 'Selected payload' : 'Find by payload key'}
+          className="col-span-5 flex min-h-0 flex-col overflow-hidden border-r border-[#E2E8F0] dark:border-[#1E293B]"
+        >
+          {pane === 'payload' ? <PayloadInspector /> : <FindByProperty />}
+        </section>
+        <section aria-label="Live feed" className="col-span-4 min-h-0 overflow-hidden">
+          <LiveMqttFeed />
+        </section>
+      </div>
+    </div>
+  );
+};
+```
+
+The three-pane split is the layout `HomeView.tsx` already used, minus its mobile stacking — per the constraints this console is desktop-first at 1280px and above, and the panes scroll rather than the shell.
+
+- [ ] **Step 19: Point the route at it and delete `HomeView`**
+
+In `11_frontend/src/App.tsx`, replace the Task 1 placeholder for `/namespace` with `<NamespaceView />`. Then delete `11_frontend/src/components/home/HomeView.tsx`: `NamespaceView` replaces it, and `grep -rn "HomeView" src` must print nothing before the commit. Its three children stay where they are.
+
+- [ ] **Step 20: Run everything**
+
+```bash
+cd 11_frontend && npx vitest run && npx tsc --noEmit && npm run lint
+```
+
+Expected: PASS. `grep -rn "isa95-probe\|HomeView" src` prints nothing.
+
+- [ ] **Step 21: Commit**
+
+```bash
+git add 11_frontend/src/lib/uns/tree-search.ts 11_frontend/src/lib/uns/tree-search.test.ts \
+        11_frontend/src/lib/uns/node-meta.ts 11_frontend/src/services/graphql/client.ts \
+        11_frontend/src/services/graphql/client-tree.test.ts 11_frontend/src/context/UNSContext.tsx \
+        11_frontend/src/components/home/ 11_frontend/src/components/namespace/ 11_frontend/src/App.tsx
+git rm 11_frontend/src/lib/uns/isa95-probe.ts 11_frontend/src/components/home/HomeView.tsx
+git commit -m "feat(frontend): namespace browsing that neither hides nor invents topics
+
+Two defects in the topic tree. Typing in the search box hid every row that did not
+match, so looking for one machine removed the plant around it; matches are now a list
+above the tree and the tree's rows do not change. And when the Asset Model declared
+nothing and a single-level query returned nothing, the tree filled the gap with
+ProcessValue/Setpoint/Status/Alarm/EVENT and six sensor names taken from the simulator -
+rows for topics that were never published. lib/uns/map-assets.ts already called that out
+as wrong for every plant that is not the simulator and already replaced it with authored
+Metric Definitions, so this deletes lib/uns/isa95-probe.ts and lets an empty branch be
+empty.
+
+Sparkplug is filtered out of tree roots and children: DEVICE is a label in both the UNS
+and Sparkplug node-type sets, so the guarantee is worth making in one line.
+
+getUnsNodesByProperty gets the screen the gap table gives it. It matches payload keys
+rather than topic segments and takes no AND/OR/NOT operator, so the panel says the first
+and offers no control for the second.
+
+Text search covers the topics loaded in this browser and says so with the count. There is
+no server-side topic search to call; that is marked requires backend."
+```
+
+---
+
+---
+
+## Task 18: HISTORIAN — the query the API actually supports, and a CSV of the rows on screen
+
+This is spec section 18 test 13: *"**Historian by property** sends the OR/AND/NOT
+combination the form expresses, and CSV export contains exactly the loaded rows."*
+
+Seven facts from the repo set the whole shape of this task. Read them before writing code,
+because five of them are defects and the task exists to remove them.
+
+**1. The query has no row limit and no ordering.** `HistorianDBHelper._fetch`
+(`07_uns_graphql/src/uns_graphql/backend/historian.py:115-175`) builds
+`SELECT time, topic, client_id, mqtt_msg FROM <table> WHERE …` and executes it. There is no
+`LIMIT`, no `OFFSET` and no `ORDER BY`. Two consequences, and the current UI gets both wrong:
+
+- The footer at `explore/HistorianTable.tsx:219` says *"Pagination: Backend GraphQL schema
+  returns single query batch (Pagination blocked pending GraphQL schema)"*. That reads as
+  "the backend truncated your results and we cannot fetch page two". The opposite is true:
+  every matching row is already here, and there is no page two to fetch. Replace the notice
+  with the fact, and do not build a fake pager.
+- Row order is whatever the database returns. The table renders rows in array order and
+  labels the column `Timestamp`, which invites an operator to read the first row as the
+  newest event. Sort in the view — and say the sort is the view's, not the historian's.
+
+**2. `binaryOperator` means three specific things.** From `HistorianDBHelper` and the
+resolver in `07_uns_graphql/src/uns_graphql/queries/historian.py`, property matching uses a
+JSON path of the form `$.**."key"`, so a key matches **at any depth** in the payload, and:
+
+| Operator | Matches an event when |
+|---|---|
+| `OR`  | any one of the keys is present |
+| `AND` | all of the keys are present |
+| `NOT` | none of the keys is present |
+
+Topic and time filters are always ANDed on top. The form must say which of the three it is
+sending in those words, because "NOT" alone reads as "not the first key".
+
+**3. Only the historian query takes the operator.** `getHistoricEventsByProperty` has
+`binaryOperator`; `getUnsNodesByProperty` does not (`queries/graph.py:312-347`). Task 17
+moved the node-property search to NAMESPACE. This task deletes the fourth mode from the
+historian form, which is the other half of that move.
+
+**4. CSV exports a different row set than the header counts.** `handleExportCsv`
+(`explore/HistorianTable.tsx:34-74`) iterates `events`, while the header at `:84` shows
+`{filteredEvents.length} / {events.length} rows`. Type a filter, click Export, and you get
+rows you cannot see. Spec test 13 says "exactly the loaded rows"; the fix is to export the
+rows on screen and put that number in the button label, so the two readings of "loaded"
+become the same number and the button cannot lie about it.
+
+**5. The export button is gated by a permission that gates nothing.**
+`canExport = hasPermission('export_csv')` renders a padlock and the title *"Export CSV
+permission restricted by Administrator"* over rows that are already in the browser's
+memory and already on the screen. Anyone can read them, select them, or open devtools. The
+gate is theatre, so it goes. Real restriction would have to happen in the resolver, and no
+query supports it — **requires backend**, out of scope for this cycle and for the
+authentication cycle too, which gates mutations rather than reads.
+
+**6. The form runs a query on every keystroke.** `ExploreView` closes `runQuery` over every
+input value and then does `useEffect(() => { runQuery(); }, [runQuery])` (`:144-146`).
+`runQuery`'s identity changes whenever any field changes, so each character typed into the
+topic box fires another unbounded historian query. Combined with fact 1 that is a real
+hazard, not just waste. The rebuilt screen queries on an explicit **Run query** and on a
+deep link from `jumpToHistorian`, and on nothing else.
+
+**7. A topic with no wildcard is silently rewritten.** `resolveHistorianTopic` appends `/#`
+via `historianTopic` (`src/lib/uns/topics.ts:12`). On the broker side
+`get_regex_for_topic_with_wildcard` (`02_mqtt-cluster/src/uns_mqtt/mqtt_listener.py:374-398`)
+maps `a/#` to `a(/.*)*` — the comment at `:389` states that `a/#` "should map to just `a`
+too". So `Plant/Line1` is queried as `Plant/Line1/#`, which matches `Plant/Line1` **and**
+everything beneath it. That is the behaviour an operator wants; it is also a rewrite of what
+they typed, so the screen shows the resolved topic.
+
+**One structural change.** Once `ExploreView` is deleted, `src/components/explore/` holds
+only `HistorianTable` and `HistorianTrendChart`, both used solely by the Historian screen. A
+directory named after a menu item that no longer exists is the same class of untruth as a
+badge that lies, so both files move to `historian/` with `git mv`. Their bodies are
+otherwise unchanged apart from the table's four fixes above; the trend chart is not touched
+at all beyond its import paths, and it stays a native chart rather than a Grafana embed
+because it plots exactly the rows the query returned — no bucketing, no server-side
+aggregation, nothing to be wrong about. (Task 11's PLANT ▸ Trend embeds Grafana instead,
+because that surface trends a Metric over a range the browser never loads.)
+
+**Files:**
+- Create: `11_frontend/src/lib/csv/to-csv.ts`
+- Create: `11_frontend/src/lib/csv/to-csv.test.ts`
+- Create: `11_frontend/src/lib/uns/historian-query.ts`
+- Create: `11_frontend/src/lib/uns/historian-query.test.ts`
+- Create: `11_frontend/src/lib/uns/historian-csv.ts`
+- Create: `11_frontend/src/lib/uns/historian-csv.test.ts`
+- Create: `11_frontend/src/components/historian/HistorianQueryForm.tsx`
+- Create: `11_frontend/src/components/historian/HistorianView.tsx`
+- Create: `11_frontend/src/components/historian/HistorianView.test.tsx`
+- Create: `11_frontend/src/components/historian/HistorianTable.test.tsx`
+- Move + modify: `11_frontend/src/components/explore/HistorianTable.tsx` →
+  `11_frontend/src/components/historian/HistorianTable.tsx` (`:1-20` imports and the
+  permission gate, `:33-74` the export, `:84` the row count, `:101-116` the button,
+  `:215-222` the footer)
+- Move: `11_frontend/src/components/explore/HistorianTrendChart.tsx` →
+  `11_frontend/src/components/historian/HistorianTrendChart.tsx` (import paths only)
+- Delete: `11_frontend/src/components/explore/ExploreView.tsx`
+- Modify: `11_frontend/src/App.tsx` (the `/historian` route from Task 1)
+
+**Interfaces:**
+- Consumes:
+  - `unsGraphQLClient.getHistoricEvents(topic: string, fromTime?: string, toTime?: string): Promise<HistoricEvent[]>`,
+    `.getHistoricEventsByPublishers(publishers: string[], topics?: string[], fromTime?: string, toTime?: string): Promise<HistoricEvent[]>`,
+    `.getHistoricEventsByProperty(propertyKeys: string[], binaryOperator?: BinaryOperator, topics?: string[], fromTime?: string, toTime?: string): Promise<HistoricEvent[]>`
+    — all three exist today at `src/services/graphql/client.ts` and all three `throw` on a
+    transport error rather than returning a result object. Confirm the parameter order in
+    the file before wiring the calls; do not change their signatures.
+  - `historianTopic` from `src/lib/uns/topics.ts`.
+  - `HistoricEvent`, `BinaryOperator` from `src/types/uns.ts`.
+  - `useUNS()` for `historianInitialTopic` and `selectedNode` (Task 1 left both in place).
+  - `StatusPill` from Task 5.
+- Produces:
+  ```ts
+  // src/lib/csv/to-csv.ts — domain-free, so nothing about UNS leaks into the serialiser
+  export interface CsvColumn<T> {
+    header: string;
+    value: (row: T) => unknown;
+  }
+  /** RFC 4180: CRLF rows, quotes doubled, a field quoted only when it needs to be. */
+  export function toCsv<T>(columns: CsvColumn<T>[], rows: T[]): string;
+  /** Triggers a browser download. Prepends a BOM so Excel reads the file as UTF-8. */
+  export function downloadCsv(filename: string, csv: string): void;
+  ```
+  ```ts
+  // src/lib/uns/historian-query.ts — the form's state, and the pure functions over it
+  export type HistorianMode = 'topic-time' | 'publisher' | 'payload-key';
+  export type TimePreset = '5m' | '15m' | '1h' | '6h' | '24h' | 'all' | 'custom';
+
+  export interface HistorianQuery {
+    mode: HistorianMode;
+    topic: string;
+    publishers: string;
+    propertyKeys: string;
+    operator: BinaryOperator;
+    preset: TimePreset;
+    /** `datetime-local` values, i.e. 'YYYY-MM-DDTHH:mm' in the browser's zone. */
+    customStart: string;
+    customEnd: string;
+  }
+
+  export const MODE_LABELS: Record<HistorianMode, string>;
+  export const OPERATOR_MEANING: Record<BinaryOperator, string>;
+  export function defaultQuery(topic: string, now: number): HistorianQuery;
+  export function timeBounds(query: HistorianQuery, now: number): { start?: string; end?: string };
+  export function resolveHistorianTopic(topic: string): string;
+  export function parseList(input: string): string[];
+  ```
+  ```ts
+  // src/lib/uns/historian-csv.ts
+  export function payloadKeys(rows: HistoricEvent[]): string[];
+  export function historianCsvColumns(rows: HistoricEvent[]): CsvColumn<HistoricEvent>[];
+  export function historianCsvFilename(now: Date): string;
+  ```
+  ```tsx
+  // src/components/historian/HistorianQueryForm.tsx — presentational only
+  export const HistorianQueryForm: React.FC<{
+    query: HistorianQuery;
+    onChange: (next: HistorianQuery) => void;
+    onRun: () => void;
+    loading: boolean;
+    error: string | null;
+  }>;
+  ```
+  ```tsx
+  // src/components/historian/HistorianView.tsx
+  export const HistorianView: React.FC;
+  // src/components/historian/HistorianTable.tsx — `topicTitle` dropped, it was never read
+  export const HistorianTable: React.FC<{ events: HistoricEvent[]; isLoading: boolean }>;
+  ```
+
+- [ ] **Step 1: Write the failing CSV serialiser test**
+
+Create `11_frontend/src/lib/csv/to-csv.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { CsvColumn, toCsv } from './to-csv';
+
+interface Row {
+  topic: string;
+  value: unknown;
+}
+
+const columns: CsvColumn<Row>[] = [
+  { header: 'topic', value: (r) => r.topic },
+  { header: 'value', value: (r) => r.value },
+];
+
+describe('toCsv', () => {
+  it('writes a header row and one row per input, separated by CRLF', () => {
+    const csv = toCsv(columns, [
+      { topic: 'a/b', value: 1 },
+      { topic: 'a/c', value: 2 },
+    ]);
+    expect(csv).toBe('topic,value\r\na/b,1\r\na/c,2');
+  });
+
+  it('writes only the header when there are no rows', () => {
+    expect(toCsv(columns, [])).toBe('topic,value');
+  });
+
+  it('quotes a field containing a comma, a quote or a newline, and doubles quotes', () => {
+    const csv = toCsv(columns, [
+      { topic: 'a,b', value: 'say "hi"' },
+      { topic: 'multi\nline', value: 'plain' },
+    ]);
+    expect(csv).toBe('topic,value\r\n"a,b","say ""hi"""\r\n"multi\nline",plain');
+  });
+
+  it('leaves an ordinary field unquoted', () => {
+    expect(toCsv(columns, [{ topic: 'a/b/c', value: 12.5 }])).toContain('a/b/c,12.5');
+  });
+
+  it('writes an empty field for null and undefined, not the words', () => {
+    const csv = toCsv(columns, [{ topic: 'a', value: null }, { topic: 'b', value: undefined }]);
+    expect(csv).toBe('topic,value\r\na,\r\nb,');
+  });
+
+  it('serialises an object field as JSON in one cell', () => {
+    const csv = toCsv(columns, [{ topic: 'a', value: { x: 1, y: 'z' } }]);
+    expect(csv).toBe('topic,value\r\na,"{""x"":1,""y"":""z""}"');
+  });
+});
+```
+
+- [ ] **Step 2: Run it and watch it fail**
+
+```bash
+cd 11_frontend && npx vitest run src/lib/csv/to-csv.test.ts
+```
+
+Expected: FAIL — `Failed to resolve import "./to-csv"`.
+
+- [ ] **Step 3: Write the serialiser**
+
+Create `11_frontend/src/lib/csv/to-csv.ts`:
+
+```ts
+export interface CsvColumn<T> {
+  header: string;
+  value: (row: T) => unknown;
+}
+
+/** A field needs quoting only if it contains the delimiter, a quote, or a line break. */
+const NEEDS_QUOTING = /[",\r\n]/;
+
+function field(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  const raw = typeof value === 'object' ? JSON.stringify(value) : String(value);
+  return NEEDS_QUOTING.test(raw) ? `"${raw.replace(/"/g, '""')}"` : raw;
+}
+
+/** RFC 4180: CRLF rows, quotes doubled, a field quoted only when it needs to be. */
+export function toCsv<T>(columns: CsvColumn<T>[], rows: T[]): string {
+  const lines = [columns.map((column) => field(column.header)).join(',')];
+  for (const row of rows) {
+    lines.push(columns.map((column) => field(column.value(row))).join(','));
+  }
+  return lines.join('\r\n');
+}
+
+/** Triggers a browser download. Prepends a BOM so Excel reads the file as UTF-8. */
+export function downloadCsv(filename: string, csv: string): void {
+  const blob = new Blob(['﻿', csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  // The old implementation never revoked, so every export leaked a blob for the
+  // lifetime of the tab.
+  URL.revokeObjectURL(url);
+}
+```
+
+- [ ] **Step 4: Run it and watch it pass**
+
+```bash
+cd 11_frontend && npx vitest run src/lib/csv/to-csv.test.ts
+```
+
+Expected: PASS, 6 tests.
+
+- [ ] **Step 5: Write the failing query-state test**
+
+Create `11_frontend/src/lib/uns/historian-query.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest';
+import {
+  defaultQuery,
+  parseList,
+  resolveHistorianTopic,
+  timeBounds,
+  MODE_LABELS,
+  OPERATOR_MEANING,
+} from './historian-query';
+
+const NOW = Date.parse('2026-09-02T12:00:00.000Z');
+
+describe('resolveHistorianTopic', () => {
+  it('appends /# to a topic with no wildcard, which also matches the topic itself', () => {
+    expect(resolveHistorianTopic('CovestroAG/Dormagen/Line1')).toBe('CovestroAG/Dormagen/Line1/#');
+  });
+
+  it('leaves a topic that already has a wildcard alone', () => {
+    expect(resolveHistorianTopic('CovestroAG/#')).toBe('CovestroAG/#');
+    expect(resolveHistorianTopic('CovestroAG/+/Line1')).toBe('CovestroAG/+/Line1');
+  });
+
+  it('trims, and returns empty for blank input', () => {
+    expect(resolveHistorianTopic('  a/b  ')).toBe('a/b/#');
+    expect(resolveHistorianTopic('   ')).toBe('');
+  });
+});
+
+describe('timeBounds', () => {
+  it('turns a preset into an ISO window ending now', () => {
+    const bounds = timeBounds({ ...defaultQuery('', NOW), preset: '15m' }, NOW);
+    expect(bounds).toEqual({
+      start: '2026-09-02T11:45:00.000Z',
+      end: '2026-09-02T12:00:00.000Z',
+    });
+  });
+
+  it('sends no bounds for the all-time preset', () => {
+    expect(timeBounds({ ...defaultQuery('', NOW), preset: 'all' }, NOW)).toEqual({});
+  });
+
+  it('converts the custom local values to ISO', () => {
+    const bounds = timeBounds(
+      {
+        ...defaultQuery('', NOW),
+        preset: 'custom',
+        customStart: '2026-09-01T08:00',
+        customEnd: '2026-09-01T09:30',
+      },
+      NOW,
+    );
+    expect(bounds.start).toBe(new Date('2026-09-01T08:00').toISOString());
+    expect(bounds.end).toBe(new Date('2026-09-01T09:30').toISOString());
+  });
+
+  it('drops an unparseable custom bound rather than sending "Invalid Date"', () => {
+    const bounds = timeBounds(
+      { ...defaultQuery('', NOW), preset: 'custom', customStart: '', customEnd: '' },
+      NOW,
+    );
+    expect(bounds).toEqual({});
+  });
+});
+
+describe('parseList', () => {
+  it('splits on commas and drops blanks', () => {
+    expect(parseList(' site , cell_id ,, ')).toEqual(['site', 'cell_id']);
+  });
+
+  it('returns an empty array for an empty string', () => {
+    expect(parseList('   ')).toEqual([]);
+  });
+});
+
+describe('the labels an operator reads', () => {
+  it('names the three modes in plain language, not in GraphQL field names', () => {
+    expect(Object.values(MODE_LABELS)).toEqual(['By topic and time', 'By publisher', 'By payload key']);
+    expect(Object.values(MODE_LABELS).join(' ')).not.toMatch(/getHistoric/);
+  });
+
+  it('spells out what each operator does to the result', () => {
+    expect(OPERATOR_MEANING.OR).toBe('any of these keys is present');
+    expect(OPERATOR_MEANING.AND).toBe('all of these keys are present');
+    expect(OPERATOR_MEANING.NOT).toBe('none of these keys is present');
+  });
+});
+
+describe('defaultQuery', () => {
+  it('starts on topic and time, over the last hour, with the topic it was given', () => {
+    const query = defaultQuery('CovestroAG/Dormagen', NOW);
+    expect(query.mode).toBe('topic-time');
+    expect(query.preset).toBe('1h');
+    expect(query.topic).toBe('CovestroAG/Dormagen');
+    expect(query.operator).toBe('OR');
+  });
+});
+```
+
+The two `custom` assertions compare against `new Date(...)` rather than a literal because
+`datetime-local` values have no zone and the suite must pass in any `TZ`.
+
+- [ ] **Step 6: Run it and watch it fail**
+
+```bash
+cd 11_frontend && npx vitest run src/lib/uns/historian-query.test.ts
+```
+
+Expected: FAIL — `Failed to resolve import "./historian-query"`.
+
+- [ ] **Step 7: Write the query-state module**
+
+Create `11_frontend/src/lib/uns/historian-query.ts`:
+
+```ts
+import { BinaryOperator } from '../../types/uns';
+import { historianTopic } from './topics';
+
+export type HistorianMode = 'topic-time' | 'publisher' | 'payload-key';
+export type TimePreset = '5m' | '15m' | '1h' | '6h' | '24h' | 'all' | 'custom';
+
+export interface HistorianQuery {
+  mode: HistorianMode;
+  topic: string;
+  publishers: string;
+  propertyKeys: string;
+  operator: BinaryOperator;
+  preset: TimePreset;
+  /** `datetime-local` values, i.e. 'YYYY-MM-DDTHH:mm' in the browser's zone. */
+  customStart: string;
+  customEnd: string;
+}
+
+/** Operators are the resolver's, labels are the operator's. Never show the field name. */
+export const MODE_LABELS: Record<HistorianMode, string> = {
+  'topic-time': 'By topic and time',
+  publisher: 'By publisher',
+  'payload-key': 'By payload key',
+};
+
+/**
+ * What `binaryOperator` does to the result set, in the resolver's own terms: a key is
+ * matched at any depth in the payload, and the topic and time filters are ANDed on top.
+ */
+export const OPERATOR_MEANING: Record<BinaryOperator, string> = {
+  OR: 'any of these keys is present',
+  AND: 'all of these keys are present',
+  NOT: 'none of these keys is present',
+};
+
+const PRESET_MS: Record<Exclude<TimePreset, 'all' | 'custom'>, number> = {
+  '5m': 5 * 60 * 1000,
+  '15m': 15 * 60 * 1000,
+  '1h': 60 * 60 * 1000,
+  '6h': 6 * 60 * 60 * 1000,
+  '24h': 24 * 60 * 60 * 1000,
+};
+
+/** Local `datetime-local` string for a moment, so the custom pickers open somewhere sane. */
+function localInputValue(ms: number): string {
+  const at = new Date(ms);
+  const offset = at.getTimezoneOffset() * 60 * 1000;
+  return new Date(ms - offset).toISOString().slice(0, 16);
+}
+
+export function defaultQuery(topic: string, now: number): HistorianQuery {
+  return {
+    mode: 'topic-time',
+    topic,
+    publishers: '',
+    propertyKeys: '',
+    operator: 'OR',
+    preset: '1h',
+    customStart: localInputValue(now - PRESET_MS['1h']),
+    customEnd: localInputValue(now),
+  };
+}
+
+function isoOrUndefined(value: string): string | undefined {
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? undefined : new Date(ms).toISOString();
+}
+
+export function timeBounds(query: HistorianQuery, now: number): { start?: string; end?: string } {
+  if (query.preset === 'all') return {};
+  if (query.preset === 'custom') {
+    const start = isoOrUndefined(query.customStart);
+    const end = isoOrUndefined(query.customEnd);
+    // An omitted bound is an omitted filter, not an "Invalid Date" the resolver rejects.
+    return { ...(start ? { start } : {}), ...(end ? { end } : {}) };
+  }
+  return {
+    start: new Date(now - PRESET_MS[query.preset]).toISOString(),
+    end: new Date(now).toISOString(),
+  };
+}
+
+/**
+ * A topic with no wildcard is queried as `topic/#`. The broker's own regex maps `a/#` to
+ * `a(/.*)*`, so that form matches `a` itself as well as everything under it
+ * (`02_mqtt-cluster/src/uns_mqtt/mqtt_listener.py:374-398`).
+ */
+export function resolveHistorianTopic(topic: string): string {
+  const trimmed = topic.trim();
+  if (!trimmed || trimmed.includes('#') || trimmed.includes('+')) return trimmed;
+  return historianTopic(trimmed);
+}
+
+export function parseList(input: string): string[] {
+  return input
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+```
+
+- [ ] **Step 8: Run it and watch it pass**
+
+```bash
+cd 11_frontend && npx vitest run src/lib/uns/historian-query.test.ts
+```
+
+Expected: PASS, 11 tests.
+
+- [ ] **Step 9: Write the failing CSV-columns test**
+
+Create `11_frontend/src/lib/uns/historian-csv.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { HistoricEvent } from '../../types/uns';
+import { historianCsvColumns, historianCsvFilename, payloadKeys } from './historian-csv';
+import { toCsv } from '../csv/to-csv';
+
+const ROWS: HistoricEvent[] = [
+  {
+    id: 'e1',
+    topic: 'CovestroAG/Dormagen/Line1/Reactor',
+    publisher: 'edge:s7',
+    timestamp: '2026-09-02T11:59:00.000Z',
+    payload: { temperature: 71.2, unit: 'C' },
+  },
+  {
+    id: 'e2',
+    topic: 'CovestroAG/Dormagen/Line1/Pump',
+    publisher: null,
+    timestamp: '2026-09-02T11:58:00.000Z',
+    payload: { pressure: 4.1 },
+  },
+];
+
+describe('payloadKeys', () => {
+  it('unions the top-level keys across the rows, sorted', () => {
+    expect(payloadKeys(ROWS)).toEqual(['pressure', 'temperature', 'unit']);
+  });
+
+  it('ignores a payload that is not a plain object', () => {
+    expect(
+      payloadKeys([
+        { ...ROWS[0], payload: 'raw string' as unknown as Record<string, unknown> },
+        { ...ROWS[1], payload: [1, 2] as unknown as Record<string, unknown> },
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe('historianCsvColumns', () => {
+  it('leads with the four columns the historian row has, then one per payload key', () => {
+    expect(historianCsvColumns(ROWS).map((column) => column.header)).toEqual([
+      'timestamp',
+      'topic',
+      'publisher',
+      'payload',
+      'pressure',
+      'temperature',
+      'unit',
+    ]);
+  });
+
+  it('leaves a key absent from a row empty instead of writing 0', () => {
+    const csv = toCsv(historianCsvColumns(ROWS), ROWS).split('\r\n');
+    expect(csv[2]).toBe(
+      '2026-09-02T11:58:00.000Z,CovestroAG/Dormagen/Line1/Pump,,"{""pressure"":4.1}",4.1,,',
+    );
+  });
+
+  it('keeps the whole payload in one cell so a nested value is never lost', () => {
+    const nested: HistoricEvent = {
+      ...ROWS[0],
+      payload: { outer: { inner: 5 } },
+    };
+    const csv = toCsv(historianCsvColumns([nested]), [nested]);
+    expect(csv).toContain('"{""outer"":{""inner"":5}}"');
+  });
+});
+
+describe('historianCsvFilename', () => {
+  it('stamps the file with the moment of export, to the second', () => {
+    expect(historianCsvFilename(new Date('2026-09-02T12:00:05.000Z'))).toBe(
+      'historic-events-2026-09-02T12-00-05Z.csv',
+    );
+  });
+});
+```
+
+- [ ] **Step 10: Run it and watch it fail**
+
+```bash
+cd 11_frontend && npx vitest run src/lib/uns/historian-csv.test.ts
+```
+
+Expected: FAIL — `Failed to resolve import "./historian-csv"`.
+
+- [ ] **Step 11: Write the CSV columns**
+
+Create `11_frontend/src/lib/uns/historian-csv.ts`:
+
+```ts
+import { CsvColumn } from '../csv/to-csv';
+import { HistoricEvent } from '../../types/uns';
+
+function asRecord(payload: unknown): Record<string, unknown> | null {
+  return payload && typeof payload === 'object' && !Array.isArray(payload)
+    ? (payload as Record<string, unknown>)
+    : null;
+}
+
+/**
+ * The historian's own columns. `id` is deliberately absent: the SELECT reads
+ * `time, topic, client_id, mqtt_msg` and nothing else, so the `id` on `HistoricEvent` is
+ * assigned by this client. Exporting it would imply a row identity the store does not have.
+ */
+const HISTORIAN_COLUMNS: CsvColumn<HistoricEvent>[] = [
+  { header: 'timestamp', value: (event) => event.timestamp },
+  { header: 'topic', value: (event) => event.topic },
+  { header: 'publisher', value: (event) => event.publisher },
+  { header: 'payload', value: (event) => event.payload },
+];
+
+/** Top-level payload keys across the given rows, so the export widens to the data. */
+export function payloadKeys(rows: HistoricEvent[]): string[] {
+  const keys = new Set<string>();
+  for (const row of rows) {
+    const record = asRecord(row.payload);
+    if (record) Object.keys(record).forEach((key) => keys.add(key));
+  }
+  return Array.from(keys).sort();
+}
+
+export function historianCsvColumns(rows: HistoricEvent[]): CsvColumn<HistoricEvent>[] {
+  return [
+    ...HISTORIAN_COLUMNS,
+    ...payloadKeys(rows).map((key) => ({
+      header: key,
+      value: (event: HistoricEvent) => asRecord(event.payload)?.[key],
+    })),
+  ];
+}
+
+export function historianCsvFilename(now: Date): string {
+  const stamp = now.toISOString().slice(0, 19).replace(/:/g, '-');
+  return `historic-events-${stamp}Z.csv`;
+}
+```
+
+- [ ] **Step 12: Run it and watch it pass**
+
+```bash
+cd 11_frontend && npx vitest run src/lib/uns/historian-csv.test.ts
+```
+
+Expected: PASS, 5 tests. If the `publisher: null` row writes the word `null` rather than an
+empty cell, `field` in `to-csv.ts` is wrong, not this module.
+
+- [ ] **Step 13: Commit the three pure modules**
+
+```bash
+git add 11_frontend/src/lib/csv 11_frontend/src/lib/uns/historian-query.ts \
+  11_frontend/src/lib/uns/historian-query.test.ts \
+  11_frontend/src/lib/uns/historian-csv.ts 11_frontend/src/lib/uns/historian-csv.test.ts
+git commit -m "feat(frontend): CSV serialiser and historian query state
+
+Three pure modules the Historian screen builds on: an RFC 4180 serialiser, the
+form state with the time-bound and /# rewrite rules, and the historian's CSV
+columns. The operator meanings are the resolver's OR/AND/NOT semantics spelled
+out in words."
+```
+
+- [ ] **Step 14: Move the two kept components**
+
+```bash
+cd 11_frontend
+mkdir -p src/components/historian
+git mv src/components/explore/HistorianTable.tsx src/components/historian/HistorianTable.tsx
+git mv src/components/explore/HistorianTrendChart.tsx src/components/historian/HistorianTrendChart.tsx
+```
+
+Both files import from `'../../types/uns'`, `'../common/JsonViewer'`, `'../../context/UNSContext'`
+and `'../../lib/uns/telemetry-metrics'`. The nesting depth is unchanged, so **no import path
+changes**. Verify rather than assume:
+
+```bash
+cd 11_frontend && npx tsc --noEmit 2>&1 | grep -i "historian" || echo "no historian import errors"
+```
+
+`ExploreView.tsx` still imports from `./HistorianTable`, which is now gone, so `tsc` will
+report that one file. That is expected and Step 22 deletes it.
+
+- [ ] **Step 15: Write the failing table test**
+
+Create `11_frontend/src/components/historian/HistorianTable.test.tsx`. It mocks only
+`downloadCsv` and keeps the real `toCsv`, so the assertion runs over the bytes an operator
+would actually receive. That also keeps `URL.createObjectURL` out of the test, which jsdom
+does not implement.
+
+```tsx
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { HistoricEvent } from '../../types/uns';
+
+const downloaded: { name: string; csv: string }[] = [];
+
+vi.mock('../../lib/csv/to-csv', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/csv/to-csv')>();
+  return {
+    ...actual,
+    downloadCsv: (name: string, csv: string) => {
+      downloaded.push({ name, csv });
+    },
+  };
+});
+
+vi.mock('../../context/UNSContext', () => ({
+  useUNS: () => ({ jumpToTopicInTree: vi.fn() }),
+}));
+
+import { HistorianTable } from './HistorianTable';
+
+const EVENTS: HistoricEvent[] = [
+  {
+    id: 'e1',
+    topic: 'CovestroAG/Dormagen/Line1/Reactor',
+    publisher: 'edge:s7',
+    timestamp: '2026-09-02T11:59:00.000Z',
+    payload: { temperature: 71.2 },
+  },
+  {
+    id: 'e2',
+    topic: 'CovestroAG/Dormagen/Line1/Pump',
+    publisher: 'edge:s7',
+    timestamp: '2026-09-02T11:58:00.000Z',
+    payload: { pressure: 4.1 },
+  },
+  {
+    id: 'e3',
+    topic: 'CovestroAG/Krefeld/Line9/Reactor',
+    publisher: 'edge:beckhoff',
+    timestamp: '2026-09-02T11:57:00.000Z',
+    payload: { temperature: 68.4 },
+  },
+];
+
+describe('HistorianTable', () => {
+  beforeEach(() => {
+    downloaded.length = 0;
+  });
+
+  it('exports exactly the rows on screen, not every row loaded', async () => {
+    const user = userEvent.setup();
+    render(<HistorianTable events={EVENTS} isLoading={false} />);
+
+    await user.type(screen.getByRole('textbox', { name: /filter rows/i }), 'Krefeld');
+    expect(screen.getByTestId('historian-row-count')).toHaveTextContent('1 of 3 rows shown');
+
+    await user.click(screen.getByRole('button', { name: 'Export 1 row to CSV' }));
+
+    expect(downloaded).toHaveLength(1);
+    const lines = downloaded[0].csv.split('\r\n');
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toContain('CovestroAG/Krefeld/Line9/Reactor');
+    expect(downloaded[0].csv).not.toContain('Dormagen');
+  });
+
+  it('names the row count in the button so the two cannot drift apart', () => {
+    render(<HistorianTable events={EVENTS} isLoading={false} />);
+    expect(screen.getByRole('button', { name: 'Export 3 rows to CSV' })).toBeEnabled();
+  });
+
+  it('disables the export only when there is nothing on screen', () => {
+    render(<HistorianTable events={[]} isLoading={false} />);
+    expect(screen.getByRole('button', { name: /export/i })).toBeDisabled();
+  });
+
+  it('does not gate the export behind a permission over rows already rendered', () => {
+    render(<HistorianTable events={EVENTS} isLoading={false} />);
+    expect(screen.queryByTitle(/restricted by administrator/i)).toBeNull();
+  });
+
+  it('states that every matching row arrived, instead of claiming pagination is blocked', () => {
+    render(<HistorianTable events={EVENTS} isLoading={false} />);
+    const footer = screen.getByTestId('historian-footer');
+    expect(footer).toHaveTextContent('no row limit');
+    expect(footer).toHaveTextContent('All 3 matching rows arrived in one response');
+    expect(footer).not.toHaveTextContent(/pagination/i);
+    expect(screen.queryByRole('button', { name: /next page/i })).toBeNull();
+  });
+});
+```
+
+- [ ] **Step 16: Run it and watch it fail**
+
+```bash
+cd 11_frontend && npx vitest run src/components/historian/HistorianTable.test.tsx
+```
+
+Expected: FAIL. The filter input has no accessible name, the button reads `Export CSV`, and
+`historian-row-count` / `historian-footer` do not exist.
+
+- [ ] **Step 17: Fix the four defects in the table**
+
+In `11_frontend/src/components/historian/HistorianTable.tsx`, replace the imports and the
+top of the component (`:1-74`) with:
+
+```tsx
+import React, { useMemo, useState } from 'react';
+import { Download, ChevronDown, ChevronRight, Search, FileSpreadsheet, ExternalLink } from 'lucide-react';
+import { HistoricEvent } from '../../types/uns';
+import { JsonViewer } from '../common/JsonViewer';
+import { useUNS } from '../../context/UNSContext';
+import { downloadCsv, toCsv } from '../../lib/csv/to-csv';
+import { historianCsvColumns, historianCsvFilename } from '../../lib/uns/historian-csv';
+
+interface HistorianTableProps {
+  events: HistoricEvent[];
+  isLoading: boolean;
+}
+
+export const HistorianTable: React.FC<HistorianTableProps> = ({ events, isLoading }) => {
+  const { jumpToTopicInTree } = useUNS();
+  const [filterText, setFilterText] = useState('');
+  const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
+
+  const visibleRows = useMemo(() => {
+    if (!filterText) return events;
+    const query = filterText.toLowerCase();
+    return events.filter(
+      (event) =>
+        event.topic.toLowerCase().includes(query) ||
+        (event.publisher ?? '').toLowerCase().includes(query) ||
+        JSON.stringify(event.payload).toLowerCase().includes(query),
+    );
+  }, [events, filterText]);
+
+  // Exactly the rows on screen. The button label carries the same number, so a filtered
+  // export cannot quietly hand over rows the operator never saw.
+  const handleExportCsv = () => {
+    if (visibleRows.length === 0) return;
+    downloadCsv(
+      historianCsvFilename(new Date()),
+      toCsv(historianCsvColumns(visibleRows), visibleRows),
+    );
+  };
+
+  const exportLabel = `Export ${visibleRows.length} ${visibleRows.length === 1 ? 'row' : 'rows'} to CSV`;
+```
+
+Then replace the header controls (the old `:79-117`) with:
+
+```tsx
+  return (
+    <div
+      id="historian-table-container"
+      className="flex flex-col overflow-hidden rounded-lg border border-[#E2E8F0] bg-white dark:border-[#1E293B] dark:bg-[#111114]"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E2E8F0] bg-white p-3 text-[12px] dark:border-[#1E293B] dark:bg-[#111114]">
+        <div className="flex items-center gap-2">
+          <FileSpreadsheet className="h-4 w-4 text-emerald-600 dark:text-[#10B981]" />
+          <span className="text-[12px] font-semibold text-[#0F172A] dark:text-[#F8FAFC]">Historic Events</span>
+          <span
+            data-testid="historian-row-count"
+            className="rounded bg-slate-200 px-1.5 py-0.5 font-mono text-[11px] text-[#475569] dark:bg-[#1E293B] dark:text-[#94A3B8]"
+          >
+            {visibleRows.length} of {events.length} rows shown
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <label htmlFor="historian-filter" className="sr-only">
+              Filter rows
+            </label>
+            <Search className="pointer-events-none absolute left-2 top-2 h-3 w-3 text-[#64748B]" />
+            <input
+              id="historian-filter"
+              type="text"
+              placeholder="Topic, publisher or payload"
+              value={filterText}
+              onChange={(event) => setFilterText(event.target.value)}
+              className="w-44 rounded border border-[#CBD5E1] bg-[#F8FAFC] py-1 pl-7 pr-2 font-mono text-[11px] text-[#0F172A] placeholder-[#64748B] focus:border-amber-500 focus:outline-none sm:w-56 dark:border-[#1E293B] dark:bg-[#0B0B0C] dark:text-[#F8FAFC] dark:focus:border-[#FFC107]"
+            />
+          </div>
+
+          <button
+            id="export-historian-csv-btn"
+            type="button"
+            onClick={handleExportCsv}
+            disabled={visibleRows.length === 0}
+            className="flex cursor-pointer items-center gap-1 rounded border border-[#10B981]/40 bg-[#10B981]/15 px-2.5 py-1 font-mono text-[11px] font-medium text-[#0F9D63] transition-colors hover:bg-[#10B981]/25 disabled:cursor-not-allowed disabled:opacity-40 dark:text-[#10B981]"
+          >
+            <Download className="h-3.5 w-3.5" />
+            <span>{exportLabel}</span>
+          </button>
+        </div>
+      </div>
+```
+
+The rest of the table body is unchanged except that every `filteredEvents` becomes
+`visibleRows`, the loading line reads `Reading Historic Events…` instead of
+`Querying Timescale historian records...`, and the empty line reads:
+
+```tsx
+              <tr>
+                <td colSpan={6} className="py-8 text-center text-[#64748B]">
+                  <p>No Historic Events matched this query.</p>
+                  <p className="mt-1 text-[11px] text-[#94A3B8]">
+                    Widen the time range, or check that this topic is being published.
+                  </p>
+                </td>
+              </tr>
+```
+
+Finally replace the footer (the old `:215-222`):
+
+```tsx
+      <div
+        data-testid="historian-footer"
+        className="flex flex-wrap items-center justify-between gap-2 border-t border-[#E2E8F0] bg-[#F8FAFC] p-2.5 font-mono text-[11px] text-[#64748B] dark:border-[#1E293B] dark:bg-[#0B0B0C]"
+      >
+        {/* The historian SELECT has no LIMIT and no OFFSET, so there is no page two to
+            fetch and no pager to build. Say so rather than implying a truncated result. */}
+        <span>
+          This query has no row limit. All {events.length} matching rows arrived in one response.
+        </span>
+        <span>Export writes the {visibleRows.length} rows shown.</span>
+      </div>
+```
+
+Delete the `useAuth` import, the `hasPermission` call, the `canExport` constant and the
+`Lock` import. `Lock` is no longer used anywhere in this file, so leaving it would fail lint.
+
+- [ ] **Step 18: Run it and watch it pass**
+
+```bash
+cd 11_frontend && npx vitest run src/components/historian/HistorianTable.test.tsx
+```
+
+Expected: PASS, 5 tests.
+
+- [ ] **Step 19: Write the failing view test**
+
+Create `11_frontend/src/components/historian/HistorianView.test.tsx`. This is spec test 13's
+operator half. The table and the chart are mocked, so the assertions are about what the view
+sends and in what order it hands rows over.
+
+```tsx
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { HistoricEvent } from '../../types/uns';
+
+const getHistoricEvents = vi.fn();
+const getHistoricEventsByPublishers = vi.fn();
+const getHistoricEventsByProperty = vi.fn();
+
+vi.mock('../../services/graphql/client', () => ({
+  unsGraphQLClient: {
+    getHistoricEvents: (...args: unknown[]) => getHistoricEvents(...args),
+    getHistoricEventsByPublishers: (...args: unknown[]) => getHistoricEventsByPublishers(...args),
+    getHistoricEventsByProperty: (...args: unknown[]) => getHistoricEventsByProperty(...args),
+  },
+}));
+
+const unsContext = { historianInitialTopic: '', selectedNode: null as { topic: string } | null };
+vi.mock('../../context/UNSContext', () => ({ useUNS: () => unsContext }));
+
+vi.mock('./HistorianTable', () => ({
+  HistorianTable: ({ events, isLoading }: { events: HistoricEvent[]; isLoading: boolean }) => (
+    <div data-testid="table">{isLoading ? 'loading' : events.map((event) => event.id).join(',')}</div>
+  ),
+}));
+
+vi.mock('./HistorianTrendChart', () => ({
+  HistorianTrendChart: () => <div data-testid="chart" />,
+}));
+
+import { HistorianView } from './HistorianView';
+
+const NOW = new Date('2026-09-02T12:00:00.000Z');
+const START = '2026-09-02T11:00:00.000Z';
+const END = '2026-09-02T12:00:00.000Z';
+
+const event = (id: string, timestamp: string): HistoricEvent => ({
+  id,
+  topic: 'CovestroAG/Dormagen/Line1',
+  publisher: 'edge:s7',
+  timestamp,
+  payload: { value: 1 },
+});
+
+const setup = () => {
+  const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  render(<HistorianView />);
+  return user;
+};
+
+describe('HistorianView', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(NOW);
+    unsContext.historianInitialTopic = '';
+    unsContext.selectedNode = null;
+    getHistoricEvents.mockReset().mockResolvedValue([]);
+    getHistoricEventsByPublishers.mockReset().mockResolvedValue([]);
+    getHistoricEventsByProperty.mockReset().mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('names the three modes in plain language', () => {
+    setup();
+    expect(screen.getByRole('button', { name: 'By topic and time' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'By publisher' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'By payload key' })).toBeInTheDocument();
+    expect(screen.queryByText(/getHistoricEvents/)).toBeNull();
+    expect(screen.queryByText(/getUnsNodesByProperty/)).toBeNull();
+  });
+
+  it('does not query while the operator is still typing', async () => {
+    const user = setup();
+    await user.type(screen.getByRole('textbox', { name: /topic/i }), 'CovestroAG/Dormagen');
+    expect(getHistoricEvents).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: /run query/i }));
+    expect(getHistoricEvents).toHaveBeenCalledTimes(1);
+  });
+
+  it('discloses that a wildcard-free topic is queried as topic/#', async () => {
+    const user = setup();
+    await user.type(screen.getByRole('textbox', { name: /topic/i }), 'CovestroAG/Dormagen');
+    await user.click(screen.getByRole('button', { name: /run query/i }));
+
+    expect(getHistoricEvents).toHaveBeenCalledWith('CovestroAG/Dormagen/#', START, END);
+    expect(screen.getByTestId('historian-topic-note')).toHaveTextContent(
+      'Queried as CovestroAG/Dormagen/# — which also matches CovestroAG/Dormagen itself.',
+    );
+  });
+
+  it.each([
+    ['any of these keys is present', 'OR'],
+    ['all of these keys are present', 'AND'],
+    ['none of these keys is present', 'NOT'],
+  ])('sends %s as binaryOperator %s', async (meaning, operator) => {
+    const user = setup();
+    await user.click(screen.getByRole('button', { name: 'By payload key' }));
+    await user.type(screen.getByRole('textbox', { name: /payload keys/i }), 'site, cell_id');
+    await user.selectOptions(screen.getByRole('combobox', { name: /match/i }), operator);
+    await user.click(screen.getByRole('button', { name: /run query/i }));
+
+    expect(getHistoricEventsByProperty).toHaveBeenCalledWith(
+      ['site', 'cell_id'],
+      operator,
+      undefined,
+      START,
+      END,
+    );
+    expect(screen.getByRole('combobox', { name: /match/i })).toHaveAccessibleDescription(
+      new RegExp(meaning),
+    );
+  });
+
+  it('sends the publisher list split on commas', async () => {
+    const user = setup();
+    await user.click(screen.getByRole('button', { name: 'By publisher' }));
+    await user.type(screen.getByRole('textbox', { name: /publishers/i }), 'edge:s7, edge:beckhoff');
+    await user.click(screen.getByRole('button', { name: /run query/i }));
+
+    expect(getHistoricEventsByPublishers).toHaveBeenCalledWith(
+      ['edge:s7', 'edge:beckhoff'],
+      undefined,
+      START,
+      END,
+    );
+  });
+
+  it('sorts rows newest first, because the historian query has no ORDER BY', async () => {
+    getHistoricEvents.mockResolvedValue([
+      event('old', '2026-09-02T11:10:00.000Z'),
+      event('new', '2026-09-02T11:50:00.000Z'),
+      event('mid', '2026-09-02T11:30:00.000Z'),
+    ]);
+    const user = setup();
+    await user.type(screen.getByRole('textbox', { name: /topic/i }), 'a/b');
+    await user.click(screen.getByRole('button', { name: /run query/i }));
+
+    expect(await screen.findByTestId('table')).toHaveTextContent('new,mid,old');
+    expect(screen.getByTestId('historian-order-note')).toHaveTextContent('Sorted newest first');
+  });
+
+  it('refuses to run an empty topic and says what to enter', async () => {
+    const user = setup();
+    await user.click(screen.getByRole('button', { name: /run query/i }));
+
+    expect(getHistoricEvents).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert')).toHaveTextContent(/enter a topic/i);
+  });
+
+  it('shows the transport error and clears the rows', async () => {
+    getHistoricEvents.mockRejectedValue(new Error('GraphQL endpoint unreachable'));
+    const user = setup();
+    await user.type(screen.getByRole('textbox', { name: /topic/i }), 'a/b');
+    await user.click(screen.getByRole('button', { name: /run query/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('GraphQL endpoint unreachable');
+    expect(screen.getByTestId('table')).toHaveTextContent('');
+  });
+
+  it('warns that the query has no row limit before it is run', () => {
+    setup();
+    expect(screen.getByTestId('historian-no-limit-note')).toHaveTextContent(
+      'no row limit',
+    );
+  });
+
+  it('runs once for a topic arriving from another screen', async () => {
+    unsContext.historianInitialTopic = 'CovestroAG/Krefeld/Line9';
+    setup();
+    await vi.waitFor(() =>
+      expect(getHistoricEvents).toHaveBeenCalledWith('CovestroAG/Krefeld/Line9/#', START, END),
+    );
+    expect(getHistoricEvents).toHaveBeenCalledTimes(1);
+  });
+});
+```
+
+`vi.useFakeTimers({ shouldAdvanceTime: true })` plus `advanceTimers` on the `userEvent`
+setup is what lets a pinned clock coexist with `userEvent`'s internal delays; without it
+every `await user.type` hangs.
+
+- [ ] **Step 20: Run it and watch it fail**
+
+```bash
+cd 11_frontend && npx vitest run src/components/historian/HistorianView.test.tsx
+```
+
+Expected: FAIL — `HistorianView` is still Task 1's placeholder shell, so no mode buttons exist.
+
+- [ ] **Step 21: Write the query form**
+
+Create `11_frontend/src/components/historian/HistorianQueryForm.tsx`:
+
+```tsx
+import React from 'react';
+import { Clock, RefreshCw } from 'lucide-react';
+import { BinaryOperator } from '../../types/uns';
+import {
+  HistorianMode,
+  HistorianQuery,
+  MODE_LABELS,
+  OPERATOR_MEANING,
+  TimePreset,
+  resolveHistorianTopic,
+} from '../../lib/uns/historian-query';
+
+const MODES: HistorianMode[] = ['topic-time', 'publisher', 'payload-key'];
+const PRESETS: TimePreset[] = ['5m', '15m', '1h', '6h', '24h', 'all', 'custom'];
+const PRESET_LABELS: Record<TimePreset, string> = {
+  '5m': '5m',
+  '15m': '15m',
+  '1h': '1h',
+  '6h': '6h',
+  '24h': '24h',
+  all: 'All time',
+  custom: 'Custom',
+};
+
+const fieldClass =
+  'w-full rounded border border-[#CBD5E1] bg-[#F8FAFC] px-2.5 py-1.5 font-mono text-[12px] text-[#0F172A] focus:border-amber-500 focus:outline-none dark:border-[#1E293B] dark:bg-[#0B0B0C] dark:text-[#F8FAFC] dark:focus:border-[#FFC107]';
+const labelClass = 'text-[11px] font-medium text-[#475569] dark:text-[#94A3B8]';
+
+interface HistorianQueryFormProps {
+  query: HistorianQuery;
+  onChange: (next: HistorianQuery) => void;
+  onRun: () => void;
+  loading: boolean;
+  error: string | null;
+}
+
+export const HistorianQueryForm: React.FC<HistorianQueryFormProps> = ({
+  query,
+  onChange,
+  onRun,
+  loading,
+  error,
+}) => {
+  const set = <K extends keyof HistorianQuery>(key: K, value: HistorianQuery[K]) =>
+    onChange({ ...query, [key]: value });
+
+  const resolvedTopic = resolveHistorianTopic(query.topic);
+  const rewritten = resolvedTopic !== query.topic.trim() && resolvedTopic !== '';
+
+  return (
+    <form
+      className="space-y-3 rounded-lg border border-[#E2E8F0] bg-white p-4 dark:border-[#1E293B] dark:bg-[#111114]"
+      onSubmit={(submit) => {
+        submit.preventDefault();
+        onRun();
+      }}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E2E8F0] pb-3 dark:border-[#1E293B]">
+        <div>
+          <h1 className="text-[13px] font-semibold text-[#0F172A] dark:text-[#F8FAFC]">Historian</h1>
+          <p className="text-[11px] text-[#64748B] dark:text-[#94A3B8]">
+            Historic Events recorded from the Unified Namespace.
+          </p>
+        </div>
+
+        <div
+          role="group"
+          aria-label="Query the historian"
+          className="flex flex-wrap items-center gap-1 rounded border border-[#E2E8F0] bg-[#F1F5F9] p-1 dark:border-[#1E293B] dark:bg-[#0B0B0C]"
+        >
+          {MODES.map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              aria-pressed={query.mode === mode}
+              onClick={() => set('mode', mode)}
+              className={`cursor-pointer rounded px-2.5 py-1 text-[11px] transition-colors ${
+                query.mode === mode
+                  ? 'bg-amber-500 font-semibold text-[#0B0B0C] dark:bg-[#FFC107]'
+                  : 'text-[#64748B] hover:text-[#0F172A] dark:text-[#94A3B8] dark:hover:text-[#F8FAFC]'
+              }`}
+            >
+              {MODE_LABELS[mode]}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 items-end gap-3 md:grid-cols-12">
+        {query.mode === 'topic-time' && (
+          <div className="space-y-1 md:col-span-6">
+            <label className={labelClass} htmlFor="historian-topic">
+              Topic
+            </label>
+            <input
+              id="historian-topic"
+              className={fieldClass}
+              value={query.topic}
+              onChange={(change) => set('topic', change.target.value)}
+              placeholder="CovestroAG/Dormagen/Line1"
+            />
+          </div>
+        )}
+
+        {query.mode === 'publisher' && (
+          <div className="space-y-1 md:col-span-6">
+            <label className={labelClass} htmlFor="historian-publishers">
+              Publishers, comma separated
+            </label>
+            <input
+              id="historian-publishers"
+              className={fieldClass}
+              value={query.publishers}
+              onChange={(change) => set('publishers', change.target.value)}
+              placeholder="edge:siemens_s7_1500, edge:beckhoff_twincat"
+            />
+          </div>
+        )}
+
+        {query.mode === 'payload-key' && (
+          <>
+            <div className="space-y-1 md:col-span-4">
+              <label className={labelClass} htmlFor="historian-keys">
+                Payload keys, comma separated
+              </label>
+              <input
+                id="historian-keys"
+                className={fieldClass}
+                value={query.propertyKeys}
+                onChange={(change) => set('propertyKeys', change.target.value)}
+                placeholder="site, cell_id"
+              />
+            </div>
+            <div className="space-y-1 md:col-span-2">
+              <label className={labelClass} htmlFor="historian-operator">
+                Match
+              </label>
+              <select
+                id="historian-operator"
+                className={fieldClass}
+                aria-describedby="historian-operator-meaning"
+                value={query.operator}
+                onChange={(change) => set('operator', change.target.value as BinaryOperator)}
+              >
+                <option value="OR">Any key</option>
+                <option value="AND">All keys</option>
+                <option value="NOT">No key</option>
+              </select>
+            </div>
+          </>
+        )}
+
+        <div className="space-y-1 md:col-span-4">
+          <label className={`${labelClass} flex items-center gap-1`} id="historian-range-label">
+            <Clock className="h-3 w-3 text-amber-600 dark:text-[#FFC107]" />
+            <span>Time range</span>
+          </label>
+          <div
+            role="group"
+            aria-labelledby="historian-range-label"
+            className="flex items-center gap-1 rounded border border-[#E2E8F0] bg-[#F1F5F9] p-0.5 dark:border-[#1E293B] dark:bg-[#0B0B0C]"
+          >
+            {PRESETS.map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                aria-pressed={query.preset === preset}
+                onClick={() => set('preset', preset)}
+                className={`flex-1 cursor-pointer rounded py-1 text-[11px] transition-colors ${
+                  query.preset === preset
+                    ? 'bg-amber-500 font-semibold text-[#0B0B0C] dark:bg-[#FFC107]'
+                    : 'text-[#64748B] hover:text-[#0F172A] dark:text-[#94A3B8] dark:hover:text-[#F8FAFC]'
+                }`}
+              >
+                {PRESET_LABELS[preset]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="md:col-span-2">
+          <button
+            type="submit"
+            disabled={loading}
+            className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded bg-amber-500 py-1.5 text-[12px] font-semibold text-[#0B0B0C] transition-colors hover:bg-amber-600 disabled:opacity-60 dark:bg-[#FFC107] dark:hover:bg-[#FFB300]"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <span>{loading ? 'Querying…' : 'Run query'}</span>
+          </button>
+        </div>
+      </div>
+
+      {query.preset === 'custom' && (
+        <div className="flex flex-wrap items-center gap-3 border-t border-[#E2E8F0] pt-2 text-[11px] dark:border-[#1E293B]">
+          <div className="flex items-center gap-1.5">
+            <label className={labelClass} htmlFor="historian-start">
+              From
+            </label>
+            <input
+              id="historian-start"
+              type="datetime-local"
+              value={query.customStart}
+              onChange={(change) => set('customStart', change.target.value)}
+              className="rounded border border-[#CBD5E1] bg-[#F8FAFC] px-2 py-0.5 font-mono text-[11px] text-[#0F172A] dark:border-[#1E293B] dark:bg-[#0B0B0C] dark:text-[#F8FAFC]"
+            />
+          </div>
+          <div className="flex items-center gap-1.5">
+            <label className={labelClass} htmlFor="historian-end">
+              To
+            </label>
+            <input
+              id="historian-end"
+              type="datetime-local"
+              value={query.customEnd}
+              onChange={(change) => set('customEnd', change.target.value)}
+              className="rounded border border-[#CBD5E1] bg-[#F8FAFC] px-2 py-0.5 font-mono text-[11px] text-[#0F172A] dark:border-[#1E293B] dark:bg-[#0B0B0C] dark:text-[#F8FAFC]"
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-1 border-t border-[#E2E8F0] pt-2 font-mono text-[11px] text-[#64748B] dark:border-[#1E293B] dark:text-[#94A3B8]">
+        {/* The resolver has no LIMIT, so a wide range returns everything it matches. */}
+        <p data-testid="historian-no-limit-note">
+          This query has no row limit — every matching Historic Event is returned in one
+          response. Narrow the time range if a query does not come back.
+        </p>
+        {query.mode === 'payload-key' && (
+          <p id="historian-operator-meaning">
+            Matches an event when {OPERATOR_MEANING[query.operator]}, at any depth in the payload.
+          </p>
+        )}
+        {query.mode === 'topic-time' && rewritten && (
+          <p data-testid="historian-topic-note">
+            Queried as {resolvedTopic} — which also matches {query.topic.trim()} itself.
+          </p>
+        )}
+      </div>
+
+      {error && (
+        <p
+          role="alert"
+          className="rounded border border-rose-300 bg-rose-50 px-2.5 py-2 text-[12px] text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300"
+        >
+          {error}
+        </p>
+      )}
+    </form>
+  );
+};
+```
+
+- [ ] **Step 22: Write the view, delete `ExploreView`, and point the route at it**
+
+Create `11_frontend/src/components/historian/HistorianView.tsx`:
+
+```tsx
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { HistoricEvent } from '../../types/uns';
+import { unsGraphQLClient } from '../../services/graphql/client';
+import { useUNS } from '../../context/UNSContext';
+import {
+  HistorianQuery,
+  defaultQuery,
+  parseList,
+  resolveHistorianTopic,
+  timeBounds,
+} from '../../lib/uns/historian-query';
+import { HistorianQueryForm } from './HistorianQueryForm';
+import { HistorianTable } from './HistorianTable';
+import { HistorianTrendChart } from './HistorianTrendChart';
+
+export const HistorianView: React.FC = () => {
+  const { historianInitialTopic, selectedNode } = useUNS();
+
+  const [query, setQuery] = useState<HistorianQuery>(() =>
+    defaultQuery(historianInitialTopic || selectedNode?.topic || '', Date.now()),
+  );
+  const [rows, setRows] = useState<HistoricEvent[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pendingRun, setPendingRun] = useState(false);
+
+  const run = useCallback(async () => {
+    const { start, end } = timeBounds(query, Date.now());
+    setLoading(true);
+    setError(null);
+    try {
+      if (query.mode === 'topic-time') {
+        const topic = resolveHistorianTopic(query.topic);
+        if (!topic) {
+          setError('Enter a topic. A topic with no wildcard is queried as topic/#.');
+          setRows([]);
+          return;
+        }
+        setRows(await unsGraphQLClient.getHistoricEvents(topic, start, end));
+      } else if (query.mode === 'publisher') {
+        const publishers = parseList(query.publishers);
+        if (publishers.length === 0) {
+          setError('Enter at least one publisher. Publishers are the client ids that wrote the event.');
+          setRows([]);
+          return;
+        }
+        setRows(await unsGraphQLClient.getHistoricEventsByPublishers(publishers, undefined, start, end));
+      } else {
+        const keys = parseList(query.propertyKeys);
+        if (keys.length === 0) {
+          setError('Enter at least one payload key, for example site or cell_id.');
+          setRows([]);
+          return;
+        }
+        setRows(
+          await unsGraphQLClient.getHistoricEventsByProperty(keys, query.operator, undefined, start, end),
+        );
+      }
+    } catch (thrown) {
+      // All three client methods throw on a transport failure rather than returning a result.
+      setError((thrown as Error).message || 'The historian query failed.');
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [query]);
+
+  // A topic arriving from jumpToHistorian is the operator asking for a result, so it runs
+  // once. Nothing else auto-runs: the query has no row limit, so it must be deliberate.
+  useEffect(() => {
+    if (!historianInitialTopic) return;
+    setQuery((current) => ({ ...current, mode: 'topic-time', topic: historianInitialTopic }));
+    setPendingRun(true);
+  }, [historianInitialTopic]);
+
+  useEffect(() => {
+    if (!pendingRun) return;
+    setPendingRun(false);
+    void run();
+  }, [pendingRun, run]);
+
+  // The historian SELECT has no ORDER BY, so the order is this view's, not the store's.
+  const sortedRows = useMemo(
+    () => [...rows].sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp)),
+    [rows],
+  );
+
+  return (
+    <section className="flex-1 space-y-3 overflow-y-auto bg-[#F8FAFC] p-4 text-[12px] text-[#0F172A] dark:bg-[#050505] dark:text-[#F8FAFC]">
+      <HistorianQueryForm
+        query={query}
+        onChange={setQuery}
+        onRun={() => setPendingRun(true)}
+        loading={loading}
+        error={error}
+      />
+
+      {sortedRows.length > 0 && (
+        <HistorianTrendChart events={sortedRows} selectedTopic={query.topic} />
+      )}
+
+      <HistorianTable events={sortedRows} isLoading={loading} />
+
+      <p
+        data-testid="historian-order-note"
+        className="font-mono text-[11px] text-[#64748B] dark:text-[#94A3B8]"
+      >
+        Sorted newest first by this screen. The historian returns rows unordered.
+      </p>
+    </section>
+  );
+};
+```
+
+Delete the old screen and repoint the route:
+
+```bash
+cd 11_frontend && git rm src/components/explore/ExploreView.tsx
+```
+
+In `11_frontend/src/App.tsx`, replace the import Task 1 left in place:
+
+```tsx
+import { HistorianView } from './components/historian/HistorianView';
+```
+
+and the route, dropping Task 1's comment about the old screen:
+
+```tsx
+          <Route path="/historian" element={<HistorianView />} />
+```
+
+`src/components/explore/` is now empty, so git stops tracking it.
+
+- [ ] **Step 23: Run the whole suite and the type check**
+
+```bash
+cd 11_frontend && npx vitest run && npx tsc --noEmit
+```
+
+Expected: PASS, no TypeScript errors. Two things `tsc` catches if they were missed: any
+remaining import of `explore/`, and the dropped `topicTitle` prop on `HistorianTable`.
+
+- [ ] **Step 24: Prove the four untruths are gone**
+
+```bash
+cd 11_frontend && grep -rn "Pagination blocked\|restricted by Administrator\|export_csv\|getHistoricEventsBy" src/components || echo "clean"
+```
+
+Expected: `clean`. The GraphQL field names now appear only in
+`src/services/graphql/client.ts`, and `export_csv` only in `src/types/rbac.ts`, which Task 21
+deals with.
+
+- [ ] **Step 25: Commit**
+
+```bash
+git add 11_frontend/src/components/historian 11_frontend/src/App.tsx
+git add -u 11_frontend/src/components/explore
+git commit -m "feat(frontend): rebuild the Historian on what the API supports
+
+The three query modes are named for the question they answer rather than the
+GraphQL field they call, and the payload-key mode states which of OR/AND/NOT it
+is sending in the resolver's own words. Four untruths go with the old screen:
+CSV exported every loaded row while the header counted the filtered ones, a
+permission padlock gated rows already on the screen, the footer blamed the
+schema for pagination the query does not need, and the form fired an unbounded
+historian query on every keystroke. Rows are now sorted newest first by the
+view, which says so, because the historian SELECT has no ORDER BY.
+
+Spec section 18 test 13."
+```
+## Task 19: HEALTH — the transport, the read surface, and a plain list of what a browser cannot see
+
+Spec section 13 fixes this screen's contents exactly: the connection state expanded with
+endpoint URLs and two "last seen" timestamps, the embedded `uns-platform-observability`
+dashboard together with the Process and OEE switcher, real Asset Model and Alert Rule
+counts, and a plain statement of what the console cannot observe. This task builds those
+four, and deletes `system/SystemHealthView.tsx` by absorbing it.
+
+**What is already true, verified in the repo before writing this task:**
+
+1. `src/components/system/SystemHealthView.tsx` is 53 lines and reads no `health` at all.
+   Commit `0812fc6e` had already rewritten it into a three-dashboard Grafana switcher —
+   `platform`, `process`, `oee` — and that switcher is the only thing in the file worth
+   keeping. HEALTH takes it over; Task 6 has already moved `GRAFANA_DASHBOARDS` into
+   `src/lib/grafana/dashboards.ts` so both files import it from there.
+2. `health/HealthView.tsx` exists as the Task 1 placeholder shell. This task replaces its
+   body. The route `/health` and the `#/system` → `/health` redirect are already wired.
+3. `SystemHealthInfo` carries no timestamps. After the foundation plan it is
+   `{ status, graphqlHttp, graphqlWs, lastPingMs, endpointUrl }` — five keys, none naming a
+   datastore. Spec section 13 asks for "last successful query" and "last WebSocket event",
+   so this task adds them. It also adds the WebSocket URL, because `endpointUrl` names only
+   the HTTP half and the client *derives* its WebSocket URL from `window.location` when the
+   constructor is given none (`client.ts:82-89`) — so the URL actually in use is not always
+   the one in settings, and the health snapshot is the only place that knows.
+   That takes the interface to eight keys. The foundation plan's Definition of Done asserts
+   five, and that assertion is correct at the end of that plan. The invariant that has to
+   survive this task is the other one: **no key names a datastore.**
+4. The foundation plan's `client-health.test.ts` asserts the sorted key list literally. Three
+   new keys break it, and the fix is to extend the list — that test exists to forbid
+   `mqttBroker`, `neo4jTree`, `timescaleHistorian`, `kafkaBroker` and `sparkplugMapper`, not
+   to freeze the count. Step 8 updates it.
+5. Both counts already have client methods from the foundation plan:
+   `getAssetModelSummary(): Promise<AssetModelSummary | null>` and
+   `getAlertRuleSummary(): Promise<AlertRuleSummary | null>`. Both resolve to `null` when the
+   query fails, and `null` must never render as `0` — a screen that shows "0 Unmodelled
+   Topics" because the query failed is the exact class of lie this console is being built to
+   remove.
+6. There is no GraphQL field that reports per-module health, and this task invents none. A
+   `getPlatformHealth` query would be **requires backend**. ADR-0001 records why it does not
+   exist: the modules emit to Prometheus, the browser is not Prometheus, and Neo4j Community
+   exports no metrics at all.
+
+**One design decision, stated because it is not obvious:** HEALTH reads
+`unsGraphQLClient.getHealth()` on a one-second interval rather than consuming
+`useUNS().health`. Two reasons. The screen has to re-render as time passes anyway — "4 s
+ago" is wrong a second later whether or not anything changed — so it needs a tick
+regardless. And the WebSocket stamp is deliberately *not* pushed through `notifyHealth()`:
+a `next` frame arrives for every published message, and notifying every health listener on
+each one would re-render every consumer of `UNSContext` at broker rate. Stamping a private
+field and letting one screen poll it costs nothing; broadcasting it would cost the whole
+app.
+
+**Files:**
+- Create: `11_frontend/src/lib/health/relative-age.ts`
+- Create: `11_frontend/src/components/health/HealthRow.tsx`
+- Create: `11_frontend/src/components/health/TransportPanel.tsx`
+- Create: `11_frontend/src/components/health/ReadSurfacePanel.tsx`
+- Create: `11_frontend/src/components/health/NotObservablePanel.tsx`
+- Modify: `11_frontend/src/components/health/HealthView.tsx` — the Task 1 shell, replaced
+- Modify: `11_frontend/src/types/uns.ts` — `SystemHealthInfo` gains three keys
+- Modify: `11_frontend/src/services/graphql/client.ts` — two stamps and the WebSocket URL
+- Modify: `11_frontend/src/services/graphql/client-health.test.ts` — the key list
+- Delete: `11_frontend/src/components/system/SystemHealthView.tsx`
+- Test: `11_frontend/src/lib/health/relative-age.test.ts`
+- Test: `11_frontend/src/components/health/HealthView.test.tsx`
+
+**Interfaces:**
+- Consumes: `connectionState(health)` and `ConnectionState` from `src/lib/health/connection-state.ts` (foundation Task 6); `StatusPill` and `PillTone` (Task 5); `EmptyState` (Task 1); `GrafanaEmbed` and `GRAFANA_DASHBOARDS` / `GrafanaDashboardId` from `src/lib/grafana/dashboards.ts` (Task 6); `getAssetModelSummary` / `getAlertRuleSummary` and the `AssetModelSummary` / `AlertRuleSummary` types (foundation Tasks 8 and 9); `useTheme()` from `src/context/ThemeContext.tsx`.
+- Produces:
+  ```ts
+  // lib/health/relative-age.ts
+  /** Age of an epoch-millisecond stamp in words. `null` means it has never happened. */
+  export function relativeAge(stamp: number | null, now: number): string;
+
+  // types/uns.ts — SystemHealthInfo, extended
+  export interface SystemHealthInfo {
+    status: ConnectionStatus;
+    graphqlHttp: boolean;
+    graphqlWs: boolean;
+    lastPingMs: number;
+    endpointUrl: string;
+    wsEndpointUrl: string;
+    /** Epoch ms of the last GraphQL HTTP response that carried data. */
+    lastQueryAt: number | null;
+    /** Epoch ms of the last `next` frame received on the GraphQL WebSocket. */
+    lastWsEventAt: number | null;
+  }
+
+  // components/health/HealthRow.tsx
+  export const HealthRow: React.FC<{
+    label: string;
+    value: React.ReactNode;
+    mono?: boolean;
+    title?: string;
+    testId?: string;
+  }>;
+
+  // components/health/TransportPanel.tsx
+  export const TransportPanel: React.FC<{ health: SystemHealthInfo; now: number }>;
+
+  // components/health/ReadSurfacePanel.tsx
+  export const ReadSurfacePanel: React.FC<{
+    model: AssetModelSummary | null;
+    rules: AlertRuleSummary | null;
+    loading: boolean;
+  }>;
+
+  // components/health/NotObservablePanel.tsx
+  export const NotObservablePanel: React.FC;
+
+  // components/health/HealthView.tsx
+  export const HealthView: React.FC;
+  ```
+
+- [ ] **Step 1: Read the two files this task consumes and replaces**
+
+```bash
+cd 11_frontend
+cat src/components/system/SystemHealthView.tsx
+cat src/components/health/HealthView.tsx
+grep -rn "SystemHealthView" src/
+grep -n "wsUrl\|lastPingMs\|isLiveBackend\|type === 'next'" src/services/graphql/client.ts
+```
+
+Expected: `SystemHealthView` is imported only by `App.tsx` (and that import is removed in
+Step 15); `HealthView.tsx` is the placeholder; `client.ts` has a private `wsUrl`, sets
+`isLiveBackend = true` inside `if (json.data)`, and handles `msg.type === 'next'` in
+`this.ws.onmessage`. If any of those has moved, work from the file rather than from the line
+numbers quoted below.
+
+- [ ] **Step 2: Write the failing `relativeAge` test**
+
+Create `11_frontend/src/lib/health/relative-age.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { relativeAge } from './relative-age';
+
+const NOW = 1_756_800_000_000;
+
+describe('relativeAge', () => {
+  it('says never when it has not happened', () => {
+    expect(relativeAge(null, NOW)).toBe('never');
+  });
+
+  it('says just now under two seconds', () => {
+    expect(relativeAge(NOW, NOW)).toBe('just now');
+    expect(relativeAge(NOW - 1_999, NOW)).toBe('just now');
+  });
+
+  it('counts seconds up to a minute', () => {
+    expect(relativeAge(NOW - 2_000, NOW)).toBe('2 s ago');
+    expect(relativeAge(NOW - 59_000, NOW)).toBe('59 s ago');
+  });
+
+  it('counts minutes up to an hour', () => {
+    expect(relativeAge(NOW - 60_000, NOW)).toBe('1 min ago');
+    expect(relativeAge(NOW - 3_599_000, NOW)).toBe('59 min ago');
+  });
+
+  it('counts hours up to a day, then days', () => {
+    expect(relativeAge(NOW - 3_600_000, NOW)).toBe('1 h ago');
+    expect(relativeAge(NOW - 86_399_000, NOW)).toBe('23 h ago');
+    expect(relativeAge(NOW - 86_400_000, NOW)).toBe('1 d ago');
+  });
+
+  // A stamp in the future means the clock moved, not that the event is pending.
+  it('never reports a negative age', () => {
+    expect(relativeAge(NOW + 5_000, NOW)).toBe('just now');
+  });
+});
+```
+
+- [ ] **Step 3: Run it to verify it fails**
+
+Run: `cd 11_frontend && npx vitest run src/lib/health/relative-age.test.ts`
+Expected: FAIL — cannot find module `./relative-age`.
+
+- [ ] **Step 4: Implement `relativeAge`**
+
+Create `11_frontend/src/lib/health/relative-age.ts`:
+
+```ts
+const SECOND = 1_000;
+const MINUTE = 60 * SECOND;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+
+/**
+ * Age of an epoch-millisecond stamp in words, coarsening as it gets older.
+ *
+ * `now` is a parameter rather than a `Date.now()` call so that this is a pure function and
+ * its caller owns the clock. HEALTH ticks once a second and passes the tick's `now`, which
+ * is why every age on that screen moves together.
+ */
+export function relativeAge(stamp: number | null, now: number): string {
+  if (stamp === null) {
+    return 'never';
+  }
+  const age = Math.max(0, now - stamp);
+  if (age < 2 * SECOND) {
+    return 'just now';
+  }
+  if (age < MINUTE) {
+    return `${Math.floor(age / SECOND)} s ago`;
+  }
+  if (age < HOUR) {
+    return `${Math.floor(age / MINUTE)} min ago`;
+  }
+  if (age < DAY) {
+    return `${Math.floor(age / HOUR)} h ago`;
+  }
+  return `${Math.floor(age / DAY)} d ago`;
+}
+```
+
+- [ ] **Step 5: Run it to verify it passes**
+
+Run: `cd 11_frontend && npx vitest run src/lib/health/relative-age.test.ts`
+Expected: PASS, 6 tests.
+
+- [ ] **Step 6: Write the failing client-stamp test**
+
+Append to `11_frontend/src/services/graphql/client-health.test.ts`. The existing
+`clientWithoutSocket()` helper in that file stubs a silent `WebSocket`; this block needs a
+handle on the instance, so it declares its own stub. Keep both — they are testing different
+things and a shared stub would have to serve both.
+
+```ts
+/** A WebSocket stub that keeps the instance the client built, so a test can drive it. */
+class FakeSocket {
+  public static last: FakeSocket | null = null
+  public onopen: (() => void) | null = null
+  public onmessage: ((event: { data: string }) => void) | null = null
+  public onerror: (() => void) | null = null
+  public onclose: (() => void) | null = null
+  public sent: string[] = []
+  constructor() {
+    FakeSocket.last = this
+  }
+  send(payload: string) {
+    this.sent.push(payload)
+  }
+  close() {}
+}
+
+function clientWithFakeSocket(): UnsGraphQLClient {
+  FakeSocket.last = null
+  vi.stubGlobal('WebSocket', FakeSocket)
+  return new UnsGraphQLClient('/graphql', 'ws://console.test/graphql')
+}
+
+describe('observed timestamps', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('has seen nothing before anything has happened', () => {
+    const health = clientWithFakeSocket().getHealth()
+
+    expect(health.lastQueryAt).toBeNull()
+    expect(health.lastWsEventAt).toBeNull()
+  })
+
+  it('reports the WebSocket URL it is actually using', () => {
+    expect(clientWithFakeSocket().getHealth().wsEndpointUrl).toBe('ws://console.test/graphql')
+  })
+
+  it('stamps the last query when a response carries data', async () => {
+    const client = clientWithFakeSocket()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ data: { getUnsNodes: [] } }),
+      }),
+    )
+
+    const before = Date.now()
+    await client.getUnsNodes(['enterprise/facility/area'])
+    const after = Date.now()
+
+    const stamp = client.getHealth().lastQueryAt
+    expect(stamp).not.toBeNull()
+    expect(stamp as number).toBeGreaterThanOrEqual(before)
+    expect(stamp as number).toBeLessThanOrEqual(after)
+  })
+
+  it('does not stamp a query the endpoint refused', async () => {
+    const client = clientWithFakeSocket()
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
+
+    await client.getUnsNodes(['enterprise/facility/area'])
+
+    expect(client.getHealth().lastQueryAt).toBeNull()
+  })
+
+  it('stamps a next frame arriving on the WebSocket', () => {
+    const client = clientWithFakeSocket()
+    const socket = FakeSocket.last as FakeSocket
+
+    socket.onopen?.()
+    const before = Date.now()
+    socket.onmessage?.({
+      data: JSON.stringify({ type: 'next', id: 'sub-1', payload: { data: {} } }),
+    })
+    const after = Date.now()
+
+    const stamp = client.getHealth().lastWsEventAt
+    expect(stamp).not.toBeNull()
+    expect(stamp as number).toBeGreaterThanOrEqual(before)
+    expect(stamp as number).toBeLessThanOrEqual(after)
+  })
+
+  // connection_ack is protocol handshake, not plant data. An operator asking "is anything
+  // still arriving?" is asking about data.
+  it('does not treat the protocol handshake as a live update', () => {
+    const client = clientWithFakeSocket()
+    const socket = FakeSocket.last as FakeSocket
+
+    socket.onopen?.()
+    socket.onmessage?.({ data: JSON.stringify({ type: 'connection_ack' }) })
+
+    expect(client.getHealth().graphqlWs).toBe(true)
+    expect(client.getHealth().lastWsEventAt).toBeNull()
+  })
+})
+```
+
+Add `afterEach` to the `vitest` import at the top of the file if it is not already there.
+
+- [ ] **Step 7: Run it to verify it fails**
+
+Run: `cd 11_frontend && npx vitest run src/services/graphql/client-health.test.ts`
+Expected: FAIL — `lastQueryAt`, `lastWsEventAt` and `wsEndpointUrl` are all `undefined`, and
+the type check on `SystemHealthInfo` rejects them.
+
+- [ ] **Step 8: Extend the key-list assertion in the same file**
+
+The foundation plan's first test in this file asserts the sorted key list. Replace that array
+with the eight keys, keeping the comment above it — the point of the assertion is unchanged:
+
+```ts
+    expect(Object.keys(health).sort()).toEqual([
+      'endpointUrl',
+      'graphqlHttp',
+      'graphqlWs',
+      'lastPingMs',
+      'lastQueryAt',
+      'lastWsEventAt',
+      'status',
+      'wsEndpointUrl',
+    ])
+```
+
+Leave the `does not claim a store is online` test exactly as it is. That is the assertion
+that actually constrains this interface, and it still passes unchanged.
+
+- [ ] **Step 9: Extend `SystemHealthInfo`**
+
+In `11_frontend/src/types/uns.ts`, add three keys to the interface the foundation plan
+narrowed, and extend its docstring:
+
+```ts
+/**
+ * What the browser can actually observe about the platform: the GraphQL endpoint, its
+ * WebSocket, and when each of them last worked. Nothing else.
+ *
+ * The five per-store indicators this type used to carry were all derived from one boolean,
+ * which is the defect ADR-0001 was written about. Store health is Platform Observability
+ * and belongs to Grafana, which is where the modules emit and the browser is not.
+ */
+export interface SystemHealthInfo {
+  status: ConnectionStatus;
+  graphqlHttp: boolean;
+  graphqlWs: boolean;
+  lastPingMs: number;
+  endpointUrl: string;
+  wsEndpointUrl: string;
+  /** Epoch ms of the last GraphQL HTTP response that carried data. Null until one does. */
+  lastQueryAt: number | null;
+  /** Epoch ms of the last `next` frame on the GraphQL WebSocket. Null until one arrives. */
+  lastWsEventAt: number | null;
+}
+```
+
+- [ ] **Step 10: Stamp the two events in the client**
+
+Three edits in `11_frontend/src/services/graphql/client.ts`.
+
+First, two private fields beside `lastPingMs` (`:74`):
+
+```ts
+  private lastQueryAt: number | null = null
+  private lastWsEventAt: number | null = null
+```
+
+Second, in `this.ws.onmessage`, the `next` branch. The stamp goes outside the
+`activeWsSubscriptions` check — a frame that arrives for a subscription this client has since
+dropped still proves the WebSocket is delivering. It deliberately does **not** call
+`notifyHealth()`; see the note at the head of this task.
+
+```ts
+          if (msg.type === 'next') {
+            this.lastWsEventAt = Date.now()
+            if (msg.id && this.activeWsSubscriptions.has(msg.id)) {
+              this.activeWsSubscriptions.get(msg.id)?.(msg.payload?.data)
+            }
+          }
+```
+
+Third, in `executeQuery`, inside the `if (json.data)` branch that already sets
+`isLiveBackend`:
+
+```ts
+        if (json.data) {
+          this.isLiveBackend = true
+          this.lastQueryAt = Date.now()
+          this.notifyHealth()
+          return { data: json.data as T }
+        }
+```
+
+Then add the three keys to `getHealth()`:
+
+```ts
+      lastPingMs: this.lastPingMs || 0,
+      endpointUrl: this.httpUrl,
+      wsEndpointUrl: this.wsUrl,
+      lastQueryAt: this.lastQueryAt,
+      lastWsEventAt: this.lastWsEventAt,
+```
+
+A GraphQL response whose body is all errors does not stamp `lastQueryAt`, and neither does a
+network failure. The stamp means "the read surface answered with data", which is the question
+an operator is asking.
+
+- [ ] **Step 11: Run the client tests**
+
+```bash
+cd 11_frontend && npx vitest run src/services/graphql/client-health.test.ts
+```
+
+Expected: PASS — the existing tests plus the six new ones.
+
+- [ ] **Step 12: Commit the transport plumbing**
+
+```bash
+git add 11_frontend/src/types/uns.ts \
+  11_frontend/src/services/graphql/client.ts \
+  11_frontend/src/services/graphql/client-health.test.ts \
+  11_frontend/src/lib/health/relative-age.ts \
+  11_frontend/src/lib/health/relative-age.test.ts
+git commit -m "feat(frontend): health records when each transport last worked
+
+SystemHealthInfo gains the WebSocket URL the client is actually using and two
+nullable stamps: the last GraphQL response that carried data, and the last next
+frame on the socket. Both are things the browser genuinely observes, so neither
+crosses the line ADR-0001 draws - no key names a datastore.
+
+The WebSocket stamp is not broadcast through notifyHealth(): a next frame
+arrives per published message, and re-rendering every UNSContext consumer at
+broker rate to move a timestamp would be a bad trade. The HEALTH screen polls."
+```
+
+- [ ] **Step 13: Write the failing HEALTH screen test**
+
+Create `11_frontend/src/components/health/HealthView.test.tsx`. The client module is mocked
+whole, so this test needs no provider but `ThemeProvider`, and `GrafanaEmbed` is stubbed so
+that no iframe is created and the switcher's effect is visible as an attribute.
+
+```tsx
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ThemeProvider } from '../../context/ThemeContext';
+import { HealthView } from './HealthView';
+import type { SystemHealthInfo } from '../../types/uns';
+import { unsGraphQLClient } from '../../services/graphql/client';
+
+vi.mock('../../services/graphql/client', () => ({
+  unsGraphQLClient: {
+    getHealth: vi.fn(),
+    getAssetModelSummary: vi.fn(),
+    getAlertRuleSummary: vi.fn(),
+  },
+}));
+
+vi.mock('../common/GrafanaEmbed', () => ({
+  GrafanaEmbed: ({ uid, title }: { uid: string; title: string }) => (
+    <div data-testid="grafana-embed" data-uid={uid}>
+      {title}
+    </div>
+  ),
+}));
+
+const NOW = new Date('2026-09-02T10:00:00.000Z').getTime();
+
+function health(overrides: Partial<SystemHealthInfo> = {}): SystemHealthInfo {
+  return {
+    status: 'LIVE',
+    graphqlHttp: true,
+    graphqlWs: true,
+    lastPingMs: 41,
+    endpointUrl: '/graphql',
+    wsEndpointUrl: 'ws://console.test/graphql',
+    lastQueryAt: NOW - 5_000,
+    lastWsEventAt: NOW - 1_000,
+    ...overrides,
+  };
+}
+
+const mocked = vi.mocked(unsGraphQLClient);
+
+/** Drain the two summary promises without waitFor, which is unreliable on fake timers. */
+async function flush(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
+async function renderHealth(): Promise<void> {
+  render(
+    <ThemeProvider>
+      <HealthView />
+    </ThemeProvider>,
+  );
+  await flush();
+}
+
+describe('HealthView', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    mocked.getHealth.mockReturnValue(health());
+    mocked.getAssetModelSummary.mockResolvedValue({
+      assets: 42,
+      metricDefinitions: 118,
+      boundTopics: 96,
+      unmodelledTopics: 7,
+    });
+    mocked.getAlertRuleSummary.mockResolvedValue({ total: 12, enabled: 9 });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.resetAllMocks();
+  });
+
+  it('names both endpoints and when each half last worked', async () => {
+    await renderHealth();
+
+    expect(screen.getByTestId('health-status-pill')).toHaveTextContent('Live');
+    expect(screen.getByTestId('health-endpoint-http')).toHaveTextContent('/graphql');
+    expect(screen.getByTestId('health-endpoint-ws')).toHaveTextContent('ws://console.test/graphql');
+    expect(screen.getByTestId('health-last-query')).toHaveTextContent('5 s ago');
+    expect(screen.getByTestId('health-last-ws')).toHaveTextContent('just now');
+    expect(screen.getByTestId('health-round-trip')).toHaveTextContent('41 ms');
+  });
+
+  it('ages the timestamps as the clock moves', async () => {
+    await renderHealth();
+
+    act(() => {
+      vi.advanceTimersByTime(3_000);
+    });
+
+    expect(screen.getByTestId('health-last-query')).toHaveTextContent('8 s ago');
+    expect(screen.getByTestId('health-last-ws')).toHaveTextContent('4 s ago');
+  });
+
+  it('says never rather than showing a fake time', async () => {
+    mocked.getHealth.mockReturnValue(health({ lastQueryAt: null, lastWsEventAt: null }));
+    await renderHealth();
+
+    expect(screen.getByTestId('health-last-query')).toHaveTextContent('never');
+    expect(screen.getByTestId('health-last-ws')).toHaveTextContent('never');
+  });
+
+  it('shows a dash for a round-trip that has never been measured', async () => {
+    mocked.getHealth.mockReturnValue(health({ lastPingMs: 0 }));
+    await renderHealth();
+
+    expect(screen.getByTestId('health-round-trip')).toHaveTextContent('—');
+  });
+
+  it('names which half failed', async () => {
+    mocked.getHealth.mockReturnValue(health({ status: 'DEGRADED', graphqlWs: false }));
+    await renderHealth();
+
+    expect(screen.getByTestId('health-status-pill')).toHaveTextContent(
+      'Degraded — live updates offline',
+    );
+  });
+
+  it('reports the Asset Model and Alert Rule counts from the read surface', async () => {
+    await renderHealth();
+
+    const surface = screen.getByTestId('health-read-surface');
+    expect(surface).toHaveTextContent('42');
+    expect(surface).toHaveTextContent('118');
+    expect(surface).toHaveTextContent('96');
+    expect(surface).toHaveTextContent('7');
+    expect(surface).toHaveTextContent('12');
+    expect(surface).toHaveTextContent('9 enabled');
+    expect(surface).toHaveTextContent(
+      '7 Unmodelled Topics are being published that the Asset Model does not describe.',
+    );
+  });
+
+  it('says the Asset Model is fully described when nothing is unmodelled', async () => {
+    mocked.getAssetModelSummary.mockResolvedValue({
+      assets: 42,
+      metricDefinitions: 118,
+      boundTopics: 103,
+      unmodelledTopics: 0,
+    });
+    await renderHealth();
+
+    expect(screen.getByTestId('health-read-surface')).toHaveTextContent(
+      'Every observed topic is described by the Asset Model.',
+    );
+  });
+
+  // A failed count must not become a zero. This is the whole reason both client methods
+  // return null instead of an empty summary.
+  it('does not render a failed count as zero', async () => {
+    mocked.getAssetModelSummary.mockResolvedValue(null);
+    mocked.getAlertRuleSummary.mockResolvedValue(null);
+    await renderHealth();
+
+    const surface = screen.getByTestId('health-read-surface');
+    expect(surface).toHaveTextContent('Asset Model counts are unavailable');
+    expect(surface).toHaveTextContent('Alert Rule counts are unavailable');
+    expect(surface).not.toHaveTextContent('0');
+  });
+
+  it('embeds Platform Observability first and switches dashboards', async () => {
+    await renderHealth();
+
+    expect(screen.getByTestId('grafana-embed')).toHaveAttribute(
+      'data-uid',
+      'uns-platform-observability',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'OEE' }));
+    expect(screen.getByTestId('grafana-embed')).toHaveAttribute('data-uid', 'uns-oee');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Process' }));
+    expect(screen.getByTestId('grafana-embed')).toHaveAttribute(
+      'data-uid',
+      'uns-process-visualization',
+    );
+  });
+
+  it('says plainly what the browser cannot see', async () => {
+    await renderHealth();
+
+    const panel = screen.getByTestId('health-not-observable');
+    expect(panel).toHaveTextContent('MQTT broker');
+    expect(panel).toHaveTextContent('Graph database');
+    expect(panel).toHaveTextContent('Historian');
+    expect(panel).toHaveTextContent('Kafka');
+    expect(panel).toHaveTextContent(
+      'Neo4j Community exports no metrics at all, so no dashboard reports its health either',
+    );
+  });
+
+  it('stops polling when it unmounts', async () => {
+    const { unmount } = render(
+      <ThemeProvider>
+        <HealthView />
+      </ThemeProvider>,
+    );
+    await flush();
+    const callsWhileMounted = mocked.getHealth.mock.calls.length;
+
+    unmount();
+    act(() => {
+      vi.advanceTimersByTime(10_000);
+    });
+
+    expect(mocked.getHealth.mock.calls.length).toBe(callsWhileMounted);
+  });
+});
+```
+
+Two notes for whoever runs this. `vi.useFakeTimers()` fakes `Date` as well as timers, so
+`vi.advanceTimersByTime` moves both the interval and `Date.now()` — which is what makes the
+ageing assertions exact. And `waitFor`/`findBy*` are avoided deliberately: their internal
+polling and fake timers interact badly, and `flush()` is enough because the only asynchrony
+is two already-resolved promises.
+
+- [ ] **Step 14: Run it to verify it fails**
+
+Run: `cd 11_frontend && npx vitest run src/components/health/HealthView.test.tsx`
+Expected: FAIL — the placeholder shell renders `Health workspace not built yet`, so every
+`getByTestId` misses.
+
+- [ ] **Step 15: Create `HealthRow`**
+
+Create `11_frontend/src/components/health/HealthRow.tsx`. One label-and-value line, so that
+the type scale, the truncation and the tabular numerals are decided once for the whole
+screen.
+
+```tsx
+import React from 'react';
+
+export const HealthRow: React.FC<{
+  label: string;
+  value: React.ReactNode;
+  mono?: boolean;
+  title?: string;
+  testId?: string;
+}> = ({ label, value, mono, title, testId }) => (
+  <div
+    data-testid={testId}
+    className="flex items-baseline justify-between gap-3 py-1 text-[12px]"
+  >
+    <span className="shrink-0 text-[#475569] dark:text-[#94A3B8]">{label}</span>
+    <span
+      title={title}
+      className={`truncate text-right font-semibold text-[#0F172A] dark:text-[#F8FAFC] ${
+        mono ? 'font-mono text-[11px]' : 'tabular-nums'
+      }`}
+    >
+      {value}
+    </span>
+  </div>
+);
+```
+
+- [ ] **Step 16: Create `TransportPanel`**
+
+Create `11_frontend/src/components/health/TransportPanel.tsx`. This is spec section 13 item
+1: the section 12 chip expanded. It reuses `connectionState` so that the wording here and the
+wording in the footer chip can never drift apart.
+
+```tsx
+import React from 'react';
+import { Activity, Wifi } from 'lucide-react';
+import { connectionState } from '../../lib/health/connection-state';
+import { relativeAge } from '../../lib/health/relative-age';
+import { StatusPill, type PillTone } from '../common/StatusPill';
+import type { ConnectionStatus, SystemHealthInfo } from '../../types/uns';
+import { HealthRow } from './HealthRow';
+
+const TONE: Record<ConnectionStatus, PillTone> = {
+  LIVE: 'good',
+  DEGRADED: 'warn',
+  DOWN: 'bad',
+};
+
+export const TransportPanel: React.FC<{ health: SystemHealthInfo; now: number }> = ({
+  health,
+  now,
+}) => {
+  const state = connectionState(health);
+
+  return (
+    <section
+      data-testid="health-transport"
+      className="rounded-md border border-[#E2E8F0] bg-white p-3 dark:border-[#1E293B] dark:bg-[#111114]"
+    >
+      <header className="mb-2 flex items-center justify-between gap-3 border-b border-[#E2E8F0] pb-2 dark:border-[#1E293B]">
+        <h2 className="flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-wider text-[#0F172A] dark:text-[#F8FAFC]">
+          <Activity className="h-3.5 w-3.5 text-amber-600 dark:text-[#FFC107]" />
+          <span>GraphQL read surface</span>
+        </h2>
+        <span data-testid="health-status-pill">
+          <StatusPill label={state.label} tone={TONE[state.status]} title={state.detail} />
+        </span>
+      </header>
+
+      <p className="mb-2 text-[12px] text-[#475569] dark:text-[#94A3B8]">{state.detail}</p>
+
+      <HealthRow
+        label="Queries (HTTP POST)"
+        value={health.graphqlHttp ? 'Answering' : 'Not answering'}
+      />
+      <HealthRow
+        label="Live updates (WebSocket)"
+        value={
+          <span className="inline-flex items-center gap-1.5">
+            <Wifi className="h-3 w-3 text-[#64748B]" />
+            {health.graphqlWs ? 'Subscribed' : 'Disconnected'}
+          </span>
+        }
+      />
+      <HealthRow
+        label="Round-trip"
+        testId="health-round-trip"
+        value={health.lastPingMs === 0 ? '—' : `${health.lastPingMs} ms`}
+      />
+      <HealthRow
+        label="Last query that returned data"
+        testId="health-last-query"
+        value={relativeAge(health.lastQueryAt, now)}
+      />
+      <HealthRow
+        label="Last live update received"
+        testId="health-last-ws"
+        value={relativeAge(health.lastWsEventAt, now)}
+      />
+      <HealthRow
+        label="Query endpoint"
+        testId="health-endpoint-http"
+        mono
+        title={health.endpointUrl}
+        value={health.endpointUrl}
+      />
+      <HealthRow
+        label="WebSocket endpoint"
+        testId="health-endpoint-ws"
+        mono
+        title={health.wsEndpointUrl}
+        value={health.wsEndpointUrl}
+      />
+    </section>
+  );
+};
+```
+
+`Last live update received` says `never` on a console that is connected but subscribed to
+nothing, which is correct and worth seeing: it distinguishes "the socket is up" from "plant
+data is arriving", and those are different questions.
+
+- [ ] **Step 17: Create `ReadSurfacePanel`**
+
+Create `11_frontend/src/components/health/ReadSurfacePanel.tsx`. Spec section 13 item 3.
+`CONTEXT.md` says counting Unmodelled Topics "is how you tell an incomplete Asset Model from
+a complete one", so that count gets a sentence rather than a number in a row. No percentage
+and no completeness score is computed here: both would be invented KPIs.
+
+```tsx
+import React from 'react';
+import { Boxes } from 'lucide-react';
+import type { AlertRuleSummary, AssetModelSummary } from '../../services/graphql/types';
+import { HealthRow } from './HealthRow';
+
+export const ReadSurfacePanel: React.FC<{
+  model: AssetModelSummary | null;
+  rules: AlertRuleSummary | null;
+  loading: boolean;
+}> = ({ model, rules, loading }) => (
+  <section
+    data-testid="health-read-surface"
+    className="rounded-md border border-[#E2E8F0] bg-white p-3 dark:border-[#1E293B] dark:bg-[#111114]"
+  >
+    <header className="mb-2 flex items-center gap-1.5 border-b border-[#E2E8F0] pb-2 dark:border-[#1E293B]">
+      <Boxes className="h-3.5 w-3.5 text-amber-600 dark:text-[#FFC107]" />
+      <h2 className="text-[12px] font-bold uppercase tracking-wider text-[#0F172A] dark:text-[#F8FAFC]">
+        Asset Model and Alert Rules
+      </h2>
+    </header>
+
+    {loading ? (
+      <p className="text-[12px] text-[#64748B]">Loading counts…</p>
+    ) : model === null ? (
+      <p className="text-[12px] text-[#B45309] dark:text-[#FFC107]">
+        Asset Model counts are unavailable — the query returned no data. This is not a count
+        of zero.
+      </p>
+    ) : (
+      <>
+        <HealthRow label="Assets" value={model.assets} />
+        <HealthRow label="Metric Definitions" value={model.metricDefinitions} />
+        <HealthRow label="Bound topics" value={model.boundTopics} />
+        <HealthRow label="Unmodelled Topics" value={model.unmodelledTopics} />
+        <p className="mt-2 text-[12px] text-[#475569] dark:text-[#94A3B8]">
+          {model.unmodelledTopics === 0
+            ? 'Every observed topic is described by the Asset Model.'
+            : `${model.unmodelledTopics} Unmodelled Topics are being published that the Asset Model does not describe.`}
+        </p>
+      </>
+    )}
+
+    <div className="mt-3 border-t border-[#E2E8F0] pt-2 dark:border-[#1E293B]">
+      {loading ? (
+        <p className="text-[12px] text-[#64748B]">Loading counts…</p>
+      ) : rules === null ? (
+        <p className="text-[12px] text-[#B45309] dark:text-[#FFC107]">
+          Alert Rule counts are unavailable — the query returned no data. This is not a count
+          of zero.
+        </p>
+      ) : (
+        <HealthRow
+          label="Alert Rules"
+          value={`${rules.total} total, ${rules.enabled} enabled`}
+        />
+      )}
+    </div>
+  </section>
+);
+```
+
+- [ ] **Step 18: Create `NotObservablePanel`**
+
+Create `11_frontend/src/components/health/NotObservablePanel.tsx`. Spec section 13 item 4.
+This panel is static text on purpose — it is a statement about the architecture, not a
+reading, and there is no query behind it because there is nothing to query.
+
+```tsx
+import React from 'react';
+import { EyeOff } from 'lucide-react';
+
+const UNREACHABLE = [
+  {
+    name: 'MQTT broker',
+    module: '02_mqtt-cluster',
+    note: 'The browser never connects to MQTT. Everything on screen arrived through GraphQL.',
+  },
+  {
+    name: 'Graph database',
+    module: '03_uns_graphdb',
+    note: 'Neo4j holds the current-state projection. The console reads it only through GraphQL.',
+  },
+  {
+    name: 'Historian',
+    module: '04_uns_historian',
+    note: 'TimescaleDB holds Historic Events. Queried through GraphQL, never directly.',
+  },
+  {
+    name: 'Kafka',
+    module: '06_uns_kafka',
+    note: 'A second projection of the same messages, for downstream consumers.',
+  },
+];
+
+export const NotObservablePanel: React.FC = () => (
+  <section
+    data-testid="health-not-observable"
+    className="rounded-md border border-[#E2E8F0] bg-white p-3 dark:border-[#1E293B] dark:bg-[#111114]"
+  >
+    <header className="mb-2 flex items-center gap-1.5 border-b border-[#E2E8F0] pb-2 dark:border-[#1E293B]">
+      <EyeOff className="h-3.5 w-3.5 text-[#64748B]" />
+      <h2 className="text-[12px] font-bold uppercase tracking-wider text-[#0F172A] dark:text-[#F8FAFC]">
+        Not visible from this console
+      </h2>
+    </header>
+
+    <p className="mb-2 text-[12px] text-[#475569] dark:text-[#94A3B8]">
+      A browser can only observe the two transports above. The state of these four is in the
+      Platform dashboard on the right, where the modules report it themselves.
+    </p>
+
+    <ul className="space-y-1.5">
+      {UNREACHABLE.map((item) => (
+        <li key={item.name} className="text-[12px]">
+          <span className="font-semibold text-[#0F172A] dark:text-[#F8FAFC]">{item.name}</span>
+          <span className="ml-1.5 font-mono text-[11px] text-[#64748B]">{item.module}</span>
+          <span className="block text-[#475569] dark:text-[#94A3B8]">{item.note}</span>
+        </li>
+      ))}
+    </ul>
+
+    <p className="mt-2 border-t border-[#E2E8F0] pt-2 text-[12px] text-[#64748B] dark:border-[#1E293B]">
+      Neo4j Community exports no metrics at all, so no dashboard reports its health either.
+      The honest answer is that the graph database is only known to be working when a query
+      returns data.
+    </p>
+  </section>
+);
+```
+
+That last paragraph is ADR-0001 stated to the reader instead of papered over with a green
+dot. A per-module health field on the read surface would be **requires backend**, and no such
+field exists.
+
+- [ ] **Step 19: Replace `HealthView`**
+
+Replace the whole body of `11_frontend/src/components/health/HealthView.tsx`:
+
+```tsx
+import React, { useEffect, useState } from 'react';
+import { Activity } from 'lucide-react';
+import { useTheme } from '../../context/ThemeContext';
+import { GRAFANA_DASHBOARDS, type GrafanaDashboardId } from '../../lib/grafana/dashboards';
+import { GrafanaEmbed } from '../common/GrafanaEmbed';
+import { unsGraphQLClient } from '../../services/graphql/client';
+import type { AlertRuleSummary, AssetModelSummary } from '../../services/graphql/types';
+import type { SystemHealthInfo } from '../../types/uns';
+import { NotObservablePanel } from './NotObservablePanel';
+import { ReadSurfacePanel } from './ReadSurfacePanel';
+import { TransportPanel } from './TransportPanel';
+
+/**
+ * One second is fast enough for a screen whose smallest unit is "1 s ago", and slow enough
+ * that it costs nothing. The tick exists because the ages have to move even when nothing
+ * changed, so the whole snapshot is taken here rather than pushed from the client - see the
+ * note in the surfaces plan about not broadcasting WebSocket stamps at broker rate.
+ */
+const TICK_MS = 1000;
+
+interface Snapshot {
+  health: SystemHealthInfo;
+  now: number;
+}
+
+function snapshot(): Snapshot {
+  return { health: unsGraphQLClient.getHealth(), now: Date.now() };
+}
+
+export const HealthView: React.FC = () => {
+  const { isDark } = useTheme();
+  const [dashboard, setDashboard] = useState<GrafanaDashboardId>('platform');
+  const [{ health, now }, setSnapshot] = useState<Snapshot>(snapshot);
+  const [model, setModel] = useState<AssetModelSummary | null>(null);
+  const [rules, setRules] = useState<AlertRuleSummary | null>(null);
+  const [loadingCounts, setLoadingCounts] = useState(true);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setSnapshot(snapshot()), TICK_MS);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([
+      unsGraphQLClient.getAssetModelSummary(),
+      unsGraphQLClient.getAlertRuleSummary(),
+    ]).then(([nextModel, nextRules]) => {
+      if (cancelled) {
+        return;
+      }
+      setModel(nextModel);
+      setRules(nextRules);
+      setLoadingCounts(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const active = GRAFANA_DASHBOARDS[dashboard];
+
+  return (
+    <section id="health-view" className="flex h-full min-h-0 flex-col overflow-hidden">
+      <header className="flex shrink-0 items-center justify-between gap-4 border-b border-[#E2E8F0] px-4 py-2 dark:border-[#1E293B]">
+        <div>
+          <h1 className="flex items-center gap-2 text-[13px] font-semibold text-[#0F172A] dark:text-[#E2E8F0]">
+            <Activity className="h-4 w-4 text-amber-600 dark:text-[#FFC107]" />
+            <span>Health</span>
+          </h1>
+          <p className="mt-0.5 text-[11px] text-[#64748B]">
+            What this browser observes, and what only Platform Observability can see.
+          </p>
+        </div>
+
+        <div
+          data-testid="health-dashboard-switcher"
+          className="flex items-center gap-1 rounded border border-[#E2E8F0] bg-[#F8FAFC] p-0.5 dark:border-[#1E293B] dark:bg-[#111114]"
+        >
+          {(Object.keys(GRAFANA_DASHBOARDS) as GrafanaDashboardId[]).map((id) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setDashboard(id)}
+              aria-pressed={dashboard === id}
+              className={`rounded px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 ${
+                dashboard === id
+                  ? 'bg-amber-500 text-[#0F172A] dark:bg-[#FFC107]'
+                  : 'text-[#475569] hover:text-[#0F172A] dark:text-[#94A3B8] dark:hover:text-[#F8FAFC]'
+              }`}
+            >
+              {GRAFANA_DASHBOARDS[id].label}
+            </button>
+          ))}
+        </div>
+      </header>
+
+      <div className="flex min-h-0 flex-1">
+        <div className="w-[400px] shrink-0 space-y-3 overflow-y-auto border-r border-[#E2E8F0] p-3 dark:border-[#1E293B]">
+          <TransportPanel health={health} now={now} />
+          <ReadSurfacePanel model={model} rules={rules} loading={loadingCounts} />
+          <NotObservablePanel />
+        </div>
+
+        <div className="min-h-0 flex-1">
+          <GrafanaEmbed
+            uid={active.uid}
+            theme={isDark ? 'dark' : 'light'}
+            title={`${active.label} dashboard`}
+          />
+        </div>
+      </div>
+    </section>
+  );
+};
+```
+
+The left column scrolls and the shell does not, which is the layout rule for every surface in
+this console.
+
+- [ ] **Step 20: Run the screen test**
+
+Run: `cd 11_frontend && npx vitest run src/components/health/HealthView.test.tsx`
+Expected: PASS, 11 tests.
+
+- [ ] **Step 21: Delete `SystemHealthView` and drop its route import**
+
+`HealthView` now does everything that file did and more, and `/system` already redirects to
+`/health`.
+
+```bash
+cd 11_frontend
+git rm src/components/system/SystemHealthView.tsx
+rmdir src/components/system 2>/dev/null || true
+grep -rn "SystemHealthView" src/ || echo "no references remain"
+```
+
+If `grep` still finds the import in `src/App.tsx`, remove that import line. Task 1 replaced
+the `/system` route with a `<Navigate to="/health" replace />`, so nothing else refers to it.
+Leave `src/components/system/` in place if any other file still lives there.
+
+- [ ] **Step 22: Run the whole suite and the type check**
+
+```bash
+cd 11_frontend && npx tsc --noEmit && npx vitest run
+```
+
+Expected: no type errors and a green suite. `client-health.test.ts` in particular must pass —
+it is the test that guards the shape of `SystemHealthInfo`, and Step 8 changed it.
+
+- [ ] **Step 23: Commit**
+
+```bash
+git add 11_frontend/src/components/health/ \
+  11_frontend/src/App.tsx
+git rm --cached --ignore-unmatch 11_frontend/src/components/system/SystemHealthView.tsx
+git commit -m "feat(frontend): HEALTH says what the browser sees and what it cannot
+
+Four panels, all of them true. The two transports with the URLs in use and when
+each last worked. Asset Model and Alert Rule counts from the read surface, where
+a failed query reads 'unavailable' rather than zero. The Platform Observability
+dashboard, with the Process and OEE switcher absorbed from SystemHealthView,
+which this commit deletes. And a named list of the four things a browser cannot
+reach - broker, graph database, historian, Kafka - including the fact that Neo4j
+Community exports no metrics at all, so nothing reports its health.
+
+Spec section 13. ADR-0001 stated to the operator instead of drawn as a green
+dot."
+```
+
+---
+## Task 20: ALARMS — delete the fictional plant, and stop silence from meaning "normal"
+
+Spec section 11 lists two rows for `AlarmContext.tsx`: `INITIAL_RULES` deleted, and
+`restoreDefaults()` removed. Both are here. So are three things found while reading the file,
+each of which is the same untruth one layer down.
+
+**What is in the file, verified line by line:**
+
+1. `INITIAL_RULES` (`:42`–`:212`) is three rules on
+   `CovestroAG/Dormagen/Polyurethane/Reactor_01/temperature`,
+   `CovestroAG/Krefeld_Uerdingen/Polycarbonates/Extrusion_Line_02/pressure` and
+   `CovestroAG/Leverkusen/MDI/Distillation_Column/vibration`, complete with
+   `triggerCount: 8` and webhooks pointing at `ops-webhook.covestro.internal`. Neither
+   `Polyurethane` nor `Reactor_01` appears anywhere in `conf/` or `99_simulator/`.
+2. **These rules escape into shared Postgres on their own.** `refreshRules` (`:409`–`:433`)
+   asks the platform for rules; if the platform holds *none*, it POSTs
+   `rulesRef.current` through `saveAlertRules`. On a fresh browser `rulesRef.current` is
+   `INITIAL_RULES`. So the first console ever opened against an empty platform writes three
+   fabricated rules into the database every other console then reads. Deleting the constant
+   is what actually closes this, and the hand-over path itself is worth keeping — it is the
+   migration route for rules authored before the server could store them. It just has to
+   stop firing when there is nothing to hand over.
+3. `INITIAL_ACTIVE_ALARMS` (`:213`–`:262`) and `INITIAL_ALARM_AUDIT` (`:264`–`:301`) are the
+   same fabrication for the other two collections: an `ACTIVE_UNACK` alarm reading
+   `88.4 °C` on the reactor that does not exist, and an audit trail crediting acknowledgements
+   to named people. They go with the rules, and not only for honesty — their `ruleId`s point
+   at `rule-temp-01` and `rule-press-02`, so leaving them would leave active alarms belonging
+   to rules that no longer exist anywhere.
+4. `restoreDefaultRules` (`:1019`–`:1054`) deletes every rule the site has authored, POSTs
+   `INITIAL_RULES` back, and is **called by nothing** — `grep -rn "restoreDefaultRules" src/`
+   finds only its own declaration, type member and provider value. It is dead code whose only
+   capability is rewriting plant configuration for everybody.
+5. The topic matcher (`:648`–`:655`) is inline and wrong in two ways: it cannot handle a
+   filter containing both `+` and `#`, and it builds `new RegExp` from the filter without
+   escaping, so a rule on a topic containing `.` matches topics that merely have some other
+   character in that position. Task 14 already extracted `topicMatchesFilter` for the PLANT
+   tab. Two copies of a subtly wrong matcher is how an alarm silently stops firing.
+6. **The active-alarm empty state states a fact about the plant that it cannot know.**
+   `AlarmManagementView.tsx:392`–`:400` reads `No Active Incidents` /
+   `All ISA-95 node metrics and edge streams are operating within configured tolerances`.
+   With zero rules configured — which, after this task, is what a fresh install has —
+   nothing is being evaluated at all, and an empty list means nobody is watching rather than
+   nothing is wrong. This is the most dangerous sentence in the console, because it is
+   reassurance produced by absence.
+7. **There is no empty state for zero rules.** `rules.map(...)` at `:635` renders a table with
+   headers and no rows, which reads like a loading state that never finishes.
+8. `AlarmAuditLog.tsx:38`–`:60` hand-rolls CSV: it quotes every field whether or not it needs
+   quoting, joins rows with `\n`, and never calls `URL.revokeObjectURL`, so every export
+   leaks a blob for the life of the tab. Task 18 already produced `toCsv` and `downloadCsv`.
+   Two CSV writers in one console is one too many.
+
+Nothing here changes where evaluation happens. ADR-0005 accepted browser-side evaluation;
+this task surfaces it with `BrowserEvaluationNotice` from Task 14 instead of concealing it.
+
+**Files:**
+- Modify: `11_frontend/src/context/AlarmContext.tsx:42`–`:302`, `:409`–`:433`, `:648`–`:655`, `:334`, `:1019`–`:1054`, `:1083`
+- Modify: `11_frontend/src/components/alarms/AlarmManagementView.tsx:392`–`:400`, `:567`–`:635`
+- Modify: `11_frontend/src/components/alarms/AlarmAuditLog.tsx:38`–`:60`
+- Test: `11_frontend/src/context/AlarmContext.test.tsx`
+- Test: `11_frontend/src/components/alarms/AlarmManagementView.test.tsx`
+
+**Interfaces:**
+- Consumes: `topicMatchesFilter` from `src/lib/uns/topic-match.ts` and `BrowserEvaluationNotice` from `src/components/alarms/BrowserEvaluationNotice.tsx` (both Task 14); `toCsv`, `downloadCsv` and `CsvColumn` from `src/lib/csv/to-csv.ts` (Task 18); `EmptyState` (Task 1).
+- Produces: `AlarmContextType` **without** `restoreDefaultRules`. Everything else on the context keeps its current name and signature. No new export.
+
+- [ ] **Step 1: Confirm what is being deleted and that nothing calls it**
+
+```bash
+cd 11_frontend
+grep -rn "restoreDefaultRules" src/
+grep -n "INITIAL_RULES\|INITIAL_ACTIVE_ALARMS\|INITIAL_ALARM_AUDIT" src/context/AlarmContext.tsx
+grep -rn "Polyurethane\|Reactor_01" src/ ../conf ../99_simulator | grep -v node_modules
+```
+
+Expected: `restoreDefaultRules` appears only in `AlarmContext.tsx` (three times); the three
+constants appear only in `AlarmContext.tsx`; `Polyurethane` and `Reactor_01` appear only in
+`AlarmContext.tsx` and nowhere in `conf/` or `99_simulator/`. If any view does call
+`restoreDefaultRules`, stop and remove that call site in this task as well.
+
+- [ ] **Step 2: Write the failing context test**
+
+Create `11_frontend/src/context/AlarmContext.test.tsx`. `AlarmProvider` depends on two other
+contexts and on the client, so all three are mocked at the module boundary — that is the same
+rule the rest of this suite follows, and it keeps the test about alarm behaviour.
+
+```tsx
+import { act, render } from '@testing-library/react';
+import React from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { AlarmProvider, useAlarms } from './AlarmContext';
+import type { AlertRule } from '../types/alarm';
+import type { MqttMessage } from '../types/uns';
+import { unsGraphQLClient } from '../services/graphql/client';
+
+let feed: MqttMessage[] = [];
+
+vi.mock('./UNSContext', () => ({
+  useUNS: () => ({ mqttFeed: feed }),
+}));
+
+vi.mock('./AuthContext', () => ({
+  useAuth: () => ({
+    currentUser: { id: 'u-test', name: 'Test Operator', role: 'operator' },
+  }),
+}));
+
+vi.mock('../services/graphql/client', () => ({
+  unsGraphQLClient: {
+    getAlertRules: vi.fn(),
+    saveAlertRules: vi.fn(),
+    saveAlertRule: vi.fn(),
+    deleteAlertRule: vi.fn(),
+    recordAlertRuleEvaluation: vi.fn(),
+  },
+}));
+
+const mocked = vi.mocked(unsGraphQLClient);
+
+/** A rule that breaches on `temp > 80`, with the chime off so jsdom needs no audio. */
+function rule(overrides: Partial<AlertRule> = {}): AlertRule {
+  return {
+    id: 'r-1',
+    name: 'Line 1 temperature high',
+    description: '',
+    enabled: true,
+    severity: 'HIGH',
+    category: 'TEMPERATURE',
+    topic: 'CovestroAG/+/Production/#',
+    metricField: 'temp',
+    condition: 'GREATER_THAN',
+    thresholdValue: 80,
+    unit: '°C',
+    delaySeconds: 0,
+    targetRoles: ['operator'],
+    autoResolveOnNormal: false,
+    actions: { inAppNotification: true, audioChime: false },
+    triggerCount: 0,
+    createdAt: '2026-09-01T00:00:00.000Z',
+    updatedAt: '2026-09-01T00:00:00.000Z',
+    ...overrides,
+  } as AlertRule;
+}
+
+function message(topic: string, payload: Record<string, unknown>): MqttMessage {
+  return {
+    id: `m-${topic}`,
+    topic,
+    payload,
+    timestamp: '2026-09-02T10:00:00.000Z',
+  };
+}
+
+type Ctx = ReturnType<typeof useAlarms>;
+let ctx: Ctx | null = null;
+
+const Probe: React.FC = () => {
+  ctx = useAlarms();
+  return null;
+};
+
+async function mount(): Promise<void> {
+  render(
+    <AlarmProvider>
+      <Probe />
+    </AlarmProvider>,
+  );
+  // Drain refreshRules and, when rules arrive, the evaluation effect they retrigger.
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
+describe('AlarmProvider', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    feed = [];
+    ctx = null;
+    mocked.getAlertRules.mockResolvedValue([]);
+    mocked.saveAlertRules.mockResolvedValue([]);
+    mocked.recordAlertRuleEvaluation.mockResolvedValue(undefined as never);
+  });
+
+  afterEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it('starts with nothing, on a platform that holds nothing', async () => {
+    await mount();
+
+    expect(ctx?.rules).toEqual([]);
+    expect(ctx?.activeAlarms).toEqual([]);
+    expect(ctx?.auditLog).toEqual([]);
+  });
+
+  // The defect this task closes: a fresh browser used to POST three invented rules into
+  // shared Postgres the first time it saw an empty platform.
+  it('does not write anything to the platform when it has no rules of its own', async () => {
+    await mount();
+
+    expect(mocked.saveAlertRules).not.toHaveBeenCalled();
+    expect(ctx?.rulesOrigin).toBe('SERVER');
+    expect(ctx?.rulesError).toBeNull();
+  });
+
+  it('still hands over rules this browser cached before the server could store them', async () => {
+    const cached = rule({ id: 'r-cached', name: 'Authored here first' });
+    localStorage.setItem('uns_alert_rules_v1', JSON.stringify([cached]));
+    mocked.saveAlertRules.mockResolvedValue([cached]);
+
+    await mount();
+
+    expect(mocked.saveAlertRules).toHaveBeenCalledWith([cached]);
+    expect(ctx?.rules).toEqual([cached]);
+    expect(ctx?.rulesOrigin).toBe('SERVER');
+  });
+
+  it('raises an alarm when a filter with both + and # covers the topic', async () => {
+    mocked.getAlertRules.mockResolvedValue([rule()]);
+    feed = [message('CovestroAG/Dormagen/Production/Line1/Cell1', { temp: 91 })];
+
+    await mount();
+
+    expect(ctx?.activeAlarms).toHaveLength(1);
+    expect(ctx?.activeAlarms[0].topic).toBe('CovestroAG/Dormagen/Production/Line1/Cell1');
+    expect(ctx?.activeAlarms[0].status).toBe('ACTIVE_UNACK');
+  });
+
+  it('does not raise an alarm for a topic the filter does not cover', async () => {
+    mocked.getAlertRules.mockResolvedValue([rule()]);
+    feed = [message('CovestroAG/Dormagen/Packaging/Line1/Cell1', { temp: 91 })];
+
+    await mount();
+
+    expect(ctx?.activeAlarms).toEqual([]);
+  });
+
+  // The old inline matcher built a RegExp from the filter without escaping, so a dot in a
+  // topic matched any character.
+  it('treats a dot in a topic as a dot', async () => {
+    mocked.getAlertRules.mockResolvedValue([rule({ topic: 'Plant/A.B/temp' })]);
+    feed = [message('Plant/AxB/temp', { temp: 91 })];
+
+    await mount();
+
+    expect(ctx?.activeAlarms).toEqual([]);
+  });
+
+  it('has no way to restore fictional defaults', async () => {
+    await mount();
+
+    expect((ctx as unknown as Record<string, unknown>).restoreDefaultRules).toBeUndefined();
+  });
+});
+```
+
+The cached-rules test writes `uns_alert_rules_v1`, which is `STORAGE_KEYS.RULES` at
+`AlarmContext.tsx:27`. `STORAGE_KEYS` is not exported, so the literal is deliberate — check it
+still matches before running.
+
+- [ ] **Step 3: Run it to verify it fails**
+
+Run: `cd 11_frontend && npx vitest run src/context/AlarmContext.test.tsx`
+Expected: FAIL — `rules` is the three seeded rules, `activeAlarms` has two, `auditLog` has
+three, `saveAlertRules` was called with `INITIAL_RULES`, the dot test raises an alarm, and
+`restoreDefaultRules` is a function.
+
+- [ ] **Step 4: Delete the three fabricated collections**
+
+Delete `11_frontend/src/context/AlarmContext.tsx:42`–`:302` — `INITIAL_RULES`,
+`INITIAL_ACTIVE_ALARMS` and `INITIAL_ALARM_AUDIT`, from `const INITIAL_RULES` through the
+blank line before `interface AlarmContextType`. Then fix the three initialisers that referred
+to them, so each collection starts empty:
+
+```tsx
+  // The cached rules render first so the alarm list is never briefly empty; the
+  // server's answer replaces them as soon as it arrives.
+  const [rules, setRules] = useState<AlertRule[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.RULES);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    // No seeded rules. A rule names real equipment or it does not exist.
+    return [];
+  });
+```
+
+```tsx
+    return [];
+  });
+```
+
+for `activeAlarms` and `auditLog` in place of `return INITIAL_ACTIVE_ALARMS;` and
+`return INITIAL_ALARM_AUDIT;`. Then remove `AlarmAuditEntry` or `ActiveAlarm` from the type
+import at the top only if `tsc` reports them unused — both are still used by the state
+generics, so most likely nothing changes there.
+
+- [ ] **Step 5: Stop the hand-over from firing when there is nothing to hand over**
+
+In `refreshRules`, replace the final block (`:424`–`:432`):
+
+```tsx
+    // Nothing to hand over. An empty platform plus an empty browser is not a migration,
+    // and POSTing an empty list would be a write nobody asked for.
+    if (rulesRef.current.length === 0) {
+      setRulesOrigin('SERVER');
+      setRulesError(null);
+      return;
+    }
+
+    try {
+      const imported = await unsGraphQLClient.saveAlertRules(rulesRef.current);
+      setRules(imported);
+      setRulesOrigin('SERVER');
+      setRulesError(null);
+    } catch (error) {
+      setRulesOrigin('BROWSER');
+      setRulesError(error instanceof Error ? error.message : 'Alert Rules could not be stored');
+    }
+```
+
+`SERVER` is the honest origin in the new branch: the platform answered, and what it holds is
+nothing. `BROWSER` would say the rules on screen are local, and there are none.
+
+- [ ] **Step 6: Use the tested matcher**
+
+Add the import:
+
+```tsx
+import { topicMatchesFilter } from '../lib/uns/topic-match';
+```
+
+and replace `:648`–`:655`:
+
+```tsx
+      // Check topic matching
+      const topicMatches = rule.topic === '*' || topicMatchesFilter(rule.topic, latestMessage.topic);
+```
+
+`topicMatchesFilter` already treats `*` as everything, so the first clause is redundant —
+keep it anyway, because a rule stored with `*` is matched before the function is entered and
+that is one less thing to reason about at 3 a.m.
+
+- [ ] **Step 7: Delete `restoreDefaultRules`**
+
+Three deletions:
+
+- `:334` — the `restoreDefaultRules: () => void;` member of `AlarmContextType`.
+- `:1019`–`:1054` — the docstring, the `useCallback`, everything through its closing `}, []);`.
+- `:1083` — the `restoreDefaultRules,` line in the provider value.
+
+Nothing else refers to it. If `deleteAlertRule` or `rulesRef` becomes unused as a result,
+`tsc --noEmit` will say so in Step 12 — both are used elsewhere, so they should not.
+
+- [ ] **Step 8: Run the context test**
+
+Run: `cd 11_frontend && npx vitest run src/context/AlarmContext.test.tsx`
+Expected: PASS, 7 tests.
+
+- [ ] **Step 9: Write the failing view test**
+
+Create `11_frontend/src/components/alarms/AlarmManagementView.test.tsx`. `useAlarms` is
+mocked rather than wrapped in a provider, because what is under test is what this screen says
+about a given state — the provider's behaviour is Step 2's test.
+
+```tsx
+import { render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import { AlarmManagementView } from './AlarmManagementView';
+import type { AlertRule } from '../../types/alarm';
+
+const alarms = {
+  rules: [] as AlertRule[],
+  activeAlarms: [],
+  auditLog: [],
+  isMuted: false,
+  rulesOrigin: 'SERVER' as const,
+  rulesError: null,
+  myRoleAlarms: [],
+  myUnacknowledgedCount: 0,
+  totalUnacknowledgedCount: 0,
+  criticalAlarmsCount: 0,
+  refreshRules: vi.fn(),
+  createRule: vi.fn(),
+  updateRule: vi.fn(),
+  deleteRule: vi.fn(),
+  toggleRuleEnabled: vi.fn(),
+  testTriggerRule: vi.fn(),
+  acknowledgeAlarm: vi.fn(),
+  resolveAlarm: vi.fn(),
+  bulkAcknowledgeAll: vi.fn(),
+  toggleAudioMute: vi.fn(),
+  playAlarmChime: vi.fn(),
+  clearResolvedAlarms: vi.fn(),
+};
+
+vi.mock('../../context/AlarmContext', () => ({
+  useAlarms: () => alarms,
+}));
+
+vi.mock('../../context/AuthContext', () => ({
+  useAuth: () => ({
+    currentUser: { id: 'u-test', name: 'Test Operator', role: 'operator' },
+    isAdmin: false,
+  }),
+}));
+
+vi.mock('../../context/UNSContext', () => ({
+  useUNS: () => ({ jumpToHistorian: vi.fn(), jumpToTopicInTree: vi.fn() }),
+}));
+
+function enabledRule(): AlertRule {
+  return {
+    id: 'r-1',
+    name: 'Line 1 temperature high',
+    description: '',
+    enabled: true,
+    severity: 'HIGH',
+    category: 'TEMPERATURE',
+    topic: 'CovestroAG/Dormagen/Production/Line1/#',
+    metricField: 'temp',
+    condition: 'GREATER_THAN',
+    thresholdValue: 80,
+    unit: '°C',
+    delaySeconds: 0,
+    targetRoles: ['operator'],
+    autoResolveOnNormal: false,
+    actions: { inAppNotification: true, audioChime: false },
+    triggerCount: 0,
+    createdAt: '2026-09-01T00:00:00.000Z',
+    updatedAt: '2026-09-01T00:00:00.000Z',
+  } as AlertRule;
+}
+
+describe('AlarmManagementView', () => {
+  it('does not call an unwatched plant normal', () => {
+    alarms.rules = [];
+    render(<AlarmManagementView />);
+
+    const empty = screen.getByTestId('alarms-empty');
+    expect(empty).toHaveTextContent('No Alert Rules are configured');
+    expect(empty).toHaveTextContent('nothing is being evaluated');
+    expect(empty).not.toHaveTextContent('within configured tolerances');
+    expect(empty).not.toHaveTextContent('normal parameters');
+  });
+
+  it('says so when every rule is switched off', () => {
+    alarms.rules = [{ ...enabledRule(), enabled: false }];
+    render(<AlarmManagementView />);
+
+    expect(screen.getByTestId('alarms-empty')).toHaveTextContent(
+      'All 1 Alert Rules are disabled',
+    );
+  });
+
+  it('reports a quiet plant only when something is watching it', () => {
+    alarms.rules = [enabledRule()];
+    render(<AlarmManagementView />);
+
+    const empty = screen.getByTestId('alarms-empty');
+    expect(empty).toHaveTextContent('No enabled Alert Rule is currently breached');
+    expect(empty).toHaveTextContent('while this console is open');
+  });
+});
+```
+
+The three assertions on the same `data-testid` are the point: one empty list, three different
+truths, and the current code tells the third one in all three cases.
+
+- [ ] **Step 10: Run it to verify it fails**
+
+Run: `cd 11_frontend && npx vitest run src/components/alarms/AlarmManagementView.test.tsx`
+Expected: FAIL — no element has `data-testid="alarms-empty"`, and the text is the
+`configured tolerances` sentence.
+
+- [ ] **Step 11: Rewrite the two empty states and add the notice**
+
+First, `AlarmManagementView.tsx:392`–`:400`. Above the `return` in the component, derive the
+one fact the empty state turns on:
+
+```tsx
+  const enabledRuleCount = rules.filter((r) => r.enabled).length;
+```
+
+Then replace the empty branch's heading and paragraph:
+
+```tsx
+              <div
+                data-testid="alarms-empty"
+                className="bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] rounded-xl p-12 text-center text-[#64748B] space-y-3"
+              >
+                {rules.length === 0 ? (
+                  <AlertTriangle className="w-12 h-12 text-amber-500 dark:text-[#FFC107] mx-auto opacity-70" />
+                ) : (
+                  <CheckCircle2 className="w-12 h-12 text-emerald-500 dark:text-emerald-400 mx-auto opacity-70" />
+                )}
+                <h3 className="font-bold text-[#0F172A] dark:text-[#F8FAFC] text-sm text-balance">
+                  No active alarms
+                </h3>
+                <p className="text-[12px] text-[#64748B] dark:text-[#94A3B8] max-w-md mx-auto text-pretty">
+                  {rules.length === 0
+                    ? 'No Alert Rules are configured, so nothing is being evaluated. An empty list here says nobody is watching, not that the plant is running well.'
+                    : enabledRuleCount === 0
+                      ? `All ${rules.length} Alert Rules are disabled, so nothing is being evaluated.`
+                      : roleFilter === 'my_role'
+                        ? `No enabled Alert Rule routed to role '${currentUser.role}' is currently breached, while this console is open.`
+                        : `No enabled Alert Rule is currently breached, while this console is open.`}
+                </p>
+```
+
+Leave the button that follows the paragraph as it is.
+
+The `while this console is open` clause is not padding. ADR-0005 means an alarm that would
+have fired overnight did not, and a screen that says "no active alarms" without that clause
+is claiming a quiet night it never observed.
+
+Second, the rules tab. Add the imports:
+
+```tsx
+import { BrowserEvaluationNotice } from './BrowserEvaluationNotice';
+import { EmptyState } from '../common/EmptyState';
+```
+
+Put the notice under the rules-header paragraph at `:573`:
+
+```tsx
+                <p className="text-[11px] text-[#64748B] dark:text-[#94A3B8] text-pretty">
+                  Define telemetry thresholds, evaluation conditions, and the predefined roles that receive alerts.
+                </p>
+                <BrowserEvaluationNotice className="mt-1" />
+```
+
+And give the table an empty state — replace the wrapper `div` that contains it (`:620` to the
+closing of the table block) with a conditional:
+
+```tsx
+            {rules.length === 0 ? (
+              <EmptyState
+                title="No Alert Rules are configured"
+                detail="Add a rule to watch a topic's payload against a threshold. Rules are stored on the platform and shared with every console at this site."
+              />
+            ) : (
+              <div className="bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] rounded-xl overflow-hidden">
+                {/* the existing overflow-x-auto table, unchanged */}
+              </div>
+            )}
+```
+
+Keep the table markup exactly as it is inside the `else` branch — this step adds a wrapper
+and changes nothing about the rows.
+
+- [ ] **Step 12: Run both tests and the type check**
+
+```bash
+cd 11_frontend && npx tsc --noEmit \
+  && npx vitest run src/context/AlarmContext.test.tsx src/components/alarms/AlarmManagementView.test.tsx
+```
+
+Expected: no type errors, 10 tests passing.
+
+- [ ] **Step 13: Commit the honesty changes**
+
+```bash
+git add 11_frontend/src/context/AlarmContext.tsx \
+  11_frontend/src/context/AlarmContext.test.tsx \
+  11_frontend/src/components/alarms/AlarmManagementView.tsx \
+  11_frontend/src/components/alarms/AlarmManagementView.test.tsx
+git commit -m "fix(frontend): ALARMS stops inventing a plant and stops calling silence normal
+
+Three seeded collections deleted: rules on Polyurethane/Reactor_01, an active
+alarm reading 88.4 C on that reactor, and an audit trail crediting named people
+with acknowledging it. None of that equipment exists in conf/ or 99_simulator/.
+
+They were not only cosmetic. refreshRules POSTs this browser's rules when the
+platform holds none, so the first console opened against an empty database wrote
+all three fabricated rules into shared Postgres for every other console to read.
+That branch now returns early when there is nothing to hand over.
+
+restoreDefaultRules is gone. It deleted every authored rule and POSTed the
+fictional ones back, and nothing ever called it.
+
+The topic matcher is now the tested topicMatchesFilter, which handles a filter
+with both + and # and escapes regex metacharacters - the inline version matched
+Plant/AxB against a rule on Plant/A.B.
+
+And the empty alarm list no longer reads 'operating within configured
+tolerances'. With no rules configured nothing is being evaluated, and the screen
+now says which of the three situations it is in. ADR-0005's browser-side
+evaluation is stated rather than concealed."
+```
+
+- [ ] **Step 14: Write the failing audit-export test**
+
+Append to `11_frontend/src/components/alarms/AlarmManagementView.test.tsx` — the audit log is
+reached through this screen, and mocking `downloadCsv` keeps jsdom's missing
+`URL.createObjectURL` out of it while the real `toCsv` still runs.
+
+```tsx
+import userEvent from '@testing-library/user-event';
+import { downloadCsv } from '../../lib/csv/to-csv';
+import { AlarmAuditLog } from './AlarmAuditLog';
+
+vi.mock('../../lib/csv/to-csv', async () => {
+  const actual = await vi.importActual<typeof import('../../lib/csv/to-csv')>(
+    '../../lib/csv/to-csv',
+  );
+  return { ...actual, downloadCsv: vi.fn() };
+});
+
+describe('AlarmAuditLog export', () => {
+  it('exports the rows on screen through the shared CSV writer', async () => {
+    alarms.auditLog = [
+      {
+        id: 'aud-1',
+        timestamp: '2026-09-02T09:58:00.000Z',
+        alarmId: 'alm-1',
+        ruleName: 'Line 1 temperature high',
+        topic: 'CovestroAG/Dormagen/Production/Line1/Cell1',
+        severity: 'HIGH',
+        action: 'TRIGGERED',
+        actorName: 'UNS Ingestion Engine',
+        actorRole: 'admin',
+        details: 'temp (91 °C) > 80 °C, "high" band',
+      },
+    ];
+    render(<AlarmAuditLog />);
+
+    await userEvent.click(screen.getByRole('button', { name: /export/i }));
+
+    expect(downloadCsv).toHaveBeenCalledTimes(1);
+    const [filename, csv] = vi.mocked(downloadCsv).mock.calls[0];
+    expect(filename).toMatch(/^uns-alarm-audit-\d{4}-\d{2}-\d{2}\.csv$/);
+    expect(csv.split('\r\n')[0]).toBe(
+      'Timestamp,Action,Severity,Rule Name,Topic,Actor Name,Actor Role,Details',
+    );
+    // The details field contains a comma and a quote, so it is the one field quoted.
+    expect(csv).toContain('"temp (91 °C) > 80 °C, ""high"" band"');
+    expect(csv).toContain('UNS Ingestion Engine');
+  });
+});
+```
+
+`alarms.auditLog` is typed `[]` in the harness above; widen it to
+`auditLog: [] as AlarmAuditEntry[]` and import `AlarmAuditEntry` from `../../types/alarm` so
+this assignment type-checks.
+
+- [ ] **Step 15: Run it to verify it fails**
+
+Run: `cd 11_frontend && npx vitest run src/components/alarms/AlarmManagementView.test.tsx`
+Expected: FAIL — `downloadCsv` is never called; the component builds its own blob.
+
+- [ ] **Step 16: Route the audit export through `toCsv`**
+
+Replace `AlarmAuditLog.tsx:38`–`:60` with:
+
+```tsx
+  const exportCSV = () => {
+    const columns: CsvColumn<AlarmAuditEntry>[] = [
+      { header: 'Timestamp', value: (e) => e.timestamp },
+      { header: 'Action', value: (e) => e.action },
+      { header: 'Severity', value: (e) => e.severity },
+      { header: 'Rule Name', value: (e) => e.ruleName },
+      { header: 'Topic', value: (e) => e.topic },
+      { header: 'Actor Name', value: (e) => e.actorName },
+      { header: 'Actor Role', value: (e) => e.actorRole },
+      { header: 'Details', value: (e) => e.details },
+    ];
+    const today = new Date().toISOString().slice(0, 10);
+    downloadCsv(`uns-alarm-audit-${today}.csv`, toCsv(columns, filteredLogs));
+  };
+```
+
+with the imports:
+
+```tsx
+import { downloadCsv, toCsv, type CsvColumn } from '../../lib/csv/to-csv';
+import type { AlarmAuditEntry } from '../../types/alarm';
+```
+
+`filteredLogs`, not `auditLog` — the button exports what the filters left on screen, which is
+the same rule Task 18 settled for the historian. `toCsv` quotes only fields that need it and
+joins with `\r\n`; `downloadCsv` revokes the object URL, which the hand-rolled version never
+did.
+
+Add an empty row to the table body while it is open, so a filtered-to-nothing audit trail does
+not look like a stuck load. Directly after `{filteredLogs.map(...)}` inside `<tbody>`:
+
+```tsx
+              {filteredLogs.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="py-8 px-3 text-center text-[12px] text-[#64748B]">
+                    No audit entries match these filters. The trail is browser-local and starts
+                    empty in a new browser.
+                  </td>
+                </tr>
+              )}
+```
+
+Check the `<thead>` row before committing to `colSpan={6}` and use the real column count.
+
+- [ ] **Step 17: Run everything and commit**
+
+```bash
+cd 11_frontend && npx tsc --noEmit && npx vitest run
+```
+
+Expected: no type errors, green suite.
+
+```bash
+git add 11_frontend/src/components/alarms/AlarmAuditLog.tsx \
+  11_frontend/src/components/alarms/AlarmManagementView.test.tsx
+git commit -m "refactor(frontend): the alarm audit export uses the shared CSV writer
+
+One CSV writer, not two. The hand-rolled version quoted every field whether it
+needed it or not, joined rows with a bare newline, and never revoked its object
+URL - one leaked blob per export for the life of the tab. It also exported
+auditLog while the table showed filteredLogs; the button now exports the rows on
+screen, the same rule the historian follows.
+
+An empty trail says it is browser-local and starts empty, instead of showing a
+table with headers and no rows."
+```
+
+---
+
+---
+
+## Task 21: USERS — a read-only list of browser-local accounts, and an audit trail that audits nothing
+
+Spec section 11's last row: `/users` is *"reduced to a read-only view of the local user
+list, labelled browser-local, not enforced, until the authentication spec lands"*. The spec
+then says why this row matters more than the others:
+
+> The `/users` reduction matters. The current screen edits `localStorage` and presents the
+> result as access control. Leaving it looking authoritative while `AuthContext.tsx:417`
+> accepts any password is the single most misleading surface in the console.
+
+Read the file before you touch it. Eight facts, verified in the working tree:
+
+1. **`UserManagementView.tsx` has five write affordances.** `Reset Defaults` (`:136`–`:147`,
+   `restoreDefaults()` behind a `confirm()`), `New User Account` (`:149`–`:156`, opens
+   `CreateUserModal`), the per-row `Manage` button (`:437`–`:444`, opens `EditUserModal`), the
+   per-cell permission toggle in the matrix (`:538`–`:549`, `toggleUserFeaturePermission`), and
+   `Simulate` (`:428`–`:434`, `switchUser`). Four of the five write. The fifth only changes
+   which account this browser is pretending to be.
+
+2. **`AuthContext.tsx:98`–`:115` seeds two fabricated audit entries.** `log-001` credits
+   `saif.wsm@gmail.com` with creating `elena.rostova@covestro.com`'s account three days ago;
+   `log-002` credits the same person with granting `marcus.weber@covestro.com` a permission
+   twelve hours ago. Neither event happened. They are the same class of fabrication Task 20
+   deletes from `AlarmContext`, and this one is displayed under a compliance heading.
+
+3. **The audit tab calls itself an immutable ledger.** `:621`–`:624`: *"Security & RBAC Audit
+   Trail — Immutable ledger tracking user additions, role transitions, and permission
+   grants."* It reads `localStorage`, which any operator can edit from a devtools console and
+   any browser can clear. Nothing about it is immutable and nothing about it is a ledger.
+
+4. **The matrix advertises persistence it does not have.** `:465`–`:467` badges the matrix
+   `LIVE TOGGLE & AUTO-SAVED` and `:470` reads *"Click checkboxes to instantly grant or revoke
+   specific console capabilities for any user."* The toggle writes one browser's
+   `localStorage` key `uns_rbac_users_v2`. It grants nothing and revokes nothing.
+
+5. **`logAction` is called with actions its own type does not contain.**
+   `AuditLogEntry['action']` (`types/rbac.ts:260`) is
+   `'CREATE_USER' | 'UPDATE_ROLE' | 'UPDATE_PERMISSIONS' | 'DELETE_USER' | 'TOGGLE_STATUS'`.
+   `login` (`:432`) passes `'USER_LOGIN' as any` and `logout` (`:442`) passes
+   `'USER_LOGOUT' as any`. The casts exist because the entries are not of the type the ledger
+   claims to hold.
+
+6. **`getFeatureIcon` (`:88`–`:111`) has no caller,** and `KeyRound` (`:6`), `Lock` (`:25`) and
+   `Sparkles` (`:27`) are imported and never rendered. Deleting `getFeatureIcon` also retires
+   the `Layers`, `Radio`, `Workflow`, `Activity`, `Download`, `Send`, `Settings` and `Bookmark`
+   imports, which exist only inside it.
+
+7. **The exhaustive caller list for everything this task removes** — run the grep in Step 1 and
+   you should get exactly this:
+
+   | Removed member | Callers outside `AuthContext.tsx` |
+   | --- | --- |
+   | `createUser` | `users/CreateUserModal.tsx:12`, `:44` |
+   | `updateUser` | `users/EditUserModal.tsx:13`, `:55` |
+   | `deleteUser` | `users/EditUserModal.tsx:13`, `:71` |
+   | `resetUserToRoleDefaults` | `users/EditUserModal.tsx:13` |
+   | `toggleUserFeaturePermission` | `users/UserManagementView.tsx:49`, `:540` |
+   | `restoreDefaults` | `users/UserManagementView.tsx:50`, `:139` |
+   | `auditLogs` | `users/UserManagementView.tsx:46`, `:240`, `:627`, `:643` |
+
+   Both modals exist only to drive these methods, so both files go. `switchUser`,
+   `hasPermission`, `getUserPermission`, `canAccessTab`, `isAdmin`, `isAuthenticated`, `login`
+   and `logout` all have callers elsewhere (`common/UserSessionMenu.tsx`,
+   `common/AccessRestricted.tsx`, `layout/AppLayout.tsx`, `layout/Sidebar.tsx`,
+   `explore/HistorianTable.tsx`, `simulator/*`, `auth/LoginView.tsx`,
+   `landing/LandingView.tsx`, `alarms/AlarmManagementView.tsx`) and all stay.
+
+8. **No test in `11_frontend/src` references `useAuth`, `AuthProvider` or this view.** Nothing
+   green breaks; the tests this task writes are the first coverage the screen has ever had.
+
+**What this task does not do.** It does not fix sign-in. Spec section 6 is explicit that
+`login` falling through to `users[0]` and ignoring its password argument *"This spec does not
+fix it — the authentication spec does"*. It does not touch `LoginView.tsx:245` or
+`AuthContext.tsx:73` either — Task 3 owns both. And it does not remove the `/users` route or
+its `canAccessTab('users')` gate: an honest read-only directory is worth keeping, because it
+is how an integrator sees which role profile changes which part of the console before Cycle 2
+makes the roles real.
+
+**Palette note.** This file is dark-only (`bg-[#050505]`, `text-[#F8FAFC]`, `font-mono`) and
+this task keeps it that way. Migrating it to the light/dark pairs the new screens use is a
+separate change and is not in this spec.
+
+**Files:**
+- Modify: `11_frontend/src/components/users/UserManagementView.tsx` (full rewrite, 685 → ~330 lines)
+- Delete: `11_frontend/src/components/users/CreateUserModal.tsx`
+- Delete: `11_frontend/src/components/users/EditUserModal.tsx`
+- Modify: `11_frontend/src/context/AuthContext.tsx`
+- Modify: `11_frontend/src/types/rbac.ts:255`–`:261`
+- Test: `11_frontend/src/components/users/UserManagementView.test.tsx` (create)
+- Test: `11_frontend/src/context/auth-context.test.tsx` (create)
+
+**Interfaces:**
+- Consumes: `useAuth` from `src/context/AuthContext.tsx`; `SYSTEM_FEATURES`, `ROLE_CONFIGS`,
+  `UserRole` from `src/types/rbac.ts`. Nothing from Tasks 1–20 — this task adds no client
+  method, no GraphQL query and no shared component.
+- Produces:
+  - `AuthContextType` reduced to exactly ten members, in this shape:
+    ```ts
+    interface AuthContextType {
+      currentUser: UserAccount;
+      users: UserAccount[];
+      isAdmin: boolean;
+      isAuthenticated: boolean;
+      login: (identifier: string, password?: string) => boolean;
+      logout: () => void;
+      switchUser: (userId: string) => void;
+      hasPermission: (feature: FeatureKey) => boolean;
+      getUserPermission: (user: UserAccount, feature: FeatureKey) => boolean;
+      canAccessTab: (tab: string) => { allowed: boolean; requiredFeature: FeatureKey; featureName: string };
+    }
+    ```
+    Cycle 2 (`docs/superpowers/plans/2026-09-02-console-authentication.md`) replaces this
+    object with an OIDC session, so keep the surface this small.
+  - `export const UserManagementView: React.FC` — unchanged signature, no props.
+  - Test ids later tasks and Cycle 2 assert against: `users-view`, `users-not-enforced`,
+    `users-directory`, `users-matrix`, `users-roles`, `user-row-<id>`, `user-view-as-<id>`.
+  - `AuditLogEntry` no longer exists in `src/types/rbac.ts`. `UserAccount`, `UserRole`,
+    `FeatureKey`, `SYSTEM_FEATURES` and `ROLE_CONFIGS` are untouched.
+
+- [ ] **Step 1: Confirm the caller list before deleting anything**
+
+Line numbers in this task were read from the working tree, and the file is long enough that an
+earlier task's edit can shift them. Match on code content, not on line number, and start by
+reproducing the table in fact 7:
+
+```bash
+cd 11_frontend/src
+for m in createUser updateUser deleteUser resetUserToRoleDefaults \
+         toggleUserFeaturePermission restoreDefaults auditLogs; do
+  echo "--- $m"
+  grep -rn "\b$m\b" --include=*.ts --include=*.tsx . | grep -v "context/AuthContext.tsx"
+done
+grep -rn "AuditLogEntry" --include=*.ts --include=*.tsx .
+```
+
+Expected: the seven blocks match fact 7 exactly, and `AuditLogEntry` appears only in
+`context/AuthContext.tsx` (five times) and `types/rbac.ts:255`. If any block names a file this
+task does not touch, stop and reconcile before continuing — a caller you did not plan for means
+the deletion is not safe yet.
+
+- [ ] **Step 2: Write the failing view test**
+
+Create `11_frontend/src/components/users/UserManagementView.test.tsx`. `AuthProvider` is real
+here: it touches only `localStorage`, never `fetch` or `WebSocket`, so `src/test/setup.ts` has
+nothing to complain about. Clear storage between tests so the seeded users are deterministic.
+
+```tsx
+import { describe, expect, it, beforeEach } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { AuthProvider } from '../../context/AuthContext';
+import { UserManagementView } from './UserManagementView';
+
+const renderView = () =>
+  render(
+    <AuthProvider>
+      <UserManagementView />
+    </AuthProvider>
+  );
+
+describe('UserManagementView', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('says the accounts are browser-local and not enforced', () => {
+    renderView();
+    const notice = screen.getByTestId('users-not-enforced');
+    expect(notice).toHaveTextContent(/browser-local, not enforced/i);
+    expect(notice).toHaveTextContent(/accepts any password/i);
+  });
+
+  it('offers no way to create, edit, delete or reset an account', () => {
+    renderView();
+    expect(screen.queryByRole('button', { name: /new user account/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /reset defaults/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /manage/i })).toBeNull();
+    expect(screen.queryByText(/ADMIN ACCESS ONLY/i)).toBeNull();
+  });
+
+  it('renders the feature matrix without a single toggle', () => {
+    renderView();
+    fireEvent.click(screen.getByRole('button', { name: /feature flags/i }));
+    const matrix = screen.getByTestId('users-matrix');
+    expect(matrix.querySelectorAll('button')).toHaveLength(0);
+    expect(screen.queryByText(/auto-saved/i)).toBeNull();
+    expect(screen.queryByText(/instantly grant or revoke/i)).toBeNull();
+  });
+
+  it('has no audit log tab', () => {
+    renderView();
+    expect(screen.queryByRole('button', { name: /audit/i })).toBeNull();
+    expect(screen.queryByText(/immutable ledger/i)).toBeNull();
+  });
+
+  it('still lets an integrator view the console as another account', () => {
+    renderView();
+    // The seeded default account is the admin; the engineer is a different row.
+    expect(screen.getByTestId('user-row-usr-admin-01')).toHaveTextContent('YOU');
+    fireEvent.click(screen.getByTestId('user-view-as-usr-eng-01'));
+    expect(screen.getByTestId('user-row-usr-eng-01')).toHaveTextContent('YOU');
+    expect(screen.getByTestId('user-row-usr-admin-01')).not.toHaveTextContent('YOU');
+  });
+});
+```
+
+The engineer's id is read from `AuthContext.tsx`'s `INITIAL_USERS` — confirm it with
+`grep -n "id: 'usr-" 11_frontend/src/context/AuthContext.tsx` and use the real second id if it
+is not `usr-eng-01`.
+
+- [ ] **Step 3: Run it and watch it fail**
+
+Run: `cd 11_frontend && npx vitest run src/components/users/UserManagementView.test.tsx`
+
+Expected: FAIL. The first test cannot find `users-not-enforced`; the second finds
+`New User Account`, `Reset Defaults`, `Manage` and `ADMIN ACCESS ONLY`; the third finds
+`LIVE TOGGLE & AUTO-SAVED` and forty-odd toggle buttons; the fourth finds the audit tab; the
+fifth cannot find `user-row-usr-admin-01`.
+
+- [ ] **Step 4: Rewrite the view**
+
+Replace the whole of `11_frontend/src/components/users/UserManagementView.tsx` with:
+
+```tsx
+import React, { useMemo, useState } from 'react';
+import {
+  Users,
+  Shield,
+  Search,
+  Filter,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Check,
+  X,
+  FileSpreadsheet,
+  Eye,
+  Info,
+} from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { UserRole, SYSTEM_FEATURES, ROLE_CONFIGS } from '../../types/rbac';
+
+type SubTab = 'directory' | 'matrix' | 'roles';
+
+export const UserManagementView: React.FC = () => {
+  const { users, currentUser, switchUser } = useAuth();
+
+  const [activeSubTab, setActiveSubTab] = useState<SubTab>('directory');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState<string>('ALL');
+  const [statusFilter, setStatusFilter] = useState<string>('ALL');
+
+  const filteredUsers = useMemo(() => {
+    const q = searchQuery.toLowerCase();
+    return users.filter((u) => {
+      const matchSearch =
+        u.name.toLowerCase().includes(q) ||
+        u.email.toLowerCase().includes(q) ||
+        u.department.toLowerCase().includes(q) ||
+        u.plantLocation.toLowerCase().includes(q);
+      const matchRole = roleFilter === 'ALL' || u.role === roleFilter;
+      const matchStatus = statusFilter === 'ALL' || u.status === statusFilter;
+      return matchSearch && matchRole && matchStatus;
+    });
+  }, [users, searchQuery, roleFilter, statusFilter]);
+
+  const stats = useMemo(
+    () => ({
+      total: users.length,
+      admins: users.filter((u) => u.role === 'admin').length,
+      engineers: users.filter((u) => u.role === 'engineer').length,
+      operators: users.filter((u) => u.role === 'operator').length,
+      auditors: users.filter((u) => u.role === 'auditor').length,
+      suspended: users.filter((u) => u.status === 'suspended').length,
+    }),
+    [users]
+  );
+
+  const subTabClass = (tab: SubTab) =>
+    `px-3 py-2 border-b-2 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
+      activeSubTab === tab
+        ? 'border-[#FFC107] text-[#FFC107]'
+        : 'border-transparent text-[#94A3B8] hover:text-[#F8FAFC]'
+    } focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500`;
+
+  return (
+    <div
+      id="user-management-view"
+      data-testid="users-view"
+      className="flex-1 flex flex-col h-full overflow-hidden bg-[#050505] text-[#F8FAFC] font-mono text-xs"
+    >
+      {/* Header */}
+      <div className="p-3 md:p-4 bg-[#111114] border-b border-[#1E293B] shrink-0 flex items-center gap-3">
+        <div className="w-8 h-8 rounded bg-[#0B0B0C] border border-[#1E293B] flex items-center justify-center text-[#94A3B8]">
+          <Shield className="w-4 h-4" />
+        </div>
+        <div>
+          <h1 className="font-bold text-sm text-[#F8FAFC]">Console Users</h1>
+          <p className="text-[10px] text-[#64748B]">
+            The accounts this browser knows about, the role profile each one was created from,
+            and which parts of the console each profile shows.
+          </p>
+        </div>
+      </div>
+
+      {/* The one thing an operator has to know before reading anything below */}
+      <div
+        data-testid="users-not-enforced"
+        className="px-3 md:px-4 py-2.5 bg-[#0B0B0C] border-b border-[#1E293B] shrink-0 flex items-start gap-2.5"
+      >
+        <Info className="w-3.5 h-3.5 text-[#FFC107] mt-0.5 shrink-0" />
+        <p className="text-[11px] leading-relaxed text-[#94A3B8] max-w-4xl">
+          <span className="font-bold text-[#F8FAFC]">Browser-local, not enforced.</span> This
+          list, the role profiles and every flag below are stored in this browser only. Nothing
+          here is sent to the platform, the GraphQL API applies no authorization of its own, and
+          signing in accepts any password. Read this screen as a preview of how the console
+          changes shape per role — not as access control.
+        </p>
+      </div>
+
+      {/* Counts of the local list */}
+      <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 p-3 bg-[#0B0B0C] border-b border-[#1E293B] text-[10px] shrink-0">
+        <div className="p-2 rounded bg-[#111114] border border-[#1E293B]">
+          <div className="text-[#64748B] uppercase text-[9px]">Accounts</div>
+          <div className="text-base font-bold text-[#F8FAFC]">{stats.total}</div>
+        </div>
+        <div className="p-2 rounded bg-[#111114] border border-[#1E293B]">
+          <div className="text-[#64748B] uppercase text-[9px]">Admins</div>
+          <div className="text-base font-bold text-[#F8FAFC]">{stats.admins}</div>
+        </div>
+        <div className="p-2 rounded bg-[#111114] border border-[#1E293B]">
+          <div className="text-[#64748B] uppercase text-[9px]">Engineers</div>
+          <div className="text-base font-bold text-[#F8FAFC]">{stats.engineers}</div>
+        </div>
+        <div className="p-2 rounded bg-[#111114] border border-[#1E293B]">
+          <div className="text-[#64748B] uppercase text-[9px]">Operators</div>
+          <div className="text-base font-bold text-[#F8FAFC]">{stats.operators}</div>
+        </div>
+        <div className="p-2 rounded bg-[#111114] border border-[#1E293B]">
+          <div className="text-[#64748B] uppercase text-[9px]">Auditors</div>
+          <div className="text-base font-bold text-[#F8FAFC]">{stats.auditors}</div>
+        </div>
+        <div className="p-2 rounded bg-[#111114] border border-[#1E293B]">
+          <div className="text-[#64748B] uppercase text-[9px]">Suspended</div>
+          <div className="text-base font-bold text-[#94A3B8]">{stats.suspended}</div>
+        </div>
+      </div>
+
+      {/* Sub-navigation */}
+      <div className="px-3 md:px-4 bg-[#111114] border-b border-[#1E293B] flex items-center shrink-0 overflow-x-auto scrollbar-none">
+        <div className="flex items-center gap-1 min-w-max">
+          <button
+            id="subtab-directory"
+            type="button"
+            onClick={() => setActiveSubTab('directory')}
+            className={subTabClass('directory')}
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>Directory ({filteredUsers.length})</span>
+          </button>
+
+          <button
+            id="subtab-matrix"
+            type="button"
+            onClick={() => setActiveSubTab('matrix')}
+            className={subTabClass('matrix')}
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <span>Feature flags</span>
+          </button>
+
+          <button
+            id="subtab-roles"
+            type="button"
+            onClick={() => setActiveSubTab('roles')}
+            className={subTabClass('roles')}
+          >
+            <Shield className="w-3.5 h-3.5" />
+            <span>Role profiles</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-3 md:p-4 scrollbar-thin scrollbar-thumb-[#1E293B]">
+        {/* DIRECTORY */}
+        {activeSubTab === 'directory' && (
+          <div className="space-y-3" data-testid="users-directory">
+            <div className="p-2.5 rounded bg-[#111114] border border-[#1E293B] flex flex-wrap items-center justify-between gap-2.5">
+              <div className="relative flex-1 min-w-[200px] max-w-md">
+                <Search className="w-3.5 h-3.5 text-[#64748B] absolute left-2.5 top-2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search name, email, department, site..."
+                  aria-label="Search accounts"
+                  className="w-full bg-[#0B0B0C] border border-[#1E293B] rounded pl-8 pr-3 py-1 text-xs text-[#F8FAFC] focus:outline-none focus:border-[#FFC107]"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
+                  <Filter className="w-3 h-3 text-[#64748B]" />
+                  <span className="text-[10px] text-[#64748B] uppercase">Role:</span>
+                  <select
+                    value={roleFilter}
+                    onChange={(e) => setRoleFilter(e.target.value)}
+                    aria-label="Filter by role"
+                    className="bg-[#0B0B0C] border border-[#1E293B] rounded px-2 py-1 text-[11px] text-[#F8FAFC] focus:outline-none focus:border-[#FFC107]"
+                  >
+                    <option value="ALL">All roles</option>
+                    <option value="admin">Admin</option>
+                    <option value="engineer">Engineer</option>
+                    <option value="operator">Operator</option>
+                    <option value="auditor">Auditor</option>
+                    <option value="viewer">Viewer</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] text-[#64748B] uppercase">Status:</span>
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    aria-label="Filter by status"
+                    className="bg-[#0B0B0C] border border-[#1E293B] rounded px-2 py-1 text-[11px] text-[#F8FAFC] focus:outline-none focus:border-[#FFC107]"
+                  >
+                    <option value="ALL">All statuses</option>
+                    <option value="active">Active</option>
+                    <option value="suspended">Suspended</option>
+                    <option value="pending">Pending</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="border border-[#1E293B] rounded-lg bg-[#111114] overflow-hidden shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs font-mono">
+                  <thead>
+                    <tr className="bg-[#0B0B0C] border-b border-[#1E293B] text-[10px] text-[#64748B] uppercase tracking-wider">
+                      <th className="py-2.5 px-3">Account</th>
+                      <th className="py-2.5 px-3">Role profile</th>
+                      <th className="py-2.5 px-3">Plant &amp; department</th>
+                      <th className="py-2.5 px-3">Status</th>
+                      <th className="py-2.5 px-3">Feature flags set</th>
+                      <th className="py-2.5 px-3">Last used here</th>
+                      <th className="py-2.5 px-3 text-right">View console as</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#1E293B]">
+                    {filteredUsers.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="text-center py-10 text-[#64748B]">
+                          No account matches this search. Clear the filters to see all{' '}
+                          {users.length}.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredUsers.map((user) => {
+                        const isSelf = user.id === currentUser.id;
+                        const roleConfig = ROLE_CONFIGS[user.role] || ROLE_CONFIGS.viewer;
+                        const allowedCount = Object.values(user.customPermissions || {}).filter(
+                          Boolean
+                        ).length;
+
+                        return (
+                          <tr
+                            key={user.id}
+                            data-testid={`user-row-${user.id}`}
+                            className={`hover:bg-[#1E293B]/40 transition-colors ${
+                              isSelf ? 'bg-[#1E293B]/20' : ''
+                            }`}
+                          >
+                            <td className="py-2.5 px-3">
+                              <div className="flex items-center gap-2.5">
+                                <div
+                                  className={`w-7 h-7 rounded-full ${
+                                    user.avatarColor || 'bg-[#FFC107]'
+                                  } text-black flex items-center justify-center font-bold text-xs shrink-0`}
+                                >
+                                  {user.name.charAt(0).toUpperCase()}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="font-bold text-[#F8FAFC] flex items-center gap-1.5 truncate">
+                                    <span>{user.name}</span>
+                                    {isSelf && (
+                                      <span className="px-1 rounded bg-amber-500/20 text-[#FFC107] text-[8px] font-bold border border-amber-500/30">
+                                        YOU
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-[10px] text-[#64748B] truncate">
+                                    {user.email}
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+
+                            <td className="py-2.5 px-3">
+                              <span
+                                className={`px-2 py-0.5 rounded text-[9px] font-bold border ${roleConfig.badgeBg} ${roleConfig.badgeText} ${roleConfig.badgeBorder}`}
+                              >
+                                {roleConfig.label.toUpperCase()}
+                              </span>
+                            </td>
+
+                            <td className="py-2.5 px-3">
+                              <div className="text-[11px] text-[#F8FAFC] truncate max-w-[150px]">
+                                {user.department}
+                              </div>
+                              <div className="text-[9px] text-[#64748B] truncate max-w-[150px]">
+                                {user.plantLocation}
+                              </div>
+                            </td>
+
+                            <td className="py-2.5 px-3">
+                              {user.status === 'active' && (
+                                <span className="inline-flex items-center gap-1 text-emerald-400 text-[10px]">
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  <span>Active</span>
+                                </span>
+                              )}
+                              {user.status === 'suspended' && (
+                                <span className="inline-flex items-center gap-1 text-rose-400 text-[10px]">
+                                  <XCircle className="w-3 h-3" />
+                                  <span>Suspended</span>
+                                </span>
+                              )}
+                              {user.status === 'pending' && (
+                                <span className="inline-flex items-center gap-1 text-amber-400 text-[10px]">
+                                  <Clock className="w-3 h-3" />
+                                  <span>Pending</span>
+                                </span>
+                              )}
+                            </td>
+
+                            <td className="py-2.5 px-3">
+                              <span className="font-bold text-[#F8FAFC]">{allowedCount}</span>
+                              <span className="text-[#64748B]"> / {SYSTEM_FEATURES.length}</span>
+                            </td>
+
+                            <td className="py-2.5 px-3 text-[10px] text-[#64748B]">
+                              {user.lastLogin === 'Never'
+                                ? 'Never'
+                                : new Date(user.lastLogin).toLocaleString(undefined, {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })}
+                            </td>
+
+                            <td className="py-2.5 px-3 text-right">
+                              {isSelf ? (
+                                <span className="text-[10px] text-[#64748B]">Current</span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  data-testid={`user-view-as-${user.id}`}
+                                  onClick={() => switchUser(user.id)}
+                                  className="px-2 py-1 rounded bg-[#0B0B0C] border border-[#1E293B] hover:border-[#FFC107] text-[#94A3B8] hover:text-[#FFC107] text-[10px] inline-flex items-center gap-1 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+                                  title={`Show this console as ${user.name} sees it`}
+                                >
+                                  <Eye className="w-3 h-3" />
+                                  <span>View as</span>
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* FEATURE FLAGS */}
+        {activeSubTab === 'matrix' && (
+          <div className="space-y-3" data-testid="users-matrix">
+            <div className="p-3 bg-[#111114] border border-[#1E293B] rounded-lg flex flex-col md:flex-row md:items-center justify-between gap-2">
+              <div>
+                <h3 className="font-bold text-xs text-[#F8FAFC]">Feature flags by account</h3>
+                <p className="text-[10px] text-[#64748B] max-w-3xl leading-relaxed">
+                  Which console features each account sees. A flag is set from the role profile
+                  the account was created with, and is stored in this browser. It is not a
+                  permission the platform checks.
+                </p>
+              </div>
+
+              <div className="text-[10px] text-[#94A3B8] flex items-center gap-3 shrink-0">
+                <div className="flex items-center gap-1">
+                  <Check className="w-3 h-3 text-emerald-400" />
+                  <span>Set</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <X className="w-3 h-3 text-[#475569]" />
+                  <span>Not set</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="border border-[#1E293B] rounded-lg bg-[#111114] overflow-x-auto shadow-sm">
+              <table className="w-full text-left border-collapse text-xs font-mono">
+                <thead>
+                  <tr className="bg-[#0B0B0C] border-b border-[#1E293B] text-[10px] text-[#64748B] uppercase tracking-wider">
+                    <th className="py-2.5 px-3 sticky left-0 bg-[#0B0B0C] z-10 min-w-[180px]">
+                      Account
+                    </th>
+                    <th className="py-2.5 px-2 text-center min-w-[70px]">Role</th>
+                    {SYSTEM_FEATURES.map((f) => (
+                      <th
+                        key={f.key}
+                        className="py-2.5 px-2 text-center min-w-[100px]"
+                        title={f.description}
+                      >
+                        <div className="truncate">{f.label}</div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#1E293B]">
+                  {users.map((user) => {
+                    const roleConfig = ROLE_CONFIGS[user.role] || ROLE_CONFIGS.viewer;
+                    const bypassesFlags = user.role === 'admin';
+
+                    return (
+                      <tr key={user.id} className="hover:bg-[#1E293B]/30 transition-colors">
+                        <td className="py-2.5 px-3 sticky left-0 bg-[#111114] z-10 border-r border-[#1E293B]">
+                          <div className="flex items-center gap-2">
+                            <div
+                              className={`w-5 h-5 rounded-full ${
+                                user.avatarColor || 'bg-[#FFC107]'
+                              } text-black flex items-center justify-center font-bold text-[10px] shrink-0`}
+                            >
+                              {user.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="truncate">
+                              <div className="font-bold text-[#F8FAFC] truncate text-[11px]">
+                                {user.name}
+                              </div>
+                              <div className="text-[9px] text-[#64748B] truncate">
+                                {user.email}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="py-2 px-2 text-center border-r border-[#1E293B]">
+                          <span
+                            className={`px-1.5 rounded text-[8px] font-bold border ${roleConfig.badgeBg} ${roleConfig.badgeText} ${roleConfig.badgeBorder}`}
+                          >
+                            {user.role.toUpperCase()}
+                          </span>
+                        </td>
+
+                        {SYSTEM_FEATURES.map((feat) => {
+                          const isSet = bypassesFlags || !!user.customPermissions?.[feat.key];
+
+                          return (
+                            <td key={feat.key} className="py-2 px-2 text-center">
+                              {isSet ? (
+                                <Check
+                                  className="w-3.5 h-3.5 text-emerald-400 inline-block"
+                                  aria-label={`${feat.label} set for ${user.name}`}
+                                  title={
+                                    bypassesFlags
+                                      ? 'The admin role shows every feature regardless of flags'
+                                      : `${feat.label} set for ${user.name}`
+                                  }
+                                />
+                              ) : (
+                                <X
+                                  className="w-3.5 h-3.5 text-[#475569] inline-block"
+                                  aria-label={`${feat.label} not set for ${user.name}`}
+                                  title={`${feat.label} not set for ${user.name}`}
+                                />
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* ROLE PROFILES */}
+        {activeSubTab === 'roles' && (
+          <div className="space-y-3" data-testid="users-roles">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {(Object.keys(ROLE_CONFIGS) as UserRole[]).map((r) => {
+                const config = ROLE_CONFIGS[r];
+                const assignedCount = users.filter((u) => u.role === r).length;
+
+                return (
+                  <div
+                    key={r}
+                    className="p-4 rounded-lg bg-[#111114] border border-[#1E293B] space-y-3 shadow-sm hover:border-[#334155] transition-colors"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span
+                        className={`px-2.5 py-0.5 rounded text-[10px] font-bold border ${config.badgeBg} ${config.badgeText} ${config.badgeBorder}`}
+                      >
+                        {config.label.toUpperCase()}
+                      </span>
+                      <span className="text-[10px] text-[#64748B]">
+                        {assignedCount} in this browser
+                      </span>
+                    </div>
+
+                    <p className="text-[11px] text-[#94A3B8] leading-relaxed">
+                      {config.description}
+                    </p>
+
+                    <div className="pt-2 border-t border-[#1E293B] space-y-1.5">
+                      <div className="text-[9px] uppercase tracking-wider text-[#64748B]">
+                        Features this profile shows
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {SYSTEM_FEATURES.map((feat) => {
+                          const isDefault = !!config.defaultPermissions[feat.key];
+                          return (
+                            <span
+                              key={feat.key}
+                              className={`px-1.5 py-0.5 rounded text-[9px] flex items-center gap-1 border ${
+                                isDefault
+                                  ? 'bg-emerald-950/40 border-emerald-800/40 text-emerald-400'
+                                  : 'bg-[#0B0B0C] border-[#1E293B] text-[#475569]'
+                              }`}
+                            >
+                              {isDefault ? (
+                                <Check className="w-2.5 h-2.5" />
+                              ) : (
+                                <X className="w-2.5 h-2.5" />
+                              )}
+                              <span>{feat.label}</span>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+```
+
+Three details worth naming, because a reviewer will ask:
+
+- The matrix renders `Check`/`X` **icons with `aria-label`**, not buttons and not bare glyphs.
+  `matrix.querySelectorAll('button')` returning zero is the test that this screen cannot write,
+  and the labels keep the cell readable to a screen reader now that the `title` is no longer
+  attached to an interactive element.
+- The admin row still shows every flag set, because `getUserPermission` genuinely returns
+  `true` for `role === 'admin'` before it looks at `customPermissions`. The `title` says so
+  rather than implying the flags were individually granted.
+- `Last used here` replaces `Last Active`. `lastLogin` is written by `switchUser` and `login`
+  in this browser, so "active" overstated it.
+
+- [ ] **Step 5: Delete the two modals**
+
+```bash
+cd 11_frontend
+git rm src/components/users/CreateUserModal.tsx src/components/users/EditUserModal.tsx
+```
+
+They are the only callers of `createUser`, `updateUser`, `deleteUser` and
+`resetUserToRoleDefaults`, and nothing else imports them — Step 4 removed the two import lines
+that did.
+
+- [ ] **Step 6: Run the view test**
+
+Run: `cd 11_frontend && npx vitest run src/components/users/UserManagementView.test.tsx`
+
+Expected: PASS, five tests.
+
+- [ ] **Step 7: Commit the view**
+
+```bash
+cd 11_frontend
+git add src/components/users/UserManagementView.tsx src/components/users/UserManagementView.test.tsx
+git commit -m "refactor(frontend): make /users a read-only, browser-local account list
+
+The screen edited localStorage and presented the result as access control.
+Create, edit, delete, reset and the permission toggle are gone, along with
+the ADMIN ACCESS ONLY badge and the LIVE TOGGLE & AUTO-SAVED claim. A notice
+states that the list is browser-local, not enforced, and that sign-in accepts
+any password. 'View as' stays: it is how a role preview is reached."
+```
+
+- [ ] **Step 8: Write the failing context-shape test**
+
+Create `11_frontend/src/context/auth-context.test.tsx`. Asserting the whole sorted key list is
+deliberate: it fails when someone adds a write method back, which a per-method
+`toBeUndefined()` check would not.
+
+```tsx
+import { describe, expect, it, beforeEach } from 'vitest';
+import { render } from '@testing-library/react';
+import { AuthProvider, useAuth } from './AuthContext';
+
+type Auth = ReturnType<typeof useAuth>;
+
+let captured: Auth | null = null;
+
+const Probe: React.FC = () => {
+  captured = useAuth();
+  return null;
+};
+
+describe('AuthContext', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    captured = null;
+  });
+
+  it('exposes no way to write an account, a permission or an audit entry', () => {
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+
+    expect(Object.keys(captured!).sort()).toEqual([
+      'canAccessTab',
+      'currentUser',
+      'getUserPermission',
+      'hasPermission',
+      'isAdmin',
+      'isAuthenticated',
+      'login',
+      'logout',
+      'switchUser',
+      'users',
+    ]);
+  });
+
+  it('clears an audit trail left in storage by an earlier build', () => {
+    localStorage.setItem(
+      'uns_rbac_audit_logs_v2',
+      JSON.stringify([{ id: 'log-001', details: 'Created Engineer account' }])
+    );
+
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>
+    );
+
+    expect(localStorage.getItem('uns_rbac_audit_logs_v2')).toBeNull();
+  });
+});
+```
+
+Add `import React from 'react';` at the top if the project's JSX runtime is not automatic —
+check the top of `AlarmContext`'s test from Task 20 and match it.
+
+- [ ] **Step 9: Run it and watch it fail**
+
+Run: `cd 11_frontend && npx vitest run src/context/auth-context.test.tsx`
+
+Expected: FAIL. The first test reports seven extra keys (`auditLogs`, `createUser`,
+`deleteUser`, `restoreDefaults`, `resetUserToRoleDefaults`, `toggleUserFeaturePermission`,
+`updateUser`). The second finds the stale key still in storage.
+
+- [ ] **Step 10: Delete the fabricated audit entries and their storage key**
+
+In `11_frontend/src/context/AuthContext.tsx`, delete `INITIAL_AUDIT_LOGS` in full — the
+`const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [ … ];` block at `:98`–`:115`, both entries.
+
+Then narrow `STORAGE_KEYS` (`:17`–`:22`) by removing the `AUDIT_LOGS` line:
+
+```ts
+const STORAGE_KEYS = {
+  USERS: 'uns_rbac_users_v2',
+  CURRENT_USER_ID: 'uns_rbac_current_user_id_v2',
+  IS_LOGGED_IN: 'uns_rbac_logged_in_v2',
+};
+```
+
+And fix the file's header comment (`:1`–`:5`) so it stops promising an audit log:
+
+```ts
+/**
+ * Console session state, stored in this browser.
+ * Holds the local account list, which account the console is being viewed as, and the
+ * feature flags each account carries. It authenticates nothing: the platform applies no
+ * authorization to GraphQL, and login ignores its password argument. Real authentication
+ * is a separate change — see docs/adr/.
+ */
+```
+
+- [ ] **Step 11: Delete the audit state, the writer, and every mutation**
+
+Still in `AuthContext.tsx`, delete these six regions. Match them by their opening line, not by
+line number:
+
+1. `const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(() => { … });` (`:172`–`:183`).
+2. The `useEffect` that persists it (`:211`–`:217`) — the one whose body is
+   `localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(auditLogs));`.
+3. `const logAction = useCallback(…)` (`:223`–`:236`).
+4. `createUser` (`:249`–`:272`), `updateUser` (`:274`–`:293`), `deleteUser` (`:295`–`:307`),
+   `toggleUserFeaturePermission` (`:309`–`:330`) and `resetUserToRoleDefaults` (`:332`–`:356`)
+   — five consecutive `useCallback` blocks. `deleteUser` is also the file's only `alert()`.
+5. `const restoreDefaults = useCallback(…)` (`:445`–`:458`).
+6. The seven matching lines from the `interface AuthContextType` body (`:120`, `:126`–`:130`,
+   `:134`) and the seven from the provider's `value` object (`:465`, `:471`–`:475`, `:479`),
+   leaving the ten members listed in this task's Produces block.
+
+`login` and `logout` each end with a `logAction(… as any, …)` call. Drop those two lines; the
+casts existed only because the actions were outside `AuditLogEntry['action']`. `login` keeps
+`setCurrentUserId`, `setIsAuthenticated` and the `lastLogin` update, and its dependency array
+becomes `[users]`; `logout` keeps `setIsAuthenticated(false)` and its array becomes `[]`.
+
+Add the one-time cleanup for browsers that already hold the fabricated entries, next to the
+other persistence effects:
+
+```ts
+  // An earlier build seeded a browser-local "audit trail" with events that never happened.
+  // Anything still in storage is that fabrication, so drop it once on mount.
+  useEffect(() => {
+    try {
+      localStorage.removeItem('uns_rbac_audit_logs_v2');
+    } catch {
+      // ignore
+    }
+  }, []);
+```
+
+The key is written as a literal because `STORAGE_KEYS.AUDIT_LOGS` no longer exists — that is
+the point.
+
+Finally, narrow the type import (`:8`–`:15`). `AuditLogEntry` and `UserRole` lose their last
+use in this file, and `SYSTEM_FEATURES` was already imported without ever being used:
+
+```ts
+import { UserAccount, FeatureKey, ROLE_CONFIGS } from '../types/rbac';
+```
+
+`ROLE_CONFIGS` stays — `INITIAL_USERS` still spreads five `defaultPermissions` from it.
+`FeatureKey` stays — `hasPermission`, `getUserPermission` and `canAccessTab` all use it.
+
+- [ ] **Step 12: Run the context test**
+
+Run: `cd 11_frontend && npx vitest run src/context/auth-context.test.tsx`
+
+Expected: PASS, two tests.
+
+- [ ] **Step 13: Delete `AuditLogEntry` from the type module**
+
+Nothing imports it now. Remove `11_frontend/src/types/rbac.ts:255`–`:261` in full:
+
+```ts
+export interface AuditLogEntry {
+  id: string;
+  timestamp: string;
+  actorEmail: string;
+  targetUserEmail: string;
+  action: 'CREATE_USER' | 'UPDATE_ROLE' | 'UPDATE_PERMISSIONS' | 'DELETE_USER' | 'TOGGLE_STATUS';
+  details: string;
+}
+```
+
+Then prove it is unreferenced:
+
+```bash
+cd 11_frontend && grep -rn "AuditLogEntry" src/ ; echo "exit=$?"
+```
+
+Expected: no output, `exit=1`.
+
+- [ ] **Step 14: Type-check and run the whole suite**
+
+```bash
+cd 11_frontend
+npx tsc --noEmit
+npx vitest run
+```
+
+Expected: `tsc` clean, all tests pass. If `tsc` reports an unused import in
+`UserManagementView.tsx`, the rewrite in Step 4 was applied on top of the old import block
+instead of replacing it — the new list is exactly twelve `lucide-react` names and three from
+`types/rbac`.
+
+- [ ] **Step 15: Commit**
+
+```bash
+cd 11_frontend
+git add src/context/AuthContext.tsx src/context/auth-context.test.tsx src/types/rbac.ts
+git commit -m "refactor(frontend): delete the browser-local RBAC write surface
+
+INITIAL_AUDIT_LOGS credited named people with account changes that never
+happened and presented them as an immutable ledger. It is gone, along with
+the state, the writer, the storage key, and the five mutations plus
+restoreDefaults that fed it. A mount-once removeItem clears the entries from
+browsers that already stored them. AuthContext is down to ten read members;
+Cycle 2 replaces them with an OIDC session."
+```
+
+**Definition of done:**
+- `/users` has no control that writes: no create, no edit, no delete, no reset, no toggle.
+- The screen states `Browser-local, not enforced`, that nothing is sent to the platform, that
+  GraphQL applies no authorization, and that sign-in accepts any password.
+- `ADMIN ACCESS ONLY`, `LIVE TOGGLE & AUTO-SAVED`, *"instantly grant or revoke"*, *"Immutable
+  ledger"* and *"compliance logs"* appear nowhere in `11_frontend/src`.
+- The Security Audit Log sub-tab is gone; three sub-tabs remain — Directory, Feature flags,
+  Role profiles.
+- `View as` still switches the previewed account, and the `YOU` marker follows it.
+- `AuthContext` exposes exactly ten members, asserted as a sorted key list.
+- `uns_rbac_audit_logs_v2` is removed from storage on mount and written by nothing.
+- `AuditLogEntry` does not exist in `src/`; `grep -rn AuditLogEntry src/` is empty.
+- `CreateUserModal.tsx` and `EditUserModal.tsx` are deleted.
+- `login` still ignores its password argument. That is Cycle 2's task, and this screen now says
+  so out loud instead of hiding it behind a red badge.
+- `npx tsc --noEmit` clean; `npx vitest run` green.

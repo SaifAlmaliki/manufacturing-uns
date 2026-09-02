@@ -83,11 +83,18 @@ Established by reading the code, not assumed.
 8. **Every GraphQL call already funnels through one client.** `services/graphql/client.ts`
    holds all seventeen methods, and every component goes through it. Adding surface means
    adding methods there, not scattering fetches.
-9. **Grafana embedding is already enabled but unreachable.** `docker-compose.yml:399` sets
-   `GF_SECURITY_ALLOW_EMBEDDING: "true"`. Neither `11_frontend/nginx.conf` nor
-   `vite.config.ts` proxies Grafana — they proxy only `/graphql` and `/simulator` — and no
-   component references a dashboard. The dashboards exist with fixed UIDs `uns-oee`,
-   `uns-process-visualization` and `uns-platform-observability`.
+9. **Grafana embedding already works, with one gap and one limit.** Commit `0812fc6e`
+   landed all of it: `GF_SECURITY_ALLOW_EMBEDDING`, `GF_SERVER_SERVE_FROM_SUB_PATH` and
+   `GF_SERVER_ROOT_URL` on `uns_grafana`, a `location /grafana/` block in
+   `11_frontend/nginx.conf` ordered before `location /`, a matching `vite.config.ts` dev
+   proxy, and `components/common/GrafanaEmbed.tsx` embedding one of three dashboards in
+   `system/SystemHealthView.tsx`. The dashboards exist with fixed UIDs `uns-oee`,
+   `uns-process-visualization` and `uns-platform-observability`. The gap:
+   `urls.grafana_proxy_target` is absent from `conf/settings.yaml`, so the dev proxy falls
+   back to `localhost:3000`, which compose deliberately leaves unpublished — `npm run dev`
+   therefore embeds blank frames. The limit: `grafanaKioskPath(uid, theme)` accepts no
+   dashboard variables, so nothing can deep-link to an Asset or a Metric, and the plain
+   iframe has no failure state.
 10. **The Grafana template variables constrain deep-linking.** `oee.json` has one variable,
     `asset` (a query variable). `process-visualization.json` has two textbox variables,
     `topic` and `metric`. `platform-observability.json` has none. Deep links may set only
@@ -135,8 +142,9 @@ In scope:
 - New surfaces for Shift & OEE, downtime, the Asset Model and Unmodelled Topics.
 - One new read query in `07_uns_graphql` and its repository read in `09_uns_model`.
 - Regenerating `07_uns_graphql/schema/uns_schema.graphql`.
-- A `/grafana` proxy in `nginx.conf` and `vite.config.ts`, and the Grafana sub-path
-  environment it needs.
+- Deep-linkable Grafana embeds: dashboard variables and a failure state on the existing
+  `GrafanaEmbed`, plus `urls.grafana_proxy_target` in `conf/settings.yaml`. The proxy and
+  the sub-path environment already exist (finding 9).
 - Fixing the duplicate host port 9092.
 - Vitest + Testing Library, with mocked GraphQL.
 
@@ -378,10 +386,7 @@ better-looking invention.
 | `AppLayout.tsx:107` | `SCHEMA: 2026.08.28-v2` | Deleted. No build step produces it |
 | `AppLayout.tsx:114` | Static `Connected to UNS Backend` with a green pulse | Replaced by the connection chip in section 12 |
 | `AppLayout.tsx:117` | `Nodes: {allLoadedNodes.length \|\| 28}` | `\|\| 28` removed; zero renders as zero |
-| `SystemHealthView.tsx:76` | `ENFORCED (ZERO-TRUST)` | Deleted. Finding 12 |
-| `SystemHealthView.tsx:92`, `:108`, `:124` | Three `SCHEMA PENDING` panels | Deleted. Replaced per section 13 |
-| `SystemHealthView.tsx:165`, `:175`, `:185` | Capability matrix rows reading `OPERATIONAL` | Deleted with the matrix |
-| `SystemHealthView.tsx:197`, `:209` | `BLOCKED (SCHEMA PENDING)` | Deleted with the matrix |
+| `AuthContext.tsx:73` | A seeded user whose department is `ISO/IEC 62443 Compliance` | Replaced with a plain department name |
 | `LandingView.tsx:135` | `99.999%` | Deleted |
 | `LandingView.tsx:153`, `:267`, `:593`, `:72` | `ISO/IEC 62443`, `ISO/IEC 62443 Certified Cyber Defense` | Deleted. Nothing in this repository holds that certification |
 | `LoginView.tsx:245` | `ISO/IEC 62443 Security Auditing Enabled` | Deleted |
@@ -426,8 +431,10 @@ Contents:
 
 1. The connection chip from section 12, expanded: endpoint URLs, last successful query, last
    WebSocket event.
-2. An embedded `uns-platform-observability` dashboard. Per ADR-0001 this is the source for
-   module health, because Prometheus is where the modules emit and the browser is not.
+2. An embedded `uns-platform-observability` dashboard, plus the Process and OEE switcher
+   `system/SystemHealthView.tsx` already has — HEALTH absorbs that view rather than
+   discarding it. Per ADR-0001 the Platform dashboard is the source for module health,
+   because Prometheus is where the modules emit and the browser is not.
 3. Asset Model completeness from `getAssetModelSummary`, and Alert Rule counts from
    `getAlertRuleSummary` — both real counts from the read surface.
 4. A plain statement of what the console cannot see: the broker, the graph database, the
@@ -440,15 +447,19 @@ Contents:
 Three dashboards, embedded in three places: `uns-process-visualization` in PLANT ▸ Trend,
 `uns-oee` in SHIFT, `uns-platform-observability` in HEALTH.
 
+Already present, and to be verified rather than rebuilt (finding 9): the `location /grafana/`
+block in `11_frontend/nginx.conf` placed before `location /`, the matching `vite.config.ts`
+dev proxy, and `GF_SERVER_ROOT_URL` plus `GF_SERVER_SERVE_FROM_SUB_PATH` on `uns_grafana`.
+ADR-0007 records that a missing proxy entry returns `index.html` with a 200 rather than a
+clear failure, so each of the three gets a check that asserts JSON, not merely a 200.
+
 Required changes:
 
-- `11_frontend/nginx.conf`: a `location /grafana` proxying to `uns_grafana:3000`, placed
-  before `location /`. ADR-0007 records that a missing proxy entry returns `index.html` with
-  a 200 rather than a clear failure, which is why this must be added deliberately.
-- `11_frontend/vite.config.ts`: the same path in the dev proxy, so `npm run dev` behaves
-  like the composed stack.
-- `docker-compose.yml`: `GF_SERVER_ROOT_URL` and `GF_SERVER_SERVE_FROM_SUB_PATH` on
-  `uns_grafana`, so Grafana generates correct asset URLs under `/grafana`.
+- `conf/settings.yaml`: `urls.grafana_proxy_target`, so the dev proxy target is configured
+  next to every other URL instead of defaulting to a port compose does not publish.
+- `components/common/GrafanaEmbed.tsx`: accept the dashboard variables below, reject any
+  variable the target dashboard does not declare, and render a named failure state instead
+  of a blank frame. URL construction moves to a tested `lib/grafana/dashboards.ts`.
 
 Deep links set only the variables that exist (finding 10): `var-asset` on `uns-oee`,
 `var-topic` and `var-metric` on `uns-process-visualization`, none on
