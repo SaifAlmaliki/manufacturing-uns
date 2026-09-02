@@ -161,7 +161,7 @@ def event_values(
             "reason_source": stop.source,
             "assigned_by": stop.assigned_by,
             "assigned_at": None,
-            "note": stop.note,
+            "note": stop.note or "",
         }
         for stop in stops
     ]

@@ -202,6 +202,13 @@ def test_an_event_carries_the_classification():
     assert row["note"] == ""
 
 
+def test_an_auto_classified_stop_with_no_note_persists_empty_string():
+    auto = replace(stop(6, 7), note=None)
+    row = event_values(UNIT, t(4), (auto,))[0]
+    assert row["note"] == ""
+    assert row["note"] is not None
+
+
 def test_a_manual_classification_carries_its_assigner_and_note():
     manual = stop(6, 7, reason="TOOL_CHANGE", source=MANUAL, note="die swap", assigned_by="operator1")
     row = event_values(UNIT, t(4), (manual,))[0]
