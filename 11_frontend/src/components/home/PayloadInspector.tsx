@@ -12,13 +12,14 @@ import {
   Layers,
   ChevronRight,
   Filter,
-  Activity,
   Gauge,
 } from 'lucide-react';
 import { useUNS } from '../../context/UNSContext';
 import { JsonViewer } from '../common/JsonViewer';
 import { getNodeRole, getNodeRoleLabel, hasLiveTelemetry, isNodeStale, isStaleCandidate } from '../../lib/uns/node-meta';
 import { parseMetricNumber } from '../../lib/uns/telemetry-metrics';
+import { useTheme } from '../../context/ThemeContext';
+import { GRAFANA_DASHBOARDS, GrafanaEmbed, grafanaTopicFilter } from '../common/GrafanaEmbed';
 
 export const PayloadInspector: React.FC = () => {
   const {
@@ -31,6 +32,7 @@ export const PayloadInspector: React.FC = () => {
     setFeedTopicFilter,
     settings,
   } = useUNS();
+  const { isDark } = useTheme();
 
   const [copiedTopic, setCopiedTopic] = useState(false);
 
@@ -214,20 +216,22 @@ export const PayloadInspector: React.FC = () => {
                 </div>
               ))}
             </div>
-
-            {/* Output stability indicator */}
-            <div className="pt-1 flex items-center justify-between text-[9px] font-mono text-[#64748B]">
-              <span>OUTPUT STABILITY</span>
-              <div className="flex gap-1">
-                <div className="w-3 h-1.5 rounded-sm bg-emerald-500 dark:bg-[#10B981]" />
-                <div className="w-3 h-1.5 rounded-sm bg-emerald-500 dark:bg-[#10B981]" />
-                <div className="w-3 h-1.5 rounded-sm bg-emerald-500 dark:bg-[#10B981]" />
-                <div className="w-3 h-1.5 rounded-sm bg-amber-500 dark:bg-[#FFC107]" />
-                <div className="w-3 h-1.5 rounded-sm bg-slate-300 dark:bg-[#1E293B]" />
-              </div>
-            </div>
           </div>
         )}
+
+        <div
+          id="payload-inspector-grafana-trend"
+          className="h-80 rounded-lg overflow-hidden border border-[#E2E8F0] dark:border-[#1E293B] bg-[#111114]"
+        >
+          <GrafanaEmbed
+            uid={GRAFANA_DASHBOARDS.process.uid}
+            theme={isDark ? 'dark' : 'light'}
+            title="Process Visualization"
+            vars={{ topic: grafanaTopicFilter(selectedNode.topic) }}
+            from="now-6h"
+            to="now"
+          />
+        </div>
 
         <JsonViewer
           data={selectedNode.payload}

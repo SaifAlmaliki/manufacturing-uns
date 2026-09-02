@@ -13,9 +13,12 @@ import React, { useEffect } from 'react'
 import { AlertTriangle, Radio, Server, Stethoscope } from 'lucide-react'
 import type { SimulatorState } from './SimulatorStatusPanel'
 import { TIER_LABELS } from './SimulatorStatusPanel'
+import { useTheme } from '../../context/ThemeContext'
+import { GRAFANA_DASHBOARDS, GrafanaEmbed } from '../common/GrafanaEmbed'
 
 export const SimulatorDiagnosticsPanel: React.FC<{ simulator: SimulatorState }> = ({ simulator }) => {
   const { status, diagnostics, telemetry, refreshDiagnostics } = simulator
+  const { isDark } = useTheme()
 
   useEffect(() => {
     void refreshDiagnostics()
@@ -229,6 +232,17 @@ export const SimulatorDiagnosticsPanel: React.FC<{ simulator: SimulatorState }> 
           ))}
           {(diagnostics?.sample_topics ?? []).length === 0 && <div>—</div>}
         </div>
+      </div>
+
+      <div
+        id="simulator-grafana-platform"
+        className="h-[520px] rounded-lg overflow-hidden border border-[#E2E8F0] dark:border-[#1E293B] bg-[#111114]"
+      >
+        <GrafanaEmbed
+          uid={GRAFANA_DASHBOARDS.platform.uid}
+          theme={isDark ? 'dark' : 'light'}
+          title="Platform Observability"
+        />
       </div>
     </div>
   )
