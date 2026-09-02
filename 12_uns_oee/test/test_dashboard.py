@@ -211,12 +211,23 @@ def test_process_visualization_shows_the_plant_the_simulator_publishes():
     assert len([t for t in titles if t]) >= 6
     assert "metric_name = 'value'" in sql
     assert "metric_name = 'ProductionRate'" not in sql
-    for metric in ("ThroughputTph", "ActivePower"):
-        assert f"%/{metric}" in sql, f"process dashboard never filters topics for {metric}"
+    for metric in ("ThroughputTph", "ActivePower", "ProductionRate", "PackMlStateCode"):
+        assert metric in sql, f"process dashboard never queries {metric}"
     assert "uns_metrics_1m_enriched" in sql
     assert "ShiftOee" not in sql
     assert "'Oee'" not in sql
     assert any(panel.get("title") == "All simulator process values" for panel in _panels(body))
+    for title in ("Production", "PackML state", "Vibration", "Safety", "Quality", "Process pressure"):
+        assert title in titles, f"process dashboard is missing {title!r}"
+    quality = next(panel for panel in _panels(body) if panel.get("title") == "Quality")
+    for metric in ("Density", "Moisture", "ColorB", "NirIndex", "Viscosity"):
+        assert metric in _queries(quality)[0], f"Quality panel never queries {metric}"
+    process_pressure = next(panel for panel in _panels(body) if panel.get("title") == "Process pressure")
+    assert "Production" in _queries(process_pressure)[0]
+    assert "psi" in (process_pressure.get("fieldConfig") or {}).get("defaults", {}).get("unit", "")
+    flows = next(panel for panel in _panels(body) if panel.get("title") == "Flows")
+    assert "Total" in _queries(flows)[0] or "total" in _queries(flows)[0].lower()
+    assert "NOT" in _queries(flows)[0] or "!~" in _queries(flows)[0]
     metric_var = next(item for item in body["templating"]["list"] if item["name"] == "metric")
     assert metric_var["current"]["value"] != "Temperature"
 
@@ -239,6 +250,12 @@ def test_platform_observability_covers_the_scraped_jobs():
         "uns_simulator_devices_connected",
         "uns_simulator_signal_value",
         "uns_oee_db_up",
+        "uns_oee_unpublished_results",
+        "uns_simulator_publish_failures",
+        "uns_opcua_publish_errors",
+        "uns_opcua_spool_lag",
+        "uns_oee_compute_failures",
+        "uns_graphdb_persist_failure_total",
         'up{',
     ):
         assert needle in exprs, f"platform dashboard is missing {needle}"

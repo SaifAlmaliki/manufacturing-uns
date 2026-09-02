@@ -1,6 +1,6 @@
 {
   "annotations": { "list": [] },
-  "description": "Plant measurements from uns_metrics_1m_enriched. Named panels are the simulator's process, energy and utilities series; the explorer at the bottom is the topic/metric filter.",
+  "description": "Simulator process data from uns_metrics_1m_enriched. Counters and totals are kept off the rate charts so they cannot flatten the axis. Site and line fall back to the topic path when enrichment is null.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -9,220 +9,211 @@
   "panels": [
     {
       "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
-      "fieldConfig": {
-        "defaults": { "color": { "mode": "thresholds" }, "decimals": 0, "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } },
-        "overrides": []
-      },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "decimals": 0, "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
       "gridPos": { "h": 4, "w": 8, "x": 0, "y": 0 },
       "id": 1,
-      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
-      "targets": [
-        {
-          "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
-          "format": "table",
-          "rawSql": "SELECT count(DISTINCT topic) AS \"Topics\" FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value'",
-          "refId": "A"
-        }
-      ],
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "value_and_name" },
+      "targets": [{ "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" }, "format": "table", "rawSql": "SELECT count(DISTINCT topic) AS \"Topics\" FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value'", "refId": "A" }],
       "title": "Topics in range",
       "type": "stat"
     },
     {
       "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
-      "fieldConfig": {
-        "defaults": { "color": { "mode": "thresholds" }, "decimals": 0, "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } },
-        "overrides": []
-      },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "decimals": 0, "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
       "gridPos": { "h": 4, "w": 8, "x": 8, "y": 0 },
       "id": 2,
-      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
-      "targets": [
-        {
-          "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
-          "format": "table",
-          "rawSql": "SELECT count(DISTINCT split_part(topic, '/', array_length(string_to_array(topic, '/'), 1))) AS \"Signals\" FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value'",
-          "refId": "A"
-        }
-      ],
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "value_and_name" },
+      "targets": [{ "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" }, "format": "table", "rawSql": "SELECT count(DISTINCT split_part(topic, '/', array_length(string_to_array(topic, '/'), 1))) AS \"Signals\" FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value'", "refId": "A" }],
       "title": "Signals",
       "type": "stat"
     },
     {
       "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
-      "fieldConfig": {
-        "defaults": { "color": { "mode": "thresholds" }, "decimals": 0, "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } },
-        "overrides": []
-      },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "decimals": 0, "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } }, "overrides": [] },
       "gridPos": { "h": 4, "w": 8, "x": 16, "y": 0 },
       "id": 3,
-      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
-      "targets": [
-        {
-          "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
-          "format": "table",
-          "rawSql": "SELECT coalesce(sum(sample_count), 0) AS \"Samples\" FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value'",
-          "refId": "A"
-        }
-      ],
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "value_and_name" },
+      "targets": [{ "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" }, "format": "table", "rawSql": "SELECT coalesce(sum(sample_count), 0) AS \"Samples\" FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value'", "refId": "A" }],
       "title": "Samples in range",
       "type": "stat"
     },
     {
       "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
-      "fieldConfig": {
-        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 8, "lineWidth": 2, "spanNulls": true }, "unit": "short" },
-        "overrides": []
-      },
-      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 4 },
+      "description": "Instantaneous process values only. Totals, counts and run-hours are excluded so one counter cannot squash the rest of the plant to a flat line.",
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 6, "lineWidth": 1, "spanNulls": true }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 4 },
       "id": 4,
-      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull"] }, "tooltip": { "mode": "multi" } },
-      "targets": [
-        {
-          "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
-          "format": "time_series",
-          "rawSql": "SELECT bucket AS time, avg_value_double AS value, COALESCE(site, '—') || ' / ' || COALESCE(line, '—') || ' / ' || split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) AS metric FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value' AND avg_value_double IS NOT NULL AND split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) LIKE '%$metric%' ORDER BY 1",
-          "refId": "A"
-        }
-      ],
+      "options": { "legend": { "calcs": ["lastNotNull"], "displayMode": "table", "placement": "right" }, "tooltip": { "mode": "multi" } },
+      "targets": [{ "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" }, "format": "time_series", "rawSql": "SELECT bucket AS time, avg_value_double AS value, COALESCE(NULLIF(site, ''), split_part(topic, '/', 2), '—') || ' / ' || COALESCE(NULLIF(line, ''), split_part(topic, '/', 4), '—') || ' / ' || split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) AS metric FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value' AND avg_value_double IS NOT NULL AND split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) LIKE '%$metric%' AND split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) !~* '(total|count|hours|cycles|density|viscosity)$' ORDER BY 1", "refId": "A" }],
       "title": "All simulator process values",
       "type": "timeseries"
     },
     {
       "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
-      "fieldConfig": {
-        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 8, "lineWidth": 2, "spanNulls": true }, "unit": "tph" },
-        "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 8, "lineWidth": 2, "spanNulls": true }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
       "id": 5,
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-      "targets": [
-        {
-          "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
-          "format": "time_series",
-          "rawSql": "SELECT bucket AS time, avg_value_double AS value, COALESCE(site, '—') || ' / ' || COALESCE(line, '—') || ' / ' || split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) AS metric FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value' AND topic LIKE '%/ThroughputTph' ORDER BY 1",
-          "refId": "A"
-        }
-      ],
-      "title": "Throughput",
+      "targets": [{ "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" }, "format": "time_series", "rawSql": "SELECT bucket AS time, avg_value_double AS value, COALESCE(NULLIF(site, ''), split_part(topic, '/', 2), '—') || ' / ' || COALESCE(NULLIF(line, ''), split_part(topic, '/', 4), '—') || ' / ' || split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) AS metric FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value' AND split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) IN ('ProductionRate', 'ThroughputTph', 'CycleTime') ORDER BY 1", "refId": "A" }],
+      "title": "Production",
       "type": "timeseries"
     },
     {
       "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
-      "fieldConfig": {
-        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 8, "lineWidth": 2, "spanNulls": true }, "unit": "kwatt" },
-        "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "description": "OMAC PackML numeric state. 6 is EXECUTE.",
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 8, "lineWidth": 2, "spanNulls": true }, "decimals": 0 }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "id": 12,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [{ "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" }, "format": "time_series", "rawSql": "SELECT bucket AS time, avg_value_double AS value, COALESCE(NULLIF(site, ''), split_part(topic, '/', 2), '—') || ' / ' || COALESCE(NULLIF(line, ''), split_part(topic, '/', 4), '—') AS metric FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value' AND topic LIKE '%/PackMlStateCode' ORDER BY 1", "refId": "A" }],
+      "title": "PackML state",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 8, "lineWidth": 2, "spanNulls": true }, "unit": "kwatt" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
       "id": 6,
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-      "targets": [
-        {
-          "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
-          "format": "time_series",
-          "rawSql": "SELECT bucket AS time, avg_value_double AS value, COALESCE(site, '—') || ' / ' || COALESCE(line, '—') || ' / ' || split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) AS metric FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value' AND topic LIKE '%/ActivePower' ORDER BY 1",
-          "refId": "A"
-        }
-      ],
+      "targets": [{ "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" }, "format": "time_series", "rawSql": "SELECT bucket AS time, avg_value_double AS value, COALESCE(NULLIF(site, ''), split_part(topic, '/', 2), '—') || ' / ' || split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) AS metric FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value' AND split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) IN ('ActivePower', 'MotorPower', 'CompressorPower') ORDER BY 1", "refId": "A" }],
       "title": "Active power",
       "type": "timeseries"
     },
     {
       "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
-      "fieldConfig": {
-        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 8, "lineWidth": 2, "spanNulls": true }, "unit": "pressurebar" },
-        "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
-      "id": 7,
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 8, "lineWidth": 2, "spanNulls": true }, "max": 1, "min": 0, "unit": "percentunit" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
+      "id": 13,
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-      "targets": [
-        {
-          "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
-          "format": "time_series",
-          "rawSql": "SELECT bucket AS time, avg_value_double AS value, COALESCE(line, '—') || ' / ' || split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) AS metric FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value' AND (topic LIKE '%/HeaderPressure' OR topic LIKE '%/DischargePressure' OR topic LIKE '%/SteamPressure') ORDER BY 1",
-          "refId": "A"
-        }
-      ],
-      "title": "Pressures",
+      "targets": [{ "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" }, "format": "time_series", "rawSql": "SELECT bucket AS time, avg_value_double AS value, COALESCE(NULLIF(site, ''), split_part(topic, '/', 2), '—') || ' / PowerFactor' AS metric FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value' AND topic LIKE '%/PowerFactor' ORDER BY 1", "refId": "A" }],
+      "title": "Power factor",
       "type": "timeseries"
     },
     {
       "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
-      "fieldConfig": {
-        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 8, "lineWidth": 2, "spanNulls": true }, "unit": "celsius" },
-        "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 8, "lineWidth": 2, "spanNulls": true }, "unit": "celsius" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 30 },
       "id": 8,
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-      "targets": [
-        {
-          "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
-          "format": "time_series",
-          "rawSql": "SELECT bucket AS time, avg_value_double AS value, COALESCE(line, '—') || ' / ' || split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) AS metric FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value' AND split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) ~* 'temp' ORDER BY 1",
-          "refId": "A"
-        }
-      ],
+      "targets": [{ "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" }, "format": "time_series", "rawSql": "SELECT bucket AS time, avg_value_double AS value, COALESCE(NULLIF(line, ''), split_part(topic, '/', 4), '—') || ' / ' || split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) AS metric FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value' AND split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) ~* 'temp' ORDER BY 1", "refId": "A" }],
       "title": "Temperatures",
       "type": "timeseries"
     },
     {
       "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
-      "fieldConfig": {
-        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 8, "lineWidth": 2, "spanNulls": true }, "unit": "short" },
-        "overrides": []
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+      "description": "Compressed-air and steam headers in bar. Filling-machine ProcessValue/Pressure is a different scale and is left on Latest values.",
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 8, "lineWidth": 2, "spanNulls": true }, "unit": "pressurebar" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 30 },
+      "id": 7,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [{ "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" }, "format": "time_series", "rawSql": "SELECT bucket AS time, avg_value_double AS value, COALESCE(NULLIF(line, ''), split_part(topic, '/', 4), '—') || ' / ' || split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) AS metric FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value' AND split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) IN ('HeaderPressure', 'DischargePressure', 'SteamPressure', 'SuctionPressure', 'EvaporatorPressure', 'CondenserPressure') ORDER BY 1", "refId": "A" }],
+      "title": "Pressures",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+      "description": "Instantaneous flow only. FlowTotal / VolumeTotal are cumulative and belong on Counters.",
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 8, "lineWidth": 2, "spanNulls": true }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 38 },
       "id": 9,
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-      "targets": [
-        {
-          "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
-          "format": "time_series",
-          "rawSql": "SELECT bucket AS time, avg_value_double AS value, COALESCE(line, '—') || ' / ' || split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) AS metric FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value' AND split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) ~* 'flow' ORDER BY 1",
-          "refId": "A"
-        }
-      ],
+      "targets": [{ "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" }, "format": "time_series", "rawSql": "SELECT bucket AS time, avg_value_double AS value, COALESCE(NULLIF(line, ''), split_part(topic, '/', 4), '—') || ' / ' || split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) AS metric FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value' AND split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) ~* 'flow' AND split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) !~* 'total' ORDER BY 1", "refId": "A" }],
       "title": "Flows",
       "type": "timeseries"
     },
     {
       "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
-      "fieldConfig": { "defaults": { "decimals": 2 }, "overrides": [] },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 40 },
-      "id": 10,
-      "options": { "showHeader": true },
-      "targets": [
-        {
-          "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
-          "format": "table",
-          "rawSql": "SELECT DISTINCT ON (topic) bucket AS time, COALESCE(site, '—') AS site, COALESCE(line, '—') AS line, split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) AS signal, avg_value_double AS value, unit_of_measure AS uom FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value' AND avg_value_double IS NOT NULL AND split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) LIKE '%$metric%' ORDER BY topic, bucket DESC",
-          "refId": "A"
-        }
-      ],
-      "title": "Latest values",
-      "type": "table"
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 8, "lineWidth": 2, "spanNulls": true }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 38 },
+      "id": 14,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [{ "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" }, "format": "time_series", "rawSql": "SELECT bucket AS time, avg_value_double AS value, COALESCE(NULLIF(line, ''), split_part(topic, '/', 4), '—') || ' / ' || split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) AS metric FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value' AND split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) IN ('VibrationRmsVelocity', 'VibrationAccelPeak', 'BearingEnvelope', 'MotorCurrent', 'FilterDp') ORDER BY 1", "refId": "A" }],
+      "title": "Vibration",
+      "type": "timeseries"
     },
     {
       "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
-      "fieldConfig": {
-        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 8, "lineWidth": 2, "spanNulls": true }, "unit": "short" },
-        "overrides": []
-      },
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 50 },
-      "id": 11,
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 8, "lineWidth": 2, "spanNulls": true }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 46 },
+      "id": 15,
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-      "targets": [
-        {
-          "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
-          "format": "time_series",
-          "rawSql": "SELECT bucket AS time, avg_value_double AS value, COALESCE(line, '—') || ' / ' || split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) || COALESCE(' (' || unit_of_measure || ')', '') AS metric FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value' AND split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) LIKE '%$metric%' ORDER BY 1",
-          "refId": "A"
-        }
-      ],
-      "title": "Explorer (topic / metric contains)",
+      "targets": [{ "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" }, "format": "time_series", "rawSql": "SELECT bucket AS time, avg_value_double AS value, COALESCE(NULLIF(site, ''), split_part(topic, '/', 2), '—') || ' / ' || split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) AS metric FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value' AND split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) IN ('Lel', 'H2S', 'CO', 'O2', 'VOC', 'NOx', 'SOx') ORDER BY 1", "refId": "A" }],
+      "title": "Safety",
       "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 8, "lineWidth": 2, "spanNulls": true }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 46 },
+      "id": 16,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [{ "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" }, "format": "time_series", "rawSql": "SELECT bucket AS time, avg_value_double AS value, COALESCE(NULLIF(line, ''), split_part(topic, '/', 4), '—') || ' / ' || split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) AS metric FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value' AND split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) IN ('Conductivity', 'Turbidity', 'COD', 'TSS', 'AmmoniumN', 'Silica', 'DewPoint') ORDER BY 1", "refId": "A" }],
+      "title": "Water quality",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+      "description": "Inline QA and lab signals. Kept off the overview chart because Density ~1040 kg/m³ flattens Moisture at 0.07.",
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 8, "lineWidth": 2, "spanNulls": true }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 54 },
+      "id": 18,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [{ "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" }, "format": "time_series", "rawSql": "SELECT bucket AS time, avg_value_double AS value, COALESCE(NULLIF(line, ''), split_part(topic, '/', 4), '—') || ' / ' || split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) AS metric FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value' AND split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) IN ('Viscosity', 'Density', 'Moisture', 'RefractiveIndex', 'NirIndex', 'ColorB', 'HydroxylNumber', 'WaterContent', 'Acidity') ORDER BY 1", "refId": "A" }],
+      "title": "Quality",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+      "description": "G1 ProcessValue/Pressure is psi (~150). Utility headers are barg and live on Pressures.",
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 8, "lineWidth": 2, "spanNulls": true }, "unit": "pressurepsi" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 54 },
+      "id": 19,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [{ "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" }, "format": "time_series", "rawSql": "SELECT bucket AS time, avg_value_double AS value, COALESCE(NULLIF(line, ''), split_part(topic, '/', 4), '—') || ' / Pressure' AS metric FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value' AND topic LIKE '%/Production/%' AND topic LIKE '%/ProcessValue/Pressure' ORDER BY 1", "refId": "A" }],
+      "title": "Process pressure",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 8, "lineWidth": 2, "spanNulls": true }, "unit": "volt" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 62 },
+      "id": 20,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [{ "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" }, "format": "time_series", "rawSql": "SELECT bucket AS time, avg_value_double AS value, COALESCE(NULLIF(line, ''), split_part(topic, '/', 4), '—') || ' / ' || split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) AS metric FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value' AND split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) IN ('VoltageL1', 'VoltageL2', 'VoltageL3', 'Frequency') ORDER BY 1", "refId": "A" }],
+      "title": "Mains voltage",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+      "description": "Compressor and chiller duty. LoadUnloadCycles stay on Counters.",
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 8, "lineWidth": 2, "spanNulls": true }, "unit": "percent" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 62 },
+      "id": 21,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [{ "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" }, "format": "time_series", "rawSql": "SELECT bucket AS time, avg_value_double AS value, COALESCE(NULLIF(line, ''), split_part(topic, '/', 4), '—') || ' / ' || split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) AS metric FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value' AND split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) IN ('LoadPercent', 'FanSpeed', 'DamperPosition', 'HeatingValvePosition', 'CoolingValvePosition') ORDER BY 1", "refId": "A" }],
+      "title": "Utility load",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+      "description": "Cumulative counters on their own axis.",
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "fillOpacity": 8, "lineWidth": 2, "spanNulls": true }, "unit": "short" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 70 },
+      "id": 17,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [{ "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" }, "format": "time_series", "rawSql": "SELECT bucket AS time, avg_value_double AS value, COALESCE(NULLIF(line, ''), split_part(topic, '/', 4), '—') || ' / ' || split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) AS metric FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value' AND split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) IN ('GoodCount', 'RejectCount', 'TotalCount', 'VolumeTotal', 'FlowTotal', 'EnergyTotal', 'RunHours', 'StartCount', 'LoadUnloadCycles', 'ProductVolumeTotal') ORDER BY 1", "refId": "A" }],
+      "title": "Counters",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
+      "fieldConfig": { "defaults": { "decimals": 2 }, "overrides": [] },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 78 },
+      "id": 10,
+      "options": { "showHeader": true, "sortBy": [{ "desc": false, "displayName": "site" }] },
+      "targets": [{ "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" }, "format": "table", "rawSql": "SELECT DISTINCT ON (topic) bucket AS time, COALESCE(NULLIF(site, ''), split_part(topic, '/', 2)) AS site, COALESCE(NULLIF(line, ''), split_part(topic, '/', 4)) AS line, split_part(topic, '/', 3) AS area, split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) AS signal, avg_value_double AS value, COALESCE(unit_of_measure, '') AS uom FROM uns_metrics_1m_enriched WHERE $__timeFilter(bucket) AND topic LIKE '%$topic%' AND metric_name = 'value' AND avg_value_double IS NOT NULL AND split_part(topic, '/', array_length(string_to_array(topic, '/'), 1)) LIKE '%$metric%' ORDER BY topic, bucket DESC", "refId": "A" }],
+      "title": "Latest values",
+      "type": "table"
     }
   ],
   "refresh": "30s",
@@ -250,5 +241,5 @@
   "timezone": "browser",
   "title": "Process Visualization",
   "uid": "uns-process-visualization",
-  "version": 4
+  "version": 6
 }
