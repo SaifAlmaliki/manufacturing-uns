@@ -1512,6 +1512,7 @@ dependencies = [
     { name = "uns-kafka-mapper" },
     { name = "uns-model" },
     { name = "uns-mqtt" },
+    { name = "uns-oee" },
     { name = "uns-opcua" },
     { name = "uns-simulator" },
     { name = "uns-spb-mapper" },
@@ -1537,6 +1538,7 @@ requires-dist = [
     { name = "uns-kafka-mapper", editable = "06_uns_kafka" },
     { name = "uns-model", editable = "09_uns_model" },
     { name = "uns-mqtt", editable = "02_mqtt-cluster" },
+    { name = "uns-oee", editable = "12_uns_oee" },
     { name = "uns-opcua", editable = "10_uns_opcua" },
     { name = "uns-simulator", editable = "99_simulator" },
     { name = "uns-spb-mapper", editable = "05_sparkplugb" },
@@ -1770,6 +1772,43 @@ test = [
     { name = "pytest-timeout", specifier = ">=2.4.0,<3" },
     { name = "pytest-xdist", specifier = ">=3.8.0,<4" },
     { name = "safety", specifier = ">=3.7.0,<4" },
+]
+
+[[package]]
+name = "uns-oee"
+version = "0.9.38"
+source = { editable = "12_uns_oee" }
+dependencies = [
+    { name = "aiomqtt" },
+    { name = "asyncpg" },
+    { name = "dynaconf" },
+    { name = "logger" },
+    { name = "prometheus-client" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "uns-config" },
+    { name = "uns-model" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aiomqtt", specifier = ">=2.4.0,<3" },
+    { name = "asyncpg", specifier = ">=0.31.0,<0.32" },
+    { name = "dynaconf", specifier = "~=3.2" },
+    { name = "logger", specifier = "~=1.4" },
+    { name = "prometheus-client", specifier = ">=0.21.0,<1" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.36,<3" },
+    { name = "uns-config", editable = "00_uns_config" },
+    { name = "uns-model", editable = "09_uns_model" },
+]
+
+[package.metadata.requires-dev]
+test = [
+    { name = "pytest", specifier = ">=9.0.3,<10" },
+    { name = "pytest-asyncio", specifier = ">=1.3.0,<1.5" },
+    { name = "pytest-cov", specifier = ">=6.0.0,<8" },
+    { name = "pytest-timeout", specifier = ">=2.4.0,<3" },
+    { name = "pytest-xdist", specifier = ">=3.8.0,<4" },
+    { name = "safety", specifier = ">=3.4.0,<4" },
 ]
 
 [[package]]

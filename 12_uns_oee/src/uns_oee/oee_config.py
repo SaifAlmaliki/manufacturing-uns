@@ -72,4 +72,4 @@ class OeeConfig:
 
     def is_valid(self) -> bool:
         """Mandatory settings are present. Does not check that they are correct."""
-        return self.mqtt_host is not None
+        return bool(self.mqtt_host and self.mqtt_host.strip())

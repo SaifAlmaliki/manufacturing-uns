@@ -18,6 +18,11 @@ def test_is_valid_requires_an_mqtt_host():
     assert not OeeConfig(mqtt_host=None).is_valid()
 
 
+def test_is_valid_rejects_empty_or_whitespace_mqtt_host():
+    assert not OeeConfig(mqtt_host="").is_valid()
+    assert not OeeConfig(mqtt_host="   ").is_valid()
+
+
 def test_from_settings_reads_the_oee_environment():
     config = OeeConfig.from_settings("oee")
     assert config.metrics_port == 9095
