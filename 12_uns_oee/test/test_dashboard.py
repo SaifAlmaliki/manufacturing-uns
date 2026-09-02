@@ -137,3 +137,47 @@ def test_the_unusable_shifts_panel_is_a_worklist(dashboard: dict):
     assert "shift_label" in query
     assert "status" in query
     assert "GROUP BY" not in query
+
+
+COMPOSE_FILE = REPO_ROOT / "docker-compose.yml"
+NGINX_FILE = REPO_ROOT / "11_frontend" / "nginx.conf"
+VITE_FILE = REPO_ROOT / "11_frontend" / "vite.config.ts"
+SYSTEM_HEALTH = REPO_ROOT / "11_frontend" / "src" / "components" / "system" / "SystemHealthView.tsx"
+GRAFANA_EMBED = REPO_ROOT / "11_frontend" / "src" / "components" / "common" / "GrafanaEmbed.tsx"
+DASHBOARD_UIDS = (
+    "uns-platform-observability",
+    "uns-process-visualization",
+    "uns-oee",
+)
+
+
+def test_grafana_is_reached_through_the_console_not_host_port_3000():
+    """Publishing 3000 fails when anything else on the host already bound it."""
+    compose = yaml.safe_load(COMPOSE_FILE.read_text(encoding="utf-8"))
+    grafana = compose["services"]["uns_grafana"]
+    assert "ports" not in grafana
+    assert grafana["environment"]["GF_SERVER_SERVE_FROM_SUB_PATH"] == "true"
+    assert grafana["environment"]["GF_SECURITY_ALLOW_EMBEDDING"] == "true"
+    assert "uns_grafana" in compose["services"]["uns_frontend"]["depends_on"]
+
+
+def test_grafana_does_not_need_envsubst():
+    compose = yaml.safe_load(COMPOSE_FILE.read_text(encoding="utf-8"))
+    grafana = compose["services"]["uns_grafana"]
+    assert grafana.get("entrypoint") in (None, [])
+    mounts = " ".join(grafana["volumes"])
+    assert "datasources.yaml" in mounts
+
+
+def test_the_console_proxies_grafana_before_the_spa_fallback():
+    nginx = NGINX_FILE.read_text(encoding="utf-8")
+    assert "location /grafana" in nginx
+    assert nginx.index("location /grafana") < nginx.index("location / {")
+    vite = VITE_FILE.read_text(encoding="utf-8")
+    assert "'/grafana'" in vite or '"/grafana"' in vite
+
+
+def test_the_console_embeds_the_three_provisioned_dashboards():
+    sources = GRAFANA_EMBED.read_text(encoding="utf-8") + SYSTEM_HEALTH.read_text(encoding="utf-8")
+    for uid in DASHBOARD_UIDS:
+        assert uid in sources, f"console does not embed dashboard uid {uid}"

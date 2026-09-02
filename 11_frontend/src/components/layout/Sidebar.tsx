@@ -118,7 +118,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'System Operations',
       shortLabel: 'System Ops',
       icon: Activity,
-      description: 'Subsystems & Health Matrix',
+      description: 'Grafana: platform, process, OEE',
       featureKey: 'system_ops',
     },
     {

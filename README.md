@@ -117,9 +117,9 @@ uv run uns_simulator
 | `uns_simulator` | Synthetic PLC / HMI / SCADA publisher used for local demos. Not for production. |
 | `oee_client` | Computes shift OEE from the historised `uns_metrics` rows and publishes each result to `<line>/KPI/ShiftOee`. Reads the historian, writes the `oee` schema, never writes to a control system (ADR-0008). Metrics on `9095`, unpublished. |
 | `graphql_server` | GraphQL API over MQTT (live), Neo4j (current tree), TimescaleDB (history), Postgres `model` / `console` (Asset Model and Alert Rules), and Kafka. Host port: **`8000`** (`http://localhost:8000/graphql`). |
-| `uns_frontend` | Web console for the namespace tree, payload inspector, live feed, search, and historian. Host port: **`8088`** (`http://localhost:8088`). The browser calls GraphQL on port `8000`. |
+| `uns_frontend` | Web console for the namespace tree, payload inspector, live feed, search, historian, and Grafana. Host port: **`8088`** (`http://localhost:8088`). Grafana is proxied at `/grafana` (System Operations in the console). The browser calls GraphQL on port `8000`. |
 | `uns_prometheus` | Scrapes the `/metrics` endpoints exposed by the mapper clients. Host port: `9090`. |
-| `uns_grafana` | Dashboards for Process Visualization (plant measurements from `uns_metrics_1m_enriched`), OEE (shift results and downtime from the `oee` schema), and Platform Observability (platform health). Host port: **`3000`** (`http://localhost:3000`). Anonymous access is enabled — see [Known Limitations](#known-limitations--workarounds). |
+| `uns_grafana` | Dashboards for Process Visualization (plant measurements from `uns_metrics_1m_enriched`), OEE (shift results and downtime from the `oee` schema), and Platform Observability (platform health). Not published on the host: open them from the console at `http://localhost:8088` → System Operations, or `http://localhost:8088/grafana/`. Anonymous access is enabled — see [Known Limitations](#known-limitations--workarounds). |
 
 Typical flow: **simulator or plant devices → MQTT → mapper clients → Neo4j / Timescale / Kafka → GraphQL → UI**,
 with **mapper clients → Prometheus → Grafana** alongside it for platform health.
@@ -461,14 +461,9 @@ uv run pytest -m "not integrationtest" ./12_uns_oee
 1. **pytest-asyncio & Integration Testing**:
    Similar to `pytest-xdist` I have also enabled `pytest-asyncio` for the project. While this has significantly decreased the execution time, for some integration tests ( marked by `@pytest.mark.integrationtest`) sometimes fail (_flaky tests_) if there is too much CPU / IO load. Executing them again normally works. Need to investigate how to make those more robust/race proof. The issue is not in the code but in the test case where the validation starts before the test data has completely been setup in the data store.
 
-1. **Grafana / Prometheus is incomplete.** The observability stack is wired into
-   `docker-compose.yml` but is **not yet working end to end**. Known issues:
+1. **Grafana / Prometheus coverage is still incomplete.** Grafana is part of the console
+   (`/grafana` on port `8088`), but the scrape surface is not:
 
-   - `08_uns_observability/grafana/entrypoint.sh` calls `envsubst`, which is **not present in the
-     `grafana/grafana` image**, so the container exits on start. Grafana interpolates `$VAR` in
-     provisioning files natively, so this indirection can be removed entirely.
-   - The dashboards reference data sources by `uid` (`prometheus`, `timescaledb`), but the
-     provisioning file does not declare `uid:` fields, so panels will not bind to a data source.
    - Enabling compression on `unifiednamespace` conflicts with the surviving
      `unique_event UNIQUE (time, topic, client_id, mqtt_msg)` constraint: TimescaleDB requires every
      column of a unique constraint to be in `segmentby` or `orderby`. Recent versions warn, older
@@ -483,16 +478,10 @@ uv run pytest -m "not integrationtest" ./12_uns_oee
    - Prometheus `remote_write` from edge to enterprise is not configured; the current setup is
      enterprise-only.
 
-1. **The console's System Health panel is not real.** `11_frontend` derives all five component
-   indicators from a single boolean — "did a GraphQL query return data" — so Neo4j or Kafka can be
-   down while the panel reads `ONLINE`. It is intended to be replaced by an embedded Grafana
-   dashboard (`GF_SECURITY_ALLOW_EMBEDDING` is already set) but that is not implemented yet.
-   Until then, do not treat that panel as a health signal.
-
 1. **Grafana runs with anonymous access.** `GF_AUTH_ANONYMOUS_ENABLED=true` with the `Admin` role,
    matching the rest of this stack, which has no authentication anywhere. This is a deliberate but
-   real security gap: anyone who can reach port `3000` can read plant process data. See
-   [ADR 0001](./docs/adr/0001-grafana-for-visualization-and-observability.md). Do not expose these
-   ports outside a trusted network.
+   real security gap: anyone who can reach the console (`8088`) can open `/grafana` and read plant
+   process data. See [ADR 0001](./docs/adr/0001-grafana-for-visualization-and-observability.md).
+   Do not expose these ports outside a trusted network.
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/mkashwin/unifiednamespace)

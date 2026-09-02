@@ -31,6 +31,11 @@ export default defineConfig(() => {
           target: platform.simulatorProxyTarget,
           changeOrigin: true,
         },
+        '/grafana': {
+          target: platform.grafanaProxyTarget,
+          changeOrigin: true,
+          ws: true,
+        },
       },
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: process.env.DISABLE_HMR === 'true' ? null : {},

@@ -7,12 +7,15 @@ See [docs/adr/0001-grafana-for-visualization-and-observability.md](../docs/adr/0
 From the repository root, with the main stack running:
 
 ```bash
-docker compose up -d uns_prometheus uns_grafana
+uv run uns_compose up -d uns_prometheus uns_grafana uns_frontend
 ```
+
+Grafana is not published on host port 3000. The console proxies it:
 
 | Service | URL | Purpose |
 | --- | --- | --- |
-| Grafana | http://localhost:3000 | Dashboards (anonymous admin — dev only) |
+| Grafana (in console) | http://localhost:8088 → System Operations | Process, OEE, and Platform dashboards |
+| Grafana (direct) | http://localhost:8088/grafana/ | Same Grafana, same origin |
 | Prometheus | http://localhost:9090 | Scrape targets for mapper `/metrics` endpoints |
 
 `uns_grafana` waits for `asset_model_setup` to complete so the TimescaleDB enrichment views exist before dashboards query them.
