@@ -404,7 +404,8 @@ async def test_an_unchanged_fingerprint_writes_nothing(seeded: Database, unit, p
             await connection.execute(
                 text(
                     "SELECT count(*) FROM oee.shift_result_revision v "
-                    "JOIN oee.shift_result r ON r.id = v.shift_result_id WHERE r.oee_unit_id = :unit"
+                    "JOIN oee.shift_result r ON r.oee_unit_id = v.oee_unit_id AND r.shift_start = v.shift_start "
+                    "WHERE r.oee_unit_id = :unit"
                 ),
                 {"unit": unit.unit_id},
             )
@@ -433,7 +434,8 @@ async def test_late_data_bumps_the_revision_and_preserves_the_previous(seeded: D
             await connection.execute(
                 text(
                     "SELECT v.revision, v.good_count, v.oee FROM oee.shift_result_revision v "
-                    "JOIN oee.shift_result r ON r.id = v.shift_result_id WHERE r.oee_unit_id = :unit"
+                    "JOIN oee.shift_result r ON r.oee_unit_id = v.oee_unit_id AND r.shift_start = v.shift_start "
+                    "WHERE r.oee_unit_id = :unit"
                 ),
                 {"unit": unit.unit_id},
             )
