@@ -157,8 +157,8 @@ services:
       dockerfile: ./03_uns_graphdb/Dockerfile
     volumes:
       - ./conf:/app/conf
-    ports:
-      - "9092:9092"
+    # 9092 stays unpublished: it collides with uns_kafka_broker's host port, and Prometheus
+    # scrapes graphdb_client:9092 from inside the network, exactly as it does OEE on 9095.
     environment:
       UNS_CONF_DIR: /app/conf
       UNS_MODULE: 03_uns_graphdb
