@@ -33,6 +33,7 @@ dependencies = [
     "asyncpg>=0.31.0,<0.32",
     "alembic>=1.14.0,<2",
     "dynaconf~=3.2",
+    "pyyaml>=6.0.2,<7",
 ]
 
 [project.urls]
@@ -41,6 +42,7 @@ Repository = "https://github.com/mkashwin/unifiednamespace/tree/main/09_uns_mode
 [project.scripts]
 uns_model_migrate = "uns_model.cli:migrate"
 uns_model_seed = "uns_model.cli:seed"
+uns_model_oee_import = "uns_model.cli:oee_import"
 uns_model_setup = "uns_model.cli:main"
 
 [dependency-groups]

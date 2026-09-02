@@ -1,0 +1,29 @@
+# conf/oee/shifts.yaml
+# Weekly shift patterns. `start` is local wall-clock time in `timezone`, so 06:00 stays
+# 06:00 to the operator across a daylight-saving change - which means the shift containing
+# the spring-forward gap really is 7 hours long, and the autumn one 9.
+#
+# `duration_minutes` rather than an end time: a shift crossing midnight then needs no
+# second row and no end-before-start special case.
+
+patterns:
+  - name: "Dormagen 3-shift"
+    timezone: "Europe/Berlin"
+    asset: "CovestroAG/Dormagen/Production/Line1"
+    slots:
+      # Monday (0) to Friday (4), three eight-hour shifts.
+      - {days: [0, 1, 2, 3, 4], start: "06:00", duration_minutes: 480, label: "A"}
+      - {days: [0, 1, 2, 3, 4], start: "14:00", duration_minutes: 480, label: "B"}
+      - {days: [0, 1, 2, 3, 4], start: "22:00", duration_minutes: 480, label: "C"}
+
+exceptions:
+  # No `asset` means every Asset: a plant holiday is one row, not one per line.
+  - starts_at: "2026-12-24T00:00:00+01:00"
+    ends_at: "2026-12-27T00:00:00+01:00"
+    kind: "HOLIDAY"
+    note: "Christmas shutdown"
+  - asset: "CovestroAG/Dormagen/Production/Line1"
+    starts_at: "2026-09-14T06:00:00+02:00"
+    ends_at: "2026-09-14T14:00:00+02:00"
+    kind: "PLANNED_DOWN"
+    note: "Annual overhaul, Line 1"

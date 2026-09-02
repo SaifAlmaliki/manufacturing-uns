@@ -1,0 +1,38 @@
+# conf/oee/reasons.yaml
+# Downtime reason codes, and the rules that attribute a published state to one.
+#
+# `is_planned` is an input to the calculation, not a label: a planned stop is subtracted
+# from Loading Time, an unplanned one from Run Time. Getting it wrong moves the OEE number.
+#
+# Migration 0003 already seeded UNCLASSIFIED, PLANNED_MAINTENANCE, CHANGEOVER,
+# PLANNED_BREAK, BREAKDOWN, MINOR_STOP, MATERIAL_SHORTAGE, OPERATOR_ABSENT and
+# QUALITY_HOLD. These are the additions this plant needs for the PackML state set.
+
+reasons:
+  - {code: "NO_ORDER", display_name: "No order", category: "Organisational", is_planned: true}
+  - {code: "ORDER_FINISHING", display_name: "Order finishing", category: "Organisational", is_planned: true}
+  - {code: "STARTUP", display_name: "Startup / ramp-up", category: "Setup", is_planned: false}
+  - {code: "PROCESS_HOLD", display_name: "Process hold", category: "Technical", is_planned: false}
+  - {code: "UPSTREAM_BLOCKED", display_name: "Blocked or starved", category: "Supply", is_planned: false}
+  - {code: "OPERATOR_STOP", display_name: "Operator stop", category: "Organisational", is_planned: false}
+
+# No `asset` means the rule is the platform default for every unit. A rule naming an asset
+# wins over the default for that unit. EXECUTE is deliberately absent: it is a producing
+# state, so it never becomes a stop and never needs a reason.
+state_rules:
+  - {state: "IDLE", reason: "NO_ORDER"}
+  - {state: "STARTING", reason: "STARTUP"}
+  - {state: "HOLDING", reason: "PROCESS_HOLD"}
+  - {state: "HELD", reason: "MATERIAL_SHORTAGE"}
+  - {state: "UNHOLDING", reason: "STARTUP"}
+  - {state: "SUSPENDING", reason: "UPSTREAM_BLOCKED"}
+  - {state: "SUSPENDED", reason: "UPSTREAM_BLOCKED"}
+  - {state: "UNSUSPENDING", reason: "STARTUP"}
+  - {state: "COMPLETING", reason: "ORDER_FINISHING"}
+  - {state: "COMPLETE", reason: "NO_ORDER"}
+  - {state: "RESETTING", reason: "CHANGEOVER"}
+  - {state: "ABORTING", reason: "BREAKDOWN"}
+  - {state: "ABORTED", reason: "BREAKDOWN"}
+  - {state: "CLEARING", reason: "BREAKDOWN"}
+  - {state: "STOPPING", reason: "OPERATOR_STOP"}
+  - {state: "STOPPED", reason: "OPERATOR_STOP"}

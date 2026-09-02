@@ -1,0 +1,13 @@
+# conf/oee/products.yaml
+# What the plant makes. `code` must equal the value published on the unit's
+# product_metric_key topic, because that is how a shift's counts are split by product.
+
+products:
+  - code: "R-100-STD"
+    name: "Resin 100 standard"
+  - code: "R-100-HIGH"
+    name: "Resin 100 high-flow"
+  - code: "R-220-STD"
+    name: "Resin 220 standard"
+  - code: "R-330-LOW"
+    name: "Resin 330 low-viscosity"

@@ -15,11 +15,12 @@
 *    -
 *******************************************************************************
 
-Operator commands for the Asset Model: `uns_model_migrate`, `uns_model_seed` and
-`uns_model_setup`, which is both in the order a deployment needs them.
+Operator commands for the Asset Model: `uns_model_migrate`, `uns_model_seed`,
+`uns_model_oee_import` and `uns_model_setup`, which is the order a deployment needs them.
 
-All three are thin: the migration lives in migrations/, the plan lives in seed.py,
-and this module only parses arguments and reports what happened.
+All four are thin: the migration lives in migrations/, the plan lives in seed.py,
+OEE master data lives in oee_seed.py, and this module only parses arguments and reports
+what happened.
 """
 
 from __future__ import annotations
@@ -34,6 +35,9 @@ from uns_config import get_settings
 
 from uns_model.engine import Database
 from uns_model.model_config import ModelConfig
+from uns_model.oee_master_data import OeeMasterDataRepository
+from uns_model.oee_seed import OeeSeedPlan, plan_from_oee_config, read_oee_conf
+from uns_model.oee_seed import apply_plan as apply_oee_plan
 from uns_model.repositories import AssetModelRepository
 from uns_model.seed import SeedPlan, apply_plan, plan_from_simulator_config
 
@@ -164,19 +168,62 @@ async def _seed(plan: SeedPlan) -> int:
     return 0
 
 
+def oee_import(argv: list[str] | None = None) -> int:
+    """Import conf/oee/*.yaml into the OEE master data."""
+    parser = argparse.ArgumentParser(
+        prog="uns_model_oee_import",
+        description="Import conf/oee/*.yaml (shift patterns, units, products, reason codes).",
+    )
+    parser.add_argument("--dry-run", action="store_true", help="Print what would be written and exit")
+    parser.add_argument("-v", "--verbose", action="store_true")
+    args = parser.parse_args(argv)
+    _configure_logging(args.verbose)
+
+    plan = plan_from_oee_config(read_oee_conf())
+    if args.dry_run:
+        sys.stdout.write(plan.describe() + "\n")
+        return 0
+    return asyncio.run(_oee_import(plan))
+
+
+async def _oee_import(plan: OeeSeedPlan) -> int:
+    database = Database.from_config(ModelConfig.from_settings())
+    try:
+        repository = OeeMasterDataRepository(database)
+        written = await apply_oee_plan(repository, plan)
+        LOGGER.info(
+            "Imported %s OEE unit(s), %s shift pattern(s), %s ideal cycle time(s), %s reason rule(s)",
+            written["oee_units"],
+            written["shift_patterns"],
+            written["ideal_cycle_times"],
+            written["state_reason_rules"],
+        )
+        for name, count in sorted((await repository.counts()).items()):
+            LOGGER.info("OEE master data now holds %s %s", count, name)
+    finally:
+        await database.dispose()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """
-    Migrate, then seed. The entrypoint of the Asset Model container.
+    Migrate, then seed, then import OEE master data. The entrypoint of the Asset Model
+    container.
 
-    One command rather than two, because a deployment always wants both and seeding
-    a schema that was never migrated fails in a way nobody can read. Both steps are
+    One command rather than three, because a deployment always wants them in order and
+    seeding a schema that was never migrated fails in a way nobody can read. Every step is
     idempotent, so re-running it is how the model is updated.
     """
     parser = argparse.ArgumentParser(
         prog="uns_model_setup",
         description="Bring the Asset Model schema and content up to date.",
     )
-    parser.add_argument("--skip-seed", action="store_true", help="Migrate only, leaving the Asset Model untouched")
+    parser.add_argument("--skip-seed", action="store_true", help="Do not seed the Asset Model after migrating")
+    parser.add_argument(
+        "--skip-oee-import",
+        action="store_true",
+        help="Do not import conf/oee/*.yaml after seeding",
+    )
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
 
@@ -185,8 +232,17 @@ def main(argv: list[str] | None = None) -> int:
         return status
     if args.skip_seed:
         LOGGER.info("Skipping the seed as asked; the Asset Model schema is up to date")
-        return 0
-    return seed(["--from-simulator-config", *forwarded])
+    elif (code := seed(["--from-simulator-config", *forwarded])) != 0:
+        return code
+    if not args.skip_oee_import:
+        # Absent conf/oee/ is not an error: a deployment that does not report OEE has
+        # nothing to import, and the tables stay empty rather than half-populated.
+        if read_oee_conf():
+            if (code := oee_import(forwarded)) != 0:
+                return code
+        else:
+            LOGGER.info("No conf/oee/ directory, skipping the OEE master-data import")
+    return 0
 
 
 if __name__ == "__main__":  # pragma: no cover

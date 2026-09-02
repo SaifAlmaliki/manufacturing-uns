@@ -1,0 +1,24 @@
+# conf/oee/units.yaml
+# Which Assets OEE is reported for, and where their inputs come from.
+#
+# The subject is the Line, because that is the number a plant manages. The metric keys are
+# paths relative to the Line's topic prefix, so they can name a descendant machine without
+# a second Asset row: state_metric_key below resolves to the historian metric
+# 'CovestroAG/Dormagen/Production/Line1/Cell1/MES-01/Status/PackMlState'.
+
+units:
+  - asset: "CovestroAG/Dormagen/Production/Line1"
+    shift_pattern: "Dormagen 3-shift"
+    state_metric_key: "Cell1/MES-01/Status/PackMlState/value"
+    good_count_metric_key: "Cell1/MES-01/ProcessValue/GoodCount/value"
+    reject_count_metric_key: "Cell1/MES-01/ProcessValue/RejectCount/value"
+    product_metric_key: "Cell1/MES-01/Status/RecipeId/value"
+    # EXECUTE is the only PackML state that makes parts. Everything else is a stop.
+    producing_states: ["EXECUTE"]
+    ideal_cycle_times:
+      # No `product` is the fallback used when the published recipe has no row of its own.
+      - seconds_per_unit: 3.0
+      - {product: "R-100-STD", seconds_per_unit: 3.0}
+      - {product: "R-100-HIGH", seconds_per_unit: 2.4}
+      - {product: "R-220-STD", seconds_per_unit: 4.5}
+      - {product: "R-330-LOW", seconds_per_unit: 6.0}
