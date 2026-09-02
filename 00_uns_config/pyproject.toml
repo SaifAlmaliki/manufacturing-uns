@@ -10,6 +10,9 @@ dependencies = [
     "dynaconf~=3.2",
 ]
 
+[project.scripts]
+uns_compose = "uns_config.compose_env:main"
+
 [project.urls]
 Repository = "https://github.com/mkashwin/unifiednamespace/tree/main/00_uns_config"
 

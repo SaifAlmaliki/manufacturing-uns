@@ -74,10 +74,10 @@ decisions that would otherwise be surprising are recorded in **[docs/adr](./docs
 
 In Docker Desktop the project is `manufacturing-uns`. Container names look like `manufacturing-uns-<service>-1`.
 
-**How to start** (from the repository root; passwords can also live in `.env`):
+**How to start** (from the repository root). Passwords live in `conf/.secrets.yaml` only — copy `conf/.secrets_template.yaml` if you have not already. Compose cannot read YAML, so use the wrapper that loads that file and then runs `docker compose`:
 
 ```bash
-docker compose up -d --build
+uv run uns_compose up -d --build
 ```
 
 That command is the same on Windows, macOS, and Linux. The simulator publishes into the Compose MQTT broker (`uns_mqtt_broker`) automatically.
