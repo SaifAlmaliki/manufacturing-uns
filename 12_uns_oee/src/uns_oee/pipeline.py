@@ -168,13 +168,18 @@ def shift_inputs(
     """
     whole = as_interval(window)
     segments = state_segments(samples.state, whole)
-    stops = stop_intervals(segments, unit.producing_states)
-    unobserved = subtract([whole], [segment.interval for segment in segments])
-    stops.extend(StopInterval(state=UNOBSERVED_STATE, interval=gap) for gap in unobserved)
+    classified = classify(stop_intervals(segments, unit.producing_states), unit.resolver, manual=manual)
+    if has_input_data:
+        unobserved = [
+            StopInterval(state=UNOBSERVED_STATE, interval=gap)
+            for gap in subtract([whole], [segment.interval for segment in segments])
+            if gap.start not in manual
+        ]
+        classified.extend(classify(unobserved, unit.resolver))
     return ShiftInputs(
         window=whole,
         exception_intervals=tuple(exception_intervals(exceptions)),
-        classified_stops=tuple(classify(stops, unit.resolver, manual=manual)),
+        classified_stops=tuple(classified),
         products=product_segments(unit, window, samples),
         has_input_data=has_input_data,
     )
@@ -276,7 +281,7 @@ class ShiftPipeline:
                 unit.unit_id,
                 window,
                 metrics,
-                inputs.classified_stops,
+                () if not inputs.has_input_data else inputs.classified_stops,
                 fingerprint,
                 computed_at,
             )

@@ -15,7 +15,7 @@ from uns_model.oee_tables import UNCLASSIFIED_REASON_CODE
 from uns_oee.classifier import AUTO, MANUAL, ManualReason, ReasonResolver, ReasonSpec
 from uns_oee.counters import Sample
 from uns_oee.master_data import ExceptionWindow, UnitMasterData
-from uns_oee.oee_calc import ShiftMetrics
+from uns_oee.oee_calc import STATUS_NO_INPUT_DATA, compute
 from uns_oee.pipeline import (
     ACTION_COMPUTED,
     ACTION_REPUBLISHED,
@@ -173,6 +173,20 @@ def test_an_unobserved_opening_prefix_is_unclassified_not_run_time():
     assert opening[0].interval == Interval(t(6), t(7))
     assert opening[0].state_value == UNOBSERVED_STATE
     assert opening[0].reason_code == UNCLASSIFIED_REASON_CODE
+    metrics = compute(inputs)
+    assert metrics.loading_time_s == 8 * 3600
+    assert metrics.run_time_s == 7 * 3600
+
+
+def test_an_unobserved_gap_does_not_steal_a_manual_at_the_same_start():
+    """A manual at window.start keeps its own geometry; the unknown prefix is not that stop."""
+    late_execute = (StateSample(t(7), "EXECUTE"),)
+    manual = {t(6): ManualReason(reason_code="MECH_FAILURE", note="pump", assigned_by="operator1")}
+    inputs = shift_inputs(unit(), WINDOW, samples(state=late_execute), (), manual)
+    opening = [stop for stop in inputs.classified_stops if stop.interval.start == t(6)]
+    assert opening == []
+    assert all(stop.source != MANUAL for stop in inputs.classified_stops)
+    assert all(stop.interval != Interval(t(6), t(7)) for stop in inputs.classified_stops)
 
 
 def test_a_shift_with_counters_but_no_state_is_unobserved_throughout():
@@ -220,6 +234,8 @@ def test_exception_windows_become_exception_intervals():
 def test_no_input_rows_makes_the_shift_report_no_input_data():
     inputs = shift_inputs(unit(), WINDOW, samples(), (), {}, has_input_data=False)
     assert inputs.has_input_data is False
+    assert inputs.classified_stops == ()
+    assert compute(inputs).status == STATUS_NO_INPUT_DATA
 
 
 def test_unclassified_seconds_totals_only_the_unclassified_stops():

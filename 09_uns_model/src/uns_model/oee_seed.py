@@ -51,6 +51,7 @@ class OeeSeedPlan:
     units: list[OeeUnitSpec] = field(default_factory=list)
     cycle_times: list[IdealCycleTimeSpec] = field(default_factory=list)
     state_reason_rules: list[StateReasonRuleSpec] = field(default_factory=list)
+    present_files: frozenset[str] = field(default_factory=frozenset)
 
     def describe(self) -> str:
         """The plan as text, for `--dry-run`."""
@@ -106,8 +107,10 @@ def _read_yaml_mapping(path: Path) -> dict[str, Any] | None:
 def read_oee_conf(conf_dir: Path | None = None) -> dict[str, Any]:
     """Read `conf/oee/*.yaml` into the mapping `plan_from_oee_config` consumes.
 
-    Absent files are skipped rather than defaulted, so a deployment can land shifts before
-    it has decided its reason codes.
+    Absent files are skipped rather than defaulted, so a deployment can land `shifts.yaml`
+    before reason codes. `apply_plan` reconciles only collections whose file was present: a
+    missing file leaves existing rows alone, while a present file with an empty list is the
+    source of truth and wipes that collection.
     """
     directory = (conf_dir if conf_dir is not None else resolve_conf_dir()) / OEE_CONF_SUBDIR
     raw: dict[str, Any] = {}
@@ -171,7 +174,7 @@ def _pattern_spec_from_entry(entry: Mapping[str, Any]) -> ShiftPatternSpec:
 
 def plan_from_oee_config(config: Mapping[str, Any]) -> OeeSeedPlan:
     """Turn the `conf/oee/` mapping into a plan, validating every cross-reference."""
-    plan = OeeSeedPlan()
+    plan = OeeSeedPlan(present_files=frozenset(config.keys()))
 
     for entry in _section(config, "products", "products"):
         plan.products.append(ProductSpec(code=str(entry["code"]), name=str(entry.get("name", ""))))
@@ -285,7 +288,8 @@ async def apply_plan(repository: OeeMasterDataRepository, plan: OeeSeedPlan) -> 
 
     Order matters: products before their cycle times, patterns before the units that name
     them, units before the unit-scoped reason rules, reasons before the rules that
-    reference them.
+    reference them. Reconcile runs only for files in `plan.present_files`, so a missing
+    YAML file leaves that collection alone.
     """
     for product in plan.products:
         await repository.save_product(product)
@@ -301,12 +305,17 @@ async def apply_plan(repository: OeeMasterDataRepository, plan: OeeSeedPlan) -> 
         await repository.save_ideal_cycle_time(cycle_time)
     for rule in plan.state_reason_rules:
         await repository.save_state_reason_rule(rule)
-    await repository.reconcile_products(plan.products)
-    await repository.reconcile_shift_patterns(plan.patterns)
-    await repository.reconcile_shift_exceptions(plan.exceptions)
-    await repository.reconcile_oee_units(plan.units)
-    await repository.reconcile_ideal_cycle_times(plan.cycle_times)
-    await repository.reconcile_state_reason_rules(plan.state_reason_rules)
+    present = plan.present_files
+    if "products" in present:
+        await repository.reconcile_products(plan.products)
+    if "shifts" in present:
+        await repository.reconcile_shift_patterns(plan.patterns)
+        await repository.reconcile_shift_exceptions(plan.exceptions)
+    if "units" in present:
+        await repository.reconcile_oee_units(plan.units)
+        await repository.reconcile_ideal_cycle_times(plan.cycle_times)
+    if "reasons" in present:
+        await repository.reconcile_state_reason_rules(plan.state_reason_rules)
     return {
         "products": len(plan.products),
         "downtime_reasons": len(plan.reasons),

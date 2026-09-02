@@ -130,6 +130,14 @@ def test_describe_lists_what_would_be_written():
     assert "NO_ORDER" in described
 
 
+def test_a_full_config_records_every_oee_conf_file_as_present():
+    assert plan_from_oee_config(CONFIG).present_files == {"products", "shifts", "units", "reasons"}
+
+
+def test_a_shifts_only_config_records_only_the_shifts_file_as_present():
+    assert plan_from_oee_config({"shifts": CONFIG["shifts"]}).present_files == {"shifts"}
+
+
 def compile_pg(statement) -> tuple[str, dict[str, object]]:
     compiled = statement.compile(dialect=postgresql.dialect())
     return str(compiled).lower(), dict(compiled.params)
@@ -285,3 +293,16 @@ async def test_apply_plan_reconciles_rows_the_files_no_longer_declare():
     assert "reconcile_ideal_cycle_times" in repository.calls
     assert "reconcile_state_reason_rules" in repository.calls
     assert "reconcile_downtime_reasons" not in repository.calls
+
+
+@pytest.mark.asyncio
+async def test_a_shifts_only_plan_does_not_reconcile_units_or_products():
+    repository = RecordingOeeRepository()
+    await apply_plan(repository, plan_from_oee_config({"shifts": CONFIG["shifts"]}))
+
+    assert "reconcile_shift_patterns" in repository.calls
+    assert "reconcile_shift_exceptions" in repository.calls
+    assert "reconcile_oee_units" not in repository.calls
+    assert "reconcile_products" not in repository.calls
+    assert "reconcile_ideal_cycle_times" not in repository.calls
+    assert "reconcile_state_reason_rules" not in repository.calls
