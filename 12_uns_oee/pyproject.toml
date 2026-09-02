@@ -28,6 +28,7 @@ dependencies = [
     "aiomqtt>=2.4.0,<3",
     "prometheus-client>=0.21.0,<1",
     "dynaconf~=3.2",
+    "tzdata>=2025.2",
 ]
 
 [project.urls]
