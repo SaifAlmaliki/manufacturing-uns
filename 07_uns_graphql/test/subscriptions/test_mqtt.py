@@ -17,8 +17,11 @@
 
 """
 
+import asyncio
+import contextlib
 import random
 import time
+import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -197,8 +200,30 @@ async def async_message_generator(messages):  # noqa: RUF029
         yield msg
 
 
+def _scope_mqtt_topic(topic: str, prefix: str) -> str:
+    return f"{prefix}/{topic}"
+
+
+def _scope_mqtt_messages(messages: list[Message], prefix: str) -> list[Message]:
+    return [
+        Message(
+            topic=_scope_mqtt_topic(str(msg.topic), prefix),
+            payload=msg.payload,
+            qos=msg.qos,
+            retain=msg.retain,
+            mid=msg.mid,
+            properties=msg.properties,
+        )
+        for msg in messages
+    ]
+
+
 @pytest_asyncio.fixture(loop_scope="function", scope="function")
-async def publish_to_mqtt(expected_messages: list[Message]):
+async def publish_to_mqtt(topics: list[MQTTTopicInput], expected_messages: list[Message]):
+    prefix = f"gqlsub/{uuid.uuid4().hex[:8]}"
+    scoped_topics = [MQTTTopicInput(topic=_scope_mqtt_topic(topic.topic, prefix)) for topic in topics]
+    scoped_messages = _scope_mqtt_messages(expected_messages, prefix)
+
     client_id = f"test_graphql-{time.time()}-{random.randint(0, 1000)}"  # noqa: S311
     publish_properties = None
     if MQTTConfig.version == ProtocolVersion.V5:
@@ -219,21 +244,18 @@ async def publish_to_mqtt(expected_messages: list[Message]):
     )
     try:
         async with client:
-            for msg in expected_messages:
-                # Publish the test data
+            for msg in scoped_messages:
                 await client.publish(
                     topic=str(msg.topic), payload=msg.payload, qos=msg.qos, retain=True, properties=publish_properties
                 )
     except MqttError as ex:
         pytest.fail(f"Error publishing messages for the test: {ex!s}")
 
-    yield client
+    yield scoped_topics, scoped_messages
 
     try:
-        # clean up the test data. Publish None to delete retained message
         async with client:
-            for msg in expected_messages:
-                # Publish the test data
+            for msg in scoped_messages:
                 await client.publish(
                     topic=str(msg.topic), payload=b"", qos=msg.qos, retain=True, properties=publish_properties
                 )
@@ -243,6 +265,8 @@ async def publish_to_mqtt(expected_messages: list[Message]):
 
 @pytest.mark.asyncio(loop_scope="function")
 @pytest.mark.integrationtest
+@pytest.mark.xdist_group(name="graphql_mqtt")
+@pytest.mark.timeout(60)
 @pytest.mark.parametrize(
     "topics, expected_messages",
     [
@@ -296,7 +320,7 @@ async def publish_to_mqtt(expected_messages: list[Message]):
                 ),
             ],
         ),
-        (  # Test multiple messages to the same topic
+        (  # topic/+ matches one level only; distinct topics so retain does not collapse them
             [MQTTTopicInput(topic="topic/+")],
             [
                 Message(
@@ -308,7 +332,7 @@ async def publish_to_mqtt(expected_messages: list[Message]):
                     properties=None,
                 ),
                 Message(
-                    topic="topic/1",
+                    topic="topic/2",
                     payload=b'{"timestamp": 2345678, "val1": 4567}',
                     qos=1,
                     retain=False,
@@ -316,7 +340,7 @@ async def publish_to_mqtt(expected_messages: list[Message]):
                     properties=None,
                 ),
                 Message(
-                    topic="topic/2/3",
+                    topic="topic/3",
                     payload=b'{"timestamp": 123457, "val1": 5678}',
                     qos=1,
                     retain=False,
@@ -358,16 +382,19 @@ async def publish_to_mqtt(expected_messages: list[Message]):
         # Add more test cases as needed
     ],
 )
-async def test_get_mqtt_messages_integration(publish_to_mqtt, topics: list[MQTTTopicInput], expected_messages: list[Message]):  # noqa: ARG001
+async def test_get_mqtt_messages_integration(publish_to_mqtt):
+    topics, expected_messages = publish_to_mqtt
     subscription = MQTTSubscription()
     received_messages: list[MQTTMessage] = []
+    async_message_list = subscription.get_mqtt_messages(topics)
     try:
-        async_message_list = subscription.get_mqtt_messages(topics)
-        # Await the subscription result directly to collect the messages
-        async for message in async_message_list:
-            received_messages.append(message)
-            if len(received_messages) == len(expected_messages):
-                break
+        async with asyncio.timeout(30):
+            async for message in async_message_list:
+                received_messages.append(message)
+                if len(received_messages) == len(expected_messages):
+                    break
         assert len(received_messages) == len(expected_messages)
     finally:
-        await async_message_list.aclose()
+        with contextlib.suppress(Exception):
+            async with asyncio.timeout(5):
+                await async_message_list.aclose()
