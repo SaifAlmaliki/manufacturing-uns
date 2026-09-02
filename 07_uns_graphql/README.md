@@ -102,30 +102,17 @@ All of these configurations are a combination of the other modules with the exce
 
 ## Setting up the development environment for this module
 
-This sub module can be independently setup as a dev environment in the folder [`07_uns_graphql`](.)
-Ensure that the [configuration files](../conf/) are correctly updated to your MQTT broker and database instance
-This has been tested on **Unix(bash)**, **Windows(powershell)** and **Mac(zsh)**
+This package is a member of the repository uv workspace. Use the single `.venv` at the **repository root** — do not run `uv venv` in this folder.
+
+From the repository root (see [Setting up the development environment](../README.md#setting-up-the-development-environment)):
 
 ```bash
 python -m pip install --upgrade pip uv
-# Ensure that the uv shell is activated
 uv venv
 uv sync
 ```
 
-> **Setting up VSCode**
->
-> While importing the folder into VSCode remember to do the following steps the first time
->
-> 1. Open a terminal in VSCode
-> 1. Activate the venv
->
->    ```bash
->    python -m pip install --upgrade pip uv
->    uv venv
->    ```
->
-> 1. Select the correct python interpreter in VSCode (should automatically detect the .venv virtual environment)
+Select the interpreter at `../.venv`. Point [configuration](../conf/) at brokers and databases you can reach from the host.
 
 ## Exporting schema definition
 
@@ -138,11 +125,15 @@ strawberry export-schema uns_graphql.uns_graphql_app:UNSGraphql.schema  --output
 
 ### Running the GraphQL API Server
 
-This function is executed by the following command with the current folder as [`07_uns_graphql`](.)
+After the root `.venv` exists:
 
 ```bash
-# Ensure that the uv shell is activated
-uv venv
+uv run uns_graphql_app
+```
+
+Or, equivalently:
+
+```bash
 uv run uvicorn uns_graphql.uns_graphql_app:UNSGraphql.app --host 0.0.0.0 --port 8000
 ```
 

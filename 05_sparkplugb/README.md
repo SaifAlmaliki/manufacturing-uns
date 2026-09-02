@@ -111,40 +111,23 @@ This application reads the shared platform configuration at the repository root.
 
 ## Setting up the development environment for this module
 
-This sub module can be independently setup as a dev environment in the folder [`05_sparkplugb`](.)
-This has been tested on **Unix(bash)**, **Windows(powershell)** and **Mac(zsh)**
+This package is a member of the repository uv workspace. Use the single `.venv` at the **repository root** — do not run `uv venv` in this folder.
+
+From the repository root (see [Setting up the development environment](../README.md#setting-up-the-development-environment)):
 
 ```bash
 python -m pip install --upgrade pip uv
-# Ensure that the uv shell is activated
 uv venv
 uv sync
 ```
 
-> **Setting up VSCode**
->
-> While importing the folder into VSCode remember to do the following steps the first time
->
-> 1. Open a terminal in VSCode
-> 1. Activate the virtual environment
->
->    ```bash
->    python -m pip install --upgrade pip uv
->    uv venv
->    uv sync
->    ```
->
-> 1. Select the correct python interpreter in VSCode (should automatically detect the .venv virtual environment)
+Select the interpreter at `../.venv`.
 
 ## Running the python script
 
-This function is executed by the following command with the current folder as [`05_sparkplugb`](.)
-Ensure that the [configuration files](../conf/) are correctly updated to your MQTT broker and database instance
+After the root `.venv` exists. Point [configuration](../conf/) at an MQTT broker and database you can reach from the host.
 
 ```bash
-# Ensure that the uv shell is activated
-uv venv
-uv sync
 uv run uns_spb_mapper
 ```
 

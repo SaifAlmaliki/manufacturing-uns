@@ -78,8 +78,19 @@ This application reads the shared platform configuration at the repository root.
 
 ## Setting up the development environment for this module
 
-This sub module can be independently setup as a dev environment in the folder [`06_uns_kafka`](.)
-The following command creates a dev instance of a Kafka broker. **To be used only for development purposes**.
+This package is a member of the repository uv workspace. Use the single `.venv` at the **repository root** — do not run `uv venv` in this folder.
+
+From the repository root (see [Setting up the development environment](../README.md#setting-up-the-development-environment)):
+
+```bash
+python -m pip install --upgrade pip uv
+uv venv
+uv sync
+```
+
+Select the interpreter at `../.venv`.
+
+The following command creates a standalone Kafka broker for local development. **To be used only for development purposes**. Compose already provides `uns_kafka_broker` if you are running the full stack.
 
 ```bash
  # Generated ClusterID using "kafka-storage.sh random-uuid"
@@ -109,37 +120,11 @@ docker run \
 
 Setting up a production grade Kafka cluster is detailed on the confluent site **[Running Kafka in Production](https://docs.confluent.io/platform/current/kafka/deployment.html)**
 
-This has been tested on **Unix(bash)**, **Windows(powershell)** and **Mac(zsh)**
-
-```bash
-python -m pip install --upgrade pip uv
-# Ensure that the uv shell is activated
-uv venv
-uv sync
-```
-
-> **Setting up VSCode**
->
-> While importing the folder into VSCode remember to do the following steps the first time
->
-> 1. Open a terminal in VSCode
-> 1. Activate the venv
->
->    ```bash
->    python -m pip install --upgrade pip uv
->    uv venv
->    ```
->
-> 1. Select the correct python interpreter in VSCode (should automatically detect the .venv virtual environment)
-
 ## Running the python script
 
-This function is executed by the following command with the current folder as [`06_uns_kafka`](.)
-Ensure that the [configuration files](../conf/) are correctly updated to your MQTT broker and database instance
+After the root `.venv` exists. Point [configuration](../conf/) at an MQTT broker and Kafka instance you can reach from the host.
 
 ```bash
-# Ensure that the uv shell is activated
-uv venv
 uv run uns_kafka_mapper
 ```
 

@@ -179,29 +179,17 @@ For further securing options, like ACL, additional authentication methods etc. E
 
 ## Setting up the development environment for this module
 
-This function is executed by the following command with the current folder as `02_mqtt-cluster`
-This has been tested on **Unix(bash)**, **Windows(powershell)** and **Mac(zsh)**
+This package is a member of the repository uv workspace. Use the single `.venv` at the **repository root** — do not run `uv venv` in this folder.
+
+From the repository root (see [Setting up the development environment](../README.md#setting-up-the-development-environment)):
 
 ```bash
-python -m pip install --upgrade pip
-pip install uv
-# Ensure that the uv shell is activated
-uv venv
 python -m pip install --upgrade pip uv
+uv venv
 uv sync
 ```
 
-> While importing the folder into VSCode remember to do the following steps the first time
->
-> 1. Open a terminal in VSCode
-> 1. Activate the uv virtual environment.
->
->    ```bash
->    uv venv
->    uv sync
->    ```
->
-> 1. Select the correct python interpreter in VSCode (should automatically detect the .venv virtual environment)
+Select the interpreter at `../.venv`.
 
 ### Running tests
 

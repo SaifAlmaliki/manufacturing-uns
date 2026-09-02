@@ -119,6 +119,8 @@ await binder.observe(topic)   # a no-op for a topic already bound
 
 ## Commands
 
+These `uv run` commands use the single `.venv` at the **repository root**. Do not create a venv in this folder; see [Setting up the development environment](../README.md#setting-up-the-development-environment).
+
 Alembic owns the `model` and `console` schemas and the enrichment views. The legacy
 `04_uns_historian/sql_scripts/*.sql` still bootstrap the hypertables; see ADR-0004
 for why Timescale DDL stays as raw SQL inside migrations. The enrichment views are
