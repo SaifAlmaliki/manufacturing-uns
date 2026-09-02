@@ -211,11 +211,14 @@ def test_process_visualization_shows_the_plant_the_simulator_publishes():
     assert len([t for t in titles if t]) >= 6
     assert "metric_name = 'value'" in sql
     assert "metric_name = 'ProductionRate'" not in sql
-    for metric in ("ProductionRate", "ThroughputTph", "ActivePower"):
-        assert f"%/{metric}" in sql or f"%{metric}%" in sql, f"process dashboard never filters topics for {metric}"
+    for metric in ("ThroughputTph", "ActivePower"):
+        assert f"%/{metric}" in sql, f"process dashboard never filters topics for {metric}"
     assert "uns_metrics_1m_enriched" in sql
     assert "ShiftOee" not in sql
     assert "'Oee'" not in sql
+    assert any(panel.get("title") == "All simulator process values" for panel in _panels(body))
+    metric_var = next(item for item in body["templating"]["list"] if item["name"] == "metric")
+    assert metric_var["current"]["value"] != "Temperature"
 
 
 def test_platform_observability_covers_the_scraped_jobs():

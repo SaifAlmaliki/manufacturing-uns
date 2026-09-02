@@ -77,5 +77,5 @@ ENV GIT_HASH=${GIT_HASH:-dev}
 # Mount the volume /conf
 VOLUME /app/conf
 # Set the Entrypoint script to run the uns_oee module
-ENTRYPOINT ["uv", "run", "--no-group", "test", "uns_oee"]
-HEALTHCHECK --interval=60s --timeout=10s CMD ["uv", "run", "--no-group", "test", "uns_oee_health"]
+ENTRYPOINT ["uv", "run", "--frozen", "--no-sync", "--no-group", "test", "uns_oee"]
+HEALTHCHECK --interval=60s --timeout=10s CMD ["uv", "run", "--frozen", "--no-sync", "--no-group", "test", "uns_oee_health"]

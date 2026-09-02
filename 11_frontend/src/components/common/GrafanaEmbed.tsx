@@ -45,7 +45,7 @@ export function grafanaKioskPath(
   options: GrafanaEmbedOptions = {},
 ): string {
   const params = new URLSearchParams();
-  params.set('kiosk', '');
+  params.set('kiosk', '1');
   params.set('theme', theme);
   if (options.from) params.set('from', options.from);
   if (options.to) params.set('to', options.to);

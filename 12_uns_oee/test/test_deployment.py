@@ -80,6 +80,17 @@ def test_the_engine_does_not_wait_for_the_historian_process(compose: dict):
     assert "historian_client" not in compose["services"][SERVICE]["depends_on"]
 
 
+def test_the_runtime_image_does_not_resolve_the_historian_package():
+    """
+    uns_historian is a test-only path dependency. `uv run` without --no-sync still tries
+    to materialise it from ../04_uns_historian, which is not in the image, and the
+    container exits 2 before any shift is computed — which is why the OEE dashboard
+    was empty.
+    """
+    dockerfile = (REPO_ROOT / "12_uns_oee" / "Dockerfile").read_text(encoding="utf-8")
+    assert "--no-sync" in dockerfile
+
+
 def test_prometheus_scrapes_the_engine(compose: dict):
     """Without this, the job resolves to nothing until the engine happens to be up first."""
     assert SERVICE in compose["services"]["uns_prometheus"]["depends_on"]
