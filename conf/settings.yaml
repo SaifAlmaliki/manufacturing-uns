@@ -202,4 +202,24 @@ simulator:
       lab: 1800.0
       event: 0.0
 
+oee:
+  mqtt:
+    client_id: "uns_oee_client"
+  oee:
+    # Prometheus scrapes this. 9091 historian, 9092 graph database, 9093 simulator,
+    # 9094 reserved for the OPC UA edge connector.
+    metrics_port: 9095
+    # Seconds between scheduler passes. A shift boundary is only ever seen on a pass,
+    # so this bounds how late the first revision of a result can be.
+    scan_interval_seconds: 300
+    # Wait this long after shift_end before computing revision 1, so that in-flight
+    # messages have landed in the historian.
+    settle_minutes: 15
+    # Keep re-checking a shift's input fingerprint for this long after shift_end. Data
+    # arriving later than this does not trigger a new revision.
+    late_window_hours: 48
+    # On an empty results table, walk back this many days. Shifts that end before a
+    # unit's earliest historised sample are skipped, not computed as zero.
+    backfill_days: 30
+
 dynaconf_merge: true

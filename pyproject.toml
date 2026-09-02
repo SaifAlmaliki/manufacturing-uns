@@ -40,6 +40,7 @@ dependencies = [
     "uns_graphql",
     "uns_opcua",
     "uns_simulator",
+    "uns_oee",
 ]
 
 [project.urls]
@@ -71,9 +72,10 @@ uns_kafka_mapper = { path = "./06_uns_kafka", editable = true}
 uns_graphql = { path = "./07_uns_graphql", editable = true }
 uns_opcua = { path = "./10_uns_opcua", editable = true }
 uns_simulator = { path = "./99_simulator", editable = true }
+uns_oee = { path = "./12_uns_oee", editable = true }
 
 [tool.uv.workspace]
-members = ["uns_config", "uns_mqtt", "uns_graphdb", "uns_historian", "uns_model", "uns_spb_mapper", "uns_kafka_mapper", "uns_graphql", "uns_opcua", "uns_simulator"]
+members = ["uns_config", "uns_mqtt", "uns_graphdb", "uns_historian", "uns_model", "uns_spb_mapper", "uns_kafka_mapper", "uns_graphql", "uns_opcua", "uns_simulator", "uns_oee"]
 
 [tool.pytest.ini_options]
 markers = ["integrationtest: mark a test as an integration test"]
@@ -91,6 +93,7 @@ testpaths = [
     "09_uns_model/test",
     "10_uns_opcua/test",
     "99_simulator/test",
+    "12_uns_oee/test",
 ]
 pythonpath = [
     "00_uns_config/test",
@@ -103,6 +106,7 @@ pythonpath = [
     "09_uns_model/test",
     "10_uns_opcua/test",
     "99_simulator/test",
+    "12_uns_oee/test",
 ]
 [tool.ruff]
 
