@@ -67,7 +67,7 @@ RUN  pip install  --no-cache-dir --upgrade pip uv && \
     adduser --no-create-home --home /app --disabled-password uns_user && \
     chown -R uns_user /app && \
     # Install the required dependencies for the project using uv as that user
-    su uns_user -c "uv lock && uv sync --no-group test --compile-bytecode"
+    su uns_user -c "uv sync --frozen --no-group test --compile-bytecode"
 
 USER uns_user
 
