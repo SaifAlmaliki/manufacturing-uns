@@ -100,7 +100,7 @@ INDEXES = (
 # Kept even though the ORM sets updated_at itself: a rule edited with psql, or by
 # a future service that does not go through AlertRuleRepository, must still be
 # visible to a console that refetches on change.
-UPDATED_AT_TRIGGER = """
+UPDATED_AT_FUNCTION = """
 CREATE OR REPLACE FUNCTION console.set_alert_rules_updated_at()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -109,13 +109,16 @@ BEGIN
   NEW.updated_at = NOW();
   RETURN NEW;
 END;
-$$;
+$$
+"""
 
-DROP TRIGGER IF EXISTS trg_alert_rules_updated_at ON console.alert_rules;
+DROP_UPDATED_AT_TRIGGER = "DROP TRIGGER IF EXISTS trg_alert_rules_updated_at ON console.alert_rules"
+
+CREATE_UPDATED_AT_TRIGGER = """
 CREATE TRIGGER trg_alert_rules_updated_at
   BEFORE UPDATE ON console.alert_rules
   FOR EACH ROW
-  EXECUTE FUNCTION console.set_alert_rules_updated_at();
+  EXECUTE FUNCTION console.set_alert_rules_updated_at()
 """
 
 COMMENTS = (
@@ -150,7 +153,9 @@ def upgrade() -> None:
     op.execute(ALERT_RULE_ROLES_TABLE)
     for index in INDEXES:
         op.execute(index)
-    op.execute(UPDATED_AT_TRIGGER)
+    op.execute(UPDATED_AT_FUNCTION)
+    op.execute(DROP_UPDATED_AT_TRIGGER)
+    op.execute(CREATE_UPDATED_AT_TRIGGER)
     for comment in COMMENTS:
         op.execute(comment)
     op.execute(GRANTS)

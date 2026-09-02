@@ -54,21 +54,25 @@ SELECT
     jsonb_object_agg(level, segment) AS levels,
     jsonb_object_agg(level, COALESCE(display_name, segment)) AS level_names
 FROM lineage
-GROUP BY asset_id;
-
-COMMENT ON VIEW model.asset_lineage IS
-  'Named ancestor segments per Asset, keyed by Asset Level. Feeds the enrichment views.';
+GROUP BY asset_id
 """
+
+ASSET_LINEAGE_COMMENT = (
+    "COMMENT ON VIEW model.asset_lineage IS "
+    "'Named ancestor segments per Asset, keyed by Asset Level. Feeds the enrichment views.'"
+)
 
 UNMODELLED_TOPIC_VIEW = """
 CREATE OR REPLACE VIEW model.unmodelled_topic AS
 SELECT topic, first_seen_at, resolved_at
 FROM model.topic_binding
-WHERE asset_id IS NULL;
-
-COMMENT ON VIEW model.unmodelled_topic IS
-  'Topics that have published data but match no Asset. A non-empty result means the Asset Model is incomplete.';
+WHERE asset_id IS NULL
 """
+
+UNMODELLED_TOPIC_COMMENT = (
+    "COMMENT ON VIEW model.unmodelled_topic IS "
+    "'Topics that have published data but match no Asset. A non-empty result means the Asset Model is incomplete.'"
+)
 
 # The Asset columns each observed row gets. Shared by both enrichment views so
 # they cannot drift apart.
@@ -126,12 +130,13 @@ SELECT
     bound.metric_path, bound.metric_key,
 {_ENRICHMENT_COLUMNS}
 FROM bound
-{_ENRICHMENT_JOINS};
-
-COMMENT ON VIEW public.uns_metrics_enriched IS
-  'uns_metrics joined to the Asset Model. Rows for Unmodelled Topics survive with null Asset columns.';
+{_ENRICHMENT_JOINS}
 """
 
+METRICS_ENRICHED_COMMENT = (
+    "COMMENT ON VIEW public.uns_metrics_enriched IS "
+    "'uns_metrics joined to the Asset Model. Rows for Unmodelled Topics survive with null Asset columns.'"
+)
 METRICS_1M_ENRICHED_VIEW = f"""
 CREATE OR REPLACE VIEW public.uns_metrics_1m_enriched AS
 WITH bound AS (
@@ -151,14 +156,22 @@ SELECT
     bound.metric_path, bound.metric_key,
 {_ENRICHMENT_COLUMNS}
 FROM bound
-{_ENRICHMENT_JOINS};
-
-COMMENT ON VIEW public.uns_metrics_1m_enriched IS
-  'The 1-minute continuous aggregate joined to the Asset Model. This is what Grafana panels should query.';
+{_ENRICHMENT_JOINS}
 """
 
+METRICS_1M_ENRICHED_COMMENT = (
+    "COMMENT ON VIEW public.uns_metrics_1m_enriched IS "
+    "'The 1-minute continuous aggregate joined to the Asset Model. This is what Grafana panels should query.'"
+)
 
-def _create_view_if_source_exists(source: str, view_sql: str, view_name: str) -> None:
+
+def _execute_view(view_sql: str, comment_sql: str) -> None:
+    # Separate executes: asyncpg rejects CREATE VIEW and COMMENT in one prepared statement.
+    op.execute(view_sql)
+    op.execute(comment_sql)
+
+
+def _create_view_if_source_exists(source: str, view_sql: str, comment_sql: str, view_name: str) -> None:
     """
     Create an enrichment view only when its hypertable is present.
 
@@ -169,7 +182,7 @@ def _create_view_if_source_exists(source: str, view_sql: str, view_name: str) ->
     """
     if context.is_offline_mode():
         # Nothing to query, and whoever asked for the SQL wants to see all of it.
-        op.execute(view_sql)
+        _execute_view(view_sql, comment_sql)
         return
 
     exists = op.get_bind().execute(sa.text("SELECT to_regclass(:source)"), {"source": source}).scalar()
@@ -181,7 +194,7 @@ def _create_view_if_source_exists(source: str, view_sql: str, view_name: str) ->
             view_name,
         )
         return
-    op.execute(view_sql)
+    _execute_view(view_sql, comment_sql)
 
 
 def upgrade() -> None:
@@ -293,11 +306,17 @@ def upgrade() -> None:
     )
     op.create_index("idx_topic_binding_asset", "topic_binding", ["asset_id"], schema=SCHEMA)
 
-    op.execute(ASSET_LINEAGE_VIEW)
-    op.execute(UNMODELLED_TOPIC_VIEW)
-    _create_view_if_source_exists("public.uns_metrics", METRICS_ENRICHED_VIEW, "public.uns_metrics_enriched")
-    _create_view_if_source_exists("public.uns_metrics_1m", METRICS_1M_ENRICHED_VIEW, "public.uns_metrics_1m_enriched")
-
+    _execute_view(ASSET_LINEAGE_VIEW, ASSET_LINEAGE_COMMENT)
+    _execute_view(UNMODELLED_TOPIC_VIEW, UNMODELLED_TOPIC_COMMENT)
+    _create_view_if_source_exists(
+        "public.uns_metrics", METRICS_ENRICHED_VIEW, METRICS_ENRICHED_COMMENT, "public.uns_metrics_enriched"
+    )
+    _create_view_if_source_exists(
+        "public.uns_metrics_1m",
+        METRICS_1M_ENRICHED_VIEW,
+        METRICS_1M_ENRICHED_COMMENT,
+        "public.uns_metrics_1m_enriched",
+    )
     # Same grant pattern as 04_uns_historian/sql_scripts: the role is created
     # interactively, so it may not exist yet.
     op.execute(

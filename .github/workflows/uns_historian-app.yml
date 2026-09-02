@@ -21,6 +21,7 @@ on:
       - "09_uns_model/**/*.py"
       - "09_uns_model/pyproject.toml"
       - "09_uns_model/uv.lock"
+      - "09_uns_model/alembic.ini"
       - ".github/workflows/uns_historian-app.yml"
       - ".github/include/**"
 
@@ -41,6 +42,7 @@ on:
       - "09_uns_model/**/*.py"
       - "09_uns_model/pyproject.toml"
       - "09_uns_model/uv.lock"
+      - "09_uns_model/alembic.ini"
       - ".github/workflows/uns_historian-app.yml"
       - ".github/include/**"
 
@@ -131,6 +133,13 @@ jobs:
           " | PGPASSWORD=${UNS_historian__password} psql -h ${UNS_historian__hostname} -U $UNS_historian__username -d $UNS_historian__database  -p 5432
 
           PGPASSWORD=${UNS_historian__password} psql -h ${UNS_historian__hostname} -U $UNS_historian__username -d $UNS_historian__database -p 5432 -v ON_ERROR_STOP=1 -f 04_uns_historian/sql_scripts/04_setup_metrics_hypertable.sql
+
+      - name: Apply the Asset Model schema
+        # TopicBinder.observe() writes model.topic_binding after each persist (ADR-0003).
+        # Seed is skipped: these tests publish to test/uns/... topics, not the plant tree.
+        run: |
+          cd ./04_uns_historian
+          uv run uns_model_setup --skip-seed --skip-oee-import -v
 
       - name: Run all type of tests
         uses: ./.github/include/execute_tests/

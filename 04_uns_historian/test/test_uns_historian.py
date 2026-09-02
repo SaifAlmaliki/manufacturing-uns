@@ -270,7 +270,7 @@ def test_uns_mqtt_historian(clean_up_database, topic: str, messages: list):  # n
                     persisted[key] = result
             return len(persisted) == len(normalized_messages)
 
-        assert _wait_until(loop, _all_persisted), (
+        assert _wait_until(loop, _all_persisted, timeout_s=15.0), (
             f"Historian did not persist {len(normalized_messages)} message(s) for topic {topic}"
         )
 
