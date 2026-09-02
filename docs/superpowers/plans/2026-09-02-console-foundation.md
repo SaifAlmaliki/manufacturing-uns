@@ -679,7 +679,6 @@ instead of committing into the void."
 - Modify: `11_frontend/src/services/graphql/client.ts:572`–`:586`
 - Modify: `11_frontend/src/components/common/ConnectionChip.tsx:58`, `:86`, `:96`, `:107`
 - Modify: `11_frontend/src/components/layout/AppLayout.tsx:108`
-- Modify: `11_frontend/src/components/system/SystemHealthView.tsx:38`, `:60`
 - Test: `11_frontend/src/services/graphql/client-health.test.ts`
 
 **Interfaces:**
@@ -808,8 +807,10 @@ Replace `client.ts:572`–`:586`:
 `tsc` will name all of them. The mechanical fixes:
 
 - `AppLayout.tsx:108` — delete the `MODE: {health.mode}` span entirely.
-- `SystemHealthView.tsx:38` — delete the `Mode:` line.
-- `SystemHealthView.tsx:60` — replace `health.graphqlHttp ? 'HTTP 200 OK' : 'SIMULATION FALLBACK'` with `health.graphqlHttp ? 'Reachable' : 'Unreachable'`. There is no simulation to fall back to.
+`SystemHealthView.tsx` is **not** in this list, although an earlier audit said it was.
+Commit `0812fc6e` rewrote it into a three-dashboard Grafana switcher that reads no
+`health` at all. Confirm with `grep -n "health" src/components/system/SystemHealthView.tsx`
+before touching it; expect no output.
 - `ConnectionChip.tsx:58` — replace `{health.mode === 'LIVE_GRAPHQL' ? \`${health.lastPingMs}ms\` : 'SIM'}` with `{health.graphqlHttp ? \`${health.lastPingMs}ms\` : '—'}`.
 - `ConnectionChip.tsx:86` — replace `'Fallback Mock Engine'` with `'Unreachable'`.
 - `ConnectionChip.tsx:96` — replace `'Simulated Reactive Feed'` with `'Not subscribed'`.
@@ -825,7 +826,7 @@ Expected: PASS, 5 tests. `tsc --noEmit` clean.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add 11_frontend/src/types/uns.ts 11_frontend/src/services/graphql/client.ts 11_frontend/src/components/common/ConnectionChip.tsx 11_frontend/src/components/layout/AppLayout.tsx 11_frontend/src/components/system/SystemHealthView.tsx 11_frontend/src/services/graphql/client-health.test.ts
+git add 11_frontend/src/types/uns.ts 11_frontend/src/services/graphql/client.ts 11_frontend/src/components/common/ConnectionChip.tsx 11_frontend/src/components/layout/AppLayout.tsx 11_frontend/src/services/graphql/client-health.test.ts
 git commit -m "fix(frontend): stop deriving five store indicators from one boolean
 
 client.ts painted mqttBroker, neo4jTree, timescaleHistorian, kafkaBroker and
@@ -2247,144 +2248,166 @@ inside the network, so the host publish was never needed."
 
 ---
 
-## Task 12: The `/grafana` proxy
+## Task 12: Verify the `/grafana` proxy, and close its one real gap
 
-`GF_SECURITY_ALLOW_EMBEDDING` is already `true` (`docker-compose.yml:399`) but no proxy reaches Grafana and no component references a dashboard. ADR-0007 records that a missing proxy entry returns `index.html` with a 200 rather than a clear failure, which is why this is added deliberately and verified.
+**This task is mostly verification.** Commit `0812fc6e` ("feat(grafana): integrate
+Grafana into the console for enhanced observability") already landed the proxy, the
+dev proxy, the sub-path environment and a `GrafanaEmbed` component. Read the four
+files before writing anything — the earlier audit predated that commit, and a task
+that re-adds what exists produces a duplicate `location` block that nginx refuses to
+start with.
+
+What is already correct, and must be left alone:
+
+| Concern | Where | State |
+|---|---|---|
+| nginx sub-path | `11_frontend/nginx.conf` — `location /grafana/` plus `location = /grafana` returning a 301 | Correct, and ordered before `location /` as ADR-0007 requires |
+| dev proxy | `11_frontend/vite.config.ts` — `'/grafana'` with `ws: true` | Correct |
+| setting | `11_frontend/platform/settings.ts:19`, `:62` — `grafanaProxyTarget` | Present |
+| embedding allowed | `docker-compose.yml:398` — `GF_SECURITY_ALLOW_EMBEDDING: "true"` | Correct |
+| sub-path env | `docker-compose.yml:399`–`:400` — `GF_SERVER_SERVE_FROM_SUB_PATH` and `GF_SERVER_ROOT_URL: "http://localhost:8088/grafana/"` | Correct. Do **not** change the root URL to `%(protocol)s://%(domain)s:%(http_port)s/grafana/`: those placeholders expand to Grafana's own host and port, 3000, not the console's 8088 |
+
+The one real gap: `grafanaProxyTarget` falls back to `http://localhost:3000`
+(`platform/settings.ts:62`) because `conf/settings.yaml` has no
+`urls.grafana_proxy_target`, and `docker-compose.yml:390`–`:392` deliberately leaves
+Grafana's 3000 unpublished. So `npm run dev` against a composed stack proxies
+`/grafana` at a port nothing is listening on, and every embedded dashboard renders a
+blank frame with no error text. Every other URL in this repo is configured in
+`conf/settings.yaml`; this one must be too.
 
 **Files:**
-- Modify: `11_frontend/nginx.conf`
-- Modify: `11_frontend/vite.config.ts`
-- Modify: `docker-compose.yml` — `uns_grafana` environment
+- Modify: `conf/settings.yaml` — `default.urls`
+- Modify: `11_frontend/platform/settings.ts:62`
+- Test: `11_frontend/src/lib/platform/config.test.ts`
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: `/grafana` serving Grafana in both dev and compose, with correct asset URLs under the sub-path.
+- Produces: `platformConfig.grafanaProxyTarget`, already exported. This task only changes
+  where its value comes from.
 
-- [ ] **Step 1: Add the nginx location**
+- [ ] **Step 1: Prove the four files are already right**
 
-In `11_frontend/nginx.conf`, before `location /` at `:29` — the ordering comment at `:18`–`:20` explains why that matters — add:
-
-```nginx
-    # Grafana, for the embedded Process Visualization, OEE and Platform Observability
-    # dashboards. Must come before `location /`, whose try_files would answer with
-    # index.html and a 200 (ADR-0007).
-    location /grafana {
-        proxy_pass http://uns_grafana:3000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-Host $host;
-        # Grafana's Live features use websockets.
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
+```bash
+cd /c/Dev/unifiednamespace
+grep -n "grafana" 11_frontend/nginx.conf 11_frontend/vite.config.ts 11_frontend/platform/settings.ts
+grep -n "GF_SERVER_ROOT_URL\|GF_SERVER_SERVE_FROM_SUB_PATH\|GF_SECURITY_ALLOW_EMBEDDING" docker-compose.yml
 ```
 
-Match the header style of the existing `/graphql` block at `:7`–`:17`.
+Expected: a `location /grafana/` block, a `'/grafana'` proxy entry with `ws: true`, a
+`grafanaProxyTarget` field, and the three `GF_` variables. If any one of them is missing,
+this task grew — stop and add it in the style of the neighbouring entry before continuing.
 
-- [ ] **Step 2: Add the dev proxy**
+- [ ] **Step 2: Write the failing setting test**
 
-In `11_frontend/vite.config.ts`, inside `server.proxy`:
-
-```ts
-        // Grafana, so `npm run dev` embeds dashboards the same way the composed stack does.
-        // ws: true because Grafana Live uses websockets.
-        '/grafana': {
-          target: platform.grafanaProxyTarget,
-          changeOrigin: true,
-          ws: true,
-        },
-```
-
-- [ ] **Step 3: Add the setting it needs**
-
-`platform/settings.ts` has no Grafana entry. Add to `PlatformSettings`, to `platformSettingsFromConfig`, and read from `conf/settings.yaml` the same way `simulator_host` is read at `:41`:
+Replace the Grafana assertion in `11_frontend/src/lib/platform/config.test.ts` — or append
+it if there is none — with one that reads the configured value rather than the fallback:
 
 ```ts
-  grafanaHost: string
-  grafanaPort: number
-  grafanaProxyTarget: string
-```
+  it('takes the Grafana proxy target from settings.yaml, not from a hardcoded port', () => {
+    expect(platformSettingsFromConfig({
+      urls: { grafana_proxy_target: 'http://uns_grafana:3000' },
+    }).grafanaProxyTarget).toBe('http://uns_grafana:3000')
+  })
 
-```ts
-  const grafanaHost = String(urls.grafana_host ?? 'localhost')
-  const grafanaPort = Number(urls.grafana_port ?? 3000)
-```
-
-```ts
-    grafanaHost,
-    grafanaPort,
-    grafanaProxyTarget: `http://${grafanaHost}:${grafanaPort}`,
-```
-
-Check `conf/settings.yaml` for an existing `urls.grafana_host` before adding the default; if one exists, use its spelling.
-
-- [ ] **Step 4: Add a test for the setting**
-
-Append to `11_frontend/src/lib/platform/config.test.ts`:
-
-```ts
-  it('knows where Grafana is, for the dashboard embeds', () => {
-    expect(platformConfig.grafanaProxyTarget).toBe('http://localhost:3000')
+  it('falls back to the published dev port when settings.yaml says nothing', () => {
+    expect(platformSettingsFromConfig({}).grafanaProxyTarget).toBe('http://localhost:3000')
   })
 ```
 
-- [ ] **Step 5: Tell Grafana it is on a sub-path**
+- [ ] **Step 3: Run it**
 
-In `docker-compose.yml`, in `uns_grafana`'s `environment` (`:396`–`:401`):
+Run: `cd 11_frontend && npx vitest run src/lib/platform/config.test.ts`
+
+Expected: both PASS. `platformSettingsFromConfig` already reads
+`urls.grafana_proxy_target`, so this test documents behaviour rather than driving it. That
+is the point: it fails later if someone hardcodes the port back in.
+
+- [ ] **Step 4: Configure the target**
+
+In `conf/settings.yaml`, in `default.urls` after `simulator_port` (`:40`):
 
 ```yaml
-      # Served under /grafana by the console's nginx, so Grafana must generate its asset
-      # and redirect URLs with that prefix or an embedded dashboard loads a blank frame.
-      GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s:%(http_port)s/grafana/"
-      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+    # Grafana is reached through the console's /grafana proxy, never directly. Compose
+    # leaves Grafana's 3000 unpublished (docker-compose.yml:390-392), so `npm run dev`
+    # needs a target it can actually reach: publish 3000 locally, or point this at a
+    # Grafana you run yourself.
+    grafana_proxy_target: "http://localhost:3000"
 ```
 
-- [ ] **Step 6: Verify in dev**
+The value is the same as the current fallback. What changes is that it is now visible and
+overridable next to every other URL, instead of buried in a TypeScript default.
 
-Run `npm run dev` with a composed stack up, then:
+- [ ] **Step 5: Publish Grafana for development only**
 
-```bash
-curl -s -o /dev/null -w '%{http_code} %{content_type}\n' localhost:5173/grafana/api/health
+In `docker-compose.yml`, `uns_grafana` — keep the existing comment, add the override file
+rather than editing the service, so the composed stack keeps 3000 unpublished:
+
+Create `docker-compose.override.yml.example`:
+
+```yaml
+# Copy to docker-compose.override.yml for frontend development. `npm run dev` proxies
+# /grafana to localhost:3000, which the main compose file deliberately does not publish
+# (a published 3000 collided with whatever already bound it on the host).
+services:
+  uns_grafana:
+    ports:
+      - "3000:3000"
 ```
 
-Expected: `200 application/json`. If it is `200 text/html`, the request fell through to `index.html` — the exact failure ADR-0007 warns about — and Step 2 is wrong.
+Add `docker-compose.override.yml` to `.gitignore` if it is not already ignored.
 
-- [ ] **Step 7: Verify in compose**
-
-Run: `docker compose up -d uns_frontend uns_grafana` then:
+- [ ] **Step 6: Verify in compose**
 
 ```bash
+docker compose up -d uns_frontend uns_grafana
 curl -s localhost:8088/grafana/api/health
 ```
 
-Expected: JSON with `"database": "ok"`.
+Expected: JSON with `"database": "ok"`. If the response is HTML with a 200, the request
+fell through to `index.html` — the exact failure ADR-0007 warns about — and the nginx
+block was damaged.
 
-- [ ] **Step 8: Verify the dashboards resolve by UID**
+- [ ] **Step 7: Verify the three dashboards resolve by UID**
 
 ```bash
 for uid in uns-oee uns-process-visualization uns-platform-observability; do
-  curl -s -o /dev/null -w "$uid %{http_code}\n" "localhost:8088/grafana/api/dashboards/uid/$uid"
+  curl -s -o /dev/null -w "$uid %{http_code}
+" "localhost:8088/grafana/api/dashboards/uid/$uid"
 done
 ```
 
-Expected: `200` for all three.
+Expected: `200` for all three. These are the UIDs the surfaces plan embeds; a 404 here
+means a dashboard JSON in `08_uns_observability/grafana/dashboards/` declares a different
+uid, and the surfaces plan must use whatever it actually declares.
+
+- [ ] **Step 8: Verify in dev**
+
+```bash
+cd 11_frontend && npm run dev
+# in another shell:
+curl -s -o /dev/null -w '%{http_code} %{content_type}
+' localhost:5173/grafana/api/health
+```
+
+Expected: `200 application/json`, given the override from Step 5.
 
 - [ ] **Step 9: Run the frontend suite**
 
 Run: `cd 11_frontend && npm run test:run && npm run lint`
+
 Expected: all pass.
 
 - [ ] **Step 10: Commit**
 
 ```bash
-git add 11_frontend/nginx.conf 11_frontend/vite.config.ts 11_frontend/platform/settings.ts 11_frontend/src/lib/platform/config.test.ts docker-compose.yml
-git commit -m "feat: proxy Grafana at /grafana for the dashboard embeds
+git add conf/settings.yaml 11_frontend/src/lib/platform/config.test.ts   docker-compose.override.yml.example .gitignore
+git commit -m "fix: configure the Grafana proxy target instead of hardcoding it
 
-Embedding was already enabled but nothing could reach Grafana. Added to both
-nginx.conf and vite.config.ts, because a missing dev proxy entry returns
-index.html with a 200 rather than failing (ADR-0007), plus the sub-path
-environment Grafana needs to generate correct asset URLs."
+The /grafana proxy, the sub-path environment and the embed component already
+existed. What did not: urls.grafana_proxy_target in settings.yaml. Compose
+leaves Grafana's 3000 unpublished on purpose, so \`npm run dev\` proxied to a
+port nothing was listening on and every embedded dashboard rendered a blank
+frame. The example override file publishes it for development."
 ```
 
 ---
