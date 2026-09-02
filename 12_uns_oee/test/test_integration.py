@@ -469,6 +469,41 @@ async def test_two_pipelines_computing_the_same_shift_produce_one_row(seeded: Da
     assert {outcome.revision for outcome in outcomes} <= {1, 2}
 
 
+async def test_a_recompute_that_eliminates_a_stop_drops_the_auto_event(seeded: Database, unit, pipeline):
+    """
+    Availability and the Pareto have to describe the same stops. A late-data revision that
+    fills a stop with EXECUTE used to leave the old auto row in place because save only
+    upserted; the unique key is started_at, so the superseded stop stayed in the Pareto.
+    """
+    engine, _ = pipeline
+    await engine.run_shift(unit, WINDOW, COMPUTED_AT)
+    extra = _state(STOP_START, "EXECUTE")
+    await _insert_samples(seeded, [extra])
+    try:
+        await engine.run_shift(unit, WINDOW, COMPUTED_AT + timedelta(hours=2))
+
+        async with seeded.begin() as connection:
+            remaining = (
+                await connection.execute(
+                    text(
+                        "SELECT started_at FROM oee.downtime_event "
+                        "WHERE oee_unit_id = :unit AND shift_start = :start AND reason_source = 'auto'"
+                    ),
+                    {"unit": unit.unit_id, "start": SHIFT_START},
+                )
+            ).scalars().all()
+        assert remaining == []
+    finally:
+        async with seeded.begin() as connection:
+            await connection.execute(
+                text(
+                    "DELETE FROM uns_metrics WHERE topic = :topic AND metric_name = :name "
+                    "AND time = :at AND value_text = 'EXECUTE'"
+                ),
+                {"topic": extra[1], "name": extra[2], "at": extra[0]},
+            )
+
+
 # ---- corrections
 
 

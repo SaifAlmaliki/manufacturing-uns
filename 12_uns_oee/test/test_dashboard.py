@@ -128,3 +128,12 @@ def test_the_dashboard_is_identified_and_tagged(dashboard: dict):
     assert dashboard["uid"] == "uns-oee"
     assert dashboard["title"] == "OEE"
     assert "oee" in dashboard["tags"]
+
+
+def test_the_unusable_shifts_panel_is_a_worklist(dashboard: dict):
+    panel = next(item for item in _panels(dashboard) if item["title"] == "Unusable shifts")
+    query = _queries(panel)[0]
+    assert "shift_start" in query
+    assert "shift_label" in query
+    assert "status" in query
+    assert "GROUP BY" not in query

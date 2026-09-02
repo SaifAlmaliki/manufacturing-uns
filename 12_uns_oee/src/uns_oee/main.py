@@ -49,7 +49,11 @@ def build_scheduler(
     pipeline: both hold nothing but their connection source, and a thirty-day backfill would
     otherwise build sixty of them.
     """
-    source = MetricSource(database, metrics_table=config.metrics_table)
+    source = MetricSource(
+        database,
+        metrics_table=config.metrics_table,
+        prior_lookback_hours=config.prior_lookback_hours,
+    )
     master = MasterDataLoader(database)
     pipeline = ShiftPipeline(source, master, ResultStore(database), publisher)
     return ShiftScheduler(config, database, source, master, pipeline)

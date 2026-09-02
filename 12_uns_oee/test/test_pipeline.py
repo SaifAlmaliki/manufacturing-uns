@@ -21,6 +21,7 @@ from uns_oee.pipeline import (
     ACTION_REPUBLISHED,
     ACTION_REVISED,
     ACTION_UNCHANGED,
+    UNOBSERVED_STATE,
     ShiftPipeline,
     ShiftSamples,
     manual_digest,
@@ -158,6 +159,28 @@ def test_the_state_held_at_the_shift_start_is_carried_in():
     # unknown state and 06:00-09:00 would become a second, fabricated stop.
     assert len(inputs.classified_stops) == 1
     assert inputs.classified_stops[0].interval == Interval(t(9), t(10))
+
+
+def test_an_unobserved_opening_prefix_is_unclassified_not_run_time():
+    """
+    No sample at or before shift_start. The first in-window report is EXECUTE at 07:00.
+    [06:00, 07:00) is unknown, not producing, so Availability must not count it as Run Time.
+    """
+    late_execute = (StateSample(t(7), "EXECUTE"),)
+    inputs = shift_inputs(unit(), WINDOW, samples(state=late_execute), (), {})
+    opening = [stop for stop in inputs.classified_stops if stop.interval.start == t(6)]
+    assert len(opening) == 1
+    assert opening[0].interval == Interval(t(6), t(7))
+    assert opening[0].state_value == UNOBSERVED_STATE
+    assert opening[0].reason_code == UNCLASSIFIED_REASON_CODE
+
+
+def test_a_shift_with_counters_but_no_state_is_unobserved_throughout():
+    inputs = shift_inputs(unit(), WINDOW, samples(good=GOOD_CLIMB), (), {}, has_input_data=True)
+    assert len(inputs.classified_stops) == 1
+    assert inputs.classified_stops[0].interval == Interval(t(6), t(14))
+    assert inputs.classified_stops[0].reason_code == UNCLASSIFIED_REASON_CODE
+    assert inputs.has_input_data is True
 
 
 def test_a_stop_is_classified_before_the_inputs_are_built():

@@ -32,7 +32,7 @@ _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 #: How far before a shift start the "last known value" query is allowed to reach. Bounded so
 #: a unit that stopped publishing months ago cannot make Timescale walk every chunk backwards.
-DEFAULT_PRIOR_LOOKBACK_HOURS = 24
+DEFAULT_PRIOR_LOOKBACK_HOURS = 72
 
 
 @dataclass(frozen=True, slots=True)

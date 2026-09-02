@@ -221,5 +221,8 @@ oee:
     # On an empty results table, walk back this many days. Shifts that end before a
     # unit's earliest historised sample are skipped, not computed as zero.
     backfill_days: 30
+    # How far before shift_start the last-known-state query may reach. 72h covers a
+    # Friday C into a Monday A on the shipped Mon-Fri roster (weekend gap ~48h).
+    prior_lookback_hours: 72
 
 dynaconf_merge: true

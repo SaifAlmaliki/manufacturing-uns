@@ -28,7 +28,7 @@ from uns_model.oee_tables import (
     ShiftResultProduct,
     ShiftResultRevision,
 )
-from uns_oee.classifier import MANUAL, ClassifiedStop, ManualReason
+from uns_oee.classifier import AUTO, MANUAL, ClassifiedStop, ManualReason
 from uns_oee.oee_calc import ShiftMetrics
 from uns_oee.shift_calendar import ShiftWindow
 from uns_oee.sources import Fingerprint
@@ -192,6 +192,26 @@ def downtime_upsert(rows: Sequence[Mapping[str, object]]) -> PostgresInsert:
     )
 
 
+def downtime_auto_delete(
+    unit_id: int, shift_start: datetime, keep_started_at: Sequence[datetime]
+):
+    """Drop auto-classified stops this recompute no longer has.
+
+    Keyed on `(oee_unit_id, shift_start)` so a moved start does not leave the old row
+    behind, and filtered to `reason_source = 'auto'` so a person-assigned reason is never
+    deleted even when its `started_at` left the new stop set (Rule 3). An empty keep set
+    means the shift has no stops: every auto row for that unit and shift goes.
+    """
+    statement = delete(DowntimeEvent).where(
+        DowntimeEvent.oee_unit_id == unit_id,
+        DowntimeEvent.shift_start == shift_start,
+        DowntimeEvent.reason_source == AUTO,
+    )
+    if keep_started_at:
+        statement = statement.where(DowntimeEvent.started_at.notin_(list(keep_started_at)))
+    return statement
+
+
 class ResultStore:
     """Every write the engine makes to the `oee` schema."""
 
@@ -320,6 +340,13 @@ class ResultStore:
             events = event_values(unit_id, window.start, stops)
             if events:
                 await session.execute(downtime_upsert(events))
+            await session.execute(
+                downtime_auto_delete(
+                    unit_id,
+                    window.start,
+                    keep_started_at=tuple(stop.interval.start for stop in stops),
+                )
+            )
 
         return StoredResult(
             result_id=result_id,
@@ -347,6 +374,7 @@ __all__ = [
     "REASON_COLUMNS",
     "ResultStore",
     "StoredResult",
+    "downtime_auto_delete",
     "downtime_upsert",
     "event_values",
     "product_values",

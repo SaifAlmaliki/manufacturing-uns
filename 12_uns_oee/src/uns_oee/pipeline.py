@@ -26,7 +26,16 @@ from uns_oee.oee_calc import ProductSegment, ShiftInputs, ShiftMetrics, compute
 from uns_oee.publisher import ResultPublisher
 from uns_oee.shift_calendar import ShiftWindow
 from uns_oee.sources import Fingerprint, MetricSource
-from uns_oee.states import Interval, StateSample, merge, state_segments, stop_intervals, union_duration_s
+from uns_oee.states import (
+    Interval,
+    StateSample,
+    StopInterval,
+    merge,
+    state_segments,
+    stop_intervals,
+    subtract,
+    union_duration_s,
+)
 from uns_oee.store import ResultStore
 
 LOGGER = logging.getLogger(__name__)
@@ -40,8 +49,12 @@ ACTION_REVISED = "REVISED"
 #: The stored numbers were already right; only the MQTT message was missing.
 ACTION_REPUBLISHED = "REPUBLISHED"
 
-#: Same inputs, already published. Nothing was read past the fingerprint.
+#: A shift with the same inputs, already published. Nothing was read past the fingerprint.
 ACTION_UNCHANGED = "UNCHANGED"
+
+#: State value for time inside the shift that no sample covers. Not a producing state, so
+#: `classify` floors it to UNCLASSIFIED rather than counting it as Run Time.
+UNOBSERVED_STATE = "UNKNOWN"
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,6 +169,8 @@ def shift_inputs(
     whole = as_interval(window)
     segments = state_segments(samples.state, whole)
     stops = stop_intervals(segments, unit.producing_states)
+    unobserved = subtract([whole], [segment.interval for segment in segments])
+    stops.extend(StopInterval(state=UNOBSERVED_STATE, interval=gap) for gap in unobserved)
     return ShiftInputs(
         window=whole,
         exception_intervals=tuple(exception_intervals(exceptions)),
@@ -330,6 +345,7 @@ __all__ = [
     "ACTION_REPUBLISHED",
     "ACTION_REVISED",
     "ACTION_UNCHANGED",
+    "UNOBSERVED_STATE",
     "ShiftOutcome",
     "ShiftPipeline",
     "ShiftSamples",

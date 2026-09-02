@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from uns_oee.sources import (
+    DEFAULT_PRIOR_LOOKBACK_HOURS,
     Fingerprint,
     MetricRef,
     MetricSource,
@@ -199,6 +200,16 @@ async def test_the_prior_query_passes_the_bounded_lookback():
     await source.numeric_samples(MetricRef("topic", "value"), T0, T0 + timedelta(hours=8))
     _statement, parameters = database.connection.calls[0]
     assert parameters["lookback_from"] == T0 - timedelta(hours=6)
+
+
+@pytest.mark.asyncio
+async def test_the_prior_lookback_defaults_to_seventy_two_hours():
+    database = FakeDatabase(FakeResult([]), FakeResult([]))
+    source = MetricSource(database)
+    await source.numeric_samples(MetricRef("topic", "value"), T0, T0 + timedelta(hours=8))
+    _statement, parameters = database.connection.calls[0]
+    assert DEFAULT_PRIOR_LOOKBACK_HOURS == 72
+    assert parameters["lookback_from"] == T0 - timedelta(hours=72)
 
 
 @pytest.mark.asyncio

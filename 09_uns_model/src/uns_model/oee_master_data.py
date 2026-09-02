@@ -8,11 +8,12 @@ this file, added in Task 8.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, time
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 
 from uns_model.engine import Database
@@ -168,6 +169,111 @@ class StateReasonRuleSpec:
         _require_non_empty("state rule reason", self.reason_code)
 
 
+def product_upsert(spec: ProductSpec):
+    """Insert or update a product, reviving it if a previous import had deactivated it."""
+    return (
+        insert(Product)
+        .values(code=spec.code, name=spec.name, is_active=True)
+        .on_conflict_do_update(
+            index_elements=[Product.code],
+            set_={"name": spec.name, "is_active": True},
+        )
+        .returning(Product.id)
+    )
+
+
+def shift_pattern_upsert(spec: ShiftPatternSpec, asset_id: int | None):
+    """Insert or update a pattern, reviving it if a previous import had deactivated it."""
+    return (
+        insert(ShiftPattern)
+        .values(name=spec.name, timezone=spec.timezone, asset_id=asset_id, is_active=True)
+        .on_conflict_do_update(
+            index_elements=[ShiftPattern.name],
+            set_={"timezone": spec.timezone, "asset_id": asset_id, "is_active": True},
+        )
+        .returning(ShiftPattern.id)
+    )
+
+
+def oee_unit_upsert(values: dict[str, Any]):
+    """Insert or update a unit, reviving it if a previous import had deactivated it."""
+    revived = {**values, "is_active": True}
+    return (
+        insert(OeeUnit)
+        .values(**revived)
+        .on_conflict_do_update(
+            index_elements=[OeeUnit.asset_id],
+            set_={**revived, "updated_at": func.now()},
+        )
+        .returning(OeeUnit.id)
+    )
+
+
+def deactivate_products_absent_from(keep_codes: Sequence[str]):
+    statement = update(Product).values(is_active=False)
+    if keep_codes:
+        statement = statement.where(Product.code.notin_(list(keep_codes)))
+    return statement
+
+
+def deactivate_patterns_absent_from(keep_names: Sequence[str]):
+    statement = update(ShiftPattern).values(is_active=False)
+    if keep_names:
+        statement = statement.where(ShiftPattern.name.notin_(list(keep_names)))
+    return statement
+
+
+def deactivate_units_absent_from(keep_asset_ids: Sequence[int]):
+    statement = update(OeeUnit).values(is_active=False)
+    if keep_asset_ids:
+        statement = statement.where(OeeUnit.asset_id.notin_(list(keep_asset_ids)))
+    return statement
+
+
+def _delete_rows_absent_from(model: Any, keep_matchers: Sequence[Any]):
+    statement = delete(model)
+    if not keep_matchers:
+        return statement
+    return statement.where(~or_(*keep_matchers))
+
+
+def delete_exceptions_absent_from(
+    keep: Sequence[tuple[int | None, datetime, datetime, str]],
+):
+    matchers = [
+        and_(
+            ShiftException.asset_id.is_not_distinct_from(asset_id),
+            ShiftException.starts_at == starts_at,
+            ShiftException.ends_at == ends_at,
+            ShiftException.kind == kind,
+        )
+        for asset_id, starts_at, ends_at, kind in keep
+    ]
+    return _delete_rows_absent_from(ShiftException, matchers)
+
+
+def delete_cycle_times_absent_from(keep: Sequence[tuple[int, int | None]]):
+    matchers = [
+        and_(
+            IdealCycleTime.asset_id == asset_id,
+            IdealCycleTime.product_id.is_not_distinct_from(product_id),
+        )
+        for asset_id, product_id in keep
+    ]
+    return _delete_rows_absent_from(IdealCycleTime, matchers)
+
+
+def delete_state_rules_absent_from(keep: Sequence[tuple[int | None, str]]):
+    matchers = [
+        and_(
+            StateReasonMap.oee_unit_id.is_not_distinct_from(unit_id),
+            StateReasonMap.state_value == state_value,
+        )
+        for unit_id, state_value in keep
+    ]
+    return _delete_rows_absent_from(StateReasonMap, matchers)
+
+
 class OeeMasterDataRepository:
     """Every write to the OEE master data.
 
@@ -182,14 +288,8 @@ class OeeMasterDataRepository:
 
     async def save_product(self, spec: ProductSpec) -> int:
         spec.validate()
-        statement = (
-            insert(Product)
-            .values(code=spec.code, name=spec.name)
-            .on_conflict_do_update(index_elements=[Product.code], set_={"name": spec.name})
-            .returning(Product.id)
-        )
         async with self._database.session() as session:
-            return (await session.execute(statement)).scalar_one()
+            return (await session.execute(product_upsert(spec))).scalar_one()
 
     async def save_downtime_reason(self, spec: DowntimeReasonSpec) -> str:
         spec.validate()
@@ -223,17 +323,7 @@ class OeeMasterDataRepository:
         spec.validate()
         async with self._database.session() as session:
             asset_id = await self._asset_id(session, spec.asset_path)
-            pattern_id = (
-                await session.execute(
-                    insert(ShiftPattern)
-                    .values(name=spec.name, timezone=spec.timezone, asset_id=asset_id)
-                    .on_conflict_do_update(
-                        index_elements=[ShiftPattern.name],
-                        set_={"timezone": spec.timezone, "asset_id": asset_id},
-                    )
-                    .returning(ShiftPattern.id)
-                )
-            ).scalar_one()
+            pattern_id = (await session.execute(shift_pattern_upsert(spec, asset_id))).scalar_one()
             await session.execute(delete(ShiftPatternSlot).where(ShiftPatternSlot.shift_pattern_id == pattern_id))
             if spec.slots:
                 await session.execute(
@@ -307,15 +397,7 @@ class OeeMasterDataRepository:
                 "product_metric_key": spec.product_metric_key,
                 "producing_states": list(spec.producing_states),
             }
-            statement = (
-                insert(OeeUnit)
-                .values(**values)
-                .on_conflict_do_update(
-                    index_elements=[OeeUnit.asset_id],
-                    set_={**values, "updated_at": func.now()},
-                )
-                .returning(OeeUnit.id)
-            )
+            statement = oee_unit_upsert(values)
             return (await session.execute(statement)).scalar_one()
 
     async def save_ideal_cycle_time(self, spec: IdealCycleTimeSpec) -> int:
@@ -362,6 +444,53 @@ class OeeMasterDataRepository:
             )
             return (await session.execute(statement)).scalar_one()
 
+    async def reconcile_products(self, specs: Sequence[ProductSpec]) -> None:
+        async with self._database.session() as session:
+            await session.execute(deactivate_products_absent_from([spec.code for spec in specs]))
+
+    async def reconcile_shift_patterns(self, specs: Sequence[ShiftPatternSpec]) -> None:
+        async with self._database.session() as session:
+            await session.execute(deactivate_patterns_absent_from([spec.name for spec in specs]))
+
+    async def reconcile_oee_units(self, specs: Sequence[OeeUnitSpec]) -> None:
+        async with self._database.session() as session:
+            asset_ids = [await self._require_asset_id(session, spec.asset_path) for spec in specs]
+            await session.execute(deactivate_units_absent_from(asset_ids))
+
+    async def reconcile_shift_exceptions(self, specs: Sequence[ShiftExceptionSpec]) -> None:
+        async with self._database.session() as session:
+            keep = [
+                (await self._asset_id(session, spec.asset_path), spec.starts_at, spec.ends_at, spec.kind)
+                for spec in specs
+            ]
+            await session.execute(delete_exceptions_absent_from(keep))
+
+    async def reconcile_ideal_cycle_times(self, specs: Sequence[IdealCycleTimeSpec]) -> None:
+        async with self._database.session() as session:
+            keep: list[tuple[int, int | None]] = []
+            for spec in specs:
+                asset_id = await self._require_asset_id(session, spec.asset_path)
+                product_id = None
+                if spec.product_code is not None:
+                    product_id = (
+                        await session.execute(select(Product.id).where(Product.code == spec.product_code))
+                    ).scalar_one_or_none()
+                keep.append((asset_id, product_id))
+            await session.execute(delete_cycle_times_absent_from(keep))
+
+    async def reconcile_state_reason_rules(self, specs: Sequence[StateReasonRuleSpec]) -> None:
+        async with self._database.session() as session:
+            keep: list[tuple[int | None, str]] = []
+            for spec in specs:
+                unit_id = None
+                if spec.asset_path is not None:
+                    asset_id = await self._require_asset_id(session, spec.asset_path)
+                    unit_id = (
+                        await session.execute(select(OeeUnit.id).where(OeeUnit.asset_id == asset_id))
+                    ).scalar_one_or_none()
+                keep.append((unit_id, spec.state_value))
+            await session.execute(delete_state_rules_absent_from(keep))
+
     # ---- reads --------------------------------------------------------------------
 
     async def counts(self) -> dict[str, int]:
@@ -407,4 +536,13 @@ __all__ = [
     "ShiftPatternSpec",
     "ShiftSlotSpec",
     "StateReasonRuleSpec",
+    "deactivate_patterns_absent_from",
+    "deactivate_products_absent_from",
+    "deactivate_units_absent_from",
+    "delete_cycle_times_absent_from",
+    "delete_exceptions_absent_from",
+    "delete_state_rules_absent_from",
+    "oee_unit_upsert",
+    "product_upsert",
+    "shift_pattern_upsert",
 ]

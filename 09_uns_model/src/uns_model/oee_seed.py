@@ -301,6 +301,12 @@ async def apply_plan(repository: OeeMasterDataRepository, plan: OeeSeedPlan) -> 
         await repository.save_ideal_cycle_time(cycle_time)
     for rule in plan.state_reason_rules:
         await repository.save_state_reason_rule(rule)
+    await repository.reconcile_products(plan.products)
+    await repository.reconcile_shift_patterns(plan.patterns)
+    await repository.reconcile_shift_exceptions(plan.exceptions)
+    await repository.reconcile_oee_units(plan.units)
+    await repository.reconcile_ideal_cycle_times(plan.cycle_times)
+    await repository.reconcile_state_reason_rules(plan.state_reason_rules)
     return {
         "products": len(plan.products),
         "downtime_reasons": len(plan.reasons),

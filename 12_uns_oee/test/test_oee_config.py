@@ -11,6 +11,7 @@ def test_defaults_match_the_documented_platform_ports():
     assert config.backfill_days == 30
     assert config.mqtt_client_id == "uns_oee_client"
     assert config.metrics_table == "uns_metrics"
+    assert config.prior_lookback_hours == 72
 
 
 def test_is_valid_requires_an_mqtt_host():
@@ -28,6 +29,7 @@ def test_from_settings_reads_the_oee_environment():
     assert config.metrics_port == 9095
     assert config.mqtt_client_id == "uns_oee_client"
     assert config.scan_interval_seconds == 300
+    assert config.prior_lookback_hours == 72
 
 
 def test_from_settings_reuses_the_platforms_shared_broker_settings():

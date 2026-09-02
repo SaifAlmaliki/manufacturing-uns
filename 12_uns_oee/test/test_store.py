@@ -20,6 +20,7 @@ from uns_oee.states import Interval
 from uns_oee.store import (
     GEOMETRY_COLUMNS,
     REASON_COLUMNS,
+    downtime_auto_delete,
     downtime_upsert,
     event_values,
     product_values,
@@ -241,3 +242,35 @@ def test_the_upsert_never_overwrites_a_manual_reason():
         assert f"downtime_event.{column}" in sql
         assert f"excluded.{column}" in sql
     assert MANUAL in params.values()
+
+
+def test_stale_auto_stops_are_deleted_for_the_unit_and_shift():
+    sql, params = compile_pg(downtime_auto_delete(UNIT, t(4), keep_started_at=(t(6),)))
+    assert "delete from" in sql
+    assert "downtime_event" in sql
+    assert "reason_source" in sql
+    assert AUTO in params.values()
+    assert UNIT in params.values()
+    assert t(4) in params.values()
+
+
+def test_stale_auto_stops_keep_the_recomputed_started_at_set():
+    sql, params = compile_pg(downtime_auto_delete(UNIT, t(4), keep_started_at=(t(6), t(9))))
+    bound = [item for value in params.values() for item in (value if isinstance(value, list) else [value])]
+    assert "started_at" in sql
+    assert "not in" in sql
+    assert t(6) in bound
+    assert t(9) in bound
+
+
+def test_an_empty_stop_list_deletes_every_auto_row_for_the_shift():
+    sql, _params = compile_pg(downtime_auto_delete(UNIT, t(4), keep_started_at=()))
+    assert "delete from" in sql
+    assert "downtime_event" in sql
+    assert "not in" not in sql
+
+
+def test_stale_auto_stops_never_target_a_manual_reason():
+    sql, params = compile_pg(downtime_auto_delete(UNIT, t(4), keep_started_at=()))
+    assert MANUAL not in params.values()
+    assert AUTO in params.values()

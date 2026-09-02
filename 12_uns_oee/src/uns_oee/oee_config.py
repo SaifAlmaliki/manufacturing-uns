@@ -38,6 +38,7 @@ class OeeConfig:
     late_window_hours: int = 48
     backfill_days: int = 30
     metrics_table: str = "uns_metrics"
+    prior_lookback_hours: int = 72
 
     @classmethod
     def from_settings(cls, module_env: str = OEE_ENV) -> OeeConfig:
@@ -63,6 +64,7 @@ class OeeConfig:
             late_window_hours=settings.get("oee.late_window_hours", 48),
             backfill_days=settings.get("oee.backfill_days", 30),
             metrics_table=settings.get("historian.metrics_table", "uns_metrics"),
+            prior_lookback_hours=settings.get("oee.prior_lookback_hours", 72),
         )
         if not config.is_valid():
             LOGGER.error(

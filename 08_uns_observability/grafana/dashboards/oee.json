@@ -80,7 +80,7 @@
     },
     {
       "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
-      "description": "Shifts whose numbers are not usable, and why. An empty panel is the healthy case.",
+      "description": "Each shift in range whose numbers are not usable, and why. An empty panel is the healthy case.",
       "fieldConfig": { "defaults": {}, "overrides": [] },
       "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
       "id": 3,
@@ -89,7 +89,7 @@
         {
           "datasource": { "type": "grafana-postgresql-datasource", "uid": "timescaledb" },
           "format": "table",
-          "rawSql": "SELECT r.status AS \"Status\", count(*) AS \"Shifts\" FROM oee.shift_result r JOIN model.oee_unit u ON u.id = r.oee_unit_id JOIN model.asset a ON a.id = u.asset_id WHERE a.path = '$asset' AND r.status <> 'OK' AND $__timeFilter(r.shift_start) GROUP BY r.status ORDER BY 2 DESC",
+          "rawSql": "SELECT r.shift_start, r.shift_label, r.status, r.revision, r.oee FROM oee.shift_result r JOIN model.oee_unit u ON u.id = r.oee_unit_id JOIN model.asset a ON a.id = u.asset_id WHERE a.path = '$asset' AND r.status <> 'OK' AND $__timeFilter(r.shift_start) ORDER BY r.shift_start DESC",
           "refId": "A"
         }
       ],
