@@ -1823,6 +1823,7 @@ test = [
     { name = "pytest-xdist", specifier = ">=3.8.0,<4" },
     { name = "pyyaml", specifier = ">=6.0.2,<7" },
     { name = "safety", specifier = ">=3.4.0,<4" },
+    { name = "uns-historian", editable = "04_uns_historian" },
 ]
 
 [[package]]

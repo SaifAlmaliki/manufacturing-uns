@@ -48,6 +48,7 @@ test = [
     "pytest-cov>=6.0.0,<8",
     "safety>=3.4.0,<4",
     "pyyaml>=6.0.2,<7",
+    "uns_historian",
 ]
 
 [tool.uv]
@@ -56,6 +57,7 @@ default-groups = ["test"]
 [tool.uv.sources]
 uns_config = { path = "../00_uns_config", editable = true }
 uns_model = { path = "../09_uns_model", editable = true }
+uns_historian = { path = "../04_uns_historian", editable = true }
 
 [tool.hatch.build.targets.sdist]
 include = ["src/uns_oee"]
@@ -73,6 +75,7 @@ build-backend = "hatchling.build"
 [tool.pytest.ini_options]
 norecursedirs = [".git", "build", "node_modules", "env*", "tmp*"]
 testpaths = ["test"]
+pythonpath = ["test"]
 markers = ["integrationtest: mark a test as an integration test"]
 addopts = "--timeout=300"
 asyncio_default_fixture_loop_scope = "session"
