@@ -152,9 +152,9 @@ docker build -t uns/simulator:local --build-arg GIT_HASH=local -f ./Dockerfile .
 
 Quick start (local Python)
 
-Use this only if you are iterating on the simulator code without Docker.
+Use this only if you are iterating on the simulator code without Docker. Use the single `.venv` at the **repository root** — do not run `uv venv` in this folder.
 
-1. Install and prepare the development venv (the repository uses the uv wrapper like other modules):
+1. Create the workspace venv from the repository root (see [Setting up the development environment](../README.md#setting-up-the-development-environment)):
 
    ```bash
    python -m pip install --upgrade pip uv
@@ -167,11 +167,8 @@ Use this only if you are iterating on the simulator code without Docker.
    - Edit [`../conf/settings.yaml`](../conf/settings.yaml) to point to your MQTT broker and tune simulator options (the `simulator` environment).
 
 3. Run locally
-   - From the module folder (99_simulator) activate the venv and run:
 
    ```bash
-   uv venv
-   uv sync
    uv run uns_simulator
    ```
 

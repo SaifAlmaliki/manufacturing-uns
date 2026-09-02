@@ -56,9 +56,21 @@ See the `opcua` block in `conf/settings.yaml`. The published topic is
 `asset + "/" + metric_path`. Certificate pass phrases and broker credentials belong in
 `conf/.secrets.yaml` or `UNS_`-prefixed environment variables.
 
+## Running locally
+
+Use the single `.venv` at the **repository root** — do not run `uv venv` in this folder. See [Setting up the development environment](../README.md#setting-up-the-development-environment).
+
+```bash
+uv run uns_opcua
+```
+
+Point the `opcua` and `mqtt` blocks in `conf/settings.yaml` at servers you can reach from the host.
+
 ## Validating a mapping against the Asset Model
 
-    uv run uns_opcua_validate
+```bash
+uv run uns_opcua_validate
+```
 
 Exits non-zero when a tag names an unknown Asset, has no matching MetricDefinition, or
 disagrees with its Unit of Measure — so CI can gate a config change. At runtime the same

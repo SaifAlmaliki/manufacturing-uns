@@ -93,10 +93,9 @@ docker compose logs -f uns_simulator
 
 Do not use a Compose profile for this. Profiles hide a service from default `docker compose up`; the simulator is part of the default stack. Use the service name above instead.
 
-To run the simulator on the host instead of in Docker (optional, needs a local Python venv):
+To run the simulator on the host instead of in Docker (optional; uses the **repository-root** `.venv` from [Setting up the development environment](#setting-up-the-development-environment)):
 
 ```bash
-cd 99_simulator
 uv run uns_simulator
 ```
 
@@ -382,8 +381,7 @@ The current project contains the following microservices
 1. [12_uns_oee](./12_uns_oee/README.md): Python project that computes OEE for closed shifts from historised UNS data, stores the result and its downtime breakdown in the `oee` schema, and publishes it back to MQTT
 1. [99_simulator](./99_simulator/README.md): Python project for simulating data creation to the UNS. _*NOT TO BE USED IN PRODUCTION*_
 
-Each microservice can be independently imported into VSCode by going into the specific microservice folder. Instructions on setting up the python pip & virtual environments are provided in the respective ´README.md´ within that folder
-However to import all microservices into the same workspace, the following commands need to be executed in the terminal of your VSCode and the current folder as [`.`](/.) (parent to all the microservices)
+Python packages are a **uv workspace**. Create **one** virtualenv at this repository root. Do not run `uv venv` inside a module folder (`03_uns_graphdb/.venv`, `99_simulator/.venv`, and so on): those duplicate the workspace env and make the editor pick the wrong interpreter.
 
 This has been tested on **Unix(bash)**, **Windows(powershell)** and **Mac(zsh)**
 
@@ -393,18 +391,20 @@ uv venv
 uv sync
 ```
 
-While importing the folder into VSCode remember to do the following steps the first time
+Open the repository root in VS Code / Cursor and select the interpreter at `.venv`. `uv run` from any workspace member then uses that environment.
 
-> 1. Open a terminal in VSCode
-> 1. Activate the virtual env
->
->    ```bash
->    python -m pip install --upgrade pip uv
->    uv venv
->    uv sync
->    ```
->
-> 1. Select the correct python interpreter in VSCode (should automatically detect the .venv virtual environment)
+The stack is meant to run under Docker Compose. Use the root `.venv` when you want to run a Python service or tests on the host instead (for example while iterating on one module). Point `conf/settings.yaml` at brokers and databases you can reach from the host — typically `localhost` and the published Compose ports.
+
+```bash
+uv run uns_graphdb
+uv run uns_historian
+uv run uns_spb_mapper
+uv run uns_kafka_mapper
+uv run uns_graphql_app
+uv run uns_opcua
+uv run uns_simulator
+uv run uns_model_setup
+```
 
 ### Running tests
 
