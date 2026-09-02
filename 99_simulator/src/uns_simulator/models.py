@@ -46,6 +46,7 @@ class ParameterType(Enum):
     STATUS = "Status"  # Equipment status information
     ALARM = "Alarm"  # Alarm and warning conditions
     EVENT = "EVENT"  # EVENT STATUS
+    KPI = "KPI"  # Computed over a closed period, not measured at an instant
 
 
 class ISA95Hierarchy:

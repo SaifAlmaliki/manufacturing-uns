@@ -15,10 +15,29 @@ from pathlib import Path
 
 import pytest
 
+from uns_simulator.models import ParameterType
 from uns_simulator.plant import PACKML_STATES
 from uns_simulator.profiles import load_profile, read_simulator_conf
 
 CONF_DIR = Path(__file__).resolve().parents[2] / "conf"
+
+# Spec 12. Deleted because `12_uns_oee` computes these from historised samples, and a
+# fabricated second answer to the same question makes the real one unfalsifiable.
+RETIRED_MES_SIGNALS = ("Availability", "Performance", "Quality", "Oee", "DowntimeReason")
+
+# Kept, because these are honest machine signals and they are the engine's inputs. Asserted
+# rather than assumed: deleting one of these would leave the OEE engine computing
+# NO_INPUT_DATA for every shift, with nothing in the simulator's own suite to say why.
+CONSUMED_MES_SIGNALS = (
+    "GoodCount",
+    "RejectCount",
+    "TotalCount",
+    "CycleTime",
+    "PackMlState",
+    "PackMlStateCode",
+    "RecipeId",
+    "BatchId",
+)
 
 # Signals declared by each device template, per spec 8.1-8.2. Tasks 17 and 18 extend
 # these tables as they add family files; a family named in a profile whose file does not
@@ -43,7 +62,7 @@ EXPECTED_SIGNAL_COUNT = {
         "CH-01": 7,
     },
     "asset_health": {"VIB-01": 15, "VIB-02": 12},
-    "production": {"MES-01": 15, "QA-01": 6, "LAB-01": 6, "001": 2, "002": 1},
+    "production": {"MES-01": 10, "QA-01": 6, "LAB-01": 6, "001": 2, "002": 1},
     "safety": {"GD-01": 7, "GD-02": 7, "CEMS-01": 9, "SIS-01": 6, "WS-01": 9},
 }
 
@@ -281,12 +300,39 @@ def test_the_weather_station_reports_the_plant_context(raw):
     assert signals["SolarIrradiance"]["shape"] == "diurnal"
 
 
+def _mes_signals(raw) -> dict:
+    return next(item for item in raw["production"]["devices"] if item["id"] == "MES-01")["signals"]
+
+
 def test_packml_state_code_maps_every_state(raw):
     """A state missing from the map publishes its own name where an integer is expected.
 
     SteppedSignal._translate falls through to the raw value on a miss, so an incomplete map
     fails as a type surprise on a consumer rather than at load time. Only this test catches it.
     """
-    signals = next(item for item in raw["production"]["devices"] if item["id"] == "MES-01")["signals"]
-    assert set(signals["PackMlStateCode"]["map"]) == set(PACKML_STATES)
-    assert set(signals["DowntimeReason"]["map"]) == set(PACKML_STATES)
+    assert set(_mes_signals(raw)["PackMlStateCode"]["map"]) == set(PACKML_STATES)
+
+
+def test_the_simulator_publishes_no_fabricated_oee(raw):
+    """Spec 12. The OEE engine is the only publisher of these numbers."""
+    signals = _mes_signals(raw)
+    assert [name for name in RETIRED_MES_SIGNALS if name in signals] == []
+
+
+def test_the_signals_the_oee_engine_reads_are_still_published(raw):
+    signals = _mes_signals(raw)
+    assert [name for name in CONSUMED_MES_SIGNALS if name not in signals] == []
+
+
+def test_kpi_is_a_parameter_type_no_simulated_device_claims(raw):
+    """The sixth ParameterType exists, and nothing here publishes under it.
+
+    A simulated device claiming `KPI` would put a fabricated number back on the topic the
+    engine writes to, which is the whole thing spec 12 removes.
+    """
+    assert ParameterType("KPI") is ParameterType.KPI
+    for family in EXPECTED_SIGNAL_COUNT:
+        for template in raw[family]["devices"]:
+            for name, signal in template["signals"].items():
+                claimed = (signal or {}).get("param_type")
+                assert claimed != "KPI", f"{family}.yaml {template['id']}/{name} claims KPI"

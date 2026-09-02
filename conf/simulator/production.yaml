@@ -7,6 +7,12 @@
 #
 # NOTE the ctx path. DeviceView is flat: `ctx.state`, not `ctx.line.state`. The unit test in
 # Task 5 uses a fake view with a nested attribute; a configuration file cannot.
+#
+# OEE is NOT published here. Availability, Performance, Quality, Oee and DowntimeReason were
+# removed per the OEE engine design section 12: `12_uns_oee` computes them from historised
+# samples over a closed shift, and an instantaneous square wave named "Availability" competing
+# with a real one is worse than no number at all. The signals that engine reads - the two
+# counters, TotalCount, CycleTime, both PackML signals, RecipeId and BatchId - stay.
 
 devices:
   - id: MES-01
@@ -96,70 +102,6 @@ devices:
         params: {cycle_time_max_s: 600.0}
         precision: 3
         range: [0, 600]
-      Availability:
-        # Instantaneous, so this is a 0-or-100 square wave and NOT a rolling percentage.
-        # window_agg reads numeric siblings only and skips bools, so it cannot see
-        # ctx.running; the rolling view belongs in Grafana. ctx.running is a boolean and
-        # Python's True is 1 in arithmetic.
-        shape: derived
-        unit: "%"
-        expr: 100.0 * ctx.running
-        precision: 1
-        range: [0, 100]
-      Performance:
-        # Actual rate over ideal rate, which is what ctx.production_rate already is. Zero
-        # while the line is down, 85-100 while it executes.
-        shape: derived
-        unit: "%"
-        expr: 100.0 * ctx.production_rate
-        precision: 2
-        range: [0, 100]
-        limits: {lo: 80.0, lolo: 70.0}
-      Quality:
-        # The 1.0 floor makes this 100 % before the first unit is made rather than 0 %,
-        # which would alarm on every restart. Both counters start at zero, so this converges
-        # on the true ratio within a minute of running.
-        shape: derived
-        unit: "%"
-        expr: 100.0 * (1.0 - RejectCount / max(TotalCount, 1.0))
-        precision: 3
-        range: [0, 100]
-        limits: {lo: 97.0, lolo: 95.0}
-      Oee:
-        shape: derived
-        unit: "%"
-        expr: Availability * Performance * Quality / 10000.0
-        precision: 2
-        range: [0, 100]
-        limits: {lo: 65.0, lolo: 50.0}
-        export_metric: true
-      DowntimeReason:
-        # Mapped from the same ctx.state as PackMlState, so a reason can never contradict the
-        # state it is explaining. A reason drawn from a list would eventually publish
-        # "MaterialShortage" on a line that was running.
-        shape: stepped
-        unit: "1"
-        source: ctx.state
-        map:
-          IDLE: NoOrder
-          STARTING: Startup
-          EXECUTE: None
-          HOLDING: ProcessHold
-          HELD: MaterialShortage
-          UNHOLDING: Recovering
-          SUSPENDING: UpstreamBlocked
-          SUSPENDED: UpstreamBlocked
-          UNSUSPENDING: Recovering
-          COMPLETING: OrderFinishing
-          COMPLETE: OrderComplete
-          RESETTING: Changeover
-          ABORTING: Fault
-          ABORTED: Fault
-          CLEARING: FaultClearing
-          STOPPING: OperatorStop
-          STOPPED: OperatorStop
-        tier: status
-        param_type: Status
       BatchId:
         # dwell_s tracks Dormagen Line1's execute_s of 3600 s, so a batch id holds for about
         # as long as a batch. Krefeld's longer batches will see it change mid-batch; a
