@@ -17,18 +17,35 @@
 
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import uvicorn
 from fastapi import FastAPI
 from fastapi.concurrency import asynccontextmanager
+from uns_model.engine import Database
+
 from uns_graphql.backend.graphdb import GraphDB
-from uns_graphql.queries import graph, historian
+from uns_graphql.queries import asset, graph, historian
 from uns_graphql.subscriptions.kafka import KAFKASubscription
 from uns_graphql.subscriptions.mqtt import MQTTSubscription
 from uns_graphql.uns_graphql_app import UNSGraphql
-from uns_model.engine import Database
+
+
+@pytest.fixture
+def isolate_asset_model_startup():
+    """
+    Lifespan unit tests must not require Asset Model database credentials or a LISTEN connection.
+
+    Query.on_startup opens the shared engine and starts an AssetModelChangeListener.
+    Shutdown-contract tests only need that path not to raise.
+    """
+    with (
+        patch.object(Database, "shared", return_value=MagicMock()),
+        patch("uns_graphql.queries.asset.AssetModelChangeListener", return_value=AsyncMock()),
+    ):
+        yield
+    asset._listener = None
 
 
 def test_uns_graphql_app_attributes():
@@ -40,6 +57,7 @@ def test_uns_graphql_app_attributes():
 
 
 @pytest.mark.asyncio(loop_scope="function")
+@pytest.mark.usefixtures("isolate_asset_model_startup")
 async def test_uns_graphql_app_test_cleanup_on_shutdown():
     """
     Test to validate that the app calls the cleanup method on the query and subscription classes
@@ -72,6 +90,7 @@ async def test_uns_graphql_app_test_cleanup_on_shutdown():
 
 
 @pytest.mark.asyncio(loop_scope="function")
+@pytest.mark.usefixtures("isolate_asset_model_startup")
 async def test_uns_graphql_app_db_pool_cleanup():
     """
     Every database this service holds open is released on shutdown.

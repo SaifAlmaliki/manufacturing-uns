@@ -1528,6 +1528,7 @@ dependencies = [
     { name = "asyncpg" },
     { name = "dynaconf" },
     { name = "logger" },
+    { name = "pyyaml" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "uns-config" },
 ]
@@ -1538,6 +1539,7 @@ requires-dist = [
     { name = "asyncpg", specifier = ">=0.31.0,<0.32" },
     { name = "dynaconf", specifier = "~=3.2" },
     { name = "logger", specifier = "~=1.4" },
+    { name = "pyyaml", specifier = ">=6.0.2,<7" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.36,<3" },
     { name = "uns-config", editable = "../00_uns_config" },
 ]
