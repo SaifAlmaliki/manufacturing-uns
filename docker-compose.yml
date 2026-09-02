@@ -18,16 +18,12 @@
 # This is a docker-compose to rapidly deploy all uns modules and  associated  services needed for deployment
 # DO NOT USE FOR PRODUCTION DEPLOYMENT
 # Services mount the repository-root conf/ directory at /app/conf.
-# Override hosts and database passwords with UNS_* environment variables while running this compose file.
-# Env Variables which have to be set are
-#   - UNS_graphdb__password
-#   - UNS_historian__password
-#   - PGPASSWORD
-
-# Example for running this would be
-#   UNS_graphdb__password=password1 UNS_historian__password=password2 PGPASSWORD=password3 docker-compose up -d
-# Example for destroying  all the containers and volumes created
-#   UNS_graphdb__password=<password1> UNS_historian__password=<password1> PGPASSWORD=<password3> docker-compose down --volumes
+# Passwords come from conf/.secrets.yaml (graphdb.password, historian.password,
+# postgres.password). Compose cannot read YAML, so start with:
+#   uv run uns_compose up -d --build
+# That loads the secrets file and runs `docker compose` with the same interpolations
+# this file still uses (${UNS_graphdb__password}, ${UNS_historian__password}, ${PGPASSWORD}).
+# Do not keep a second root .env for credentials.
 services:
   uns_mqtt_broker:
     image: "emqx/emqx:latest"

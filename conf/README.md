@@ -7,8 +7,9 @@ Do not add per-module `conf/settings.yaml` copies. Module-specific values (MQTT 
 ## Setup
 
 1. Edit [`settings.yaml`](./settings.yaml) for your environment (hosts, ports, instance name, CORS origins, MQTT topics).
-2. Copy [`.secrets_template.yaml`](./.secrets_template.yaml) to [`.secrets.yaml`](./.secrets.yaml) and fill in credentials.
+2. Copy [`.secrets_template.yaml`](./.secrets_template.yaml) to [`.secrets.yaml`](./.secrets.yaml) and fill in credentials. That file is the only secrets store: Neo4j (`graphdb`), the application Postgres role (`historian`), and the Timescale superuser (`postgres.password`). There is no root `.env`.
 3. Optionally override any key via environment variables with the `UNS_` prefix (for example `UNS_PLATFORM__INSTANCE_NAME=PlantA`).
+4. Start Compose with `uv run uns_compose …` so those YAML secrets are exported for Neo4j and Timescale, which only accept environment variables.
 
 The frontend (`11_frontend`) reads `settings.yaml` automatically for GraphQL URL, dev server port, and display name.
 
