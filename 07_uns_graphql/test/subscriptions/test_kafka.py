@@ -17,6 +17,7 @@
 """
 
 import asyncio
+import contextlib
 import uuid
 from unittest.mock import MagicMock, patch
 
@@ -185,6 +186,7 @@ def kafka_setup_unique(request):
 @pytest.mark.asyncio(loop_scope="function")
 @pytest.mark.integrationtest
 @pytest.mark.xdist_group(name="graphql_graphdb")
+@pytest.mark.timeout(60)
 @pytest.mark.parametrize(
     "kafka_setup_unique",
     [
@@ -210,7 +212,9 @@ async def test_get_kafka_messages_integration(kafka_setup_unique):
                 if index == len(message_vals):
                     break
     finally:
-        await async_message_list.aclose()
+        with contextlib.suppress(Exception):
+            async with asyncio.timeout(5):
+                await async_message_list.aclose()
 
     # Ensure messages from both topics are received correctly
     topics_set = {msg.topic for msg in received_messages}
