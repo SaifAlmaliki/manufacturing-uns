@@ -22,3 +22,7 @@ scrape_configs:
   - job_name: uns_simulator
     static_configs:
       - targets: ["uns_simulator:9093"]
+
+  - job_name: uns_oee
+    static_configs:
+      - targets: ["oee_client:9095"]

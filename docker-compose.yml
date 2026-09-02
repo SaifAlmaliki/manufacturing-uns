@@ -265,6 +265,39 @@ services:
       uns_kafka_broker:
         condition: service_healthy
 
+  # Computes OEE for closed shifts and publishes each result to `<line>/KPI/ShiftOee`.
+  # Reads the `uns_metrics` hypertable and writes the `oee` schema; it never publishes
+  # process data and never writes to a control system (ADR-0008).
+  oee_client:
+    build:
+      context: .
+      dockerfile: ./12_uns_oee/Dockerfile
+    volumes:
+      - ./conf:/app/conf
+    # 9095 stays unpublished: Prometheus scrapes it from inside the network, exactly as it
+    # does the historian's 9091, the graph database's 9092 and the simulator's 9093.
+    environment:
+      UNS_CONF_DIR: /app/conf
+      UNS_MODULE: 12_uns_oee
+      UNS_mqtt__host: uns_mqtt_broker
+      UNS_historian__hostname: uns_timescale_db
+      UNS_historian__database: "uns_historian"
+      UNS_historian__metrics_table: "uns_metrics"
+      UNS_historian__username: uns_dbuser
+      UNS_historian__password: ${UNS_historian__password}
+      UNS_oee__metrics_port: 9095
+    depends_on:
+      uns_mqtt_broker:
+        condition: service_healthy
+      uns_timescale_db:
+        condition: service_healthy
+      tsdb_setup_script:
+        condition: service_completed_successfully
+      # Creates the `oee` schema and imports conf/oee/*.yaml. Without it the first pass
+      # finds no OeeUnit rows and does nothing, which is silent.
+      asset_model_setup:
+        condition: service_completed_successfully
+
   uns_simulator:
     build:
       context: .
@@ -354,6 +387,7 @@ services:
       - graphdb_client
       - uns_simulator
       - opcua_client
+      - oee_client
 
   uns_grafana:
     image: "grafana/grafana:latest"

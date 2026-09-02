@@ -1821,6 +1821,7 @@ test = [
     { name = "pytest-cov", specifier = ">=6.0.0,<8" },
     { name = "pytest-timeout", specifier = ">=2.4.0,<3" },
     { name = "pytest-xdist", specifier = ">=3.8.0,<4" },
+    { name = "pyyaml", specifier = ">=6.0.2,<7" },
     { name = "safety", specifier = ">=3.4.0,<4" },
 ]
 

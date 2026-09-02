@@ -116,6 +116,7 @@ uv run uns_simulator
 | `spb_mapper_client` | Sparkplug B translator: listens on Sparkplug topics, decodes protobuf, republishes JSON on the ISA-95 UNS topics. |
 | `kafka_mapper_client` | MQTT-to-Kafka bridge: copies UNS MQTT messages onto Kafka topics. |
 | `uns_simulator` | Synthetic PLC / HMI / SCADA publisher used for local demos. Not for production. |
+| `oee_client` | Computes shift OEE from the historised `uns_metrics` rows and publishes each result to `<line>/KPI/ShiftOee`. Reads the historian, writes the `oee` schema, never writes to a control system (ADR-0008). Metrics on `9095`, unpublished. |
 | `graphql_server` | GraphQL API over MQTT (live), Neo4j (current tree), TimescaleDB (history), Postgres `model` / `console` (Asset Model and Alert Rules), and Kafka. Host port: **`8000`** (`http://localhost:8000/graphql`). |
 | `uns_frontend` | Web console for the namespace tree, payload inspector, live feed, search, and historian. Host port: **`8088`** (`http://localhost:8088`). The browser calls GraphQL on port `8000`. |
 | `uns_prometheus` | Scrapes the `/metrics` endpoints exposed by the mapper clients. Host port: `9090`. |
@@ -267,6 +268,7 @@ Since I did not have the enterprise version of the MQTT brokers, I decided to de
 - A module which connects with all the data sources; Neo4j, TimescaleDB, Kafka and MQTT to provide GraphQL apis to query the UNS [07_uns_graphql](./07_uns_graphql/README.md)
 - Prometheus and Grafana configuration for Process Visualization and Platform Observability [08_uns_observability](./08_uns_observability/README.md)
 - The authored Asset Model in Postgres, which contextualizes and enriches everything the historian stores [09_uns_model](./09_uns_model/README.md)
+- The shift OEE engine, which turns that history into Availability x Performance x Quality per line [12_uns_oee](./12_uns_oee/README.md)
 - The read-only OPC UA edge connector that publishes PLC/SCADA tags into the UNS [10_uns_opcua](./10_uns_opcua/README.md)
 - A simulator for test purposes [99_simulator](./99_simulator/README.md)
 
@@ -324,6 +326,30 @@ Two constraints are worth knowing before you extend this:
   in the abandoned `99_simulator/notes` sketch, only `grafana-mqtt-datasource` exists — which is
   why that sketch never started.
 
+### **OEE**
+
+**Overall Equipment Effectiveness** — Availability x Performance x Quality — is computed per
+closed shift by **[12_uns_oee](./12_uns_oee/README.md)** from data already in the historian,
+and published back into the namespace on `<line>/KPI/ShiftOee`.
+
+It is deliberately not a live gauge. Availability is Run Time over *Loading Time*, and
+Loading Time is not known until the shift closes — mid-shift, a changeover scheduled for the
+last hour has not happened yet. A live number would either divide by elapsed time, which is a
+different quantity, or read 40% at 08:00 on every shift ever run.
+
+Two consequences are worth knowing before you rely on it:
+
+- **A shift's number can change.** Late-arriving data and corrected downtime reasons both
+  trigger a recomputation within `late_window_hours`. Each restatement bumps `revision` and
+  moves the previous numbers to `oee.shift_result_revision`, so the change is visible rather
+  than silent.
+- **Undefined is null, never zero.** A shift with no Loading Time has `status`
+  `NO_LOADING_TIME` and null ratios. A plant holiday therefore leaves a gap on the trend
+  instead of a catastrophe.
+
+The reasoning is recorded in
+[ADR 0008](./docs/adr/0008-oee-computed-from-history-not-streamed.md).
+
 ### OPC UA client: [asyncua](https://github.com/FreeOpcUa/opcua-asyncio)
 
 The only actively maintained pure-Python OPC UA stack with a native asyncio API, which
@@ -353,6 +379,7 @@ The current project contains the following microservices
 1. [09_uns_model](./09_uns_model/README.md): Python project holding the authored Asset Model (the ISA-95 hierarchy, equipment facts and units of measure) in Postgres via SQLAlchemy and Alembic, plus the views that enrich time-series rows with it at read time
 1. [10_uns_opcua](./10_uns_opcua/README.md): Read-only OPC UA edge connector that subscribes to PLC/SCADA nodes and publishes them into the Unified Namespace with disk-backed store-and-forward
 1. [11_frontend](./11_frontend/README.md): React console that talks only to GraphQL — Asset Model–first tree, payload inspector with read-time enrichment, live feed, search, and historian
+1. [12_uns_oee](./12_uns_oee/README.md): Python project that computes OEE for closed shifts from historised UNS data, stores the result and its downtime breakdown in the `oee` schema, and publishes it back to MQTT
 1. [99_simulator](./99_simulator/README.md): Python project for simulating data creation to the UNS. _*NOT TO BE USED IN PRODUCTION*_
 
 Each microservice can be independently imported into VSCode by going into the specific microservice folder. Instructions on setting up the python pip & virtual environments are provided in the respective ´README.md´ within that folder
@@ -400,6 +427,7 @@ uv run pytest  ./05_sparkplugb
 uv run pytest  ./06_uns_kafka
 uv run pytest  ./07_uns_graphql
 uv run pytest  ./09_uns_model
+uv run pytest  ./12_uns_oee
 uv run pytest  ./99_simulator
 ```
 
@@ -412,6 +440,7 @@ uv run pytest -m "not integrationtest" ./05_sparkplugb
 uv run pytest -m "not integrationtest" ./06_uns_kafka
 uv run pytest -m "not integrationtest" ./07_uns_graphql
 uv run pytest -m "not integrationtest" ./09_uns_model
+uv run pytest -m "not integrationtest" ./12_uns_oee
 # 99_simulator has no integration tests hence the normal call will suffice
 ```
 
