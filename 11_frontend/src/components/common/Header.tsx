@@ -46,7 +46,7 @@ function getPageHeading(
     return { title: 'System Health' };
   }
   if (path.startsWith('/simulator')) {
-    return { title: 'Simulator', subtitle: 'Control synthetic plant data generation.' };
+    return { title: 'Simulator' };
   }
   if (path.startsWith('/users')) {
     return { title: 'Users' };

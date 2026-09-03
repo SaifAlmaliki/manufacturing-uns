@@ -36,6 +36,9 @@ dependencies = [
     "strawberry-graphql[fastapi, cli]>=0.314.3",
     "uvicorn[standard]>=0.34,<0.53",
     "aiohttp~=3.14",
+    # [crypto] pulls cryptography, which is what verifies an RS256 signature; without the
+    # extra PyJWT silently supports only HMAC and every real token fails to verify.
+    "pyjwt[crypto]>=2.10,<3",
     "aiomqtt>=2.4.0,<3",
     "confluent-kafka>=2.12,<3",
     "neo4j~=6.1",

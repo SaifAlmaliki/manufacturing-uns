@@ -26,7 +26,7 @@ import neo4j
 from aiomqtt import ProtocolVersion, TLSParameters
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
-from uns_config import PlatformConfig, get_settings
+from uns_config import AuthConfig, PlatformConfig, get_settings  # noqa: F401  (re-exported; Task 3 consumes it)
 
 # Logger
 LOGGER = logging.getLogger(__name__)

@@ -445,7 +445,9 @@ async def test_assign_reason_is_null_for_an_unknown_event():
     """Null, not an error: acting on a list a recomputation has since replaced is normal."""
     database = FakeDatabase([FakeResult(["MECH_FAULT"]), FakeResult([])])
 
-    assert await OeeResultRepository(database).assign_reason(999, "MECH_FAULT") is None
+    assert (
+        await OeeResultRepository(database).assign_reason(999, "MECH_FAULT", assigned_by="a.operator") is None
+    )
     assert len(database.session_obj.statements) == 2
 
 
@@ -458,6 +460,19 @@ async def test_assign_reason_rejects_a_reason_code_nobody_authored():
     database = FakeDatabase([FakeResult([])])
 
     with pytest.raises(ValueError, match="NOT_A_REASON"):
-        await OeeResultRepository(database).assign_reason(11, "NOT_A_REASON")
+        await OeeResultRepository(database).assign_reason(11, "NOT_A_REASON", assigned_by="a.operator")
 
     assert len(database.session_obj.statements) == 1
+
+
+@pytest.mark.asyncio
+async def test_assign_reason_will_not_record_an_unattributed_correction():
+    """
+    A stored correction with no name is an edit to plant data that nobody signed. The
+    signature is now required by the type, so this is a TypeError and not a validation
+    message - which is the right place for it, because no caller should be able to try.
+    """
+    database = FakeDatabase([])
+
+    with pytest.raises(TypeError):
+        await OeeResultRepository(database).assign_reason(11, "MECH_FAULT")

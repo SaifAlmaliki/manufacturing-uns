@@ -860,7 +860,7 @@ places that can drift.
     `platformConfig.authIssuer` etc.
   - Tasks 3–5 consume the Python side; Tasks 8–10 consume the TypeScript side.
 
-- [ ] **Step 1: Write the failing Python test**
+- [x] **Step 1: Write the failing Python test**
 
 Create `00_uns_config/test/test_platform_auth.py`:
 
@@ -905,13 +905,13 @@ def test_there_is_leeway_on_expiry():
     assert AuthConfig.leeway_seconds > 0
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `cd 00_uns_config && uv run pytest test/test_platform_auth.py -q`
 
 Expected: `ImportError: cannot import name 'AuthConfig' from 'uns_config'`.
 
-- [ ] **Step 3: Add `AuthConfig`**
+- [x] **Step 3: Add `AuthConfig`**
 
 In `00_uns_config/src/uns_config/platform.py`, after the `PlatformConfig` class:
 
@@ -961,7 +961,7 @@ Export it from the package. In `00_uns_config/src/uns_config/__init__.py`, add `
 the import from `.platform` and to `__all__`, following exactly how `PlatformConfig` is listed
 there.
 
-- [ ] **Step 4: Re-export it where the GraphQL service already looks**
+- [x] **Step 4: Re-export it where the GraphQL service already looks**
 
 In `07_uns_graphql/src/uns_graphql/graphql_config.py:29`, widen the existing import:
 
@@ -977,7 +977,7 @@ If the module has an `__all__`, add `"AuthConfig"` to it. If it does not, nothin
 and a linter may flag the import as unused until Task 3 consumes it; leave it, or land Step 4
 together with Task 3's first step.
 
-- [ ] **Step 5: Run the Python test**
+- [x] **Step 5: Run the Python test**
 
 Run: `cd 00_uns_config && uv run pytest test/test_platform_auth.py -q`
 
@@ -1153,7 +1153,7 @@ Spec tests 2, 3, 6 and 7 all land here.
 - Task 4 constructs the single `JwksCache` and calls `identity_from_token`. Task 5 calls
   `Identity.has_any`.
 
-- [ ] **Step 1: Add the one new dependency**
+- [x] **Step 1: Add the one new dependency**
 
 In `07_uns_graphql/pyproject.toml`, add to `dependencies` (after `"aiohttp~=3.14",` so the list
 stays roughly grouped by purpose):
@@ -1174,7 +1174,7 @@ uv run python -c "import jwt; from jwt import PyJWK; print(jwt.__version__)"
 
 Expected: a 2.10-or-later version and no import error on `PyJWK`.
 
-- [ ] **Step 2: Write the test key helper**
+- [x] **Step 2: Write the test key helper**
 
 Create `07_uns_graphql/test/auth/__init__.py` (empty) and
 `07_uns_graphql/test/auth/keys.py`:
@@ -1267,7 +1267,7 @@ def jwks_document(*keys: TestKey) -> dict:
 2048 bits, not 4096: this runs on every test that mints a token, and a 4096-bit generation adds
 seconds to a suite that already has `pytest-xdist` for a reason.
 
-- [ ] **Step 3: Write the failing JWKS test**
+- [x] **Step 3: Write the failing JWKS test**
 
 Create `07_uns_graphql/test/auth/test_jwks.py`:
 
@@ -1355,7 +1355,7 @@ async def test_a_failed_refetch_leaves_the_cached_keys_usable():
     assert await cache.signing_key("key-a") is not None
 ```
 
-- [ ] **Step 4: Write the failing token test**
+- [x] **Step 4: Write the failing token test**
 
 Create `07_uns_graphql/test/auth/test_token.py`:
 
@@ -1503,7 +1503,7 @@ def test_identity_has_any():
 not a copy-paste slip: it proves the code verifies the signature rather than trusting that a
 matching kid was found.
 
-- [ ] **Step 5: Run both and watch them fail**
+- [x] **Step 5: Run both and watch them fail**
 
 Run: `cd 07_uns_graphql && uv run pytest test/auth -q`
 
@@ -1512,7 +1512,7 @@ Expected: collection errors — `uns_graphql.auth` does not exist. If instead yo
 in `pyproject.toml` for `asyncio_mode`; if it is not `auto`, the `@pytest.mark.asyncio`
 decorators above are already correct and nothing changes.
 
-- [ ] **Step 6: Write the JWKS cache**
+- [x] **Step 6: Write the JWKS cache**
 
 Create `07_uns_graphql/src/uns_graphql/auth/__init__.py` (empty) and
 `07_uns_graphql/src/uns_graphql/auth/jwks.py`:
@@ -1619,7 +1619,7 @@ Two things the tests pin that are easy to get wrong. `self._fetches` increments 
 still find the cached key. And `self._keys` is replaced only when `refreshed` is non-empty, so a
 realm that briefly answers with `{"keys": []}` does not wipe a working cache.
 
-- [ ] **Step 7: Write the token validator**
+- [x] **Step 7: Write the token validator**
 
 Create `07_uns_graphql/src/uns_graphql/auth/token.py`:
 
@@ -1746,7 +1746,7 @@ async def identity_from_token(token: str, keys: JwksCache) -> Identity:
 header's `alg` when given an explicit list, which is what makes the `alg: none` and
 HMAC-over-the-public-key attacks impossible rather than merely unlikely.
 
-- [ ] **Step 8: Run the tests**
+- [x] **Step 8: Run the tests**
 
 ```bash
 cd 07_uns_graphql
@@ -1838,7 +1838,7 @@ This is spec test 1 and success criterion 2.
   ```
 - Task 5 calls `identity_in`. Nothing else consumes this.
 
-- [ ] **Step 1: Write the failing unit test for the dependency**
+- [x] **Step 1: Write the failing unit test for the dependency**
 
 Create `07_uns_graphql/test/auth/test_context.py`:
 
@@ -1962,7 +1962,7 @@ def test_identity_in_tolerates_the_contexts_the_test_suite_uses():
     assert identity_in({"identity": None}) is None
 ```
 
-- [ ] **Step 2: Write the failing end-to-end gate test**
+- [x] **Step 2: Write the failing end-to-end gate test**
 
 Create `07_uns_graphql/test/auth/test_graphql_gate.py`. This one goes through the real app,
 the way `test_uns_graphql_cors.py:29` already does — no database is reached, because the
@@ -2096,7 +2096,7 @@ not delete the case. `UNSGraphql.schema.as_str()` prints the schema, and a synta
 document would return HTTP 400 with the gate open, which is a passing test for the wrong
 reason. Guard against that by checking that every case returns exactly 401 and never 400.
 
-- [ ] **Step 3: Run both and watch them fail**
+- [x] **Step 3: Run both and watch them fail**
 
 ```bash
 cd 07_uns_graphql
@@ -2105,7 +2105,7 @@ uv run pytest test/auth/test_context.py test/auth/test_graphql_gate.py -q
 
 Expected: import errors on `uns_graphql.auth.context`.
 
-- [ ] **Step 4: Write the context module**
+- [x] **Step 4: Write the context module**
 
 Create `07_uns_graphql/src/uns_graphql/auth/context.py`:
 
@@ -2262,7 +2262,7 @@ object, not HTTP headers, so its keys are case-sensitive and whichever spelling 
 sends is the spelling that arrives. Task 9 sends `Authorization`; accepting both costs one
 `or` and saves an afternoon.
 
-- [ ] **Step 5: Wire it into the app**
+- [x] **Step 5: Wire it into the app**
 
 In `07_uns_graphql/src/uns_graphql/uns_graphql_app.py`, replace the `GraphQLRouter` import at
 `:27`:
@@ -2298,7 +2298,7 @@ Leave `app.add_middleware(CORSMiddleware, ...)` alone. `allow_headers=["*"]` at 
 admits `Authorization`, and `allow_credentials=True` at `:134` is unrelated to bearer tokens —
 narrowing either is out of scope here.
 
-- [ ] **Step 6: Run the new tests**
+- [x] **Step 6: Run the new tests**
 
 ```bash
 cd 07_uns_graphql
@@ -2434,7 +2434,7 @@ Queries are not role-gated. Task 4 already made them require authentication, and
   ```
 - Task 6 uses `require`'s return value for `assignedBy`.
 
-- [ ] **Step 1: Write the failing table test**
+- [x] **Step 1: Write the failing table test**
 
 Create `07_uns_graphql/test/auth/test_require.py`:
 
@@ -2543,13 +2543,13 @@ def test_any_authenticated_role_is_the_five():
     assert ANY_AUTHENTICATED_ROLE == CONSOLE_ROLES
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `cd 07_uns_graphql && uv run pytest test/auth/test_require.py -q`
 
 Expected: `ModuleNotFoundError: uns_graphql.auth.require`.
 
-- [ ] **Step 3: Write the table**
+- [x] **Step 3: Write the table**
 
 Create `07_uns_graphql/src/uns_graphql/auth/require.py`:
 
@@ -2624,14 +2624,14 @@ Note what the error says about the caller as well as the requirement. "You need 
 somebody to ask for a role they may already have under a different name; "you need engineer or
 admin, you hold viewer" ends the conversation in one message.
 
-- [ ] **Step 4: Run the table test**
+- [x] **Step 4: Run the table test**
 
 Run: `cd 07_uns_graphql && uv run pytest test/auth/test_require.py -q`
 
 Expected: PASS — 6 + 30 - 6 parametrised cases plus the six singles. Every cell of the table in
 both directions.
 
-- [ ] **Step 5: Gate the five Alert Rule mutations**
+- [x] **Step 5: Gate the five Alert Rule mutations**
 
 In `07_uns_graphql/src/uns_graphql/mutations/alert_rule.py`, add the import after `:38`:
 
@@ -2692,7 +2692,7 @@ Also update the class docstring at `:49`, which currently reads `"""All write ac
     """
 ```
 
-- [ ] **Step 6: Gate the OEE mutation**
+- [x] **Step 6: Gate the OEE mutation**
 
 In `07_uns_graphql/src/uns_graphql/mutations/oee.py`, add the import after `:38`:
 
@@ -2721,7 +2721,7 @@ and take `info` as the first parameter of `assign_downtime_reason`, calling `req
 Leave `assigned_by` exactly as it is here. Task 6 removes it, and doing both in one task would
 mix a permission change with a schema change in one commit.
 
-- [ ] **Step 7: Give the existing mutation tests an identity**
+- [x] **Step 7: Give the existing mutation tests an identity**
 
 Both mutation test files call `UNSGraphql.schema.execute(...)` with no `context_value`, so their
 resolvers now see no identity and every one of them fails. That is the gate working. Each file
@@ -2777,7 +2777,7 @@ OPERATOR = {
 and add `context_value=OPERATOR` to the executes at `:79`, `:110`, `:127`, `:143`, `:158` and
 `:171`. Leave the introspection query at `:186` alone.
 
-- [ ] **Step 8: Run the mutation tests**
+- [x] **Step 8: Run the mutation tests**
 
 ```bash
 cd 07_uns_graphql
@@ -2787,7 +2787,7 @@ uv run pytest test/mutations test/auth -q
 Expected: PASS. If a test fails with `assignDowntimeReason needs one of these roles`, an
 `execute` call was missed — the message names the field, so the failure says which.
 
-- [ ] **Step 9: Add the two tests that prove the gate reaches the schema**
+- [x] **Step 9: Add the two tests that prove the gate reaches the schema**
 
 The table test uses a fake `info`. One test per file should go through the real schema, because
 `strawberry.Info` injection is the part a fake cannot check. Append to
@@ -2924,7 +2924,7 @@ foundation plan's own test does not see it either, because it mocks `fetch` and 
 validates the document. Step 7 is the check, and Step 9's by-hand call with a real token is the
 only thing in this plan that exercises the document against the actual schema.
 
-- [ ] **Step 1: Find the callers before changing the signature**
+- [x] **Step 1: Find the callers before changing the signature**
 
 ```bash
 cd /c/Dev/manufacturing-uns
@@ -2955,7 +2955,7 @@ import `useAuth` for exactly that reason.
 
 It is not the honest design any more, and this task is where it changes. Step 7 covers it.
 
-- [ ] **Step 2: Write the failing GraphQL test**
+- [x] **Step 2: Write the failing GraphQL test**
 
 In `07_uns_graphql/test/mutations/test_oee.py`, replace the `ASSIGN` document at `:39`–`:45` —
 it currently declares `$assignedBy` and passes it — with one that does not:
@@ -3054,7 +3054,7 @@ async def test_the_schema_publishes_no_way_to_name_the_assigner():
     assert [arg["name"] for arg in field["args"]] == ["eventId", "reasonCode", "note"]
 ```
 
-- [ ] **Step 3: Run them and watch them fail**
+- [x] **Step 3: Run them and watch them fail**
 
 Run: `cd 07_uns_graphql && uv run pytest test/mutations/test_oee.py -q`
 
@@ -3062,7 +3062,7 @@ Expected: `test_supplying_an_identity_is_a_schema_error` fails because the argum
 exists and the mutation succeeds; `test_the_schema_publishes_no_way_to_name_the_assigner` fails
 with a fourth argument in the list.
 
-- [ ] **Step 4: Take the identity from the token**
+- [x] **Step 4: Take the identity from the token**
 
 In `07_uns_graphql/src/uns_graphql/mutations/oee.py`, delete the `assigned_by` parameter at
 `:61`–`:69` entirely, along with the now-unused `Annotated` import at `:32` if nothing else in
@@ -3116,7 +3116,7 @@ The correction is signed by the signed-in user. `assignedBy` is taken from the t
 anybody, and this is the only write this platform makes to plant data.
 ```
 
-- [ ] **Step 5: Make the repository require an identity**
+- [x] **Step 5: Make the repository require an identity**
 
 `09_uns_model/src/uns_model/oee_results.py:251`–`:257` currently defaults `assigned_by` to
 `None`. A default of `None` is what let the GraphQL layer pass nothing for as long as it did, so
@@ -3148,7 +3148,7 @@ Update the docstring to say the caller is required to supply it and why:
         """
 ```
 
-- [ ] **Step 6: Fix the model tests**
+- [x] **Step 6: Fix the model tests**
 
 `09_uns_model/test/test_oee_results.py` already passes `assigned_by="a.operator"` at `:380`,
 `:400`, `:422` and `:437`, so those keep working. `:147` asserts a row with `"assigned_by":
@@ -3172,7 +3172,7 @@ async def test_assign_reason_will_not_record_an_unattributed_correction(database
 Match the fixture name and marker style of the tests already in that file — `database` above is
 a placeholder for whatever the file's existing fixture is called; read `:380` and copy it.
 
-- [ ] **Step 7: Confirm the console never names an author, and fix it if it does**
+- [x] **Step 7: Confirm the console never names an author, and fix it if it does**
 
 ```bash
 cd /c/Dev/manufacturing-uns/11_frontend

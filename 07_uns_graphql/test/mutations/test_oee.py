@@ -29,16 +29,29 @@ import pytest
 from uns_model.oee_results import DowntimeEventRow
 from uns_model.oee_tables import DowntimeEvent
 
+from uns_graphql.auth.context import CONTEXT_KEY
+from uns_graphql.auth.token import Identity
 from uns_graphql.uns_graphql_app import UNSGraphql
 
 REPOSITORY = "uns_graphql.mutations.oee._repository"
+
+# These tests are about what the mutation does, not about who may call it - that is
+# test/auth/test_require.py, one case per cell. Operator, because that is the role that
+# reassigns a stop reason in a plant, so the test exercises the row's lower bound.
+OPERATOR = {
+    CONTEXT_KEY: Identity(
+        subject="00000000-0000-0000-0000-000000000002",
+        username="olga.operator",
+        roles=frozenset({"operator"}),
+    )
+}
 
 LINE = "CovestroAG/Dormagen/Production/Line1"
 SHIFT_START = datetime(2026, 8, 31, 6, 0, tzinfo=UTC)
 
 ASSIGN = """
-    mutation Assign($eventId: ID!, $reasonCode: String!, $note: String, $assignedBy: String) {
-        assignDowntimeReason(eventId: $eventId, reasonCode: $reasonCode, note: $note, assignedBy: $assignedBy) {
+    mutation Assign($eventId: ID!, $reasonCode: String!, $note: String) {
+        assignDowntimeReason(eventId: $eventId, reasonCode: $reasonCode, note: $note) {
             id reasonCode reasonSource isPlanned assignedBy note
         }
     }
@@ -71,9 +84,14 @@ def _assigned(**overrides) -> DowntimeEventRow:
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_assign_downtime_reason_returns_the_event_as_stored():
+async def test_assign_downtime_reason_records_the_signed_in_user():
+    """
+    Spec success criterion 4: "a downtime reason reassignment records an identity the caller
+    did not choose". The caller cannot supply a name, so the name in the row is the name in
+    the token.
+    """
     repository = AsyncMock()
-    repository.assign_reason.return_value = _assigned()
+    repository.assign_reason.return_value = _assigned(assigned_by="olga.operator")
 
     with patch(REPOSITORY, return_value=repository):
         result = await UNSGraphql.schema.execute(
@@ -82,8 +100,8 @@ async def test_assign_downtime_reason_returns_the_event_as_stored():
                 "eventId": "11",
                 "reasonCode": "CHANGEOVER",
                 "note": "Product change to MDI-02",
-                "assignedBy": "a.operator",
             },
+            context_value=OPERATOR,
         )
 
     assert result.errors is None
@@ -92,11 +110,11 @@ async def test_assign_downtime_reason_returns_the_event_as_stored():
         "reasonCode": "CHANGEOVER",
         "reasonSource": "MANUAL",
         "isPlanned": True,
-        "assignedBy": "a.operator",
+        "assignedBy": "olga.operator",
         "note": "Product change to MDI-02",
     }
     repository.assign_reason.assert_awaited_once_with(
-        11, "CHANGEOVER", note="Product change to MDI-02", assigned_by="a.operator"
+        11, "CHANGEOVER", note="Product change to MDI-02", assigned_by="olga.operator"
     )
 
 
@@ -108,7 +126,9 @@ async def test_the_event_id_reaches_the_repository_as_a_number():
 
     with patch(REPOSITORY, return_value=repository):
         await UNSGraphql.schema.execute(
-            ASSIGN, variable_values={"eventId": "11", "reasonCode": "CHANGEOVER"}
+            ASSIGN,
+            variable_values={"eventId": "11", "reasonCode": "CHANGEOVER"},
+            context_value=OPERATOR,
         )
 
     assert repository.assign_reason.await_args.args == (11, "CHANGEOVER")
@@ -125,11 +145,16 @@ async def test_omitting_the_note_leaves_the_stored_note_alone():
 
     with patch(REPOSITORY, return_value=repository):
         result = await UNSGraphql.schema.execute(
-            ASSIGN, variable_values={"eventId": "11", "reasonCode": "CHANGEOVER"}
+            ASSIGN,
+            variable_values={"eventId": "11", "reasonCode": "CHANGEOVER"},
+            context_value=OPERATOR,
         )
 
     assert result.errors is None
-    assert repository.assign_reason.await_args.kwargs == {"note": None, "assigned_by": None}
+    assert repository.assign_reason.await_args.kwargs == {
+        "note": None,
+        "assigned_by": "olga.operator",
+    }
     assert result.data["assignDowntimeReason"]["note"] == "Called maintenance at 09:05"
 
 
@@ -141,7 +166,9 @@ async def test_an_unknown_event_is_an_error_and_not_a_null():
 
     with patch(REPOSITORY, return_value=repository):
         result = await UNSGraphql.schema.execute(
-            ASSIGN, variable_values={"eventId": "999", "reasonCode": "CHANGEOVER"}
+            ASSIGN,
+            variable_values={"eventId": "999", "reasonCode": "CHANGEOVER"},
+            context_value=OPERATOR,
         )
 
     assert result.errors
@@ -156,7 +183,9 @@ async def test_an_unauthored_reason_code_reaches_the_caller_as_a_message():
 
     with patch(REPOSITORY, return_value=repository):
         result = await UNSGraphql.schema.execute(
-            ASSIGN, variable_values={"eventId": "11", "reasonCode": "NOT_A_REASON"}
+            ASSIGN,
+            variable_values={"eventId": "11", "reasonCode": "NOT_A_REASON"},
+            context_value=OPERATOR,
         )
 
     assert result.errors
@@ -169,7 +198,9 @@ async def test_an_event_id_that_is_not_a_number_is_rejected_before_the_database(
 
     with patch(REPOSITORY, return_value=repository):
         result = await UNSGraphql.schema.execute(
-            ASSIGN, variable_values={"eventId": "eleven", "reasonCode": "CHANGEOVER"}
+            ASSIGN,
+            variable_values={"eventId": "eleven", "reasonCode": "CHANGEOVER"},
+            context_value=OPERATOR,
         )
 
     assert result.errors
@@ -190,3 +221,37 @@ async def test_the_schema_exposes_no_other_way_to_write_to_the_oee_schema():
     assert [name for name in names if "owntime" in name or "Oee" in name or "oee" in name] == [
         "assignDowntimeReason"
     ]
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_supplying_an_identity_is_a_schema_error():
+    """
+    Spec test 5: "a request that tries to supply assignedBy fails schema validation because
+    the argument no longer exists". A caller who could name themselves could name anybody, and
+    the argument's own description used to admit as much.
+    """
+    result = await UNSGraphql.schema.execute(
+        """
+        mutation {
+            assignDowntimeReason(eventId: "11", reasonCode: "CHANGEOVER",
+                                 assignedBy: "somebody.else") { id }
+        }
+        """,
+        context_value=OPERATOR,
+    )
+
+    assert result.errors
+    assert "assignedBy" in result.errors[0].message
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_the_schema_publishes_no_way_to_name_the_assigner():
+    result = await UNSGraphql.schema.execute(
+        """{ __type(name: "Mutation") { fields { name args { name } } } }"""
+    )
+
+    assert result.errors is None
+    field = next(
+        f for f in result.data["__type"]["fields"] if f["name"] == "assignDowntimeReason"
+    )
+    assert [arg["name"] for arg in field["args"]] == ["eventId", "reasonCode", "note"]

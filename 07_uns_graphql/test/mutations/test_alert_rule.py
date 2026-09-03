@@ -29,9 +29,21 @@ import pytest
 from uns_model.alert_rules import AlertRuleSpec
 from uns_model.tables import AlertRule, AlertRuleRole
 
+from uns_graphql.auth.context import CONTEXT_KEY
+from uns_graphql.auth.token import Identity
 from uns_graphql.uns_graphql_app import UNSGraphql
 
 REPOSITORY = "uns_graphql.mutations.alert_rule._repository"
+
+# These tests are about what the mutations do, not about who may call them - that is
+# test/auth/test_require.py, one case per cell. So they run as a role that may.
+ENGINEER = {
+    CONTEXT_KEY: Identity(
+        subject="00000000-0000-0000-0000-000000000001",
+        username="erin.engineer",
+        roles=frozenset({"engineer"}),
+    )
+}
 
 MINIMAL_INPUT = {
     "id": "rule-1",
@@ -96,7 +108,9 @@ async def test_save_alert_rule_returns_the_rule_as_stored():
     repository.save_rule.return_value = _rule(roles=("operator",))
 
     with patch(REPOSITORY, return_value=repository):
-        result = await UNSGraphql.schema.execute(SAVE_MUTATION, variable_values={"rule": MINIMAL_INPUT})
+        result = await UNSGraphql.schema.execute(
+            SAVE_MUTATION, variable_values={"rule": MINIMAL_INPUT}, context_value=ENGINEER
+        )
 
     assert result.errors is None
     assert result.data["saveAlertRule"] == {
@@ -132,6 +146,7 @@ async def test_save_alert_rule_forwards_the_optional_settings():
                     "mqttAlarmTopic": "enterprise/site/alarms/oven",
                 }
             },
+            context_value=ENGINEER,
         )
 
     assert result.errors is None
@@ -155,7 +170,9 @@ async def test_save_alert_rule_rejects_a_value_outside_the_vocabulary_before_the
 
     with patch(REPOSITORY, return_value=repository):
         result = await UNSGraphql.schema.execute(
-            SAVE_MUTATION, variable_values={"rule": MINIMAL_INPUT | {"severity": "CATASTROPHIC"}}
+            SAVE_MUTATION,
+            variable_values={"rule": MINIMAL_INPUT | {"severity": "CATASTROPHIC"}},
+            context_value=ENGINEER,
         )
 
     assert result.errors
@@ -170,7 +187,9 @@ async def test_save_alert_rule_surfaces_a_repository_rejection():
 
     with patch(REPOSITORY, return_value=repository):
         result = await UNSGraphql.schema.execute(
-            SAVE_MUTATION, variable_values={"rule": MINIMAL_INPUT | {"condition": "RANGE_OUTSIDE"}}
+            SAVE_MUTATION,
+            variable_values={"rule": MINIMAL_INPUT | {"condition": "RANGE_OUTSIDE"}},
+            context_value=ENGINEER,
         )
 
     assert result.errors
@@ -191,6 +210,7 @@ async def test_save_alert_rules_imports_a_whole_browser_full_of_rules():
             }
             """,
             variable_values={"rules": [MINIMAL_INPUT, MINIMAL_INPUT | {"id": "rule-2"}]},
+            context_value=ENGINEER,
         )
 
     assert result.errors is None
@@ -206,7 +226,9 @@ async def test_delete_alert_rule_reports_whether_there_was_anything_to_delete(de
     repository.delete_rule.return_value = deleted
 
     with patch(REPOSITORY, return_value=repository):
-        result = await UNSGraphql.schema.execute("""mutation { deleteAlertRule(id: "rule-1") }""")
+        result = await UNSGraphql.schema.execute(
+            """mutation { deleteAlertRule(id: "rule-1") }""", context_value=ENGINEER
+        )
 
     assert result.errors is None
     assert result.data["deleteAlertRule"] is deleted
@@ -220,7 +242,8 @@ async def test_set_alert_rule_enabled_mutes_without_resending_the_rule():
 
     with patch(REPOSITORY, return_value=repository):
         result = await UNSGraphql.schema.execute(
-            """mutation { setAlertRuleEnabled(id: "rule-1", enabled: false) { id enabled thresholdValue } }"""
+            """mutation { setAlertRuleEnabled(id: "rule-1", enabled: false) { id enabled thresholdValue } }""",
+            context_value=ENGINEER,
         )
 
     assert result.errors is None
@@ -235,7 +258,8 @@ async def test_set_alert_rule_enabled_is_null_for_an_unknown_rule():
 
     with patch(REPOSITORY, return_value=repository):
         result = await UNSGraphql.schema.execute(
-            """mutation { setAlertRuleEnabled(id: "nope", enabled: true) { id } }"""
+            """mutation { setAlertRuleEnabled(id: "nope", enabled: true) { id } }""",
+            context_value=ENGINEER,
         )
 
     assert result.errors is None
@@ -257,7 +281,8 @@ async def test_record_alert_rule_evaluation_returns_the_counters():
             mutation { recordAlertRuleEvaluation(id: "rule-1", triggered: true) {
                 id triggerCount lastTriggeredAt lastEvaluatedAt
             } }
-            """
+            """,
+            context_value=ENGINEER,
         )
 
     assert result.errors is None
@@ -275,7 +300,8 @@ async def test_record_alert_rule_evaluation_is_null_for_an_unknown_rule():
 
     with patch(REPOSITORY, return_value=repository):
         result = await UNSGraphql.schema.execute(
-            """mutation { recordAlertRuleEvaluation(id: "nope", triggered: false) { id } }"""
+            """mutation { recordAlertRuleEvaluation(id: "nope", triggered: false) { id } }""",
+            context_value=ENGINEER,
         )
 
     assert result.errors is None
@@ -300,3 +326,48 @@ def test_only_alert_rules_are_writable():
         "record_alert_rule_evaluation",
         "assign_downtime_reason",
     }
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_a_viewer_cannot_save_a_rule_and_is_told_which_role_they_need():
+    """
+    Through the real schema, not a fake info: `strawberry.Info` injection is exactly what a
+    fake context cannot prove, and a resolver that stopped receiving it would silently see
+    None and refuse everybody.
+    """
+    viewer = {
+        CONTEXT_KEY: Identity(subject="s", username="val.viewer", roles=frozenset({"viewer"}))
+    }
+    repository = AsyncMock()
+
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            SAVE_MUTATION, variable_values={"rule": MINIMAL_INPUT}, context_value=viewer
+        )
+
+    assert result.errors
+    assert "engineer" in result.errors[0].message
+    # Refused before the database, not after.
+    repository.save_rule.assert_not_awaited()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_an_operator_may_mute_a_rule_but_not_rewrite_it():
+    """The one row of the table that differs from its neighbours, checked end to end."""
+    operator = {
+        CONTEXT_KEY: Identity(subject="s", username="olga.operator", roles=frozenset({"operator"}))
+    }
+    repository = AsyncMock()
+    repository.set_enabled.return_value = _rule(enabled=False)
+
+    with patch(REPOSITORY, return_value=repository):
+        muted = await UNSGraphql.schema.execute(
+            """mutation { setAlertRuleEnabled(id: "rule-1", enabled: false) { id } }""",
+            context_value=operator,
+        )
+        rewritten = await UNSGraphql.schema.execute(
+            SAVE_MUTATION, variable_values={"rule": MINIMAL_INPUT}, context_value=operator
+        )
+
+    assert muted.errors is None
+    assert rewritten.errors

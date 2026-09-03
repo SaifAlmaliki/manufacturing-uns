@@ -1,0 +1,64 @@
+"""Who may write what.
+
+One table, because a policy spread across six resolvers cannot be reviewed and cannot be
+tested cell by cell. Keys are the camelCase field names the schema publishes, so that a
+reader of this file and a reader of the GraphQL schema are looking at the same names.
+
+Queries are absent on purpose. Any authenticated role may read: the read surface is plant
+data, and an operator who cannot read the plant cannot work. Gating reads by Asset would need
+an Asset-to-role mapping that `model.asset` does not have.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from uns_graphql.auth.context import identity_in
+from uns_graphql.auth.token import CONSOLE_ROLES, Identity
+
+ANY_AUTHENTICATED_ROLE: frozenset[str] = CONSOLE_ROLES
+
+MUTATION_ROLES: dict[str, frozenset[str]] = {
+    # Authoring a rule is engineering work.
+    "saveAlertRule": frozenset({"engineer", "admin"}),
+    "saveAlertRules": frozenset({"engineer", "admin"}),
+    "deleteAlertRule": frozenset({"engineer", "admin"}),
+    # Separated from the editors deliberately: silencing a nuisance alarm during a shift is
+    # operator work, and authoring the rule that produced it is not.
+    "setAlertRuleEnabled": frozenset({"operator", "engineer", "admin"}),
+    # Open, because the browser-side evaluator calls this as a consequence of a rule firing
+    # (ADR-0005), not as a user action. Gating it would make the alarm history depend on which
+    # role happens to have the console open. If evaluation ever moves server-side, this
+    # becomes a service-account call and closes to users entirely.
+    "recordAlertRuleEvaluation": ANY_AUTHENTICATED_ROLE,
+    # The one plant-data write this platform allows.
+    "assignDowntimeReason": frozenset({"operator", "engineer", "admin"}),
+}
+
+
+class NotPermittedError(Exception):
+    """The caller is authenticated and lacks the role. The message reaches the client."""
+
+
+def require(info: Any, mutation: str) -> Identity:
+    """The caller's identity, if their roles allow this mutation.
+
+    `KeyError` on an unknown name rather than a permissive default: a typo in a field name
+    must not read as "no requirement".
+    """
+    allowed = MUTATION_ROLES[mutation]
+
+    identity = identity_in(getattr(info, "context", None))
+    if identity is None:
+        raise NotPermittedError(
+            f"{mutation} needs a signed-in user. You are not signed in."
+        )
+
+    if not identity.has_any(allowed):
+        needed = ", ".join(sorted(allowed))
+        raise NotPermittedError(
+            f"{mutation} needs one of these roles: {needed}. "
+            f"You hold: {', '.join(sorted(identity.roles)) or 'no recognised role'}."
+        )
+
+    return identity

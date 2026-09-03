@@ -254,7 +254,7 @@ class OeeResultRepository:
         reason_code: str,
         *,
         note: str | None = None,
-        assigned_by: str | None = None,
+        assigned_by: str,
     ) -> DowntimeEventRow | None:
         """Attribute a stop to a reason by hand, and queue that shift for recomputation.
 
@@ -264,6 +264,9 @@ class OeeResultRepository:
 
         `assigned_at` is `func.now()` and not a caller's timestamp: the console runs in a
         browser, and a wrong laptop clock must not be able to reorder who corrected what.
+
+        `assigned_by` is required. The caller is the only party that knows who is asking, and
+        a stored `None` would be an unattributable edit to plant data.
 
         Returns None when there is no such event. A console acting on a list of stops that a
         recomputation has since replaced is normal, not an error.
@@ -313,7 +316,7 @@ class OeeResultRepository:
                 "Downtime event %s reassigned to %s by %s; shift %s queued for recompute",
                 event_id,
                 reason_code,
-                assigned_by or "unknown",
+                assigned_by,
                 changed.shift_start.isoformat(),
             )
             rows = _event_rows(

@@ -23,18 +23,22 @@ mutation corrects the attribution and queues a recomputation, and the engine rem
 the only writer of `oee.shift_result` (ADR-0005 for why the write lives in GraphQL at
 all: the console is a static bundle with no backend of its own).
 
+The correction is signed by the signed-in user. `assignedBy` is taken from the token's
+`preferred_username`, not from an argument: a caller who could name themselves could name
+anybody, and this is the only write this platform makes to plant data.
+
 Reassignment can change the OEE, because a reason's `is_planned` flag moves the
 interval between Unplanned Down and excluded time. That is correct behaviour, and it is
 why this enqueues rather than merely editing a label.
 """
 
 import logging
-from typing import Annotated
 
 import strawberry
 from uns_model.engine import Database
 from uns_model.oee_results import OeeResultRepository
 
+from uns_graphql.auth.require import require
 from uns_graphql.type.oee import DowntimeEventType
 
 LOGGER = logging.getLogger(__name__)
@@ -51,23 +55,18 @@ class Mutation:
     @strawberry.mutation(
         description="Attribute a stop to a reason code by hand and queue that shift for "
         "recomputation. The stored reason becomes MANUAL, which the engine never overwrites. "
+        "The correction is signed by the signed-in user, who cannot choose the name recorded. "
         "Errors when there is no such event or the reason code is not authored."
     )
     async def assign_downtime_reason(
         self,
+        info: strawberry.Info,
         event_id: strawberry.ID,
         reason_code: str,
         note: str | None = None,
-        # `strawberry.argument`, not `strawberry.field`: this is a resolver argument, and
-        # `field` as a default value would be published as a String with a broken default.
-        assigned_by: Annotated[
-            str | None,
-            strawberry.argument(
-                description="Who says they made the correction. Attested by the caller, not "
-                "authenticated: this platform has no authentication anywhere."
-            ),
-        ] = None,
     ) -> DowntimeEventType:
+        identity = require(info, "assignDowntimeReason")
+
         try:
             numeric_id = int(event_id)
         except (TypeError, ValueError) as ex:
@@ -75,7 +74,7 @@ class Mutation:
             raise ValueError(f"{event_id!r} is not a downtime event id") from ex
 
         assigned = await _repository().assign_reason(
-            numeric_id, reason_code, note=note, assigned_by=assigned_by
+            numeric_id, reason_code, note=note, assigned_by=identity.username
         )
         if assigned is None:
             # Non-null return type, and the right answer: an operator whose click did
@@ -83,7 +82,7 @@ class Mutation:
             raise ValueError(f"There is no downtime event {event_id}")
 
         LOGGER.info(
-            "Downtime event %s attributed to %s by %s", event_id, reason_code, assigned_by or "unknown"
+            "Downtime event %s attributed to %s by %s", event_id, reason_code, identity.username
         )
         return DowntimeEventType.from_row(assigned)
 

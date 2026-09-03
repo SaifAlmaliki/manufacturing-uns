@@ -7,10 +7,11 @@
  */
 
 import React from 'react'
-import { Activity, AlertTriangle, Pause, Play, RotateCcw, Square, Lock, WifiOff } from 'lucide-react'
+import { Activity, AlertTriangle, Cpu, Lock, Pause, Play, Radio, RotateCcw, Square, Timer, WifiOff, XCircle } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import type { useSimulator } from '../../hooks/useSimulator'
 import type { RunAction, RunState } from '../../types/simulator'
+import { BtnGhost, BtnPrimary, CompactKpiRow, ConsoleCard, PageStat } from '../ui/console-ui'
 
 export type SimulatorState = ReturnType<typeof useSimulator>
 
@@ -32,10 +33,10 @@ export const TIER_LABELS: Record<string, string> = {
 }
 
 const RUN_STATE_STYLES: Record<RunState, string> = {
-  running: 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/30',
-  paused: 'bg-amber-50 dark:bg-[#FFC107]/10 text-amber-700 dark:text-[#FFC107] border-amber-200 dark:border-[#FFC107]/30',
-  starting: 'bg-sky-50 dark:bg-sky-500/10 text-sky-700 dark:text-sky-400 border-sky-200 dark:border-sky-500/30',
-  stopped: 'bg-slate-100 dark:bg-[#1E293B] text-[#64748B] dark:text-[#94A3B8] border-[#E2E8F0] dark:border-[#334155]',
+  running: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
+  paused: 'bg-[#FF7A00]/10 text-[#FF7A00] border-[#FF7A00]/30',
+  starting: 'bg-sky-500/10 text-sky-400 border-sky-500/30',
+  stopped: 'bg-zinc-800 text-zinc-400 border-zinc-700',
 }
 
 function formatUptime(seconds: number): string {
@@ -44,15 +45,6 @@ function formatUptime(seconds: number): string {
   const minutes = Math.floor((total % 3600) / 60)
   return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m ${total % 60}s`
 }
-
-const Tile: React.FC<{ label: string; value: string; tone?: string }> = ({ label, value, tone }) => (
-  <div className="rounded-2xl border border-zinc-800 bg-[#111114] p-3">
-    <div className="text-[10px] uppercase tracking-wider text-zinc-500">{label}</div>
-    <div className={`mt-1 text-base font-semibold tabular-nums ${tone ?? 'text-[#FF7A00]'}`}>
-      {value}
-    </div>
-  </div>
-)
 
 export const SimulatorStatusPanel: React.FC<{ simulator: SimulatorState }> = ({ simulator }) => {
   const { hasPermission } = useAuth()
@@ -73,15 +65,15 @@ export const SimulatorStatusPanel: React.FC<{ simulator: SimulatorState }> = ({ 
   const totalRate = status
     ? Object.values(status.msg_per_sec).reduce((sum, rate) => sum + rate, 0)
     : 0
+  const failed = status?.failed_total ?? 0
 
   return (
-    <div className="p-3 md:p-4 space-y-3">
+    <div className="flex flex-col gap-3">
       {offline && (
-        <div className="p-3 rounded-lg bg-[#111114] border border-[#334155] flex items-start gap-2">
-          <WifiOff className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-          <div className="text-[11px] text-[#94A3B8] font-mono">
-            <div className="text-[#F8FAFC] font-bold">No simulator is answering on /simulator</div>
-            {/* Stated plainly, because on most installs this is correct rather than broken. */}
+        <div className="flex items-start gap-2 rounded-lg border border-zinc-700 bg-[#111114] px-3 py-2">
+          <WifiOff className="mt-0.5 size-4 shrink-0 text-rose-400" />
+          <div className="font-mono text-[11px] text-zinc-400">
+            <div className="font-bold text-white">No simulator is answering on /simulator</div>
             <div className="mt-0.5">
               The simulator is optional. If one should be running, check that 99_simulator is up and
               that port 8099 is reachable. Values below are the last that were read.
@@ -91,9 +83,9 @@ export const SimulatorStatusPanel: React.FC<{ simulator: SimulatorState }> = ({ 
       )}
 
       {status?.overrides_active && (
-        <div className="p-3 rounded-lg bg-amber-50 dark:bg-[#FFC107]/10 border border-amber-200 dark:border-[#FFC107]/30 flex items-start gap-2">
-          <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-[#FFC107] shrink-0 mt-0.5" />
-          <div className="text-[11px] font-mono text-amber-800 dark:text-[#FFC107]">
+        <div className="flex items-start gap-2 rounded-lg border border-[#FF7A00]/30 bg-[#FF7A00]/10 px-3 py-2">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-[#FF7A00]" />
+          <div className="font-mono text-[11px] text-[#FF7A00]">
             <span className="font-bold">Runtime overrides are active.</span> The running plant no longer
             matches the profile files on disk, and nothing here is written back to them. A restart
             returns the simulator to <code>conf/simulator/</code>.
@@ -102,75 +94,67 @@ export const SimulatorStatusPanel: React.FC<{ simulator: SimulatorState }> = ({ 
       )}
 
       {lastError && lastError.kind === 'http' && (
-        <div className="p-2.5 rounded-lg bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 text-[11px] font-mono text-rose-700 dark:text-rose-400">
+        <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 font-mono text-[11px] text-rose-400">
           {lastError.field ? `${lastError.field}: ${lastError.message}` : lastError.message}
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <span
-          className={`px-2.5 py-1 rounded border text-[10px] font-mono font-bold uppercase tracking-wider ${RUN_STATE_STYLES[runState]}`}
-        >
-          {runState}
-        </span>
-        <span className="rounded-lg border border-zinc-800 bg-zinc-900/80 px-2.5 py-1 text-xs text-[#FF7A00]">
-          profile: {status?.profile ?? '—'}
-        </span>
-        <span className="rounded-lg border border-zinc-800 bg-zinc-900/80 px-2.5 py-1 text-xs text-[#FF7A00]">
-          seed: {status?.seed ?? '—'}
-        </span>
-
-        <div className="flex-1" />
-
-        {!canControl && (
-          <span className="px-2 py-0.5 rounded bg-[#1E293B] border border-[#334155] text-[#94A3B8] text-[9px] flex items-center gap-1">
-            <Lock className="w-3 h-3 text-rose-400" />
-            <span>Read-Only Mode</span>
-          </span>
-        )}
-
-        <div className="flex items-center gap-1.5">
-          {actions.map(({ action, label, icon: Icon, enabledIn }) => {
-            const disabled = !canControl || busy || offline || !enabledIn.includes(runState)
-            return (
-              <button
-                key={action}
-                id={`simulator-run-${action}`}
-                disabled={disabled}
-                onClick={() => void run(action)}
-                title={canControl ? label : 'Requires the Simulator Control permission'}
-                className={`px-2.5 py-1.5 rounded border font-mono text-[10px] font-bold flex items-center gap-1.5 transition-colors ${
-                  disabled
-                    ? 'bg-[#F1F5F9] dark:bg-[#1E293B] border-[#E2E8F0] dark:border-[#334155] text-[#94A3B8] cursor-not-allowed'
-                    : 'bg-amber-500 dark:bg-[#FFC107] border-amber-500 dark:border-[#FFC107] text-slate-950 dark:text-[#0B0B0C] hover:brightness-110 cursor-pointer'
-                }`}
-              >
-                <Icon className="w-3 h-3" />
-                <span>{label}</span>
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2">
-        <Tile label="Devices" value={String(status?.device_count ?? 0)} />
-        <Tile label="Signals" value={String(status?.signal_count ?? 0)} />
-        <Tile label="Msg / sec" value={totalRate.toFixed(1)} />
-        <Tile label="Published" value={(status?.published_total ?? 0).toLocaleString()} />
-        <Tile
+      <CompactKpiRow
+        actions={
+          <>
+            <span
+              className={`rounded border px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-wider ${RUN_STATE_STYLES[runState]}`}
+            >
+              {runState}
+            </span>
+            <span className="rounded-lg border border-zinc-800 bg-zinc-900/80 px-2 py-1 text-xs text-[#FF7A00]">
+              profile: {status?.profile ?? '—'}
+            </span>
+            <span className="rounded-lg border border-zinc-800 bg-zinc-900/80 px-2 py-1 text-xs text-[#FF7A00]">
+              seed: {status?.seed ?? '—'}
+            </span>
+            {!canControl && (
+              <span className="inline-flex items-center gap-1 rounded border border-zinc-700 bg-zinc-800 px-2 py-0.5 text-[9px] text-zinc-400">
+                <Lock className="size-3 text-rose-400" />
+                Read-Only
+              </span>
+            )}
+            {actions.map(({ action, label, icon: Icon, enabledIn }) => {
+              const disabled = !canControl || busy || offline || !enabledIn.includes(runState)
+              const Button = disabled ? BtnGhost : BtnPrimary
+              return (
+                <Button
+                  key={action}
+                  id={`simulator-run-${action}`}
+                  disabled={disabled}
+                  onClick={() => void run(action)}
+                  title={canControl ? label : 'Requires the Simulator Control permission'}
+                  className="px-2.5 py-1.5 text-xs"
+                >
+                  <Icon className="size-3.5" />
+                  {label}
+                </Button>
+              )
+            })}
+          </>
+        }
+      >
+        <PageStat compact label="Devices" value={status?.device_count ?? 0} icon={<Cpu className="size-3.5 text-[#FF7A00]" />} />
+        <PageStat compact label="Signals" value={status?.signal_count ?? 0} icon={<Radio className="size-3.5 text-[#FF7A00]" />} />
+        <PageStat compact label="Msg / sec" value={totalRate.toFixed(1)} icon={<Activity className="size-3.5 text-[#FF7A00]" />} />
+        <PageStat compact label="Published" value={(status?.published_total ?? 0).toLocaleString()} icon={<Activity className="size-3.5 text-zinc-400" />} iconBg="bg-zinc-800" />
+        <PageStat
+          compact
           label="Failed"
-          value={(status?.failed_total ?? 0).toLocaleString()}
-          tone={
-            (status?.failed_total ?? 0) > 0
-              ? 'text-rose-600 dark:text-rose-400'
-              : 'text-[#0F172A] dark:text-[#F8FAFC]'
-          }
+          value={failed.toLocaleString()}
+          valueClassName={failed > 0 ? 'text-rose-400' : 'text-white'}
+          icon={<XCircle className={`size-3.5 ${failed > 0 ? 'text-rose-400' : 'text-zinc-500'}`} />}
+          iconBg={failed > 0 ? 'bg-rose-500/15' : 'bg-zinc-800'}
         />
-        <Tile label="Uptime" value={formatUptime(status?.uptime_s ?? 0)} />
-      </div>
+        <PageStat compact label="Uptime" value={formatUptime(status?.uptime_s ?? 0)} icon={<Timer className="size-3.5 text-zinc-400" />} iconBg="bg-zinc-800" />
+      </CompactKpiRow>
 
-      <div className="rounded-2xl border border-zinc-800 bg-[#111114] p-3">
+      <ConsoleCard padding="sm">
         <div className="mb-2 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-zinc-500">
           <Activity className="size-3.5" />
           <span>Publish rate by cadence tier</span>
@@ -186,10 +170,10 @@ export const SimulatorStatusPanel: React.FC<{ simulator: SimulatorState }> = ({ 
             </div>
           ))}
           {Object.keys(status?.msg_per_sec ?? {}).length === 0 && (
-            <div className="text-sm text-zinc-600">Nothing is publishing.</div>
+            <div className="text-sm text-zinc-500">Nothing is publishing.</div>
           )}
         </div>
-      </div>
+      </ConsoleCard>
     </div>
   )
 }

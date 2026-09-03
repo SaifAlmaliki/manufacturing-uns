@@ -24,10 +24,10 @@ import strawberry
 from fastapi import FastAPI
 from fastapi.concurrency import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
-from strawberry.fastapi import GraphQLRouter
 from strawberry.schema.config import StrawberryConfig
 from strawberry.subscriptions import GRAPHQL_TRANSPORT_WS_PROTOCOL, GRAPHQL_WS_PROTOCOL
 
+from uns_graphql.auth.context import AuthenticatedGraphQLRouter, graphql_context
 from uns_graphql.graphql_config import PlatformConfig
 from uns_graphql.mutations.alert_rule import Mutation as AlertRuleMutation
 from uns_graphql.mutations.oee import Mutation as OeeMutation
@@ -119,8 +119,12 @@ class UNSGraphql:
         query=Query, mutation=Mutation, subscription=Subscription, config=StrawberryConfig(
             scalar_map={int: Int64}))
 
-    graphql_app = GraphQLRouter(
+    graphql_app = AuthenticatedGraphQLRouter(
         schema,
+        # Every request to /graphql resolves an identity here or is refused with 401. This is
+        # the single point that ADR-0005's "There is no authorization in this service" refers
+        # to, and the reason that sentence can now be retired.
+        context_getter=graphql_context,
         subscription_protocols=[
             GRAPHQL_TRANSPORT_WS_PROTOCOL,
             GRAPHQL_WS_PROTOCOL,

@@ -985,13 +985,20 @@ version = "0.9.38"
 source = { editable = "../00_uns_config" }
 dependencies = [
     { name = "dynaconf" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "dynaconf", specifier = "~=3.2" }]
+requires-dist = [
+    { name = "dynaconf", specifier = "~=3.2" },
+    { name = "pyyaml", specifier = ">=6.0.2,<7" },
+]
 
 [package.metadata.requires-dev]
-test = [{ name = "pytest", specifier = ">=9.0.3,<10" }]
+test = [
+    { name = "pytest", specifier = ">=9.0.3,<10" },
+    { name = "pytest-timeout", specifier = ">=2.4.0,<3" },
+]
 
 [[package]]
 name = "uns-model"

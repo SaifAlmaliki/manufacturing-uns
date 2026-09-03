@@ -15,6 +15,7 @@ import { unsGraphQLClient } from '../../services/graphql/client'
 import type { SimulatorSignal } from '../../types/simulator'
 import type { SimulatorState } from './SimulatorStatusPanel'
 import { TIER_LABELS } from './SimulatorStatusPanel'
+import { BtnSecondary, ConsoleCard, FilterToolbar } from '../ui/console-ui'
 
 /** Points kept per topic. Twenty is a shape; a hundred would be a chart nobody asked for. */
 const SPARK_POINTS = 20
@@ -26,14 +27,14 @@ const SPARK_POINTS = 20
  * does mean something.
  */
 const SIGNAL_STATUS_STYLES: Record<string, string> = {
-  Normal: 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
-  Warning: 'bg-amber-50 dark:bg-[#FFC107]/10 text-amber-700 dark:text-[#FFC107]',
-  Alarm: 'bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400',
+  Normal: 'bg-emerald-500/10 text-emerald-400',
+  Warning: 'bg-[#FF7A00]/10 text-[#FF7A00]',
+  Alarm: 'bg-rose-500/10 text-rose-400',
 }
 
 const Sparkline: React.FC<{ points: number[] }> = ({ points }) => {
   if (points.length < 2) {
-    return <span className="text-[#64748B] text-[9px]">waiting…</span>
+    return <span className="text-[9px] text-zinc-500">waiting…</span>
   }
   const min = Math.min(...points)
   const max = Math.max(...points)
@@ -48,7 +49,7 @@ const Sparkline: React.FC<{ points: number[] }> = ({ points }) => {
 
   return (
     <svg width="60" height="16" viewBox="0 0 60 16" className="overflow-visible">
-      <path d={path} fill="none" stroke="currentColor" strokeWidth="1" className="text-[#FFC107]" />
+      <path d={path} fill="none" stroke="currentColor" strokeWidth="1" className="text-[#FF7A00]" />
     </svg>
   )
 }
@@ -122,73 +123,73 @@ export const SignalInspector: React.FC<{ simulator: SimulatorState }> = ({ simul
   }, [selected])
 
   return (
-    <div className="p-3 md:p-4 space-y-3">
-      <div className="flex flex-wrap items-end gap-2">
-        <div className="min-w-[220px]">
-          <label className="text-[#94A3B8] text-[10px] block mb-1" htmlFor="simulator-signal-device">
-            DEVICE:
-          </label>
-          <select
-            id="simulator-signal-device"
-            value={selectedId}
-            onChange={(event) => setSelectedId(event.target.value)}
-            className="w-full rounded-xl border border-zinc-800 bg-zinc-900/80 px-2.5 py-1.5 text-sm text-[#FF7A00] focus:border-[#FF7A00]/50 focus:outline-none"
-          >
-            <option value="">— select a device —</option>
-            {devices.map((device) => (
-              <option key={device.id} value={device.id}>
-                {device.id} — {device.equipment} ({device.signal_count})
-              </option>
-            ))}
-          </select>
-        </div>
-        <button
-          id="simulator-refresh-signals"
-          disabled={selectedId === '' || loading}
-          onClick={() => void signals(selectedId).then(setRows)}
-          className="px-2.5 py-1.5 rounded border font-mono text-[10px] font-bold flex items-center gap-1.5 bg-[#F1F5F9] dark:bg-[#1E293B] border-[#E2E8F0] dark:border-[#334155] text-[#0F172A] dark:text-[#F8FAFC] hover:brightness-110 cursor-pointer disabled:text-[#94A3B8] disabled:cursor-not-allowed"
-        >
-          <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
-          <span>Refresh values</span>
-        </button>
-        {selected && (
-          <span className="px-2 py-0.5 rounded bg-[#F1F5F9] dark:bg-[#1E293B] text-[#64748B] dark:text-[#94A3B8] font-mono text-[10px] truncate max-w-full">
-            {selected.topic_prefix}
-          </span>
-        )}
-      </div>
+    <div className="flex flex-col gap-3">
+      <FilterToolbar
+        selects={[
+          {
+            value: selectedId,
+            onChange: setSelectedId,
+            'aria-label': 'Device',
+            options: [
+              { value: '', label: '— select a device —' },
+              ...devices.map((device) => ({
+                value: device.id,
+                label: `${device.id} — ${device.equipment} (${device.signal_count})`,
+              })),
+            ],
+          },
+        ]}
+        trailing={
+          <>
+            {selected && (
+              <span className="max-w-full truncate px-2 py-0.5 font-mono text-[10px] text-zinc-500">
+                {selected.topic_prefix}
+              </span>
+            )}
+            <BtnSecondary
+              id="simulator-refresh-signals"
+              disabled={selectedId === '' || loading}
+              onClick={() => void signals(selectedId).then(setRows)}
+              className="px-2.5 py-1.5 text-xs"
+            >
+              <RefreshCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </BtnSecondary>
+          </>
+        }
+      />
 
-      <div className="rounded-lg bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] overflow-hidden">
-        <div className="px-3 py-2 text-[10px] text-[#64748B] uppercase font-mono tracking-wider border-b border-[#E2E8F0] dark:border-[#1E293B] flex items-center gap-1.5">
-          <Gauge className="w-3.5 h-3.5" />
+      <ConsoleCard padding="none" className="overflow-hidden">
+        <div className="flex items-center gap-1.5 border-b border-zinc-800 px-3 py-2 text-[10px] uppercase tracking-wider text-zinc-500">
+          <Gauge className="size-3.5" />
           <span>Signals ({rows.length})</span>
         </div>
         <div className="max-h-[28rem] overflow-y-auto">
           <table className="w-full font-mono text-[11px]">
-            <thead className="text-[#64748B] dark:text-[#94A3B8] text-[9px] uppercase">
-              <tr className="border-b border-[#E2E8F0] dark:border-[#1E293B]">
-                <th className="text-left px-3 py-1.5">Signal</th>
-                <th className="text-left px-3 py-1.5">Unit of Measure</th>
-                <th className="text-left px-3 py-1.5">Tier</th>
-                <th className="text-right px-3 py-1.5">Value</th>
-                <th className="text-left px-3 py-1.5">Status</th>
-                <th className="text-left px-3 py-1.5">Live</th>
+            <thead className="text-[9px] uppercase text-zinc-500">
+              <tr className="border-b border-zinc-800">
+                <th className="px-3 py-1.5 text-left">Signal</th>
+                <th className="px-3 py-1.5 text-left">Unit of Measure</th>
+                <th className="px-3 py-1.5 text-left">Tier</th>
+                <th className="px-3 py-1.5 text-right">Value</th>
+                <th className="px-3 py-1.5 text-left">Status</th>
+                <th className="px-3 py-1.5 text-left">Live</th>
               </tr>
             </thead>
-            <tbody className="text-[#0F172A] dark:text-[#F8FAFC]">
+            <tbody className="text-white">
               {rows.map((signal) => (
-                <tr key={signal.topic} className="border-b border-[#E2E8F0]/60 dark:border-[#1E293B]/60">
+                <tr key={signal.topic} className="border-b border-zinc-800/60">
                   <td className="px-3 py-1.5" title={signal.topic}>
                     {signal.name}
                   </td>
-                  <td className="px-3 py-1.5 text-[#64748B] dark:text-[#94A3B8]">{signal.unit || '—'}</td>
-                  <td className="px-3 py-1.5 text-[#64748B] dark:text-[#94A3B8]">
+                  <td className="px-3 py-1.5 text-zinc-400">{signal.unit || '—'}</td>
+                  <td className="px-3 py-1.5 text-zinc-400">
                     {TIER_LABELS[signal.tier] ?? signal.tier}
                   </td>
                   <td className="px-3 py-1.5 text-right tabular-nums">{formatValue(signal.value)}</td>
                   <td className="px-3 py-1.5">
                     <span
-                      className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${SIGNAL_STATUS_STYLES[signal.status] ?? SIGNAL_STATUS_STYLES.Normal}`}
+                      className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${SIGNAL_STATUS_STYLES[signal.status] ?? SIGNAL_STATUS_STYLES.Normal}`}
                     >
                       {signal.status}
                     </span>
@@ -200,7 +201,7 @@ export const SignalInspector: React.FC<{ simulator: SimulatorState }> = ({ simul
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-3 py-4 text-center text-[#64748B]">
+                  <td colSpan={6} className="px-3 py-4 text-center text-zinc-500">
                     {selectedId === '' ? 'Select a device.' : 'This device publishes no signals.'}
                   </td>
                 </tr>
@@ -208,7 +209,7 @@ export const SignalInspector: React.FC<{ simulator: SimulatorState }> = ({ simul
             </tbody>
           </table>
         </div>
-      </div>
+      </ConsoleCard>
     </div>
   )
 }
