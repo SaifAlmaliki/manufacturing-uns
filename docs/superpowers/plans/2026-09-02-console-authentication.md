@@ -983,7 +983,7 @@ Run: `cd 00_uns_config && uv run pytest test/test_platform_auth.py -q`
 
 Expected: PASS, six tests.
 
-- [ ] **Step 6: Write the failing TypeScript test**
+- [x] **Step 6: Write the failing TypeScript test**
 
 Create `11_frontend/src/lib/platform/settings-auth.test.ts`. It tests the build-time loader,
 which lives outside `src/` — imported by relative path, which works because
@@ -1023,14 +1023,14 @@ describe('platformSettingsFromConfig auth values', () => {
 })
 ```
 
-- [ ] **Step 7: Run it and watch it fail**
+- [x] **Step 7: Run it and watch it fail**
 
 Run: `cd 11_frontend && npx vitest run src/lib/platform/settings-auth.test.ts`
 
 Expected: FAIL — `authRealm` and the other three are `undefined`, and TypeScript reports four
 properties that do not exist on `PlatformSettings`.
 
-- [ ] **Step 8: Add the four keys to both platform config modules**
+- [x] **Step 8: Add the four keys to both platform config modules**
 
 In `11_frontend/platform/settings.ts`, add to the `PlatformSettings` type after
 `grafanaProxyTarget`:
@@ -1066,7 +1066,7 @@ Mirror the four keys in `11_frontend/src/lib/platform/config.ts`'s `PlatformSett
 file declares the type a second time for the browser — the two must agree or `platformConfig`
 lies about its own shape at compile time while the `define` block supplies the real object.
 
-- [ ] **Step 9: Run the frontend checks**
+- [x] **Step 9: Run the frontend checks**
 
 ```bash
 cd 11_frontend
@@ -3417,7 +3417,7 @@ Two facts shape this task, and both come from decisions already made:
 - Task 8 consumes `authClient` and `Session`. Task 9 consumes `accessToken` and `refresh`.
   Task 10 consumes `featureAllowed`.
 
-- [ ] **Step 1: Add the dependency and confirm what it exports**
+- [x] **Step 1: Add the dependency and confirm what it exports**
 
 ```bash
 cd 11_frontend
@@ -3434,7 +3434,7 @@ anything; do not substitute `sessionStorage` for the user store, because that de
 `oidc-client-ts` is chosen over `react-oidc-context` deliberately: the React binding would
 duplicate `AuthContext`, which Task 8 keeps because a dozen components consume its shape.
 
-- [ ] **Step 2: Write the failing roles test**
+- [x] **Step 2: Write the failing roles test**
 
 Create `11_frontend/src/lib/auth/roles.test.ts`:
 
@@ -3518,7 +3518,7 @@ The `featureAllowed(['viewer','engineer'], 'settings_edit')` assertion compares 
 `settings_edit` is not one, pick one that is. Asserting a value copied out of `ROLE_CONFIGS`
 would just restate the table.
 
-- [ ] **Step 3: Write `roles.ts`**
+- [x] **Step 3: Write `roles.ts`**
 
 Create `11_frontend/src/lib/auth/roles.ts`:
 
@@ -3579,7 +3579,7 @@ export function featureAllowed(roles: UserRole[], feature: FeatureKey): boolean 
 }
 ```
 
-- [ ] **Step 4: Retire the duplicate role set in the alarms mapper**
+- [x] **Step 4: Retire the duplicate role set in the alarms mapper**
 
 `src/lib/alarms/map-alert-rules.ts:46` declares its own `ROLES` set and `:52`–`:56` its own
 private `toUserRole`, with the comment this module's docstring now quotes. Delete both and
@@ -3599,7 +3599,7 @@ cd 11_frontend && npx vitest run src/lib/alarms && npx tsc --noEmit
 Expected: the existing alarms tests still pass. If `map-alert-rules.ts` has no test yet, the
 surfaces plan adds one; either way `tsc` catches the import.
 
-- [ ] **Step 5: Write the failing oidc test**
+- [x] **Step 5: Write the failing oidc test**
 
 Create `11_frontend/src/lib/auth/oidc.test.ts`. It drives the module through a fake
 `UserManager`, because the real one navigates the browser:
@@ -3767,13 +3767,13 @@ describe('onSession', () => {
 });
 ```
 
-- [ ] **Step 6: Run it and watch it fail**
+- [x] **Step 6: Run it and watch it fail**
 
 Run: `cd 11_frontend && npx vitest run src/lib/auth`
 
 Expected: `roles.test.ts` passes from Step 3; `oidc.test.ts` fails to resolve `./oidc`.
 
-- [ ] **Step 7: Write `oidc.ts`**
+- [x] **Step 7: Write `oidc.ts`**
 
 Create `11_frontend/src/lib/auth/oidc.ts`:
 
@@ -3975,7 +3975,7 @@ so a slow network cannot leave a signed-out console holding a usable token. And
 `oidc-client-ts` throws when there is no state to match, which would otherwise break every page
 refresh.
 
-- [ ] **Step 8: Run the tests**
+- [x] **Step 8: Run the tests**
 
 ```bash
 cd 11_frontend

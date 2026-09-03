@@ -95,3 +95,25 @@ def test_grafana_is_no_longer_anonymous():
     assert env["GF_AUTH_GENERIC_OAUTH_ENABLED"] == "true"
     # Removing anonymity without keeping embedding on breaks all three console embeds.
     assert env["GF_SECURITY_ALLOW_EMBEDDING"] == "true"
+
+
+def test_the_admin_role_can_read_the_user_directory(realm: dict):
+    """
+    The console lists realm members with the signed-in admin's own token. Without this
+    composite the directory screen can only ever show its cannot-reach-the-realm state.
+    """
+    admin = next(role for role in realm["roles"]["realm"] if role["name"] == "admin")
+    assert admin["composite"] is True
+    granted = admin["composites"]["client"]["realm-management"]
+    assert "view-users" in granted
+
+
+def test_no_role_in_this_realm_can_manage_users(realm: dict):
+    """
+    Reading the directory is the whole feature. A browser token that could create realm
+    users would be a far larger thing to leak, and this console never needs it.
+    """
+    for role in realm["roles"]["realm"]:
+        granted = role.get("composites", {}).get("client", {}).get("realm-management", [])
+        assert "manage-users" not in granted, role["name"]
+        assert "realm-admin" not in granted, role["name"]

@@ -16,6 +16,7 @@ import type {
   AlertRule,
 } from '../../types/alarm'
 import type { UserRole } from '../../types/rbac'
+import { toUserRole } from '../auth/roles'
 import type { GraphqlAlertRule } from '../../services/graphql/types'
 
 const SEVERITIES = new Set<string>(['CRITICAL', 'HIGH', 'WARNING', 'INFO'])
@@ -43,17 +44,9 @@ const CONDITIONS = new Set<string>([
   'CONTAINS',
 ])
 
-const ROLES = new Set<string>(['admin', 'engineer', 'operator', 'auditor', 'viewer'])
-
-/**
- * The console's role names are lower case, the GraphQL enum members are not.
- * Anything unrecognised is dropped rather than guessed: notifying the wrong role is
- * worse than notifying nobody, and the schema is the authority on what exists.
- */
-function toUserRole(role: string | null | undefined): UserRole | undefined {
-  const candidate = String(role ?? '').toLowerCase()
-  return ROLES.has(candidate) ? (candidate as UserRole) : undefined
-}
+// toUserRole lives in lib/auth/roles.ts — one copy of the five, shared with the realm
+// sign-in. It drops anything unrecognised: notifying the wrong role is worse than
+// notifying nobody, and the schema is the authority on what exists.
 
 function toConsoleRole(role: UserRole): string {
   return role.toUpperCase()

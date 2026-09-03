@@ -12,6 +12,10 @@ export type PlatformSettings = {
   simulatorApiPort: number
   simulatorProxyTarget: string
   grafanaProxyTarget: string
+  authRealm: string
+  authBaseUrl: string
+  authIssuer: string
+  authClientId: string
 }
 
 declare const __UNS_PLATFORM_CONFIG__: PlatformSettings

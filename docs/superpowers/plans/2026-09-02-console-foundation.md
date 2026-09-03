@@ -73,14 +73,14 @@
 - Consumes: nothing.
 - Produces: `npm test` and `npm run test:run`. A jsdom environment where `__UNS_PLATFORM_CONFIG__` is defined. A setup file that fails any test which reaches for the network.
 
-- [ ] **Step 1: Install the tooling**
+- [x] **Step 1: Install the tooling**
 
 ```bash
 cd 11_frontend
 npm install -D vitest@^3 jsdom@^26 @testing-library/react@^16 @testing-library/dom@^10 @testing-library/user-event@^14 @testing-library/jest-dom@^6
 ```
 
-- [ ] **Step 2: Add the scripts**
+- [x] **Step 2: Add the scripts**
 
 In `11_frontend/package.json`, add to `"scripts"`:
 
@@ -89,7 +89,7 @@ In `11_frontend/package.json`, add to `"scripts"`:
     "test:run": "vitest run"
 ```
 
-- [ ] **Step 3: Write the Vitest config**
+- [x] **Step 3: Write the Vitest config**
 
 Create `11_frontend/vitest.config.ts`. The `define` block must match `vite.config.ts:12`–`:14`, or `src/lib/platform/config.ts:18` throws on `__UNS_PLATFORM_CONFIG__` being undefined in every test that imports it.
 
@@ -124,7 +124,7 @@ export default defineConfig({
 
 Note: `tailwindcss()` is deliberately omitted. Tests assert behaviour and text, never computed styles, and the Tailwind plugin costs startup time for nothing.
 
-- [ ] **Step 4: Write the setup file**
+- [x] **Step 4: Write the setup file**
 
 Create `11_frontend/src/test/setup.ts`. The network guard is the point: the spec forbids a live broker or live GraphQL in frontend tests, and a guard enforces that far more reliably than a review habit.
 
@@ -161,7 +161,7 @@ afterEach(() => {
 })
 ```
 
-- [ ] **Step 5: Write the failing smoke test**
+- [x] **Step 5: Write the failing smoke test**
 
 Create `11_frontend/src/lib/platform/config.test.ts`. This proves the `define` plumbing works, which is the thing most likely to be wrong.
 
@@ -180,12 +180,12 @@ describe('platformConfig', () => {
 })
 ```
 
-- [ ] **Step 6: Run it**
+- [x] **Step 6: Run it**
 
 Run: `cd 11_frontend && npm run test:run`
 Expected: PASS, 2 tests. If `__UNS_PLATFORM_CONFIG__` is undefined, Step 3's `define` block does not match `vite.config.ts`.
 
-- [ ] **Step 7: Verify the network guard bites**
+- [x] **Step 7: Verify the network guard bites**
 
 Add temporarily to `config.test.ts`, run, confirm it fails with the guard's message, then delete it:
 
@@ -197,7 +197,7 @@ Add temporarily to `config.test.ts`, run, confirm it fails with the guard's mess
 
 Expected: FAIL with "Unstubbed fetch in a test". Delete the test.
 
-- [ ] **Step 8: Confirm typecheck still passes**
+- [x] **Step 8: Confirm typecheck still passes**
 
 Run: `cd 11_frontend && npm run lint`
 Expected: clean. `npm run lint` is `tsc --noEmit`.

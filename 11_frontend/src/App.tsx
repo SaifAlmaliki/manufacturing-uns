@@ -4,7 +4,7 @@
  * route — directly with 99_simulator's control API. See docs/adr/0007.
  * Modern Multi-Route Architecture:
  * - Public Landing Page (/) with generated industrial hero image & feature highlights
- * - Public Login Portal (/login) with 1-click RBAC role switching & enterprise auth
+ * - Public Login Portal (/login) — one button that redirects to the Keycloak realm
  * - Protected Console Platform (/tree, /alerts, /historian, etc.)
  */
 
@@ -36,8 +36,15 @@ import { UserManagementView } from './components/users/UserManagementView';
  * If user has not authenticated, routes to the Enterprise Login Portal.
  */
 const ProtectedConsoleLayout: React.FC = () => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isReady } = useAuth();
   const location = useLocation();
+
+  // Until the first sign-in check settles, identity is unknown: a refresh on a deep link
+  // would otherwise bounce a signed-in user to the landing page before the silent renew
+  // against the realm has finished.
+  if (!isReady) {
+    return null;
+  }
 
   if (!isAuthenticated) {
     return <Navigate to="/login" state={{ from: location }} replace />;

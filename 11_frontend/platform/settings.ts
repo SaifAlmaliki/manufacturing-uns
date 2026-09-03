@@ -17,6 +17,10 @@ export type PlatformSettings = {
   simulatorApiPort: number
   simulatorProxyTarget: string
   grafanaProxyTarget: string
+  authRealm: string
+  authBaseUrl: string
+  authIssuer: string
+  authClientId: string
 }
 
 const platformDir = dirname(fileURLToPath(import.meta.url))
@@ -46,6 +50,10 @@ export function platformSettingsFromConfig(
   const graphqlPort = Number(urls.graphql_port ?? 8000)
   const graphqlPath = String(urls.graphql_path ?? '/graphql')
 
+  const auth = (defaults.auth ?? {}) as Record<string, unknown>
+  const authRealm = String(auth.realm ?? 'uns')
+  const authBaseUrl = String(auth.base_url ?? 'http://localhost:8088/auth')
+
   return {
     instanceName: String(platform.instance_name ?? 'default'),
     organizationName: String(platform.organization_name ?? ''),
@@ -60,6 +68,12 @@ export function platformSettingsFromConfig(
     simulatorApiPort,
     simulatorProxyTarget: `http://${simulatorHost}:${simulatorApiPort}`,
     grafanaProxyTarget: String(urls.grafana_proxy_target ?? 'http://localhost:3000'),
+    authRealm,
+    authBaseUrl,
+    // Absolute, not a relative path: OIDC discovery hands the browser absolute URLs and the
+    // realm mints them from KC_HOSTNAME, so a dev session on 5173 uses this same authority.
+    authIssuer: String(auth.issuer ?? `${authBaseUrl}/realms/${authRealm}`),
+    authClientId: String(auth.console_client_id ?? 'uns-console'),
   }
 }
 

@@ -9,7 +9,16 @@
   "ssoSessionIdleTimeout": 3600,
   "roles": {
     "realm": [
-      { "name": "admin", "description": "Configure the platform and administer users" },
+      {
+        "name": "admin",
+        "description": "Console administrator. Composite so that an admin's token can read the realm's user directory.",
+        "composite": true,
+        "composites": {
+          "client": {
+            "realm-management": ["view-users", "view-realm"]
+          }
+        }
+      },
       { "name": "engineer", "description": "Author Alert Rules and correct downtime reasons" },
       { "name": "operator", "description": "Run the plant view, silence and acknowledge alarms" },
       { "name": "auditor", "description": "Read everything, change nothing" },
