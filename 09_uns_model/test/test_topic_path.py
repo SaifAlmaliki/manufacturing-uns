@@ -77,6 +77,17 @@ def test_match_of_an_unmodelled_topic_is_none():
     assert match_asset_path("Other/Plant/Sensor", {"ManufacturingCo/PlantA"}) is None
 
 
+def test_a_topic_still_matches_a_remaining_enterprise_after_its_site_is_gone():
+    """Deleting a Site does not make the topic Unmodelled while the Enterprise remains."""
+    topic = "PyTestUNS/Plant1/Area1/Line1/Cell1/Mixer1/ProcessValue/Temperature"
+
+    match = match_asset_path(topic, {"PyTestUNS"})
+
+    assert match is not None
+    assert match.asset_path == "PyTestUNS"
+    assert match.metric_path == "Plant1/Area1/Line1/Cell1/Mixer1/ProcessValue/Temperature"
+
+
 def test_match_is_case_sensitive_because_mqtt_topics_are():
     assert match_asset_path("planta/Line1", {"PlantA"}) is None
     assert match_asset_path("PlantA/Line1", {"PlantA"}) is not None

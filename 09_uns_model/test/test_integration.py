@@ -611,7 +611,7 @@ async def test_the_console_can_ask_what_changed_and_how_much_is_armed(alert_rule
 
 @pytest.mark.integrationtest
 @pytest.mark.asyncio(loop_scope="session")
-async def test_deleting_a_site_removes_its_branch_and_unbinds_its_topics(
+async def test_deleting_a_site_removes_its_branch_and_rebinds_its_topics(
     repository: AssetModelRepository,
     database: Database,
 ):
@@ -623,8 +623,16 @@ async def test_deleting_a_site_removes_its_branch_and_unbinds_its_topics(
 
     assert removed == 1
     assert await repository.list_assets(under=f"{TEST_ROOT}/Plant1") == []
-    # The binding survives with no Asset rather than taking the measurement with it,
-    # which is exactly what makes it an Unmodelled Topic again.
+    # Bindings are derived (ADR-0003): with the Site gone, longest-prefix
+    # re-resolves to the remaining Enterprise rather than leaving the topic
+    # Unmodelled while an ancestor still matches.
+    binding = await _binding(database, topic)
+    assert binding["asset_path"] == TEST_ROOT
+    assert binding["metric_path"] == "Plant1/Area1/Line1/Cell1/Mixer1/ProcessValue/Temperature"
+
+    await repository.delete_asset(TEST_ROOT)
+    # The binding row survives with no Asset rather than taking the measurement
+    # with it, which is exactly what makes it an Unmodelled Topic again.
     assert (await _binding(database, topic))["asset_path"] is None
 
 
