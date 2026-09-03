@@ -15,7 +15,7 @@ import { AlarmAuditEntry, AlarmSeverity } from '../../types/alarm';
 import { ROLE_CONFIGS, UserRole } from '../../types/rbac';
 
 export const AlarmAuditLog: React.FC = () => {
-  const { auditLog } = useAlarms();
+  const { auditLog, isPlatformLive, rulesError } = useAlarms();
   const [searchQuery, setSearchQuery] = useState('');
   const [actionFilter, setActionFilter] = useState('ALL');
   const [severityFilter, setSeverityFilter] = useState('ALL');
@@ -139,6 +139,23 @@ export const AlarmAuditLog: React.FC = () => {
 
       {/* Audit Log Table */}
       <div className="bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] rounded-xl overflow-hidden shadow-sm dark:shadow-lg">
+        {!isPlatformLive ? (
+          <div className="p-12 text-center space-y-2">
+            <AlertTriangle className="w-10 h-10 text-rose-500 dark:text-rose-400 mx-auto opacity-80" />
+            <p className="text-sm font-semibold text-rose-900 dark:text-rose-200">Platform offline</p>
+            <p className="text-xs text-rose-800/90 dark:text-rose-300/80 max-w-md mx-auto text-pretty font-mono">
+              {rulesError ?? 'Audit entries are recorded only while the platform is connected.'}
+            </p>
+          </div>
+        ) : filteredLogs.length === 0 ? (
+          <div className="p-12 text-center space-y-2">
+            <FileText className="w-10 h-10 text-[#64748B] mx-auto opacity-50" />
+            <p className="text-sm font-semibold text-[#0F172A] dark:text-[#F8FAFC]">No audit entries yet</p>
+            <p className="text-xs text-[#64748B] dark:text-[#94A3B8] max-w-md mx-auto text-pretty">
+              Rule changes and live alarm lifecycle events will appear here.
+            </p>
+          </div>
+        ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
@@ -198,6 +215,7 @@ export const AlarmAuditLog: React.FC = () => {
             </tbody>
           </table>
         </div>
+        )}
       </div>
     </div>
   );

@@ -111,7 +111,7 @@ function formatTime(iso: string): string {
 export const DashboardView: React.FC = () => {
   const navigate = useNavigate();
   const { allLoadedNodes, staleNodesCount, mqttFeed, health, settings, bookmarks } = useUNS();
-  const { myUnacknowledgedCount, totalUnacknowledgedCount, activeAlarms, rules, criticalAlarmsCount } = useAlarms();
+  const { myUnacknowledgedCount, totalUnacknowledgedCount, activeAlarms, rules, criticalAlarmsCount, isPlatformLive } = useAlarms();
 
   const activeNodes = allLoadedNodes.length - staleNodesCount;
   const messageBuckets = useMemo(() => bucketMessagesByMinute(mqttFeed), [mqttFeed]);
@@ -174,13 +174,21 @@ export const DashboardView: React.FC = () => {
           />
           <StatCard
             label="Open Alarms"
-            value={totalUnacknowledgedCount}
+            value={isPlatformLive ? totalUnacknowledgedCount : '—'}
             trend={{
-              direction: totalUnacknowledgedCount > 0 ? 'down' : 'up',
-              label: criticalAlarmsCount > 0 ? `${criticalAlarmsCount} critical` : 'All clear',
+              direction: !isPlatformLive ? 'neutral' : totalUnacknowledgedCount > 0 ? 'down' : 'up',
+              label: !isPlatformLive
+                ? 'Platform offline'
+                : criticalAlarmsCount > 0
+                  ? `${criticalAlarmsCount} critical`
+                  : 'All clear',
             }}
             sparkColor="#ef4444"
-            sparkPoints={[totalUnacknowledgedCount, myUnacknowledgedCount, criticalAlarmsCount, 0, 0, 0, 0, 0, 0, 0, 0, 0]}
+            sparkPoints={
+              isPlatformLive
+                ? [totalUnacknowledgedCount, myUnacknowledgedCount, criticalAlarmsCount, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+                : [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+            }
             icon={<Bell className="size-5 text-red-400" />}
             iconBg="bg-red-500/15"
             onClick={() => navigate('/alerts')}

@@ -2,10 +2,9 @@
  * Alarm & Alert Rule Management Context
  * Real-time threshold evaluation, role-targeted triggers, audio alerts, and audit logging.
  *
- * Alert Rules are plant configuration and live in Postgres (`console.alert_rules`),
- * reached over GraphQL (ADR-0005). The console shows only platform data — no demo
- * seed when the backend is offline. Active alarms and the audit trail are still
- * browser-local; evaluation happens here, and moving it to a service is separate work.
+ * Alert Rules live in Postgres (`console.alert_rules`) via GraphQL. Active incidents
+ * are raised only from live MQTT evaluation while the platform is online. No demo seed,
+ * simulated triggers, or browser-persisted fake alarms.
  */
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
@@ -23,12 +22,16 @@ import { useAuth } from './AuthContext';
 import { useUNS } from './UNSContext';
 
 const STORAGE_KEYS = {
-  /** v2: prior v1 often held demo seed rules; server is the source of truth now. */
-  RULES: 'uns_alert_rules_v2',
-  ACTIVE_ALARMS: 'uns_active_alarms_v1',
-  ALARM_AUDIT: 'uns_alarm_audit_v1',
   AUDIO_MUTED: 'uns_alarm_audio_muted',
 };
+
+/** Legacy keys from demo-seed builds — removed on mount so stale fake alarms never reappear. */
+const LEGACY_STORAGE_KEYS = [
+  'uns_alert_rules_v1',
+  'uns_alert_rules_v2',
+  'uns_active_alarms_v1',
+  'uns_alarm_audit_v1',
+] as const;
 
 /**
  * Where the rules on screen came from.
@@ -38,178 +41,6 @@ const STORAGE_KEYS = {
  * not warn the next shift.
  */
 export type AlertRuleOrigin = 'SERVER' | 'BROWSER';
-
-/** Demo rules for explicit "restore defaults" only — never shown when the platform is unreachable. */
-export const DEMO_ALERT_RULES: AlertRule[] = [
-  {
-    id: 'rule-temp-01',
-    name: 'Reactor 01 Core Temp High-High',
-    description: 'Triggers when Dormagen Polyurethane Reactor 01 core vessel temperature exceeds maximum safe run envelope of 85°C.',
-    enabled: true,
-    severity: 'CRITICAL',
-    category: 'TEMPERATURE',
-    topic: 'CovestroAG/Dormagen/Polyurethane/Reactor_01/temperature',
-    metricField: 'temp_celsius',
-    condition: 'GREATER_THAN',
-    thresholdValue: 85,
-    unit: '°C',
-    delaySeconds: 0,
-    targetRoles: ['operator', 'engineer', 'admin'],
-    escalationRole: 'admin',
-    escalationTimeoutMinutes: 5,
-    autoResolveOnNormal: true,
-    actions: {
-      inAppNotification: true,
-      audioChime: true,
-      mqttPublishOnTrigger: true,
-      mqttAlarmTopic: 'alarms/Dormagen/Reactor_01/high_temp',
-      emailWebhook: true,
-      webhookUrl: 'https://ops-webhook.covestro.internal/alerts/reactor1',
-    },
-    triggerCount: 8,
-    lastTriggeredAt: new Date(Date.now() - 1000 * 60 * 18).toISOString(),
-    createdAt: '2026-01-20T08:00:00.000Z',
-    updatedAt: '2026-08-20T12:00:00.000Z',
-  },
-  {
-    id: 'rule-press-02',
-    name: 'Extrusion Line 2 Pressure Relief Trip',
-    description: 'Monitors hydraulic melt accumulator pressure on Line 2. Immediate trip threshold at 135 bar.',
-    enabled: true,
-    severity: 'HIGH',
-    category: 'PRESSURE',
-    topic: 'CovestroAG/Krefeld_Uerdingen/Polycarbonates/Extrusion_Line_02/pressure',
-    metricField: 'pressure_bar',
-    condition: 'GREATER_THAN',
-    thresholdValue: 135,
-    unit: 'bar',
-    delaySeconds: 2,
-    targetRoles: ['operator', 'engineer'],
-    escalationRole: 'admin',
-    escalationTimeoutMinutes: 10,
-    autoResolveOnNormal: true,
-    actions: {
-      inAppNotification: true,
-      audioChime: true,
-      mqttPublishOnTrigger: true,
-      mqttAlarmTopic: 'alarms/Krefeld/Extruder_02/overpressure',
-      emailWebhook: false,
-    },
-    triggerCount: 3,
-    lastTriggeredAt: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
-    createdAt: '2026-02-15T09:30:00.000Z',
-    updatedAt: '2026-07-10T14:20:00.000Z',
-  },
-  {
-    id: 'rule-vib-03',
-    name: 'MDI Distillation Pump Vibration RMS',
-    description: 'Bearing wear indicator on primary charge pump. Warning when RMS vibration exceeds 4.5 mm/s.',
-    enabled: true,
-    severity: 'WARNING',
-    category: 'VIBRATION',
-    topic: 'CovestroAG/Leverkusen/MDI/Distillation_Column/vibration',
-    metricField: 'vibration_rms',
-    condition: 'GREATER_THAN',
-    thresholdValue: 4.5,
-    unit: 'mm/s',
-    delaySeconds: 5,
-    targetRoles: ['engineer', 'admin'],
-    escalationRole: 'admin',
-    escalationTimeoutMinutes: 15,
-    autoResolveOnNormal: true,
-    actions: {
-      inAppNotification: true,
-      audioChime: false,
-      mqttPublishOnTrigger: false,
-      emailWebhook: true,
-    },
-    triggerCount: 12,
-    lastTriggeredAt: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
-    createdAt: '2026-03-01T11:00:00.000Z',
-    updatedAt: '2026-08-01T16:45:00.000Z',
-  },
-  {
-    id: 'rule-flow-04',
-    name: 'Antwerp Curing Oven Scrubber Flow Low',
-    description: 'Exhaust gas scrubber intake must maintain above 140 m³/h to satisfy environmental compliance specs.',
-    enabled: true,
-    severity: 'HIGH',
-    category: 'FLOW_RATE',
-    topic: 'CovestroAG/Antwerp/Elastomers/Curing_Oven/flow',
-    metricField: 'flow_rate',
-    condition: 'LESS_THAN',
-    thresholdValue: 140,
-    unit: 'm³/h',
-    delaySeconds: 3,
-    targetRoles: ['operator', 'engineer', 'auditor'],
-    escalationRole: 'admin',
-    escalationTimeoutMinutes: 10,
-    autoResolveOnNormal: true,
-    actions: {
-      inAppNotification: true,
-      audioChime: true,
-      mqttPublishOnTrigger: true,
-      emailWebhook: true,
-    },
-    triggerCount: 2,
-    lastTriggeredAt: new Date(Date.now() - 1000 * 60 * 95).toISOString(),
-    createdAt: '2026-04-10T14:15:00.000Z',
-    updatedAt: '2026-08-15T10:00:00.000Z',
-  },
-  {
-    id: 'rule-spark-05',
-    name: 'Sparkplug B Edge Node Death Notice (NDEATH)',
-    description: 'Instant alert when an edge gateway transmits an NDEATH payload or drops MQTT connection.',
-    enabled: true,
-    severity: 'CRITICAL',
-    category: 'NODE_OFFLINE',
-    topic: 'spBv1.0/CovestroAG/NDEATH/#',
-    metricField: 'online',
-    condition: 'EQUALS',
-    thresholdValue: false,
-    delaySeconds: 0,
-    targetRoles: ['operator', 'engineer', 'admin'],
-    escalationRole: 'admin',
-    escalationTimeoutMinutes: 3,
-    autoResolveOnNormal: false,
-    actions: {
-      inAppNotification: true,
-      audioChime: true,
-      mqttPublishOnTrigger: true,
-      emailWebhook: true,
-    },
-    triggerCount: 4,
-    lastTriggeredAt: new Date(Date.now() - 1000 * 60 * 6).toISOString(),
-    createdAt: '2026-05-01T08:00:00.000Z',
-    updatedAt: '2026-08-25T11:15:00.000Z',
-  },
-  {
-    id: 'rule-stale-06',
-    name: 'Global UNS Telemetry Stale Timeout',
-    description: 'Detects any leaf sensor node that has ceased publishing updates for greater than 5 minutes.',
-    enabled: true,
-    severity: 'WARNING',
-    category: 'STALE_TIMEOUT',
-    topic: '*',
-    metricField: 'isStale',
-    condition: 'EQUALS',
-    thresholdValue: true,
-    targetRoles: ['engineer', 'admin', 'auditor'],
-    escalationRole: 'admin',
-    escalationTimeoutMinutes: 30,
-    autoResolveOnNormal: true,
-    actions: {
-      inAppNotification: true,
-      audioChime: false,
-      mqttPublishOnTrigger: false,
-      emailWebhook: false,
-    },
-    triggerCount: 19,
-    lastTriggeredAt: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-    createdAt: '2026-05-15T10:00:00.000Z',
-    updatedAt: '2026-08-28T09:00:00.000Z',
-  },
-];
 
 interface AlarmContextType {
   rules: AlertRule[];
@@ -223,6 +54,8 @@ interface AlarmContextType {
   rulesLoading: boolean;
   /** True when GraphQL returned rules from Postgres — CRUD is allowed. */
   canPersistRules: boolean;
+  /** True when the platform is reachable; incidents only evaluate against live MQTT then. */
+  isPlatformLive: boolean;
   refreshRules: () => Promise<void>;
 
   // Computed role-specific counts & filters
@@ -236,7 +69,6 @@ interface AlarmContextType {
   updateRule: (ruleId: string, updates: Partial<AlertRule>) => Promise<void>;
   deleteRule: (ruleId: string) => void;
   toggleRuleEnabled: (ruleId: string, enabled: boolean) => void;
-  testTriggerRule: (ruleId: string) => void;
   
   // Alarm Lifecycle Operations
   acknowledgeAlarm: (alarmId: string, notes?: string) => void;
@@ -245,14 +77,24 @@ interface AlarmContextType {
   toggleAudioMute: () => void;
   playAlarmChime: (severity: AlarmSeverity) => void;
   clearResolvedAlarms: () => void;
-  restoreDefaultRules: () => void;
 }
 
 const AlarmContext = createContext<AlarmContextType | null>(null);
 
 export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { currentUser } = useAuth();
-  const { mqttFeed } = useUNS();
+  const { mqttFeed, health } = useUNS();
+
+  // Drop any demo-seed data left in the browser from earlier builds.
+  useEffect(() => {
+    try {
+      for (const key of LEGACY_STORAGE_KEYS) {
+        localStorage.removeItem(key);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
 
   // Rules come from Postgres via GraphQL. No demo seed — empty until the platform responds.
   const [rules, setRules] = useState<AlertRule[]>([]);
@@ -267,31 +109,8 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     rulesRef.current = rules;
   }, [rules]);
 
-  const [activeAlarms, setActiveAlarms] = useState<ActiveAlarm[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.ACTIVE_ALARMS);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch {
-      // ignore
-    }
-    return [];
-  });
-
-  const [auditLog, setAuditLog] = useState<AlarmAuditEntry[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.ALARM_AUDIT);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch {
-      // ignore
-    }
-    return [];
-  });
+  const [activeAlarms, setActiveAlarms] = useState<ActiveAlarm[]>([]);
+  const [auditLog, setAuditLog] = useState<AlarmAuditEntry[]>([]);
 
   const [isMuted, setIsMuted] = useState<boolean>(() => {
     try {
@@ -302,12 +121,7 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
 
   /**
-   * Load the rules the platform holds, and hand over this browser's rules if it holds none.
-   *
-   * The import is the migration path off localStorage: rules authored before the
-   * server could store them would otherwise stay invisible to everybody else. It
-   * only runs when the server has no rules at all, so it cannot resurrect a rule
-   * somebody deliberately deleted elsewhere.
+   * Load alert rules from Postgres via GraphQL.
    */
   const refreshRules = useCallback(async () => {
     setRulesLoading(true);
@@ -335,30 +149,16 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     void refreshRules();
   }, [refreshRules]);
 
-  // Persistent storage effects. The rules are cached rather than owned here: see refreshRules.
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEYS.RULES, JSON.stringify(rules));
-    } catch {
-      // ignore
-    }
-  }, [rules]);
+  const isPlatformLive = health.graphqlHttp && rulesOrigin === 'SERVER';
+  const canPersistRules = isPlatformLive && !rulesLoading;
 
+  // Incidents are live MQTT evaluations only — clear them when the platform drops offline.
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEYS.ACTIVE_ALARMS, JSON.stringify(activeAlarms));
-    } catch {
-      // ignore
+    if (!isPlatformLive) {
+      setActiveAlarms([]);
+      setAuditLog([]);
     }
-  }, [activeAlarms]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEYS.ALARM_AUDIT, JSON.stringify(auditLog));
-    } catch {
-      // ignore
-    }
-  }, [auditLog]);
+  }, [isPlatformLive]);
 
   useEffect(() => {
     try {
@@ -533,8 +333,9 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  // Evaluate incoming MQTT payloads against enabled rules
+  // Evaluate incoming MQTT payloads against enabled rules (live platform only)
   useEffect(() => {
+    if (!isPlatformLive) return;
     if (mqttFeed.length === 0) return;
     const latestMessage = mqttFeed[0];
     if (!latestMessage || !latestMessage.payload || typeof latestMessage.payload !== 'object') return;
@@ -646,7 +447,7 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         });
       }
     });
-  }, [mqttFeed, rules, playAlarmChime, logAlarmAudit, reportEvaluation]);
+  }, [mqttFeed, rules, isPlatformLive, playAlarmChime, logAlarmAudit, reportEvaluation]);
 
   // Filter alarms relevant to the current user's role
   const myRoleAlarms = useMemo(() => {
@@ -668,8 +469,6 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const criticalAlarmsCount = useMemo(() => {
     return activeAlarms.filter((a) => a.severity === 'CRITICAL' && a.status === 'ACTIVE_UNACK').length;
   }, [activeAlarms]);
-
-  const canPersistRules = rulesOrigin === 'SERVER' && !rulesLoading;
 
   const requirePersistableRules = useCallback(() => {
     if (!canPersistRules) {
@@ -774,54 +573,6 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
   }, []);
 
-  const testTriggerRule = useCallback((ruleId: string) => {
-    const rule = rules.find((r) => r.id === ruleId);
-    if (!rule) return;
-
-    const testValue = typeof rule.thresholdValue === 'number'
-      ? rule.condition === 'LESS_THAN'
-        ? Number(rule.thresholdValue) - 5
-        : Number(rule.thresholdValue) + 12.5
-      : rule.thresholdValue;
-
-    const evalResult = evaluateCondition(rule, testValue);
-
-    const testAlarm: ActiveAlarm = {
-      id: `alm-test-${Date.now()}`,
-      ruleId: rule.id,
-      ruleName: `[TEST TRIGGER] ${rule.name}`,
-      topic: rule.topic === '*' ? 'CovestroAG/Dormagen/Polyurethane/Reactor_01/temperature' : rule.topic,
-      severity: rule.severity,
-      category: rule.category,
-      conditionDescription: `${evalResult.desc} (Manual Diagnostic Trigger)`,
-      currentValue: testValue,
-      unit: rule.unit,
-      status: 'ACTIVE_UNACK',
-      triggeredAt: new Date().toISOString(),
-      targetRoles: rule.targetRoles,
-      escalated: false,
-    };
-
-    if (rule.actions.audioChime) {
-      playAlarmChime(rule.severity);
-    }
-
-    // Deliberately not counted, and not reported to the platform: `triggerCount` and
-    // `lastTriggeredAt` now say how often the plant tripped this rule, shared with
-    // everybody. A diagnostic run by one engineer must not read as a real trip to the
-    // next shift. The test alarm and its audit entry are what the test is for.
-    setActiveAlarms((prev) => [testAlarm, ...prev]);
-
-    logAlarmAudit(
-      testAlarm.id,
-      rule.name,
-      testAlarm.topic,
-      rule.severity,
-      'TRIGGERED',
-      `Manual test alarm simulated by ${currentUser.name} (${currentUser.role}). Target roles: ${rule.targetRoles.join(', ')}`
-    );
-  }, [rules, currentUser, playAlarmChime, logAlarmAudit]);
-
   const acknowledgeAlarm = useCallback((alarmId: string, notes?: string) => {
     setActiveAlarms((prev) =>
       prev.map((a) => {
@@ -905,46 +656,6 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setActiveAlarms((prev) => prev.filter((a) => a.status !== 'RESOLVED'));
   }, []);
 
-  /**
-   * Put the demonstration rules back, on the platform as well as on screen.
-   *
-   * The rules are shared now, so this is not a local reset: anything authored on top of
-   * the defaults is removed for everyone. The alarms and the audit trail stay browser-
-   * local, so those really are just cleared here.
-   */
-  const restoreDefaultRules = useCallback(() => {
-    const defaultIds = new Set(DEMO_ALERT_RULES.map((r) => r.id));
-    const strays = rulesRef.current.filter((r) => !defaultIds.has(r.id)).map((r) => r.id);
-
-    setRules(DEMO_ALERT_RULES);
-    setActiveAlarms([]);
-    setAuditLog([]);
-    try {
-      localStorage.removeItem(STORAGE_KEYS.ACTIVE_ALARMS);
-      localStorage.removeItem(STORAGE_KEYS.ALARM_AUDIT);
-    } catch {
-      // ignore
-    }
-
-    void (async () => {
-      try {
-        requirePersistableRules();
-        await Promise.all(strays.map((id) => unsGraphQLClient.deleteAlertRule(id)));
-        const restored = await unsGraphQLClient.saveAlertRules(DEMO_ALERT_RULES);
-        setRules(restored);
-        setRulesOrigin('SERVER');
-        setRulesError(null);
-      } catch (error) {
-        setRulesOrigin('BROWSER');
-        setRulesError(
-          `The defaults were restored in this browser only: ${
-            error instanceof Error ? error.message : 'the platform could not be reached'
-          }`,
-        );
-      }
-    })();
-  }, [requirePersistableRules]);
-
   return (
     <AlarmContext.Provider
       value={{
@@ -956,6 +667,7 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         rulesError,
         rulesLoading,
         canPersistRules,
+        isPlatformLive,
         refreshRules,
         myRoleAlarms,
         myUnacknowledgedCount,
@@ -965,14 +677,12 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         updateRule,
         deleteRule,
         toggleRuleEnabled,
-        testTriggerRule,
         acknowledgeAlarm,
         resolveAlarm,
         bulkAcknowledgeAll,
         toggleAudioMute,
         playAlarmChime,
         clearResolvedAlarms,
-        restoreDefaultRules,
       }}
     >
       {children}

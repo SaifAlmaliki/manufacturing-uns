@@ -66,16 +66,16 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({
   const [description, setDescription] = useState(rule?.description || '');
   const [category, setCategory] = useState<AlarmCategory>(rule?.category || 'TEMPERATURE');
   const [severity, setSeverity] = useState<AlarmSeverity>(rule?.severity || 'HIGH');
-  const [topic, setTopic] = useState(rule?.topic || 'CovestroAG/Dormagen/Polyurethane/Reactor_01/temperature');
-  const [metricField, setMetricField] = useState(rule?.metricField || 'temp_celsius');
+  const [topic, setTopic] = useState(rule?.topic || '');
+  const [metricField, setMetricField] = useState(rule?.metricField || '');
   const [condition, setCondition] = useState<AlarmConditionType>(rule?.condition || 'GREATER_THAN');
   const [thresholdValue, setThresholdValue] = useState<string>(
-    rule?.thresholdValue !== undefined ? String(rule?.thresholdValue) : '85'
+    rule?.thresholdValue !== undefined ? String(rule?.thresholdValue) : ''
   );
   const [thresholdUpperValue, setThresholdUpperValue] = useState<string>(
     rule?.thresholdUpperValue !== undefined ? String(rule?.thresholdUpperValue) : '120'
   );
-  const [unit, setUnit] = useState(rule?.unit || '°C');
+  const [unit, setUnit] = useState(rule?.unit || '');
   const [delaySeconds, setDelaySeconds] = useState(rule?.delaySeconds ?? 0);
 
   // Role Configuration

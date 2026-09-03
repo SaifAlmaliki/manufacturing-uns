@@ -137,6 +137,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
     );
   };
 
+  const platformStatusDot =
+    health.status === 'LIVE'
+      ? 'bg-emerald-500'
+      : health.status === 'DEGRADED'
+        ? 'bg-amber-500'
+        : 'bg-red-500';
+
+  const platformStatusLabel =
+    health.status === 'LIVE'
+      ? 'Connected'
+      : health.status === 'DEGRADED'
+        ? 'Degraded'
+        : health.status === 'DOWN'
+          ? 'Down'
+          : health.status;
+
+  const platformStatusTitle =
+    health.status === 'LIVE'
+      ? 'Platform connected — open System Health'
+      : `Platform ${platformStatusLabel.toLowerCase()} — open System Health`;
+
   const sidebarContent = (
     <aside
       id="application-left-menu"
@@ -212,37 +233,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
 
-      {/* Status card */}
-      {!isCollapsed && (
-        <div className="mx-3 mb-3 shrink-0 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
-          <div className="mb-2 flex items-center gap-2">
+      {/* Platform status — compact */}
+      <div className={`shrink-0 px-3 pb-2 ${isCollapsed ? 'flex justify-center' : ''}`}>
+        <button
+          type="button"
+          onClick={() => {
+            navigate('/system');
+            onCloseMobile();
+          }}
+          title={platformStatusTitle}
+          aria-label={platformStatusTitle}
+          className={`flex items-center rounded-xl text-zinc-400 transition-colors hover:bg-zinc-800/60 hover:text-zinc-200 ${
+            isCollapsed ? 'relative p-2.5' : 'w-full gap-2.5 px-3 py-2'
+          }`}
+        >
+          <span className="relative shrink-0">
+            <Activity className="size-[18px]" />
             <span
-              className={`size-2 rounded-full ${
-                health.status === 'LIVE'
-                  ? 'bg-emerald-500'
-                  : health.status === 'DEGRADED'
-                    ? 'bg-amber-500'
-                    : 'bg-red-500'
-              }`}
+              className={`absolute -right-0.5 -top-0.5 size-2 rounded-full ring-2 ring-[#111114] ${platformStatusDot}`}
             />
-            <span className="text-xs font-medium text-zinc-300">
-              {health.status === 'LIVE' ? 'Platform Connected' : `Status: ${health.status}`}
-            </span>
-          </div>
-          <p className="mb-3 text-xs leading-relaxed text-zinc-500">
-            Real-time UNS data from your plant namespace.
-          </p>
-          <button
-            onClick={() => {
-              navigate('/system');
-              onCloseMobile();
-            }}
-            className="w-full rounded-xl bg-[#FF7A00] py-2 text-xs font-semibold text-white transition-colors hover:bg-[#e66e00]"
-          >
-            View System Health
-          </button>
-        </div>
-      )}
+          </span>
+          {!isCollapsed && (
+            <span className="truncate text-xs text-zinc-500">{platformStatusLabel}</span>
+          )}
+        </button>
+      </div>
 
       {/* Collapse toggle (desktop) */}
       <div className="hidden shrink-0 border-t border-zinc-800/80 lg:block">

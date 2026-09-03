@@ -57,7 +57,6 @@ export const AlarmManagementView: React.FC = () => {
     acknowledgeAlarm,
     resolveAlarm,
     bulkAcknowledgeAll,
-    testTriggerRule,
     toggleRuleEnabled,
     deleteRule,
     clearResolvedAlarms,
@@ -65,6 +64,7 @@ export const AlarmManagementView: React.FC = () => {
     rulesError,
     rulesLoading,
     canPersistRules,
+    isPlatformLive,
     refreshRules,
   } = useAlarms();
 
@@ -207,6 +207,12 @@ export const AlarmManagementView: React.FC = () => {
         </div>
 
         <SegmentTabs tabs={alarmTabs} active={activeSubTab} onChange={(id) => setActiveSubTab(id as AlarmSubTab)} />
+
+        {!isPlatformLive && !rulesLoading && (
+          <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200 font-mono">
+            Platform offline — showing no alarm data until GraphQL on port 8000 is reachable.
+          </div>
+        )}
       </PageContent>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 md:px-6 md:pb-6">
@@ -245,23 +251,24 @@ export const AlarmManagementView: React.FC = () => {
             </ConsoleCard>
 
             {/* Alarms List */}
-            {displayedAlarms.length === 0 ? (
+            {!isPlatformLive ? (
+              <div className="bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 rounded-xl p-12 text-center space-y-3">
+                <AlertTriangle className="w-12 h-12 text-rose-500 dark:text-rose-400 mx-auto opacity-80" />
+                <h3 className="font-bold text-rose-900 dark:text-rose-200 text-sm text-balance">Platform offline</h3>
+                <p className="text-xs text-rose-800/90 dark:text-rose-300/80 max-w-md mx-auto text-pretty font-mono">
+                  {rulesError ??
+                    'Active incidents require a live GraphQL connection and MQTT feed. Start the backend stack, then refresh this page.'}
+                </p>
+              </div>
+            ) : displayedAlarms.length === 0 ? (
               <div className="bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] rounded-xl p-12 text-center text-[#64748B] space-y-3">
                 <CheckCircle2 className="w-12 h-12 text-emerald-500 dark:text-emerald-400 mx-auto opacity-70" />
-                <h3 className="font-bold text-[#0F172A] dark:text-[#F8FAFC] text-sm text-balance">No Active Incidents</h3>
+                <h3 className="font-bold text-[#0F172A] dark:text-[#F8FAFC] text-sm text-balance">No active incidents</h3>
                 <p className="text-xs text-[#64748B] dark:text-[#94A3B8] max-w-md mx-auto text-pretty">
                   {roleFilter === 'my_role'
-                    ? `No active alarms routed to role '${currentUser.role}'. Plant is running within normal parameters.`
-                    : 'All ISA-95 node metrics and edge streams are operating within configured tolerances.'}
+                    ? `No live alarms are routed to role '${currentUser.role}'.`
+                    : 'No configured alert rules have been breached on the live MQTT feed.'}
                 </p>
-                <div className="pt-2">
-                  <button
-                    onClick={() => testTriggerRule(rules[0]?.id || '')}
-                    className="px-3 py-1.5 bg-[#F1F5F9] dark:bg-[#1E293B] hover:bg-slate-200 dark:hover:bg-[#334155] text-amber-700 dark:text-[#FFC107] rounded-lg text-xs font-mono font-bold transition-colors cursor-pointer"
-                  >
-                    Simulate Test Alarm
-                  </button>
-                </div>
               </div>
             ) : (
               <div className="space-y-3">
@@ -491,13 +498,6 @@ export const AlarmManagementView: React.FC = () => {
                         {/* Actions */}
                         <td className="py-3 px-3 text-right">
                           <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              onClick={() => testTriggerRule(rule.id)}
-                              className="px-2 py-1 bg-[#F1F5F9] dark:bg-[#1E293B] hover:bg-slate-200 dark:hover:bg-[#334155] text-amber-700 dark:text-[#FFC107] rounded text-[10px] transition-colors cursor-pointer"
-                              title="Simulate / Test Trigger"
-                            >
-                              Test
-                            </button>
                             <button
                               onClick={() => handleOpenEditRule(rule)}
                               className="px-2 py-1 bg-[#F1F5F9] dark:bg-[#1E293B] hover:bg-slate-200 dark:hover:bg-[#334155] text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC] rounded text-[10px] transition-colors cursor-pointer"
