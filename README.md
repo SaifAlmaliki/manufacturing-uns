@@ -74,30 +74,68 @@ decisions that would otherwise be surprising are recorded in **[docs/adr](./docs
 
 In Docker Desktop the project is `manufacturing-uns`. Container names look like `manufacturing-uns-<service>-1`.
 
-**How to start** (from the repository root). Passwords live in `conf/.secrets.yaml` only — copy `conf/.secrets_template.yaml` if you have not already. Compose cannot read YAML, so use the wrapper that loads that file and then runs `docker compose`:
+### Prerequisites
+
+1. Copy secrets if you have not already: `conf/.secrets_template.yaml` → `conf/.secrets.yaml` and fill in passwords.
+2. One-time setup from the repository root:
+
+```bash
+uv sync
+npm install --prefix 11_frontend
+```
+
+Compose cannot read YAML secrets by itself. The `uns_compose` wrapper loads `conf/.secrets.yaml` and then runs `docker compose`. The `npm run stack` / `sim` / `down` scripts use that wrapper with [`docker-compose.dev.yml`](./docker-compose.dev.yml).
+
+### Option 1: Frontend development (three terminals)
+
+Use this when you are working on the console UI with hot reload. Open **three terminals** at the repository root and run, **in order**:
+
+| Terminal | Command | What it starts |
+| --- | --- | --- |
+| 1 | `npm run stack` | Backend and databases in Docker (MQTT, Neo4j, Timescale, mappers, GraphQL, Grafana proxy on **8088**). Wait until it finishes. |
+| 2 | `npm run sim` | Device simulator in Docker, **foreground** — logs stay in this window. Leave it running. |
+| 3 | `npm run ui` | Vite dev server with hot reload at **http://localhost:5173**. |
+
+The dev compose file keeps the simulator out of `stack` and publishes port **8099** only when you run `sim`, so Vite can proxy `/simulator` correctly.
+
+Stop the simulator and UI with Ctrl+C in terminals 2 and 3, then tear down the stack:
+
+```bash
+npm run down
+```
+
+### Option 2: Full stack in Docker (one command)
+
+Use this for a quick demo or when you do not need Vite hot reload. **One command** starts all three layers — backend, simulator, and the production-built console UI:
 
 ```bash
 uv run uns_compose up -d --build
 ```
 
+| Layer | Where it runs | URL |
+| --- | --- | --- |
+| Backend (DB, MQTT, mappers, GraphQL) | Docker | GraphQL: **http://localhost:8000/graphql** |
+| Simulator | Docker (`uns_simulator`) | Control API inside the compose network; MQTT on **1883** |
+| Console UI | Docker (`uns_frontend`) | **http://localhost:8088** (Grafana at `/grafana`) |
+
 That command is the same on Windows, macOS, and Linux. The simulator publishes into the Compose MQTT broker (`uns_mqtt_broker`) automatically.
 
-Start or stop **only** the simulator (the MQTT broker is started too if needed):
+Start or stop **only** the simulator when the rest of the stack is already up:
 
 ```bash
-docker compose up -d uns_simulator
-docker compose stop uns_simulator
-docker compose start uns_simulator
-docker compose logs -f uns_simulator
+uv run uns_compose up -d uns_simulator
+uv run uns_compose stop uns_simulator
+uv run uns_compose start uns_simulator
+uv run uns_compose logs -f uns_simulator
 ```
-
-Do not use a Compose profile for this. Profiles hide a service from default `docker compose up`; the simulator is part of the default stack. Use the service name above instead.
 
 To run the simulator on the host instead of in Docker (optional; uses the **repository-root** `.venv` from [Setting up the development environment](#setting-up-the-development-environment)):
 
 ```bash
 uv run uns_simulator
 ```
+
+Point it at the published MQTT port (`localhost:1883`) while the stack from Option 1 or 2 is running.
 
 ### What each container does
 
