@@ -101,7 +101,7 @@ export const Header: React.FC<HeaderProps> = ({
     }
   };
 
-  const firstName = currentUser.name.split(/[\s(]/)[0];
+  const firstName = currentUser?.name.split(/[\s(]/)[0] ?? 'there';
   const { title, subtitle } = getPageHeading(location.pathname, firstName);
 
   return (

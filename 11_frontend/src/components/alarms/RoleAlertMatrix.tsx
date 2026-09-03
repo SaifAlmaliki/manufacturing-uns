@@ -10,7 +10,8 @@ const PREDEFINED_ROLES: UserRole[] = ['operator', 'engineer', 'admin', 'auditor'
 
 export const RoleAlertMatrix: React.FC = () => {
   const { rules, updateRule } = useAlarms();
-  const { currentUser } = useAuth();
+  const { currentUser, roles } = useAuth();
+  const myRole = currentUser?.role ?? roles[0];
 
   const handleToggleRoleTrigger = (ruleId: string, role: UserRole, currentRoles: UserRole[]) => {
     let nextRoles: UserRole[];
@@ -33,7 +34,7 @@ export const RoleAlertMatrix: React.FC = () => {
         {PREDEFINED_ROLES.map((role) => {
           const cfg = ROLE_CONFIGS[role] || ROLE_CONFIGS.viewer;
           const assignedCount = rules.filter((r) => r.targetRoles.includes(role)).length;
-          const isMyRole = currentUser.role === role;
+          const isMyRole = myRole === role;
 
           return (
             <div
@@ -94,7 +95,7 @@ export const RoleAlertMatrix: React.FC = () => {
                   </td>
                   {PREDEFINED_ROLES.map((role) => {
                     const isTriggered = rule.targetRoles.includes(role);
-                    const isCurrentUserRole = currentUser.role === role;
+                    const isCurrentUserRole = myRole === role;
 
                     return (
                       <td key={role} className="px-3 py-3 text-center">

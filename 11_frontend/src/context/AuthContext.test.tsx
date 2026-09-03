@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const client = {
+const client = vi.hoisted(() => ({
   completeRedirect: vi.fn().mockResolvedValue(null),
   restore: vi.fn().mockResolvedValue(null),
   signIn: vi.fn().mockResolvedValue(undefined),
@@ -9,7 +9,7 @@ const client = {
   accessToken: vi.fn().mockReturnValue(null),
   refresh: vi.fn().mockResolvedValue(null),
   onSession: vi.fn().mockReturnValue(() => {}),
-};
+}));
 
 vi.mock('../lib/auth/oidc', () => ({ authClient: client }));
 

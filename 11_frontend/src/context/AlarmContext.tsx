@@ -82,8 +82,12 @@ interface AlarmContextType {
 const AlarmContext = createContext<AlarmContextType | null>(null);
 
 export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { currentUser } = useAuth();
+  const { session, currentUser, isAdmin, roles } = useAuth();
   const { mqttFeed, health } = useUNS();
+
+  const actorName = session?.displayName ?? session?.username ?? 'unknown';
+  const actorRole = currentUser?.role ?? roles[0] ?? 'viewer';
+  const actorLabel = `${actorName} (${actorRole})`;
 
   // Drop any demo-seed data left in the browser from earlier builds.
   useEffect(() => {
@@ -242,12 +246,12 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       topic,
       severity,
       action,
-      actorName: currentUser.name,
-      actorRole: currentUser.role,
+      actorName: session?.displayName ?? session?.username ?? 'unknown',
+      actorRole: currentUser?.role ?? roles[0] ?? 'viewer',
       details,
     };
     setAuditLog((prev) => [newEntry, ...prev.slice(0, 199)]);
-  }, [currentUser]);
+  }, [session, currentUser, roles]);
 
   // When each rule last had a quiet evaluation reported, so that the reporting below
   // stays rare. Not state: nothing renders from it.
@@ -452,11 +456,15 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Filter alarms relevant to the current user's role
   const myRoleAlarms = useMemo(() => {
     // Admin & Auditor can view all alarms; other roles see alarms configured for their role
-    if (currentUser.role === 'admin' || currentUser.role === 'auditor') {
+    if (isAdmin || roles.includes('auditor')) {
       return activeAlarms;
     }
-    return activeAlarms.filter((a) => a.targetRoles.includes(currentUser.role));
-  }, [activeAlarms, currentUser.role]);
+    const role = currentUser?.role ?? roles[0];
+    if (!role) {
+      return [];
+    }
+    return activeAlarms.filter((a) => a.targetRoles.includes(role));
+  }, [activeAlarms, currentUser?.role, isAdmin, roles]);
 
   const myUnacknowledgedCount = useMemo(() => {
     return myRoleAlarms.filter((a) => a.status === 'ACTIVE_UNACK').length;
@@ -581,7 +589,7 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             ...a,
             status: 'ACTIVE_ACK',
             acknowledgedAt: new Date().toISOString(),
-            acknowledgedBy: `${currentUser.name} (${currentUser.role})`,
+            acknowledgedBy: actorLabel,
             notes: notes || a.notes,
           };
           logAlarmAudit(
@@ -590,14 +598,14 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             a.topic,
             a.severity,
             'ACKNOWLEDGED',
-            `Acknowledged by ${currentUser.name} (${currentUser.role}). ${notes ? 'Note: ' + notes : ''}`
+            `Acknowledged by ${actorLabel}. ${notes ? 'Note: ' + notes : ''}`
           );
           return updated;
         }
         return a;
       })
     );
-  }, [currentUser, logAlarmAudit]);
+  }, [actorLabel, logAlarmAudit]);
 
   const resolveAlarm = useCallback((alarmId: string, notes?: string) => {
     setActiveAlarms((prev) =>
@@ -615,14 +623,14 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             a.topic,
             a.severity,
             'RESOLVED',
-            `Marked as RESOLVED by ${currentUser.name}. ${notes ? 'Resolution: ' + notes : ''}`
+            `Marked as RESOLVED by ${actorName}. ${notes ? 'Resolution: ' + notes : ''}`
           );
           return updated;
         }
         return a;
       })
     );
-  }, [currentUser, logAlarmAudit]);
+  }, [actorName, logAlarmAudit]);
 
   const bulkAcknowledgeAll = useCallback((alarmIds?: string[]) => {
     setActiveAlarms((prev) =>
@@ -634,19 +642,19 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             a.topic,
             a.severity,
             'ACKNOWLEDGED',
-            `Bulk acknowledged by ${currentUser.name} (${currentUser.role})`
+            `Bulk acknowledged by ${actorLabel}`
           );
           return {
             ...a,
             status: 'ACTIVE_ACK',
             acknowledgedAt: new Date().toISOString(),
-            acknowledgedBy: `${currentUser.name} (${currentUser.role})`,
+            acknowledgedBy: actorLabel,
           };
         }
         return a;
       })
     );
-  }, [currentUser, logAlarmAudit]);
+  }, [actorLabel, logAlarmAudit]);
 
   const toggleAudioMute = useCallback(() => {
     setIsMuted((prev) => !prev);

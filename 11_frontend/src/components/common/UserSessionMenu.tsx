@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Shield,
-  CheckCircle2,
   ChevronDown,
   Lock,
   LogOut,
@@ -22,7 +21,7 @@ interface UserSessionMenuProps {
 
 export const UserSessionMenu: React.FC<UserSessionMenuProps> = ({ variant = 'header' }) => {
   const navigate = useNavigate();
-  const { currentUser, users, switchUser, isAdmin, hasPermission, logout } = useAuth();
+  const { currentUser, isAdmin, hasPermission, logout } = useAuth();
   const { setActiveTab } = useUNS();
   const { isDark, toggleTheme } = useTheme();
   const [isOpen, setIsOpen] = useState(false);
@@ -38,8 +37,13 @@ export const UserSessionMenu: React.FC<UserSessionMenuProps> = ({ variant = 'hea
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const roleConfig = ROLE_CONFIGS[currentUser.role] || ROLE_CONFIGS.viewer;
   const isSidebarStyle = variant === 'sidebar' || variant === 'compact';
+
+  if (!currentUser) {
+    return null;
+  }
+
+  const roleConfig = ROLE_CONFIGS[currentUser.role] || ROLE_CONFIGS.viewer;
 
   return (
     <div className={`relative ${variant === 'compact' ? 'w-full flex justify-center' : 'w-full'}`} ref={menuRef}>
@@ -122,45 +126,6 @@ export const UserSessionMenu: React.FC<UserSessionMenuProps> = ({ variant = 'hea
             {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
             Switch to {isDark ? 'light' : 'dark'} mode
           </button>
-
-          <div className="mb-2 max-h-40 space-y-1 overflow-y-auto">
-            <div className="px-1 pb-1 text-[10px] font-medium uppercase tracking-wider text-zinc-600">
-              Switch user
-            </div>
-            {users.map((u) => {
-              const isSelected = u.id === currentUser.id;
-              const userRole = ROLE_CONFIGS[u.role] || ROLE_CONFIGS.viewer;
-              return (
-                <button
-                  key={u.id}
-                  onClick={() => {
-                    switchUser(u.id);
-                    setIsOpen(false);
-                  }}
-                  className={`flex w-full items-center gap-2 rounded-lg p-2 text-left transition-colors ${
-                    isSelected
-                      ? 'bg-[#FF7A00]/15 text-zinc-100'
-                      : 'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100'
-                  }`}
-                >
-                  <div
-                    className={`flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-bold text-zinc-950 ${
-                      u.avatarColor || 'bg-zinc-600'
-                    }`}
-                  >
-                    {u.name.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="min-w-0 flex-1 truncate">
-                    <div className="flex items-center gap-1 text-sm font-medium">
-                      {u.name}
-                      {isSelected && <CheckCircle2 className="size-3 text-[#FF7A00]" />}
-                    </div>
-                    <div className="truncate text-xs text-zinc-500">{userRole.label}</div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
 
           <div className="mb-2 border-t border-zinc-800 pt-2">
             <div className="mb-1.5 px-1 text-[10px] font-medium uppercase tracking-wider text-zinc-600">

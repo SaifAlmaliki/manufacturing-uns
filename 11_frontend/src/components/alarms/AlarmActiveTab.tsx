@@ -21,7 +21,8 @@ import { AlarmOutletContext, AlarmPanel, getStatusBadge } from './alarmUi';
 export const AlarmActiveTab: React.FC = () => {
   const { onAcknowledge, onResolve } = useOutletContext<AlarmOutletContext>();
   const { activeAlarms, myRoleAlarms, isPlatformLive, rulesError } = useAlarms();
-  const { currentUser } = useAuth();
+  const { currentUser, roles } = useAuth();
+  const myRole = currentUser?.role ?? roles[0] ?? 'viewer';
   const { jumpToHistorian, jumpToTopicInTree } = useUNS();
 
   const [roleFilter, setRoleFilter] = useState<'my_role' | 'all'>('my_role');
@@ -47,7 +48,7 @@ export const AlarmActiveTab: React.FC = () => {
       <FilterToolbar
         tabs={{
           items: [
-            { id: 'my_role', label: `My Role (${currentUser.role})` },
+            { id: 'my_role', label: `My Role (${myRole})` },
             { id: 'all', label: `All (${activeAlarms.length})` },
           ],
           active: roleFilter,
@@ -91,7 +92,7 @@ export const AlarmActiveTab: React.FC = () => {
           title="No active incidents"
           description={
             roleFilter === 'my_role'
-              ? `No live alarms are routed to role '${currentUser.role}'.`
+              ? `No live alarms are routed to role '${myRole}'.`
               : 'No configured alert rules have been breached on the live MQTT feed.'
           }
         />

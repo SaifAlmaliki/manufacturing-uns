@@ -50,14 +50,11 @@ export const LandingView: React.FC = () => {
     }
   };
 
-  const handleLaunchConsole = (roleId?: string) => {
-    if (roleId) {
-      login(roleId);
-    }
-    if (isAuthenticated || roleId) {
+  const handleLaunchConsole = () => {
+    if (isAuthenticated) {
       navigate('/dashboard');
     } else {
-      navigate('/login');
+      login();
     }
   };
 
@@ -93,32 +90,13 @@ export const LandingView: React.FC = () => {
         onSecondaryClick={() => scrollToSection('architecture-section')}
       />
 
-      {/* Quick demo role access */}
+      {/* Theme toggle bar */}
       <section className="border-b border-[#E2E8F0] dark:border-[#1E293B] bg-[#0B0B0C] px-4 py-4 sm:px-8">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-center gap-2 text-xs text-[#94A3B8]">
-          <span className="font-medium text-white/70">Quick Demo Logins:</span>
-          <button
-            onClick={() => handleLaunchConsole('usr-admin-01')}
-            className="cursor-pointer rounded border border-[#1E293B] bg-[#111114] px-2.5 py-1 font-mono text-[11px] font-semibold text-[#F8FAFC] transition-colors hover:border-amber-500"
-          >
-            System Admin
-          </button>
-          <button
-            onClick={() => handleLaunchConsole('usr-eng-02')}
-            className="cursor-pointer rounded border border-[#1E293B] bg-[#111114] px-2.5 py-1 font-mono text-[11px] font-semibold text-[#F8FAFC] transition-colors hover:border-amber-500"
-          >
-            Process Engineer
-          </button>
-          <button
-            onClick={() => handleLaunchConsole('usr-op-03')}
-            className="cursor-pointer rounded border border-[#1E293B] bg-[#111114] px-2.5 py-1 font-mono text-[11px] font-semibold text-[#F8FAFC] transition-colors hover:border-amber-500"
-          >
-            Shift Operator
-          </button>
+        <div className="mx-auto flex max-w-7xl items-center justify-end">
           <button
             id="landing-theme-toggle-btn"
             onClick={toggleTheme}
-            className="ml-2 inline-flex cursor-pointer items-center gap-1.5 rounded border border-[#1E293B] bg-[#111114] px-2.5 py-1 text-[#94A3B8] transition-colors hover:text-[#FFC107]"
+            className="inline-flex cursor-pointer items-center gap-1.5 rounded border border-[#1E293B] bg-[#111114] px-2.5 py-1 text-xs text-[#94A3B8] transition-colors hover:text-[#FFC107]"
             title={`Switch to ${isDark ? 'Light' : 'Dark'} mode`}
           >
             {isDark ? <Sun className="h-3.5 w-3.5 text-[#FFC107]" /> : <Moon className="h-3.5 w-3.5" />}
@@ -644,7 +622,7 @@ export const LandingView: React.FC = () => {
               Ready to Access the Unified Namespace Console?
             </h2>
             <p className="text-sm sm:text-base text-slate-900/90 dark:text-[#94A3B8]">
-              Sign in with your enterprise credentials or choose one of the pre-configured role profiles to test real-time MQTT telemetry, Sparkplug B decoding, and process alarms.
+              Sign in with your plant credentials through Keycloak to access real-time MQTT telemetry, Sparkplug B decoding, and process alarms.
             </p>
           </div>
 
@@ -654,12 +632,6 @@ export const LandingView: React.FC = () => {
               className="w-full sm:w-auto px-8 py-3.5 rounded-lg bg-slate-950 dark:bg-[#FFC107] hover:bg-slate-900 dark:hover:bg-[#FFB300] text-white dark:text-slate-950 font-bold text-sm shadow-md transition-all cursor-pointer"
             >
               Sign In to Management Console
-            </button>
-            <button
-              onClick={() => handleLaunchConsole('usr-admin-01')}
-              className="w-full sm:w-auto px-6 py-3.5 rounded-lg bg-white/30 dark:bg-[#111114] hover:bg-white/40 dark:hover:bg-[#1E293B] border border-slate-950/20 dark:border-[#1E293B] text-slate-950 dark:text-[#F8FAFC] font-semibold text-sm transition-colors cursor-pointer"
-            >
-              One-Click Admin Demo
             </button>
           </div>
         </div>
