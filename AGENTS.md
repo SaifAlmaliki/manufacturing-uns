@@ -32,6 +32,7 @@ Read `.agents/skills/<name>/SKILL.md` immediately when the situation matches, th
 | An in-progress git merge or rebase with conflicts | `resolving-merge-conflicts` |
 | Steps only a human can do: credentials, dashboards, one-off cutovers | `wizard` |
 | Writing or editing skills, `AGENTS.md`, or other agent-facing docs | `writing-for-agents` |
+| Compact console UI: KPI chips, merged filter bars, full-width pages, fewer header layers | `console-compact-layout` |
 | Stress-testing a plan in-chat (and no `/grill-*` skill is already running) | `grilling` |
 
 User-invoked orchestrators stay slash-command only. Do not start them unless the user names them: `/grill-with-docs`, `/grill-me`, `/to-spec`, `/to-tickets`, `/implement`, `/triage`, `/wayfinder`, `/ask-matt`, `/improve-codebase-architecture`, `/handoff`, `/wait-what`.

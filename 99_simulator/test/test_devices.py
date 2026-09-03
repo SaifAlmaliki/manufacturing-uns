@@ -434,3 +434,17 @@ async def test_run_tier_publishes_then_sleeps_and_stops():
     await device.stop()
     await asyncio.wait_for(task, timeout=1.0)
     assert len(device.client.published) >= 2
+
+
+@pytest.mark.asyncio
+async def test_concurrent_tier_publishers_share_one_broker_connection():
+    """Each tier task used to call connect() at once, tripping aiomqtt's non-reentrant guard."""
+    device = _device(
+        SignalSpec(name="Fast", tier="fast", shape="constant", base_value=1.0),
+        SignalSpec(name="Slow", tier="process", shape="constant", base_value=2.0),
+    )
+    device.evaluate(1.0)
+    await asyncio.gather(device.publish_tier("fast"), device.publish_tier("process"))
+    assert device.connected is True
+    assert device.client.enter_count == 1
+    assert len(device.client.published) == 2

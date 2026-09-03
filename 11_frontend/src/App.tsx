@@ -22,7 +22,11 @@ import { DashboardView } from './components/dashboard/DashboardView';
 import { ExploreView } from './components/explore/ExploreView';
 import { SparkplugView } from './components/sparkplug/SparkplugView';
 import { KafkaStreamsView } from './components/streams/KafkaStreamsView';
-import { AlarmManagementView } from './components/alarms/AlarmManagementView';
+import { AlarmManagementLayout } from './components/alarms/AlarmManagementLayout';
+import { AlarmActiveTab } from './components/alarms/AlarmActiveTab';
+import { AlarmRulesTab } from './components/alarms/AlarmRulesTab';
+import { RoleAlertMatrix } from './components/alarms/RoleAlertMatrix';
+import { AlarmAuditLog } from './components/alarms/AlarmAuditLog';
 import { SystemHealthView } from './components/system/SystemHealthView';
 import { SimulatorView } from './components/simulator/SimulatorView';
 import { UserManagementView } from './components/users/UserManagementView';
@@ -60,7 +64,13 @@ export default function App() {
                 <Route element={<ProtectedConsoleLayout />}>
                   <Route path="/dashboard" element={<DashboardView />} />
                   <Route path="/tree" element={<HomeView />} />
-                  <Route path="/alerts" element={<AlarmManagementView />} />
+                  <Route path="/alerts" element={<AlarmManagementLayout />}>
+                    <Route index element={<Navigate to="active" replace />} />
+                    <Route path="active" element={<AlarmActiveTab />} />
+                    <Route path="rules" element={<AlarmRulesTab />} />
+                    <Route path="matrix" element={<RoleAlertMatrix />} />
+                    <Route path="audit" element={<AlarmAuditLog />} />
+                  </Route>
                   <Route path="/historian" element={<ExploreView />} />
                   <Route path="/sparkplug" element={<SparkplugView />} />
                   <Route path="/streams" element={<KafkaStreamsView />} />

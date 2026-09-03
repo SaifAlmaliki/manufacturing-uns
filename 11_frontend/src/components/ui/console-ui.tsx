@@ -1,4 +1,6 @@
 import React from 'react';
+import { NavLink } from 'react-router-dom';
+import { Search } from 'lucide-react';
 
 /** FlowBoard-style design tokens for console pages */
 export const consoleTokens = {
@@ -111,41 +113,64 @@ interface SegmentTab {
   label: string;
   icon?: React.FC<{ className?: string }>;
   badge?: string | number;
+  /** When set, tab navigates via router instead of onChange. */
+  href?: string;
 }
 
 interface SegmentTabsProps {
   tabs: SegmentTab[];
   active: string;
-  onChange: (id: string) => void;
+  onChange?: (id: string) => void;
   className?: string;
+}
+
+function segmentTabClass(isActive: boolean) {
+  return `flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+    isActive ? consoleTokens.tabActive : consoleTokens.tabInactive
+  }`;
 }
 
 export const SegmentTabs: React.FC<SegmentTabsProps> = ({ tabs, active, onChange, className = '' }) => (
   <div className={`flex flex-wrap gap-1 rounded-xl border border-zinc-800 bg-zinc-900/60 p-1 ${className}`}>
     {tabs.map((tab) => {
       const Icon = tab.icon;
-      const isActive = tab.id === active;
+      const badge =
+        tab.badge !== undefined ? (
+          <span
+            className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold tabular-nums ${
+              tab.id === active ? 'bg-white/20 text-white' : 'bg-zinc-800 text-zinc-400'
+            }`}
+          >
+            {tab.badge}
+          </span>
+        ) : null;
+
+      if (tab.href) {
+        return (
+          <NavLink
+            key={tab.id}
+            to={tab.href}
+            id={`subtab-${tab.id}`}
+            className={({ isActive }) => segmentTabClass(isActive)}
+          >
+            {Icon && <Icon className="size-4" />}
+            <span>{tab.label}</span>
+            {badge}
+          </NavLink>
+        );
+      }
+
       return (
         <button
           key={tab.id}
           type="button"
           id={`subtab-${tab.id}`}
-          onClick={() => onChange(tab.id)}
-          className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-            isActive ? consoleTokens.tabActive : consoleTokens.tabInactive
-          }`}
+          onClick={() => onChange?.(tab.id)}
+          className={segmentTabClass(tab.id === active)}
         >
           {Icon && <Icon className="size-4" />}
           <span>{tab.label}</span>
-          {tab.badge !== undefined && (
-            <span
-              className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold tabular-nums ${
-                isActive ? 'bg-white/20 text-white' : 'bg-zinc-800 text-zinc-400'
-              }`}
-            >
-              {tab.badge}
-            </span>
-          )}
+          {badge}
         </button>
       );
     })}
@@ -208,4 +233,85 @@ export const BtnGhost: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement>> =
   <button type="button" className={`${consoleTokens.btnGhost} ${className}`} {...props}>
     {children}
   </button>
+);
+
+/** One horizontal row: compact KPI chips on the left, page actions on the right. */
+export const CompactKpiRow: React.FC<{
+  children: React.ReactNode;
+  actions?: React.ReactNode;
+  className?: string;
+}> = ({ children, actions, className = '' }) => (
+  <div className={`flex flex-wrap items-center justify-between gap-2 ${className}`}>
+    <div className="flex flex-wrap items-center gap-2">{children}</div>
+    {actions ? <div className="flex flex-wrap items-center gap-1.5">{actions}</div> : null}
+  </div>
+);
+
+export type FilterToolbarTab = { id: string; label: string };
+
+export type FilterToolbarSelect = {
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+  'aria-label'?: string;
+};
+
+/**
+ * Single-row filter bar: optional tabs, search, selects, and trailing actions.
+ * Do not wrap tabs and search in separate cards — they belong in this one bar.
+ */
+export const FilterToolbar: React.FC<{
+  tabs?: { items: FilterToolbarTab[]; active: string; onChange: (id: string) => void };
+  search?: { value: string; onChange: (value: string) => void; placeholder?: string };
+  selects?: FilterToolbarSelect[];
+  trailing?: React.ReactNode;
+  className?: string;
+}> = ({ tabs, search, selects, trailing, className = '' }) => (
+  <div
+    className={`flex flex-wrap items-center gap-1 rounded-xl border border-zinc-800 bg-zinc-900/60 p-1 ${className}`}
+  >
+    {tabs?.items.map((tab) => (
+      <button
+        key={tab.id}
+        type="button"
+        onClick={() => tabs.onChange(tab.id)}
+        className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+          tabs.active === tab.id ? consoleTokens.tabActive : consoleTokens.tabInactive
+        }`}
+      >
+        {tab.label}
+      </button>
+    ))}
+    {(tabs?.items.length ?? 0) > 0 && (search || selects?.length || trailing) ? (
+      <div className="mx-0.5 hidden h-7 w-px shrink-0 bg-zinc-700 sm:block" aria-hidden />
+    ) : null}
+    {search ? (
+      <div className="relative min-w-[140px] flex-1 px-0.5">
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-zinc-500" />
+        <input
+          type="search"
+          value={search.value}
+          onChange={(e) => search.onChange(e.target.value)}
+          placeholder={search.placeholder ?? 'Search…'}
+          className="w-full rounded-lg border-0 bg-zinc-800/60 py-1.5 pl-8 pr-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/40"
+        />
+      </div>
+    ) : null}
+    {selects?.map((select) => (
+      <select
+        key={select['aria-label'] ?? select.options[0]?.value}
+        value={select.value}
+        onChange={(e) => select.onChange(e.target.value)}
+        aria-label={select['aria-label']}
+        className="shrink-0 rounded-lg border-0 bg-zinc-800/60 px-2.5 py-1.5 text-sm text-zinc-300 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/40"
+      >
+        {select.options.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    ))}
+    {trailing}
+  </div>
 );

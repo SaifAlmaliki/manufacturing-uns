@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { Download, Search, AlertTriangle, FileText } from 'lucide-react';
+import { Download, AlertTriangle, FileText } from 'lucide-react';
 import { useAlarms } from '../../context/AlarmContext';
 import { AlarmAuditEntry } from '../../types/alarm';
 import { ROLE_CONFIGS } from '../../types/rbac';
-import { BtnSecondary, ConsoleCard, consoleTokens } from '../ui/console-ui';
+import { BtnSecondary, ConsoleCard, FilterToolbar } from '../ui/console-ui';
 
 export const AlarmAuditLog: React.FC = () => {
   const { auditLog, isPlatformLive, rulesError } = useAlarms();
@@ -67,45 +67,42 @@ export const AlarmAuditLog: React.FC = () => {
 
   return (
     <div className="space-y-2">
-      <ConsoleCard padding="sm" className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[200px] flex-1">
-          <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-500" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search audit trail…"
-            className={consoleTokens.input + ' py-1.5 pl-8 text-xs'}
-          />
-        </div>
-        <select
-          value={actionFilter}
-          onChange={(e) => setActionFilter(e.target.value)}
-          className={consoleTokens.input + ' w-auto py-1.5 text-xs'}
-        >
-          <option value="ALL">All Actions</option>
-          <option value="TRIGGERED">Triggered</option>
-          <option value="ACKNOWLEDGED">Acknowledged</option>
-          <option value="RESOLVED">Resolved</option>
-          <option value="RULE_UPDATED">Rule Updated</option>
-          <option value="CLEARED">Cleared</option>
-        </select>
-        <select
-          value={severityFilter}
-          onChange={(e) => setSeverityFilter(e.target.value)}
-          className={consoleTokens.input + ' w-auto py-1.5 text-xs'}
-        >
-          <option value="ALL">All Severities</option>
-          <option value="CRITICAL">Critical</option>
-          <option value="HIGH">High</option>
-          <option value="WARNING">Warning</option>
-          <option value="INFO">Info</option>
-        </select>
-        <BtnSecondary onClick={exportCSV} className="px-2.5 py-1.5 text-xs">
-          <Download className="size-3.5" />
-          Export CSV
-        </BtnSecondary>
-      </ConsoleCard>
+      <FilterToolbar
+        search={{ value: searchQuery, onChange: setSearchQuery, placeholder: 'Search audit trail…' }}
+        selects={[
+          {
+            value: actionFilter,
+            onChange: setActionFilter,
+            'aria-label': 'Action filter',
+            options: [
+              { value: 'ALL', label: 'All actions' },
+              { value: 'TRIGGERED', label: 'Triggered' },
+              { value: 'ACKNOWLEDGED', label: 'Acknowledged' },
+              { value: 'RESOLVED', label: 'Resolved' },
+              { value: 'RULE_UPDATED', label: 'Rule updated' },
+              { value: 'CLEARED', label: 'Cleared' },
+            ],
+          },
+          {
+            value: severityFilter,
+            onChange: setSeverityFilter,
+            'aria-label': 'Severity filter',
+            options: [
+              { value: 'ALL', label: 'All severities' },
+              { value: 'CRITICAL', label: 'Critical' },
+              { value: 'HIGH', label: 'High' },
+              { value: 'WARNING', label: 'Warning' },
+              { value: 'INFO', label: 'Info' },
+            ],
+          },
+        ]}
+        trailing={
+          <BtnSecondary onClick={exportCSV} className="px-2.5 py-1.5 text-xs">
+            <Download className="size-3.5" />
+            Export
+          </BtnSecondary>
+        }
+      />
 
       <ConsoleCard padding="none" className="overflow-hidden">
         {!isPlatformLive ? (
@@ -128,16 +125,16 @@ export const AlarmAuditLog: React.FC = () => {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[900px] border-collapse text-left text-xs">
               <thead>
-                <tr className="border-b border-zinc-800 bg-zinc-900/80 font-mono text-[10px] uppercase text-zinc-500">
-                  <th className="px-3 py-2">Timestamp</th>
-                  <th className="px-3 py-2">Action</th>
-                  <th className="px-3 py-2">Severity</th>
-                  <th className="px-3 py-2">Rule &amp; Topic</th>
-                  <th className="px-3 py-2">Actor</th>
-                  <th className="px-3 py-2">Details</th>
+                <tr className="border-b border-zinc-800 bg-zinc-900/80 text-[10px] uppercase text-zinc-500">
+                  <th className="px-3 py-2 font-medium">Timestamp</th>
+                  <th className="px-3 py-2 font-medium">Action</th>
+                  <th className="px-3 py-2 font-medium">Severity</th>
+                  <th className="px-3 py-2 font-medium">Rule &amp; Topic</th>
+                  <th className="px-3 py-2 font-medium">Actor</th>
+                  <th className="px-3 py-2 font-medium">Details</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-800/80 font-mono text-[11px]">
+              <tbody className="divide-y divide-zinc-800/80 text-[11px]">
                 {filteredLogs.map((entry) => {
                   const actorRoleCfg = ROLE_CONFIGS[entry.actorRole] || ROLE_CONFIGS.viewer;
 
@@ -154,7 +151,7 @@ export const AlarmAuditLog: React.FC = () => {
                       <td className="px-3 py-2 font-semibold text-white">{entry.severity}</td>
                       <td className="max-w-xs px-3 py-2">
                         <div className="truncate font-semibold text-white">{entry.ruleName}</div>
-                        <div className="truncate text-[10px] text-zinc-500">{entry.topic}</div>
+                        <div className="truncate font-mono text-[10px] text-zinc-500">{entry.topic}</div>
                       </td>
                       <td className="whitespace-nowrap px-3 py-2">
                         <div className="font-semibold text-white">{entry.actorName}</div>

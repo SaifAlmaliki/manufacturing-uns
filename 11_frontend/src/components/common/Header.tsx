@@ -93,7 +93,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   const handleNotifications = () => {
     if (myUnacknowledgedCount > 0) {
-      navigate('/alerts');
+      navigate('/alerts/active');
       return;
     }
     if (staleNodesCount > 0) {
