@@ -132,7 +132,7 @@ export const SignalInspector: React.FC<{ simulator: SimulatorState }> = ({ simul
             id="simulator-signal-device"
             value={selectedId}
             onChange={(event) => setSelectedId(event.target.value)}
-            className="w-full bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#E2E8F0] dark:border-[#1E293B] rounded px-2.5 py-1.5 text-[#0F172A] dark:text-[#F8FAFC] text-[11px] font-mono focus:outline-none focus:border-[#FFC107]"
+            className="w-full rounded-xl border border-zinc-800 bg-zinc-900/80 px-2.5 py-1.5 text-sm text-[#FF7A00] focus:border-[#FF7A00]/50 focus:outline-none"
           >
             <option value="">— select a device —</option>
             {devices.map((device) => (

@@ -46,9 +46,9 @@ function formatUptime(seconds: number): string {
 }
 
 const Tile: React.FC<{ label: string; value: string; tone?: string }> = ({ label, value, tone }) => (
-  <div className="p-3 rounded-lg bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B]">
-    <div className="text-[10px] text-[#64748B] uppercase font-mono tracking-wider">{label}</div>
-    <div className={`text-base font-mono font-bold tabular-nums ${tone ?? 'text-[#0F172A] dark:text-[#F8FAFC]'}`}>
+  <div className="rounded-2xl border border-zinc-800 bg-[#111114] p-3">
+    <div className="text-[10px] uppercase tracking-wider text-zinc-500">{label}</div>
+    <div className={`mt-1 text-base font-semibold tabular-nums ${tone ?? 'text-[#FF7A00]'}`}>
       {value}
     </div>
   </div>
@@ -113,10 +113,10 @@ export const SimulatorStatusPanel: React.FC<{ simulator: SimulatorState }> = ({ 
         >
           {runState}
         </span>
-        <span className="px-2 py-0.5 rounded bg-[#F1F5F9] dark:bg-[#1E293B] text-[#64748B] dark:text-[#94A3B8] font-mono text-[10px]">
+        <span className="rounded-lg border border-zinc-800 bg-zinc-900/80 px-2.5 py-1 text-xs text-[#FF7A00]">
           profile: {status?.profile ?? '—'}
         </span>
-        <span className="px-2 py-0.5 rounded bg-[#F1F5F9] dark:bg-[#1E293B] text-[#64748B] dark:text-[#94A3B8] font-mono text-[10px]">
+        <span className="rounded-lg border border-zinc-800 bg-zinc-900/80 px-2.5 py-1 text-xs text-[#FF7A00]">
           seed: {status?.seed ?? '—'}
         </span>
 
@@ -170,23 +170,23 @@ export const SimulatorStatusPanel: React.FC<{ simulator: SimulatorState }> = ({ 
         <Tile label="Uptime" value={formatUptime(status?.uptime_s ?? 0)} />
       </div>
 
-      <div className="p-3 rounded-lg bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B]">
-        <div className="text-[10px] text-[#64748B] uppercase font-mono tracking-wider flex items-center gap-1.5 mb-2">
-          <Activity className="w-3.5 h-3.5" />
+      <div className="rounded-2xl border border-zinc-800 bg-[#111114] p-3">
+        <div className="mb-2 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-zinc-500">
+          <Activity className="size-3.5" />
           <span>Publish rate by cadence tier</span>
         </div>
         <div className="space-y-1">
           {Object.entries(status?.msg_per_sec ?? {}).map(([tier, rate]) => (
-            <div key={tier} className="flex items-center justify-between font-mono text-[11px]">
-              <span className="text-[#64748B] dark:text-[#94A3B8]">{TIER_LABELS[tier] ?? tier}</span>
-              <span className="text-[#0F172A] dark:text-[#F8FAFC] tabular-nums">
+            <div key={tier} className="flex items-center justify-between text-sm">
+              <span className="text-zinc-500">{TIER_LABELS[tier] ?? tier}</span>
+              <span className="tabular-nums text-[#FF7A00]">
                 {rate.toFixed(2)} /s
-                <span className="text-[#64748B] ml-2">({status?.per_tier[tier] ?? 0} signals)</span>
+                <span className="ml-2 text-zinc-600">({status?.per_tier[tier] ?? 0} signals)</span>
               </span>
             </div>
           ))}
           {Object.keys(status?.msg_per_sec ?? {}).length === 0 && (
-            <div className="text-[11px] font-mono text-[#64748B]">Nothing is publishing.</div>
+            <div className="text-sm text-zinc-600">Nothing is publishing.</div>
           )}
         </div>
       </div>

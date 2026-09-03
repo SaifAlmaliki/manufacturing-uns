@@ -63,7 +63,7 @@ export const SimulatorConfigPanel: React.FC<{ simulator: SimulatorState }> = ({ 
   return (
     <div className="p-3 md:p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="font-bold text-[#0F172A] dark:text-[#F8FAFC] text-xs uppercase tracking-wider flex items-center gap-2">
+        <h3 className="font-bold text-white text-xs uppercase tracking-wider flex items-center gap-2">
           <Sliders className="w-4 h-4 text-amber-500 dark:text-[#FFC107]" />
           <span>Simulator Configuration</span>
         </h3>
@@ -75,7 +75,7 @@ export const SimulatorConfigPanel: React.FC<{ simulator: SimulatorState }> = ({ 
         )}
       </div>
 
-      <div className="p-3 rounded-lg bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] space-y-2">
+      <div className="p-3 rounded-2xl border border-zinc-800 bg-[#111114] space-y-2">
         <div className="text-[10px] text-[#64748B] uppercase font-mono tracking-wider">
           Profile &amp; seed
         </div>
@@ -94,7 +94,7 @@ export const SimulatorConfigPanel: React.FC<{ simulator: SimulatorState }> = ({ 
               disabled={disabled}
               value={profileDraft}
               onChange={(event) => setProfileDraft(event.target.value)}
-              className="w-full bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#E2E8F0] dark:border-[#1E293B] rounded px-2.5 py-1.5 text-[#0F172A] dark:text-[#F8FAFC] text-[11px] font-mono focus:outline-none focus:border-[#FFC107] disabled:opacity-50"
+              className="w-full rounded-xl border border-zinc-800 bg-zinc-900/80 px-2.5 py-1.5 text-sm text-[#FF7A00] focus:border-[#FF7A00]/50 focus:outline-none disabled:opacity-50"
             >
               {(config?.available_profiles ?? []).map((name) => (
                 <option key={name} value={name}>
@@ -113,7 +113,7 @@ export const SimulatorConfigPanel: React.FC<{ simulator: SimulatorState }> = ({ 
               disabled={disabled}
               value={seedDraft}
               onChange={(event) => setSeedDraft(event.target.value)}
-              className="w-full bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#E2E8F0] dark:border-[#1E293B] rounded px-2.5 py-1.5 text-[#0F172A] dark:text-[#F8FAFC] text-[11px] font-mono tabular-nums focus:outline-none focus:border-[#FFC107] disabled:opacity-50"
+              className="w-full rounded-xl border border-zinc-800 bg-zinc-900/80 px-2.5 py-1.5 text-sm text-[#FF7A00] focus:border-[#FF7A00]/50 focus:outline-none disabled:opacity-50"
             />
           </div>
           <button
@@ -128,7 +128,7 @@ export const SimulatorConfigPanel: React.FC<{ simulator: SimulatorState }> = ({ 
         </div>
       </div>
 
-      <div className="p-3 rounded-lg bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] space-y-2">
+      <div className="p-3 rounded-2xl border border-zinc-800 bg-[#111114] space-y-2">
         <div className="text-[10px] text-[#64748B] uppercase font-mono tracking-wider">
           Cadence tiers — seconds between publishes
         </div>
@@ -148,7 +148,7 @@ export const SimulatorConfigPanel: React.FC<{ simulator: SimulatorState }> = ({ 
                 onChange={(event) =>
                   setTierDrafts((previous) => ({ ...previous, [tier]: event.target.value }))
                 }
-                className="w-full bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#E2E8F0] dark:border-[#1E293B] rounded px-2.5 py-1.5 text-[#0F172A] dark:text-[#F8FAFC] text-[11px] font-mono tabular-nums focus:outline-none focus:border-[#FFC107] disabled:opacity-50"
+                className="w-full rounded-xl border border-zinc-800 bg-zinc-900/80 px-2.5 py-1.5 text-sm text-[#FF7A00] focus:border-[#FF7A00]/50 focus:outline-none disabled:opacity-50"
               />
             </div>
           ))}
@@ -164,7 +164,7 @@ export const SimulatorConfigPanel: React.FC<{ simulator: SimulatorState }> = ({ 
         </button>
       </div>
 
-      <div className="p-3 rounded-lg bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] space-y-2">
+      <div className="p-3 rounded-2xl border border-zinc-800 bg-[#111114] space-y-2">
         <div className="text-[10px] text-[#64748B] uppercase font-mono tracking-wider">
           Sensor families
         </div>
@@ -172,7 +172,7 @@ export const SimulatorConfigPanel: React.FC<{ simulator: SimulatorState }> = ({ 
           {Object.entries(status?.families ?? config?.families ?? {}).map(([family, enabled]) => (
             <label
               key={family}
-              className="flex items-center gap-2 px-2 py-1.5 rounded bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#E2E8F0] dark:border-[#1E293B] font-mono text-[11px] text-[#0F172A] dark:text-[#F8FAFC] cursor-pointer"
+              className="flex items-center gap-2 px-2 py-1.5 rounded bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#E2E8F0] dark:border-[#1E293B] font-mono text-[11px] text-[#FF7A00] cursor-pointer"
             >
               <input
                 type="checkbox"
@@ -187,7 +187,7 @@ export const SimulatorConfigPanel: React.FC<{ simulator: SimulatorState }> = ({ 
         </div>
       </div>
 
-      <div className="rounded-lg bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] overflow-hidden">
+      <div className="rounded-2xl border border-zinc-800 bg-[#111114] overflow-hidden">
         <div className="px-3 py-2 text-[10px] text-[#64748B] uppercase font-mono tracking-wider border-b border-[#E2E8F0] dark:border-[#1E293B] flex items-center gap-1.5">
           <Layers className="w-3.5 h-3.5" />
           <span>Devices ({devices.length})</span>
@@ -205,7 +205,7 @@ export const SimulatorConfigPanel: React.FC<{ simulator: SimulatorState }> = ({ 
                 <th className="text-right px-3 py-1.5">Enabled</th>
               </tr>
             </thead>
-            <tbody className="text-[#0F172A] dark:text-[#F8FAFC]">
+            <tbody className="text-[#FF7A00]">
               {devices.map((device) => (
                 <tr key={device.id} className="border-b border-[#E2E8F0]/60 dark:border-[#1E293B]/60">
                   <td className="px-3 py-1.5" title={device.topic_prefix}>{device.id}</td>

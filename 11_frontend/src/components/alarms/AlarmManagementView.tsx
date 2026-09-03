@@ -39,6 +39,7 @@ import {
   BtnPrimary,
   BtnSecondary,
   BtnGhost,
+  consoleTokens,
 } from '../ui/console-ui';
 
 type AlarmSubTab = 'active' | 'rules' | 'matrix' | 'audit';
@@ -201,62 +202,33 @@ export const AlarmManagementView: React.FC = () => {
           <div className="space-y-4">
             {/* Filter Bar */}
             <ConsoleCard className="flex flex-wrap items-center justify-between gap-3">
-              {/* Left: Role Scope Switcher */}
-              <div className="flex items-center gap-1 bg-[#F1F5F9] dark:bg-[#0B0B0C] p-1 rounded-lg border border-[#E2E8F0] dark:border-[#1E293B]">
-                <button
-                  onClick={() => setRoleFilter('my_role')}
-                  className={`px-3 py-1.5 rounded text-xs font-mono transition-all cursor-pointer ${
-                    roleFilter === 'my_role'
-                      ? 'bg-amber-500 dark:bg-[#FFC107] text-[#0B0B0C] font-bold shadow-sm'
-                      : 'text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC]'
-                  }`}
-                >
-                  My Role Alerts ({currentUser.role})
-                </button>
-                <button
-                  onClick={() => setRoleFilter('all')}
-                  className={`px-3 py-1.5 rounded text-xs font-mono transition-all cursor-pointer ${
-                    roleFilter === 'all'
-                      ? 'bg-amber-500 dark:bg-[#FFC107] text-[#0B0B0C] font-bold shadow-sm'
-                      : 'text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC]'
-                  }`}
-                >
-                  All Plant Alarms ({activeAlarms.length})
-                </button>
-              </div>
-
-              {/* Right: Severity Dropdown & Search & Clear Resolved */}
-              <div className="flex items-center gap-2 flex-1 sm:flex-initial min-w-[280px]">
-                <div className="relative flex-1">
-                  <Search className="w-3.5 h-3.5 text-[#64748B] absolute left-2.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Filter incidents..."
-                    className="w-full bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#CBD5E1] dark:border-[#1E293B] rounded-md pl-8 pr-2 py-1.5 text-xs text-[#0F172A] dark:text-[#F8FAFC] font-mono focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107]"
-                  />
-                </div>
-
+              <SegmentTabs
+                tabs={[
+                  { id: 'my_role', label: `My Role (${currentUser.role})` },
+                  { id: 'all', label: `All (${activeAlarms.length})` },
+                ]}
+                active={roleFilter}
+                onChange={(id) => setRoleFilter(id as 'my_role' | 'all')}
+              />
+              <div className="flex min-w-[240px] flex-1 items-center gap-2 sm:max-w-sm">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search alarms..."
+                  className={consoleTokens.input + ' flex-1 py-2 text-sm'}
+                />
                 <select
                   value={severityFilter}
                   onChange={(e) => setSeverityFilter(e.target.value)}
-                  className="bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#CBD5E1] dark:border-[#1E293B] rounded-md px-2.5 py-1.5 text-xs text-[#475569] dark:text-[#94A3B8] font-mono focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107] cursor-pointer"
+                  className={consoleTokens.input + ' w-auto py-2 text-sm'}
                 >
-                  <option value="ALL">All Severities</option>
+                  <option value="ALL">All</option>
                   <option value="CRITICAL">Critical</option>
                   <option value="HIGH">High</option>
                   <option value="WARNING">Warning</option>
                   <option value="INFO">Info</option>
                 </select>
-
-                <button
-                  onClick={clearResolvedAlarms}
-                  className="px-2.5 py-1.5 rounded bg-white dark:bg-[#0B0B0C] border border-[#CBD5E1] dark:border-[#1E293B] text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC] text-xs font-mono transition-colors cursor-pointer shrink-0"
-                  title="Clear resolved alarms from view"
-                >
-                  Clear Resolved
-                </button>
               </div>
             </ConsoleCard>
 
@@ -280,155 +252,63 @@ export const AlarmManagementView: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <div className="grid grid-cols-1 gap-3">
+              <div className="space-y-3">
                 {displayedAlarms.map((alarm) => {
-                  const isRelevant = alarm.targetRoles.includes(currentUser.role);
+                  const severityColor =
+                    alarm.severity === 'CRITICAL'
+                      ? 'bg-red-500'
+                      : alarm.severity === 'HIGH'
+                        ? 'bg-[#FF7A00]'
+                        : alarm.severity === 'WARNING'
+                          ? 'bg-yellow-500'
+                          : 'bg-zinc-500';
 
                   return (
-                    <div
-                      key={alarm.id}
-                      className={`p-3.5 rounded-xl border transition-all ${
-                        alarm.status === 'ACTIVE_UNACK'
-                          ? alarm.severity === 'CRITICAL'
-                            ? 'bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-500/50 shadow-sm dark:shadow-md dark:shadow-rose-950/30'
-                            : 'bg-white dark:bg-[#111114] border-amber-300 dark:border-amber-500/40'
-                          : alarm.status === 'RESOLVED'
-                          ? 'bg-[#F8FAFC] dark:bg-[#0B0B0C] border-[#E2E8F0] dark:border-[#1E293B] opacity-75'
-                          : 'bg-white dark:bg-[#111114] border-[#E2E8F0] dark:border-[#1E293B]'
-                      }`}
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-2.5 mb-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          {/* Severity Badge */}
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border uppercase tracking-wider ${getSeverityBadge(
-                              alarm.severity
-                            )}`}
-                          >
-                            {alarm.severity}
-                          </span>
-
-                          {/* Status Badge */}
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${getStatusBadge(
-                              alarm.status
-                            )}`}
-                          >
-                            {alarm.status.replace('_', ' ')}
-                          </span>
-
-                          {/* Title */}
-                          <h3 className="font-bold text-xs sm:text-sm text-[#0F172A] dark:text-[#F8FAFC] truncate">
-                            {alarm.ruleName}
-                          </h3>
+                    <ConsoleCard key={alarm.id} className="space-y-3">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="flex min-w-0 flex-1 items-start gap-3">
+                          <span className={`mt-1.5 size-2.5 shrink-0 rounded-full ${severityColor}`} />
+                          <div className="min-w-0">
+                            <h3 className="truncate text-sm font-semibold text-white">{alarm.ruleName}</h3>
+                            <p className="mt-0.5 text-sm text-zinc-400">{alarm.conditionDescription}</p>
+                            <p className="mt-1 truncate text-xs text-zinc-600">{alarm.topic}</p>
+                          </div>
                         </div>
-
-                        {/* Triggered Timestamp & Actions */}
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-[#64748B] font-mono flex items-center gap-1 tabular-nums">
-                            <Clock className="w-3 h-3" />
+                        <div className="text-right">
+                          <div className="text-lg font-semibold tabular-nums text-[#FF7A00]">
+                            {String(alarm.currentValue)} {alarm.unit || ''}
+                          </div>
+                          <div className="text-xs text-zinc-500">
                             {new Date(alarm.triggeredAt).toLocaleTimeString()}
-                          </span>
-
-                          {/* Acknowledge Button */}
-                          {alarm.status === 'ACTIVE_UNACK' && (
-                            <button
-                              onClick={() => setAcknowledgingAlarm(alarm)}
-                              className="px-2.5 py-1 bg-emerald-50 dark:bg-emerald-600/20 hover:bg-emerald-100 dark:hover:bg-emerald-600/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/40 rounded text-xs font-mono font-bold transition-colors cursor-pointer flex items-center gap-1"
-                            >
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span>Acknowledge</span>
-                            </button>
-                          )}
-
-                          {/* Resolve Button */}
-                          {alarm.status !== 'RESOLVED' && (
-                            <button
-                              onClick={() => setResolvingAlarm(alarm)}
-                              className="px-2.5 py-1 bg-[#F1F5F9] dark:bg-[#1E293B] hover:bg-slate-200 dark:hover:bg-[#334155] text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC] border border-[#CBD5E1] dark:border-[#334155] rounded text-xs font-mono transition-colors cursor-pointer"
-                            >
-                              Resolve
-                            </button>
-                          )}
+                          </div>
                         </div>
                       </div>
 
-                      {/* Condition Description & Topic */}
-                      <div className="grid grid-cols-1 md:grid-cols-12 gap-2 text-xs py-2 bg-[#F8FAFC] dark:bg-[#0B0B0C] rounded-lg p-2.5 border border-[#E2E8F0] dark:border-[#1E293B] my-2">
-                        <div className="md:col-span-8 space-y-1">
-                          <div className="flex items-center gap-2 text-[11px] font-mono text-amber-700 dark:text-[#FFC107]">
-                            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                            <span className="font-semibold">{alarm.conditionDescription}</span>
-                          </div>
-                          <div className="text-[10px] text-[#64748B] dark:text-[#94A3B8] font-mono truncate flex items-center gap-1">
-                            <span className="text-[#64748B]">TOPIC:</span>
-                            <span className="text-[#0F172A] dark:text-[#F8FAFC]">{alarm.topic}</span>
-                          </div>
-                        </div>
-
-                        {/* Telemetry Snapshot & Value */}
-                        <div className="md:col-span-4 flex items-center justify-between md:justify-end gap-3 text-right">
-                          <div>
-                            <div className="text-[9px] text-[#64748B] uppercase font-mono">Live Breached Value</div>
-                            <div className="text-sm font-mono font-bold text-rose-600 dark:text-rose-400 tabular-nums">
-                              {String(alarm.currentValue)} {alarm.unit || ''}
-                            </div>
-                          </div>
-
-                          {/* Jump to Node In UNS Tree */}
-                          <button
-                            onClick={() => jumpToTopicInTree(alarm.topic)}
-                            className="p-1.5 rounded bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] hover:border-amber-500 dark:hover:border-[#FFC107] text-[#64748B] dark:text-[#94A3B8] hover:text-amber-700 dark:hover:text-[#FFC107] transition-colors cursor-pointer"
-                            title="Inspect in UNS Hierarchy Tree"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                          </button>
-
-                          {/* Jump to Historian Trend */}
-                          <button
-                            onClick={() => jumpToHistorian(alarm.topic)}
-                            className="p-1.5 rounded bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] hover:border-amber-500 dark:hover:border-[#FFC107] text-[#64748B] dark:text-[#94A3B8] hover:text-amber-700 dark:hover:text-[#FFC107] transition-colors cursor-pointer"
-                            title="View Historical Trend Graph"
-                          >
-                            <TrendingUp className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Footer: Target Roles & Operator Notes */}
-                      <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-[#64748B]">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-mono text-[#64748B]">Target Roles:</span>
-                          {alarm.targetRoles.map((role) => {
-                            const roleCfg = ROLE_CONFIGS[role] || ROLE_CONFIGS.viewer;
-                            const isMy = role === currentUser.role;
-                            return (
-                              <span
-                                key={role}
-                                className={`px-1.5 py-0.2 rounded font-mono font-bold border ${roleCfg.badgeBg} ${roleCfg.badgeText} ${roleCfg.badgeBorder} ${
-                                  isMy ? 'ring-1 ring-amber-500 dark:ring-[#FFC107]' : ''
-                                }`}
-                              >
-                                {roleCfg.label} {isMy ? '(You)' : ''}
-                              </span>
-                            );
-                          })}
-                        </div>
-
+                      <div className="flex flex-wrap items-center gap-2 border-t border-zinc-800 pt-3">
+                        {alarm.status === 'ACTIVE_UNACK' && (
+                          <BtnPrimary onClick={() => setAcknowledgingAlarm(alarm)} className="py-1.5 text-xs">
+                            <CheckCircle2 className="size-3.5" />
+                            Acknowledge
+                          </BtnPrimary>
+                        )}
+                        {alarm.status !== 'RESOLVED' && (
+                          <BtnSecondary onClick={() => setResolvingAlarm(alarm)} className="py-1.5 text-xs">
+                            Resolve
+                          </BtnSecondary>
+                        )}
+                        <BtnGhost onClick={() => jumpToTopicInTree(alarm.topic)} className="py-1.5 text-xs">
+                          <ExternalLink className="size-3.5" />
+                          Tree
+                        </BtnGhost>
+                        <BtnGhost onClick={() => jumpToHistorian(alarm.topic)} className="py-1.5 text-xs">
+                          <TrendingUp className="size-3.5" />
+                          Historian
+                        </BtnGhost>
                         {alarm.acknowledgedBy && (
-                          <div className="font-mono text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                            <CheckCircle2 className="w-3 h-3" />
-                            <span>Ack: {alarm.acknowledgedBy}</span>
-                          </div>
+                          <span className="ml-auto text-xs text-emerald-400">Ack: {alarm.acknowledgedBy}</span>
                         )}
                       </div>
-
-                      {alarm.notes && (
-                        <div className="mt-1.5 pt-1.5 border-t border-[#E2E8F0] dark:border-[#1E293B] text-[11px] text-[#64748B] dark:text-[#94A3B8] italic">
-                          "{alarm.notes}"
-                        </div>
-                      )}
-                    </div>
+                    </ConsoleCard>
                   );
                 })}
               </div>

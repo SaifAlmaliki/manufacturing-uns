@@ -40,12 +40,12 @@ export const PayloadInspector: React.FC = () => {
     return (
       <div
         id="payload-inspector-empty"
-        className="flex flex-col items-center justify-center h-full bg-[#FFFFFF] dark:bg-[#050505] text-[#64748B] p-8 text-center"
+        className="flex h-full flex-col items-center justify-center bg-[#111114] p-8 text-center"
       >
-        <Layers className="w-10 h-10 text-[#CBD5E1] dark:text-[#334155] mb-3" />
-        <h3 className="text-[#475569] dark:text-[#94A3B8] font-semibold text-xs font-mono">NO TOPIC SELECTED</h3>
-        <p className="text-[11px] text-[#64748B] max-w-sm mt-1 font-mono">
-          Select any ISA-95 node from the namespace hierarchy on the left to inspect its live telemetry snapshot and parameters.
+        <Layers className="mb-3 size-10 text-zinc-700" />
+        <h3 className="text-sm font-medium text-zinc-400">No topic selected</h3>
+        <p className="mt-1 max-w-xs text-sm text-zinc-600">
+          Select a node from the tree to inspect its live payload.
         </p>
       </div>
     );
@@ -93,125 +93,63 @@ export const PayloadInspector: React.FC = () => {
   }
 
   return (
-    <div id="payload-inspector-panel" className="flex flex-col h-full bg-[#F8FAFC] dark:bg-[#050505] overflow-hidden">
-      {/* Top Header: ISA-95 Breadcrumbs & Quick Actions */}
-      <div className="p-3 bg-white dark:bg-[#111114] border-b border-[#E2E8F0] dark:border-[#1E293B] space-y-2 shrink-0">
-        {/* Breadcrumb Path */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1 overflow-x-auto text-[10px] font-mono py-0.5 max-w-xl scrollbar-none">
-            {pathParts.map((part, idx) => (
-              <React.Fragment key={idx}>
-                {idx > 0 && <ChevronRight className="w-3 h-3 text-[#94A3B8] dark:text-[#475569] shrink-0" />}
-                <span
-                  className={`px-1.5 py-0.5 rounded ${
-                    idx === pathParts.length - 1
-                      ? 'bg-amber-50 dark:bg-[#1E293B] text-amber-900 dark:text-[#FFC107] font-semibold border border-amber-300 dark:border-[#334155]'
-                      : 'text-[#475569] dark:text-[#94A3B8] bg-slate-100 dark:bg-[#0B0B0C]'
-                  }`}
-                >
-                  {part}
-                </span>
-              </React.Fragment>
-            ))}
+    <div id="payload-inspector-panel" className="flex h-full flex-col overflow-hidden bg-[#111114] text-zinc-100">
+      <div className="shrink-0 space-y-2 border-b border-zinc-800 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0 truncate text-sm font-medium text-white" title={selectedNode.topic}>
+            {pathParts[pathParts.length - 1]}
           </div>
-
-          {/* Action Buttons */}
-          <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex shrink-0 items-center gap-1">
             <button
               onClick={handleCopyTopic}
-              className="flex items-center gap-1 px-2 py-0.5 rounded bg-white dark:bg-[#1E293B] hover:bg-slate-100 dark:hover:bg-[#334155] text-[#0F172A] dark:text-[#E2E8F0] text-[10px] font-mono border border-[#CBD5E1] dark:border-[#334155] transition-colors cursor-pointer"
-              title="Copy Topic Path"
+              className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-[#FF7A00]"
+              title="Copy topic"
             >
-              {copiedTopic ? <Check className="w-3 h-3 text-emerald-600 dark:text-[#10B981]" /> : <Copy className="w-3 h-3 text-[#64748B] dark:text-[#94A3B8]" />}
-              <span>{copiedTopic ? 'Copied' : 'Copy'}</span>
+              {copiedTopic ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
             </button>
-
             <button
               onClick={() => (bookmarked ? removeBookmark(selectedNode.topic) : addBookmark(selectedNode.topic))}
-              className="flex items-center gap-1 px-2 py-0.5 rounded bg-white dark:bg-[#1E293B] hover:bg-slate-100 dark:hover:bg-[#334155] text-[#0F172A] dark:text-[#E2E8F0] text-[10px] font-mono border border-[#CBD5E1] dark:border-[#334155] transition-colors cursor-pointer"
-              title="Bookmark Topic"
+              className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-[#FF7A00]"
+              title="Bookmark"
             >
               {bookmarked ? (
-                <Bookmark className="w-3 h-3 text-amber-600 dark:text-[#FFC107] fill-current" />
+                <Bookmark className="size-3.5 fill-[#FF7A00] text-[#FF7A00]" />
               ) : (
-                <BookmarkPlus className="w-3 h-3 text-[#64748B] dark:text-[#94A3B8]" />
+                <BookmarkPlus className="size-3.5" />
               )}
             </button>
-
             <button
               onClick={() => jumpToHistorian(selectedNode.topic)}
-              className="flex items-center gap-1 px-2.5 py-0.5 rounded bg-amber-50 dark:bg-[#FFC107]/10 border border-amber-300 dark:border-[#FFC107]/40 hover:bg-amber-100 dark:hover:bg-[#FFC107]/20 text-amber-900 dark:text-[#FFC107] text-[10px] font-mono transition-colors cursor-pointer font-semibold"
-              title="Open in Timescale Historian"
+              className="rounded-lg bg-[#FF7A00]/15 px-2 py-1 text-xs font-medium text-[#FF7A00] hover:bg-[#FF7A00]/25"
             >
-              <History className="w-3 h-3 text-amber-600 dark:text-[#FFC107]" />
-              <span>Historian</span>
+              Historian
             </button>
           </div>
         </div>
 
-        {/* Node Metadata Strip */}
-        <div className="flex flex-wrap items-center gap-3 text-[10px] font-mono text-[#475569] dark:text-[#94A3B8] pt-1">
-          <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-[#0B0B0C] border border-[#CBD5E1] dark:border-[#334155] text-[#64748B]">
-            {getNodeRoleLabel(role)}
+        <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-500">
+          <span className={live ? 'text-emerald-400' : 'text-zinc-600'}>{live ? 'Live' : 'No data'}</span>
+          <span>·</span>
+          <span>{selectedNode.publisher || 'No publisher'}</span>
+          <span>·</span>
+          <span className={stale ? 'text-amber-400' : 'text-zinc-400'}>
+            {new Date(selectedNode.lastUpdated).toLocaleTimeString()}
           </span>
-          {live && (
-            <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800/50 text-emerald-700 dark:text-[#10B981] font-semibold">
-              LIVE DATA
-            </span>
-          )}
-          <div className="flex items-center gap-1">
-            <Server className="w-3 h-3 text-[#64748B]" />
-            <span>PUB:</span>
-            <span className="text-[#0F172A] dark:text-[#F8FAFC] font-semibold">{selectedNode.publisher || '—'}</span>
-          </div>
-
-          <div className="flex items-center gap-1">
-            <Clock className="w-3 h-3 text-[#64748B]" />
-            <span>UPDATED:</span>
-            <span className={stale ? 'text-amber-700 dark:text-[#FFC107] font-semibold' : 'text-emerald-700 dark:text-[#10B981] font-semibold'}>
-              {new Date(selectedNode.lastUpdated).toLocaleTimeString()}
-            </span>
-          </div>
-
-          <button
-            onClick={() => setFeedTopicFilter(`${selectedNode.topic}/#`)}
-            className="flex items-center gap-1 text-[#475569] dark:text-[#94A3B8] hover:text-amber-600 dark:hover:text-[#FFC107] ml-auto transition-colors cursor-pointer"
-            title="Filter Live Feed to this topic subtree"
-          >
-            <Filter className="w-3 h-3" />
-            <span>Filter Subtree</span>
-          </button>
         </div>
       </div>
 
-      {/* Main Content Area */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-[#1E293B]">
+      <div className="flex-1 space-y-3 overflow-y-auto p-3">
         {/* Real-time Parameters Banner Grid */}
         {numericMetrics.length > 0 && (
-          <div className="bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] rounded-lg p-3 space-y-2 shadow-xs">
-            <div className="flex items-center justify-between text-[10px] text-[#64748B]">
-              <span className="flex items-center gap-1.5 text-[#0F172A] dark:text-[#F8FAFC] font-serif font-bold text-xs">
-                <Gauge className="w-3.5 h-3.5 text-amber-600 dark:text-[#FFC107]" />
-                <span>Real-time Parameters</span>
-              </span>
-              <span className="text-emerald-700 dark:text-[#10B981] flex items-center gap-1 font-mono text-[9px] font-semibold tracking-wider">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-[#10B981] animate-pulse" />
-                <span>LIVE TELEMETRY</span>
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-3">
+            <div className="mb-2 text-xs font-medium text-zinc-500">Live values</div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {numericMetrics.slice(0, 6).map((m) => (
-                <div
-                  key={m.key}
-                  className="bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#E2E8F0] dark:border-[#1E293B] rounded p-2 font-mono flex flex-col justify-between"
-                >
-                  <div className="text-[9px] text-[#64748B] dark:text-[#94A3B8] truncate uppercase font-semibold">{m.key}</div>
-                  <div className="flex items-baseline gap-1 mt-1">
-                    <span className="text-base font-bold text-amber-600 dark:text-[#FFC107] tracking-tight">
-                      {typeof m.value === 'number' ? m.value.toFixed(1) : m.value}
-                    </span>
-                    {m.unit && <span className="text-[10px] text-[#64748B]">{m.unit}</span>}
+                <div key={m.key} className="rounded-xl border border-zinc-800 bg-[#111114] p-2">
+                  <div className="truncate text-[10px] uppercase text-zinc-600">{m.key}</div>
+                  <div className="mt-1 text-lg font-semibold tabular-nums text-[#FF7A00]">
+                    {typeof m.value === 'number' ? m.value.toFixed(1) : m.value}
+                    {m.unit && <span className="ml-1 text-xs text-zinc-500">{m.unit}</span>}
                   </div>
                 </div>
               ))}
@@ -219,10 +157,7 @@ export const PayloadInspector: React.FC = () => {
           </div>
         )}
 
-        <div
-          id="payload-inspector-grafana-trend"
-          className="h-80 rounded-lg overflow-hidden border border-[#E2E8F0] dark:border-[#1E293B] bg-[#111114]"
-        >
+        <div id="payload-inspector-grafana-trend" className="h-80 overflow-hidden rounded-2xl border border-zinc-800">
           <GrafanaEmbed
             uid={GRAFANA_DASHBOARDS.process.uid}
             theme={isDark ? 'dark' : 'light'}

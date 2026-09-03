@@ -17,6 +17,11 @@ export const consoleTokens = {
   btnGhost:
     'inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-800/60 hover:text-zinc-100',
   accent: '#FF7A00',
+  /** Dark inputs with orange text — simulator & technical panels */
+  inputOrange:
+    'w-full rounded-xl border border-zinc-800 bg-zinc-900/80 px-3 py-2.5 text-sm text-[#FF7A00] placeholder:text-zinc-600 focus:border-[#FF7A00]/50 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/30',
+  pane: 'flex flex-col h-full bg-[#111114] text-zinc-100',
+  paneHeader: 'shrink-0 border-b border-zinc-800 p-3',
 } as const;
 
 interface PageShellProps {
