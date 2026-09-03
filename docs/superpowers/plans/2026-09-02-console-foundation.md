@@ -1745,7 +1745,7 @@ The pilot's success criterion (ADR-0008), referenced zero times by the console.
   - `getDowntimeEvents(assetPath: string, from: string, to: string): Promise<DowntimeEvent[]>`
   - `getDowntimePareto(assetPath: string, from: string, to: string): Promise<DowntimeParetoBucket[]>`
   - `getDowntimeReasons(): Promise<DowntimeReason[]>`
-  - `assignDowntimeReason(eventId: string, reasonCode: string, note?: string, assignedBy?: string): Promise<DowntimeEvent>` — throws with the server's message on failure.
+  - `assignDowntimeReason(eventId: string, reasonCode: string, note?: string): Promise<DowntimeEvent>` — throws with the server's message on failure. **No `assignedBy`**: the schema accepts one today, described as "attested by the caller, not authenticated", and a console that can name the author of a correction can name anybody. The returned event's `assignedBy` is read and displayed; it is just never supplied. The authentication plan's Task 6 deletes the argument from the schema, and because this method never sent it, that costs nothing here.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1913,15 +1913,32 @@ describe('assignDowntimeReason', () => {
       },
     })
 
-    const event = await client.assignDowntimeReason('11', 'BREAKDOWN', 'seal failed', 'shift.lead')
+    const event = await client.assignDowntimeReason('11', 'BREAKDOWN', 'seal failed')
 
     expect(sentBody(fetchMock).variables).toEqual({
       eventId: '11',
       reasonCode: 'BREAKDOWN',
       note: 'seal failed',
-      assignedBy: 'shift.lead',
     })
     expect(event.reasonSource).toBe('MANUAL')
+  })
+
+  it('does not name the author, and still reads the name back', async () => {
+    // The console never claims who made a correction. It displays who the server recorded.
+    const fetchMock = respond({
+      assignDowntimeReason: {
+        id: '11', assetPath: LINE, shiftStart: FROM, startedAt: FROM, endedAt: TO,
+        durationS: 60, stateValue: 'ABORTED', reasonCode: 'BREAKDOWN',
+        reasonDisplayName: 'Breakdown', reasonCategory: 'FAILURE', isPlanned: false,
+        reasonSource: 'MANUAL', assignedBy: 'erin.engineer', assignedAt: TO, note: null,
+      },
+    })
+
+    const event = await client.assignDowntimeReason('11', 'BREAKDOWN')
+
+    expect(sentBody(fetchMock).variables).not.toHaveProperty('assignedBy')
+    expect(sentBody(fetchMock).query).not.toContain('$assignedBy')
+    expect(event.assignedBy).toBe('erin.engineer')
   })
 
   it('throws the server&apos;s sentence when the code is not authored', async () => {
@@ -2047,18 +2064,28 @@ export const GET_DOWNTIME_REASONS_QUERY = `
   }
 `
 
+/**
+ * `assignedBy` is read in the selection set and never supplied.
+ *
+ * The schema still accepts it as an argument today, with a description that admits it is
+ * "attested by the caller, not authenticated". A console that can name the author of a
+ * correction to a plant number can name anybody, so this document does not name one — the
+ * server's own default is more trustworthy than anything a browser could send.
+ *
+ * `docs/superpowers/plans/2026-09-02-console-authentication.md` Task 6 removes the argument
+ * from the schema entirely and takes the name from the token. Because this document never
+ * declared it, that change needs no edit here. Do not add it back to make the field non-null.
+ */
 export const ASSIGN_DOWNTIME_REASON_MUTATION = `
   mutation AssignDowntimeReason(
     $eventId: ID!
     $reasonCode: String!
     $note: String
-    $assignedBy: String
   ) {
     assignDowntimeReason(
       eventId: $eventId
       reasonCode: $reasonCode
       note: $note
-      assignedBy: $assignedBy
     ) {
 ${DOWNTIME_EVENT_FIELDS}
     }

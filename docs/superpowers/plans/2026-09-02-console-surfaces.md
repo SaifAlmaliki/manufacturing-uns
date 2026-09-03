@@ -83,7 +83,12 @@
       BrowserEvaluationNotice.tsx          CREATE  ADR-0005 stated, not concealed (Task 14)
       AlarmManagementView.tsx              MODIFY  three honest empty states + the notice
       AlarmAuditLog.tsx                    MODIFY  export through the shared CSV writer
+      AlertRuleEditorModal.tsx             MODIFY  what this console does, split from what it
+                                                   only records; the three hidden fields get
+                                                   controls; no default plant (Task 24)
     home/                                  KEEP    UnsTreeView, LiveMqttFeed, PayloadInspector
+      PayloadInspector.tsx                 MODIFY  Sparkplug decoding attributed correctly (Task 22)
+    sparkplug/SparkplugView.tsx            MODIFY  invented byte size, seq and online dot out (Task 22)
     explore/ExploreView.tsx                DELETE  once HistorianView lands (Task 18)
     home/HomeView.tsx                      DELETE  once NamespaceView lands (Task 17)
     system/SystemHealthView.tsx            DELETE  once HealthView lands (Task 19)
@@ -93,12 +98,17 @@
     users/CreateUserModal.tsx              DELETE  this console cannot create an account
     users/EditUserModal.tsx                DELETE  this console cannot grant a permission
   context/
-    UNSContext.tsx                         MODIFY  NavigationTab, selectedAsset, jump targets
-    AlarmContext.tsx                       MODIFY  three seeded collections and restoreDefaults deleted
+    UNSContext.tsx                         MODIFY  NavigationTab, selectedAsset, jump targets;
+                                                   live Sparkplug reaches the feed but still
+                                                   never patches the tree (Task 22);
+                                                   every feed message is evaluated (Task 23)
+    AlarmContext.tsx                       MODIFY  three seeded collections and restoreDefaults deleted;
+                                                   evaluation covers the whole feed (Task 23)
     AuthContext.tsx                        MODIFY  canAccessTab tab ids and plain names (Task 3);
                                                    every write method and the audit trail
                                                    deleted (Task 21)
   lib/
+    alarms/evaluate.ts                     CREATE  conditionResult + evaluateFeed, pure (Task 23)
     csv/to-csv.ts                          CREATE  shared CSV serialiser, domain-free
     grafana/dashboards.ts                  CREATE  UIDs and variable names in one place
     health/relative-age.ts                 CREATE  "4 s ago", pure, clock passed in
@@ -106,11 +116,16 @@
     uns/historian-csv.ts                   CREATE  the historian's CSV columns
     uns/tree-search.ts                     CREATE  ancestor expansion, loaded-node matching
     uns/topic-match.ts                     CREATE  MQTT +/# semantics, one tested matcher
+    uns/base64.ts                          CREATE  byte length of a base64 string (Task 22)
+    uns/map-nodes.ts                       MODIFY  no invented byte count, no online:true (Task 22)
     uns/isa95-probe.ts                     DELETE  fabricated children (Task 17)
   services/graphql/
     client.ts                              MODIFY  two observed timestamps (Task 19)
+    queries.ts                             MODIFY  uuid and body dropped from the spB query (Task 22)
+    types.ts                               MODIFY  GraphqlSpbNode loses uuid and body (Task 22)
   types/
-    uns.ts                                 MODIFY  SystemHealthInfo gains three keys (Task 19)
+    uns.ts                                 MODIFY  SystemHealthInfo gains three keys (Task 19);
+                                                   SparkplugNode.online deleted (Task 22)
     rbac.ts                                MODIFY  AuditLogEntry deleted, no consumer (Task 21)
 ```
 
@@ -4920,7 +4935,7 @@ Read `07_uns_graphql/src/uns_graphql/mutations/oee.py` before writing this task.
 
 1. `assign_downtime_reason` is the **only** write in the OEE surface, and its module docstring says why: "An OEE number is computed, never edited. What a human legitimately knows better than the engine is *why* a machine stopped."
 2. It "queues that shift for recomputation", and "Reassignment can change the OEE, because a reason's `is_planned` flag moves the interval between Unplanned Down and excluded time." So the dialog must not present itself as relabelling a row. The operator is triggering a recomputation, and the tab says so.
-3. `assigned_by` carries the description "Attested by the caller, not authenticated: this platform has no authentication anywhere." The dialog therefore asks the operator to type a name and states plainly that nothing verifies it. It does **not** send `AuthContext`'s fabricated user, which would dress a made-up identity as a real one. The authentication plan replaces this field with the token subject.
+3. `assigned_by` carries the description "Attested by the caller, not authenticated: this platform has no authentication anywhere." The dialog therefore asks the operator to type a name and states plainly that nothing verifies it. It does **not** send `AuthContext`'s fabricated user, which would dress a made-up identity as a real one. **This field is deliberately temporary**: `docs/superpowers/plans/2026-09-02-console-authentication.md` Task 6 deletes the `assignedBy` argument from the schema and takes the name from the validated token, and its Step 7 enumerates every edit that lands here — the field, the fourth argument, the "nothing verifies it" sentence, the `useAuth`-is-absent test, and the stops-table tooltip. Write this task as specified anyway; a typed name the UI calls unverified is honest for a console with no identity, and the alternative of recording nothing loses information for no gain.
 
 `share` is documented on `DowntimeParetoBucket` as "Fraction of the window's total downtime, 0..1", and the type description says "largest first" — so `formatRatio` renders it and the server's order is kept, with a defensive sort because a bar list that is not descending is unreadable.
 
@@ -12919,4 +12934,2473 @@ Cycle 2 replaces them with an OIDC session."
 - `CreateUserModal.tsx` and `EditUserModal.tsx` are deleted.
 - `login` still ignores its password argument. That is Cycle 2's task, and this screen now says
   so out loud instead of hiding it behind a red badge.
+- `npx tsc --noEmit` clean; `npx vitest run` green.
+
+---
+
+## Task 22: SPARKPLUG — the browser decodes nothing, and says nothing it cannot check
+
+Spec section 18's test 14 is the requirement:
+
+> **No Sparkplug decoding in the browser.** Live Sparkplug renders as a badge over
+> `BytesPayload`; decoded values come only from `getSpbNodesByMetric`.
+
+Spec section 3's finding 7 says the *decoding* half is already right: *"Sparkplug is already
+handled correctly. `lib/uns/sparkplug.ts` defines `SPARKPLUG_PREFIX`, and no browser code
+decodes protobuf."* That finding holds — nothing in `11_frontend/src` parses a protobuf. But
+reading the three files that render Sparkplug turned up six statements the console cannot
+support, and one stale-state bug. This task locks the rule down with tests and fixes those.
+
+**Where the decoding actually happens.** Get this right before you edit the copy, because two
+files currently attribute it to the wrong module:
+
+- `02_mqtt-cluster/src/uns_mqtt/mqtt_listener.py:306`–`:308` calls
+  `convert_spb_bytes_payload_to_dict(payload)` for messages in the `spBv1.0` namespace. Every
+  subscriber built on the shared listener therefore receives a decoded payload.
+- `03_uns_graphdb` projects those messages into Neo4j under the node labels in
+  `graphdb_config.py:90`–`:92` (`spBv1_0`, `GROUP`, `MESSAGE_TYPE`, `EDGE_NODE`, `DEVICE`).
+- `07_uns_graphql/src/uns_graphql/queries/graph.py:382`–`:409` — `get_spb_nodes_by_metric` runs
+  `_SEARCH_SPB_BY_METRIC_QUERY` against the graph and returns `SPBNode`s. It is a read. It
+  decodes nothing off the wire.
+- `05_sparkplugb` is a separate decoder application: its README says it subscribes to
+  `spBv1.0/#`, decodes, maps metric names onto the ISA-95 namespace, and republishes — and that
+  it is *"**not** a SCADA/IIOT host and will not be publishing any control messages"*.
+
+So `SparkplugView.tsx:93` (*"Decoded edge nodes & metrics from 07_uns_graphql Sparkplug
+mapper"*) and `PayloadInspector.tsx:264` (*"Decoded by 07_uns_graphql Sparkplug mapper."*) both
+credit the wrong component. GraphQL is where the console *reads* decoded metrics, not where
+decoding happens.
+
+**The six unsupported statements and the bug.** All verified in the working tree:
+
+1. **`map-nodes.ts:139` hardcodes `online: true`.** `graphqlSpbNodeToSparkplugNode` sets it on
+   every node it builds, and `SparkplugNode.online` (`types/uns.ts:76`) is a required boolean
+   that nothing ever sets to `false`. `getSpbNodesByMetric` returns whatever the graph holds;
+   liveness is not in the payload. Nothing in `src` reads `.online` either — grep it.
+2. **`SparkplugView.tsx:152` renders a glowing green dot** on every node header regardless of
+   that field. Same claim, hardcoded a second time.
+3. **`map-nodes.ts:105` computes `binaryByteSize` as `value.length / 2`.** The value is the
+   string from `SPBPrimitive.data` or `BytesPayload.data`, and
+   `07_uns_graphql/src/uns_graphql/type/basetype.py:47`–`:52` defines `BytesPayload.data` as
+   `strawberry.scalars.Base64` — *"Represents Bytes data encoded as base64"*. Halving a base64
+   length is a hex assumption, so the byte count printed on screen is wrong.
+4. **`SparkplugView.tsx:49` falls back to `32`** when `binaryByteSize` is absent, so the UI can
+   print `[Binary Data: 32 bytes]` for a payload whose size it does not know. Same family as
+   `Nodes: {allLoadedNodes.length || 28}` in spec section 11.
+5. **`SparkplugView.tsx:158` renders `Seq: #{node.sequenceNumber ?? 0}`.** `SPBNode.seq` is
+   non-nullable in the schema (`type/sparkplugb_node.py:317`, `seq: int`), so the `?? 0` never
+   fires — but it is a fabricated default sitting in the render path, and the optional
+   `sequenceNumber?: number` in `types/uns.ts:74` is what invites it.
+6. **`SparkplugView.tsx:43` hardcodes an enterprise name.**
+   `name.startsWith('CovestroAG') || name.split('/').length >= 3` decides whether the
+   `Open in UNS` button appears. `05_sparkplugb`'s mapping rule is simply that the metric
+   **name** carries the ISA-95 path, so the plant-specific prefix and the `>= 3` guess are both
+   noise: any name containing `/` is a namespace path.
+7. **The stale-query bug.** `metricQuery` is initialised from `sparkplugInitialMetric`
+   (`:17`) but the effect at `:37`–`:39` depends on `sparkplugInitialMetric` and calls
+   `fetchSpbData()`, which reads `metricQuery`. `UNSContext.tsx:330`–`:334`'s `jumpToSparkplug`
+   sets the metric and changes the hash while this screen may already be mounted, in which case
+   `useState`'s initialiser does not run again: the second jump queries the **first** metric and
+   the search box still shows it. Reproduce it by opening a Sparkplug node in PayloadInspector,
+   coming back, and opening a different one.
+
+Two more things this task deliberately leaves alone, so nobody "fixes" them later without
+reading this:
+
+- **`queries.ts` asks for `uuid` and `body`** on every `getSpbNodesByMetric` call, and
+  `GraphqlSpbNode` (`services/graphql/types.ts:123`–`:124`) types them as optional. Nothing maps
+  or renders either one. `body` is `strawberry.scalars.Base64` — *"array of bytes used for any
+  custom binary encoded data"* (`type/sparkplugb_node.py:320`). Pulling an undecodable binary
+  blob into a browser that must not decode it, to then discard it, is worth one line of
+  deletion, so this task **does** remove both. That is the exception; the next item is not.
+- **`map-nodes.ts:87`–`:89`'s `BytesPayload` branch in `spbMetricValue` is unreachable** — the
+  branch above it (`:78`, `'data' in value && typeof value.data === 'string'`) already catches
+  base64 strings, which is what `BytesPayload.data` is. It is dead but harmless, and deleting it
+  is the kind of change that reads as behavioural in review. Leave it. If a later reader wants
+  it gone, the reasoning is here.
+
+**Files:**
+- Create: `11_frontend/src/lib/uns/base64.ts`
+- Modify: `11_frontend/src/lib/uns/map-nodes.ts` (the `binaryByteSize` line and `online: true`)
+- Modify: `11_frontend/src/types/uns.ts` (`SparkplugNode`)
+- Modify: `11_frontend/src/services/graphql/queries.ts` (`GET_SPB_NODES_BY_METRIC_QUERY`)
+- Modify: `11_frontend/src/services/graphql/types.ts:118`–`:125` (`GraphqlSpbNode`)
+- Modify: `11_frontend/src/components/sparkplug/SparkplugView.tsx`
+- Modify: `11_frontend/src/components/home/PayloadInspector.tsx:256`–`:273`
+- Modify: `11_frontend/src/context/UNSContext.tsx:364`–`:374` (the feed guard, Step 17)
+- Test: `11_frontend/src/lib/uns/base64.test.ts` (create)
+- Test: `11_frontend/src/components/sparkplug/SparkplugView.test.tsx` (create)
+- Test: `11_frontend/src/context/UNSContext.feed.test.tsx` (create)
+- Test: `11_frontend/src/components/home/LiveMqttFeed.sparkplug.test.tsx` (create)
+
+**Interfaces:**
+- Consumes: `unsGraphQLClient.getSpbNodesByMetric(metricNames: string[]): Promise<SparkplugNode[]>`
+  — already in the repo at `client.ts:382`, unchanged by this task and by every other task in
+  this plan. `useUNS()` for `jumpToTopicInTree` and `sparkplugInitialMetric`.
+- Produces:
+  - `src/lib/uns/base64.ts`:
+    ```ts
+    /** Byte length of a base64 string, without decoding it. Returns null if it is not base64. */
+    export function base64ByteLength(data: string): number | null;
+    ```
+  - `SparkplugNode` in `src/types/uns.ts` loses `online` and requires `sequenceNumber`:
+    ```ts
+    export interface SparkplugNode {
+      groupId: string;
+      edgeNodeId: string;
+      deviceId?: string;
+      topic: string;
+      metrics: SparkplugMetric[];
+      sequenceNumber: number;
+      timestamp: string;
+    }
+    ```
+    `SparkplugMetric` is unchanged, including the optional `binaryByteSize?: number` — it is now
+    absent rather than wrong when the size cannot be established.
+  - `GraphqlSpbNode` in `src/services/graphql/types.ts` loses `uuid` and `body`.
+  - Test ids: `spb-node`, `spb-metric-row`, `spb-binary`, `spb-empty`, `spb-search`.
+
+- [ ] **Step 1: Write the failing base64 test**
+
+Create `11_frontend/src/lib/uns/base64.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { base64ByteLength } from './base64';
+
+describe('base64ByteLength', () => {
+  it('counts bytes for each padding case', () => {
+    expect(base64ByteLength('AAECAw==')).toBe(4); // 00 01 02 03
+    expect(base64ByteLength('AAECAwQ=')).toBe(5);
+    expect(base64ByteLength('AAECAwQF')).toBe(6);
+    expect(base64ByteLength('')).toBe(0);
+  });
+
+  it('returns null rather than a wrong number for anything that is not base64', () => {
+    expect(base64ByteLength('not base64!')).toBeNull();
+    expect(base64ByteLength('AAE')).toBeNull(); // length 3 cannot be base64
+  });
+});
+```
+
+- [ ] **Step 2: Run it and watch it fail**
+
+Run: `cd 11_frontend && npx vitest run src/lib/uns/base64.test.ts`
+
+Expected: FAIL — `Failed to resolve import "./base64"`.
+
+- [ ] **Step 3: Write `base64.ts`**
+
+Create `11_frontend/src/lib/uns/base64.ts`:
+
+```ts
+/**
+ * The size of a base64 payload, measured without decoding it.
+ *
+ * The console never decodes Sparkplug bytes — 07_uns_graphql hands them over as
+ * strawberry.scalars.Base64 and they stay that way in the browser. A byte count is still
+ * useful to an integrator, and base64 gives one exactly: four characters carry three bytes,
+ * minus one byte per '=' of padding.
+ *
+ * Returns null when the string is not valid base64, because a wrong size is worse than none.
+ */
+export function base64ByteLength(data: string): number | null {
+  if (data.length === 0) {
+    return 0
+  }
+  if (data.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(data)) {
+    return null
+  }
+  const padding = data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0
+  return (data.length / 4) * 3 - padding
+}
+```
+
+- [ ] **Step 4: Run it and watch it pass**
+
+Run: `cd 11_frontend && npx vitest run src/lib/uns/base64.test.ts`
+
+Expected: PASS, two tests.
+
+- [ ] **Step 5: Stop the mapper inventing a byte count and a liveness flag**
+
+In `11_frontend/src/lib/uns/map-nodes.ts`, add the import beside the existing
+`./sparkplug` import:
+
+```ts
+import { base64ByteLength } from './base64'
+```
+
+Replace the `binaryByteSize` line (`:105`):
+
+```ts
+    binaryByteSize: isBinary && typeof value === 'string' ? value.length / 2 : undefined,
+```
+
+with:
+
+```ts
+    // BytesPayload.data is base64 (07_uns_graphql type/basetype.py). Undefined when the
+    // string is not base64 — the screen then says "Binary data" with no size.
+    binaryByteSize:
+      isBinary && typeof value === 'string' ? (base64ByteLength(value) ?? undefined) : undefined,
+```
+
+And in `graphqlSpbNodeToSparkplugNode`, delete the `online: true,` line. The graph read carries
+no liveness, so the field goes with it:
+
+```ts
+export function graphqlSpbNodeToSparkplugNode(node: GraphqlSpbNode): SparkplugNode {
+  const { groupId, edgeNodeId, deviceId } = parseSparkplugTopic(node.topic)
+  return {
+    groupId,
+    edgeNodeId,
+    deviceId,
+    topic: node.topic,
+    metrics: node.metrics.map(graphqlSpbMetricToSparkplugMetric),
+    sequenceNumber: node.seq,
+    timestamp: node.timestamp,
+  }
+}
+```
+
+- [ ] **Step 6: Narrow the two types**
+
+In `11_frontend/src/types/uns.ts`, replace the `SparkplugNode` interface (`:68`–`:77`) with the
+seven-field version in this task's Produces block: `online` deleted, `sequenceNumber: number`
+required because `SPBNode.seq` is non-nullable.
+
+In `11_frontend/src/services/graphql/types.ts`, drop the two unused fields (`:123`–`:124`):
+
+```ts
+export type GraphqlSpbNode = {
+  topic: string
+  timestamp: string
+  metrics: GraphqlSpbMetric[]
+  seq: number
+}
+```
+
+- [ ] **Step 7: Stop asking for the protobuf body**
+
+In `11_frontend/src/services/graphql/queries.ts`, remove the `uuid` and `body` selections from
+`GET_SPB_NODES_BY_METRIC_QUERY` so the top of the selection set reads:
+
+```graphql
+    getSpbNodesByMetric(metricNames: $metricNames) {
+      topic
+      timestamp
+      seq
+      metrics {
+```
+
+Leave the `metrics` selection exactly as it is, including both `... on SPBPrimitive` and
+`... on BytesPayload` — that union is how a binary metric arrives already-encoded, and it is
+what test 14 asserts against.
+
+Add one line above the document so the reason survives:
+
+```ts
+/**
+ * Decoded Sparkplug comes only from this query. `body` and `uuid` are not requested: `body`
+ * is an opaque base64 blob and this console has no decoder for it, by design.
+ */
+```
+
+- [ ] **Step 8: Run the whole suite to see what the type change broke**
+
+Run: `cd 11_frontend && npx tsc --noEmit && npx vitest run`
+
+Expected: `tsc` reports `SparkplugView.tsx:158` — `node.sequenceNumber` is no longer possibly
+`undefined`, so `?? 0` is flagged only if the project enables that lint; more reliably, any
+fixture in the repo that builds a `SparkplugNode` with `online` now errors. If `tsc` is clean,
+that is fine too: Step 10 removes the `?? 0` regardless.
+
+- [ ] **Step 9: Write the failing Sparkplug screen test**
+
+Create `11_frontend/src/components/sparkplug/SparkplugView.test.tsx`. The client is mocked at
+the module boundary, so no `fetch` is attempted and `src/test/setup.ts` stays quiet.
+
+```tsx
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { render, screen, waitFor } from '@testing-library/react';
+import { SparkplugView } from './SparkplugView';
+import { unsGraphQLClient } from '../../services/graphql/client';
+import type { SparkplugNode } from '../../types/uns';
+
+vi.mock('../../services/graphql/client', () => ({
+  unsGraphQLClient: { getSpbNodesByMetric: vi.fn() },
+}));
+
+const jumpToTopicInTree = vi.fn();
+
+vi.mock('../../context/UNSContext', () => ({
+  useUNS: () => ({
+    jumpToTopicInTree,
+    sparkplugInitialMetric: 'Enterprise/Dept/Line/Temperature',
+  }),
+}));
+
+// Exactly what getSpbNodesByMetric returns once client.ts has mapped it: one numeric metric
+// and one binary metric whose value is still base64.
+const NODE: SparkplugNode = {
+  groupId: 'Enterprise',
+  edgeNodeId: 'EdgeNode_01',
+  deviceId: 'Device_A',
+  topic: 'spBv1.0/Enterprise/DDATA/EdgeNode_01/Device_A',
+  timestamp: '2026-09-02T06:15:00.000Z',
+  sequenceNumber: 7,
+  metrics: [
+    {
+      name: 'Enterprise/Dept/Line/Temperature',
+      alias: 3,
+      datatype: 'Float',
+      value: 72.5,
+      timestamp: '2026-09-02T06:15:00.000Z',
+    },
+    {
+      name: 'Enterprise/Dept/Line/Waveform',
+      datatype: 'Bytes',
+      value: 'AAECAw==',
+      timestamp: '2026-09-02T06:15:00.000Z',
+      isBinary: true,
+      binaryByteSize: 4,
+    },
+  ],
+};
+
+const mockedQuery = vi.mocked(unsGraphQLClient.getSpbNodesByMetric);
+
+describe('SparkplugView', () => {
+  beforeEach(() => {
+    mockedQuery.mockReset();
+    mockedQuery.mockResolvedValue([NODE]);
+  });
+
+  it('reads decoded metrics only from getSpbNodesByMetric', async () => {
+    render(<SparkplugView />);
+
+    await waitFor(() => expect(screen.getAllByTestId('spb-metric-row')).toHaveLength(2));
+    expect(mockedQuery).toHaveBeenCalledTimes(1);
+    expect(mockedQuery).toHaveBeenCalledWith(['Enterprise/Dept/Line/Temperature']);
+    expect(screen.getByText('72.5')).toBeInTheDocument();
+  });
+
+  it('shows binary metrics as a badge with the base64 size, never as a decoded value', async () => {
+    render(<SparkplugView />);
+
+    const binary = await screen.findByTestId('spb-binary');
+    expect(binary).toHaveTextContent('Binary data: 4 bytes');
+    expect(screen.queryByText('AAECAw==')).toBeNull(); // only inside the hex modal, on demand
+  });
+
+  it('claims neither liveness nor a sequence it was not given', async () => {
+    mockedQuery.mockResolvedValue([{ ...NODE, sequenceNumber: 0 }]);
+    render(<SparkplugView />);
+
+    const node = await screen.findByTestId('spb-node');
+    expect(node).toHaveTextContent('Seq 0');
+    expect(node.querySelectorAll('.animate-pulse')).toHaveLength(0);
+    expect(node).not.toHaveTextContent(/online/i);
+  });
+
+  it('credits the decoding to the platform, not to the read API', async () => {
+    render(<SparkplugView />);
+    expect(screen.queryByText(/07_uns_graphql Sparkplug mapper/)).toBeNull();
+    expect(screen.getByText(/does not decode protobuf/i)).toBeInTheDocument();
+  });
+
+  it('ships no protobuf decoder', () => {
+    // Vitest runs with 11_frontend as its cwd (vitest.config.ts lives there).
+    const pkg = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf-8'));
+    const deps = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies });
+    expect(deps.filter((d) => /protobuf|sparkplug|tahu/i.test(d))).toEqual([]);
+  });
+});
+```
+
+- [ ] **Step 10: Run it and watch it fail**
+
+Run: `cd 11_frontend && npx vitest run src/components/sparkplug/SparkplugView.test.tsx`
+
+Expected: FAIL — there is no `spb-metric-row`, no `spb-node`, no `spb-binary`, the byte badge
+reads `[Binary Data: 4 bytes]` in different words, and the header still says
+`07_uns_graphql Sparkplug mapper`. The last test (`ships no protobuf decoder`) should already
+pass; if it does not, stop — something in `package.json` contradicts spec finding 7 and the plan
+needs revisiting before any UI work.
+
+- [ ] **Step 11: Fix the metric-name heuristic and the stale query**
+
+In `11_frontend/src/components/sparkplug/SparkplugView.tsx`, replace `:41`–`:44`:
+
+```tsx
+  // Check if string looks like an ISA-95 namespace path
+  const isIsa95Path = (name: string) => {
+    return name.includes('/') && (name.startsWith('CovestroAG') || name.split('/').length >= 3);
+  };
+```
+
+with:
+
+```tsx
+  // 05_sparkplugb maps Sparkplug to ISA-95 through the metric *name*, so a name carrying a
+  // path is a namespace path. No plant name is hardcoded here.
+  const isIsa95Path = (name: string) => name.includes('/');
+```
+
+Replace `:22`–`:39` — `fetchSpbData` takes the metric explicitly, and the effect resets the
+search box, because `jumpToSparkplug` can fire while this screen is already mounted and
+`useState`'s initialiser will not run a second time:
+
+```tsx
+  const fetchSpbData = async (query: string = metricQuery) => {
+    setLoading(true);
+    try {
+      const metricNames = query.trim() ? [query.trim()] : [];
+      const data = metricNames.length
+        ? await unsGraphQLClient.getSpbNodesByMetric(metricNames)
+        : [];
+      setNodes(data);
+    } catch (e) {
+      console.error('Failed to load Sparkplug nodes', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // jumpToSparkplug sets the metric and changes the hash. If this screen is already mounted,
+  // the useState initialiser above does not run again, so follow the metric explicitly.
+  useEffect(() => {
+    setMetricQuery(sparkplugInitialMetric);
+    void fetchSpbData(sparkplugInitialMetric);
+  }, [sparkplugInitialMetric]);
+```
+
+and change the initialiser at `:17` so the two agree on the empty case:
+
+```tsx
+  const [metricQuery, setMetricQuery] = useState(sparkplugInitialMetric);
+```
+
+- [ ] **Step 12: Fix the header, the badge and the binary value**
+
+Replace the subtitle at `:92`–`:94`:
+
+```tsx
+              <p className="text-[10px] text-[#64748B] font-mono">
+                Sparkplug B is decoded on ingest by the platform and stored in the graph. This
+                screen reads those metrics through getSpbNodesByMetric and does not decode
+                protobuf.
+              </p>
+```
+
+Replace the notice at `:98`–`:102` with plain words — the claim is true (`05_sparkplugb`'s
+README: *"will not be publishing any control messages"*), so it stays, minus the shorthand:
+
+```tsx
+          {/* True of the platform, not just of this screen — 05_sparkplugb publishes no commands */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-purple-950/30 border border-purple-800/40 text-[10px] text-purple-300">
+            <Shield className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+            <span>Read-only. This console sends no Sparkplug commands.</span>
+          </div>
+```
+
+Replace the binary branch of `renderMetricValue` (`:47`–`:64`) so an unknown size renders as an
+unknown size:
+
+```tsx
+  const renderMetricValue = (metric: SparkplugMetric) => {
+    if (metric.isBinary || metric.datatype === 'Bytes' || metric.datatype === 'File') {
+      return (
+        <div className="flex items-center gap-2">
+          <span
+            data-testid="spb-binary"
+            className="px-2 py-0.5 rounded bg-purple-950/80 border border-purple-800/80 text-purple-300 font-mono text-[10px] flex items-center gap-1"
+          >
+            <Binary className="w-3 h-3 text-purple-400" />
+            <span>
+              {metric.binaryByteSize === undefined
+                ? 'Binary data'
+                : `Binary data: ${metric.binaryByteSize} bytes`}
+            </span>
+          </span>
+          <button
+            type="button"
+            onClick={() => setSelectedBinaryMetric(metric)}
+            className="text-[10px] text-[#FFC107] hover:underline font-mono cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+          >
+            Show base64
+          </button>
+        </div>
+      );
+    }
+```
+
+Leave the boolean, number and fallback branches below it untouched.
+
+- [ ] **Step 13: Replace the green dot with the timestamp the node actually carries**
+
+`SPBNode.timestamp` is real — `type/sparkplugb_node.py:307` describes it as when the node was
+last modified, and it arrives on every payload. Replace `:150`–`:160`:
+
+```tsx
+                <div className="flex items-center gap-3">
+                  <span className="font-bold text-[#F8FAFC] text-xs">
+                    {node.groupId} / {node.edgeNodeId} {node.deviceId ? `• ${node.deviceId}` : ''}
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-[#0B0B0C] border border-[#1E293B] text-[#94A3B8] text-[9px]">
+                    Seq {node.sequenceNumber}
+                  </span>
+                  <span className="text-[9px] text-[#64748B]">
+                    Payload timestamp {new Date(node.timestamp).toLocaleString()}
+                  </span>
+                </div>
+```
+
+Add the test id to the node wrapper at `:144`–`:147` and the metric row at `:187`, and give the
+search input and the empty state theirs:
+
+```tsx
+            <div
+              key={`${node.groupId}-${node.edgeNodeId}-${node.deviceId || ''}`}
+              data-testid="spb-node"
+              className="bg-[#111114] border border-[#1E293B] rounded-lg overflow-hidden shadow-lg"
+            >
+```
+
+```tsx
+                        <tr key={mIdx} data-testid="spb-metric-row" className="hover:bg-[#1E293B]/40 transition-colors">
+```
+
+```tsx
+              placeholder="Search by metric name, ISA-95 path, or alias..."
+              aria-label="Search Sparkplug metrics"
+              data-testid="spb-search"
+```
+
+```tsx
+          <div data-testid="spb-empty" className="text-center py-16 bg-[#111114] border border-[#1E293B] rounded-lg text-[#64748B]">
+            <Info className="w-8 h-8 mx-auto mb-2 text-[#64748B]" />
+            <p>No Sparkplug B nodes or metrics matched the query.</p>
+          </div>
+```
+
+Finally, the modal footnote at `:287`–`:289` — say what is true instead of reassuring:
+
+```tsx
+            <div className="text-[10px] text-[#64748B]">
+              Base64 as it arrived from GraphQL. Nothing in this console decodes it.
+            </div>
+```
+
+and its heading at `:268` becomes `Binary metric, base64` rather than
+`Binary Payload Inspector`, because no inspection happens.
+
+- [ ] **Step 14: Run the Sparkplug screen test**
+
+Run: `cd 11_frontend && npx vitest run src/components/sparkplug/SparkplugView.test.tsx`
+
+Expected: PASS, five tests.
+
+- [ ] **Step 15: Write the failing feed-routing test**
+
+Here is the eighth finding, and it is the one that decides whether spec test 14's first half means
+anything. `UNSContext.tsx:364`–`:366`:
+
+```tsx
+    const unsubscribe = unsGraphQLClient.subscribeMqttMessages(effectiveTopics, (msg) => {
+      if (isPausedRef.current || isSparkplugTopic(msg.topic)) {
+        return;
+      }
+```
+
+The subscription asks for `['#']` by default (`:352`), and
+`07_uns_graphql/src/uns_graphql/type/mqtt_event.py:62`–`:64` returns a `BytesPayload` for any
+topic under the Sparkplug namespace. So live Sparkplug *does* arrive — and this line throws it
+away before it reaches `mqttFeed`. The `SPB` badge in `LiveMqttFeed.tsx:143`–`:147` and the
+`isSpb` check at `:114` can never fire in the running console. Spec test 14 asserts a badge that
+today is unreachable code, and a test that mocks `useUNS` would happily "prove" it.
+
+The early return is doing two jobs, and only one of them is right. Everything after the
+`setMqttFeed` call patches the ISA-95 tree — `setRootNodes:377`, `setNodeChildrenMap:381`,
+`setSelectedNode:383` — and the global constraint *"Sparkplug `spBv1.0/` never enters the ISA-95
+tree"* means Sparkplug must keep being excluded from those three. It says nothing about the feed.
+An integrator watching raw broker traffic needs to see that `spBv1.0/` messages are arriving; that
+is the whole point of a live feed. Split the guard.
+
+Create `11_frontend/src/context/UNSContext.feed.test.tsx`:
+
+```tsx
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { act, render, screen } from '@testing-library/react';
+import { UNSProvider, useUNS } from './UNSContext';
+import { unsGraphQLClient } from '../services/graphql/client';
+import type { MqttMessage, SystemHealthInfo } from '../types/uns';
+
+// Every client method UNSProvider touches while mounting. getHealth returns an empty object
+// on purpose: nothing this test renders reads a health field, and an empty object keeps the
+// test from breaking when SystemHealthInfo gains keys (it does, in Task 19).
+vi.mock('../services/graphql/client', () => ({
+  unsGraphQLClient: {
+    getHealth: vi.fn(() => ({}) as SystemHealthInfo),
+    setUrls: vi.fn(),
+    onHealthChange: vi.fn(() => () => {}),
+    getUnsRootNodes: vi.fn(async () => [
+      {
+        name: 'Enterprise',
+        topic: 'Enterprise',
+        namespace: 'Enterprise',
+        hasChildren: true,
+        payload: { value: 1 },
+        lastUpdated: '2026-09-02T06:00:00.000Z',
+      },
+    ]),
+    getUnsNodeChildren: vi.fn(async () => []),
+    getUnsNodes: vi.fn(async () => []),
+    getTopicEnrichment: vi.fn(async () => null),
+    getHistoricEvents: vi.fn(async () => []),
+    subscribeMqttMessages: vi.fn(() => () => {}),
+  },
+}));
+
+/** Reads back exactly what the feed and the tree ended up holding. */
+const Probe: React.FC = () => {
+  const { mqttFeed, rootNodes } = useUNS();
+  return (
+    <div>
+      <span data-testid="feed-topics">{mqttFeed.map((m) => m.topic).join(',')}</span>
+      <span data-testid="root-payload">{JSON.stringify(rootNodes[0]?.payload ?? null)}</span>
+    </div>
+  );
+};
+
+const subscribe = vi.mocked(unsGraphQLClient.subscribeMqttMessages);
+
+/** The callback UNSProvider handed to subscribeMqttMessages on its last effect run. */
+function emit(message: MqttMessage) {
+  const handler = subscribe.mock.calls.at(-1)?.[1];
+  if (!handler) throw new Error('UNSProvider never subscribed');
+  act(() => handler(message));
+}
+
+describe('UNSContext MQTT routing', () => {
+  beforeEach(() => {
+    subscribe.mockClear();
+    localStorage.clear();
+  });
+
+  it('puts live Sparkplug in the feed, base64 payload and all', async () => {
+    render(
+      <UNSProvider>
+        <Probe />
+      </UNSProvider>,
+    );
+    await screen.findByTestId('feed-topics');
+
+    emit({
+      id: 'spb-1',
+      topic: 'spBv1.0/Enterprise/DDATA/EdgeNode_01',
+      payload: 'AAECAw==',
+      timestamp: '2026-09-02T06:15:00.000Z',
+      isSparkplug: true,
+    });
+
+    expect(screen.getByTestId('feed-topics')).toHaveTextContent(
+      'spBv1.0/Enterprise/DDATA/EdgeNode_01',
+    );
+  });
+
+  it('never lets a Sparkplug payload patch an ISA-95 node', async () => {
+    render(
+      <UNSProvider>
+        <Probe />
+      </UNSProvider>,
+    );
+    await screen.findByText('{"value":1}');
+
+    // A Sparkplug topic that collides with a tree topic must still not overwrite it.
+    emit({
+      id: 'spb-2',
+      topic: 'Enterprise',
+      payload: { value: 2 },
+      timestamp: '2026-09-02T06:16:00.000Z',
+      isSparkplug: true,
+    });
+    expect(screen.getByTestId('root-payload')).toHaveTextContent('{"value":2}');
+
+    emit({
+      id: 'spb-3',
+      topic: 'spBv1.0/Enterprise',
+      payload: { value: 99 },
+      timestamp: '2026-09-02T06:17:00.000Z',
+    });
+    expect(screen.getByTestId('root-payload')).toHaveTextContent('{"value":2}');
+  });
+
+  it('drops everything while the feed is paused', async () => {
+    render(
+      <UNSProvider>
+        <Probe />
+      </UNSProvider>,
+    );
+    await screen.findByTestId('feed-topics');
+
+    // setIsFeedPaused is not reachable from the Probe, so assert the un-paused default
+    // instead: an ISA-95 message lands in the feed too. Pausing is covered by Task 13.
+    emit({
+      id: 'uns-1',
+      topic: 'Enterprise/Line/temperature',
+      payload: { value: 21 },
+      timestamp: '2026-09-02T06:18:00.000Z',
+    });
+    expect(screen.getByTestId('feed-topics')).toHaveTextContent('Enterprise/Line/temperature');
+  });
+});
+```
+
+The second test is the important one. It uses a Sparkplug-flagged message on a *non*-Sparkplug
+topic to prove the tree guard keys off the topic namespace and not off `isSparkplug`, then a real
+`spBv1.0/` topic to prove the tree is left alone.
+
+- [ ] **Step 16: Run it and watch the first test fail**
+
+Run: `cd 11_frontend && npx vitest run src/context/UNSContext.feed.test.tsx`
+
+Expected: test 1 FAILS — `feed-topics` is empty, because the Sparkplug message was discarded.
+Tests 2 and 3 pass already; they are the regression net for the next step.
+
+- [ ] **Step 17: Split the guard**
+
+In `11_frontend/src/context/UNSContext.tsx`, replace `:364`–`:374`:
+
+```tsx
+    const unsubscribe = unsGraphQLClient.subscribeMqttMessages(effectiveTopics, (msg) => {
+      if (isPausedRef.current) {
+        return;
+      }
+
+      setMqttFeed((prev) => {
+        const next = [msg, ...prev];
+        const cap = maxBufferRef.current || 500;
+        return next.length > cap ? next.slice(0, cap) : next;
+      });
+
+      // Everything below patches the ISA-95 tree, and spBv1.0/ is a separate namespace: a
+      // Sparkplug message is broker traffic an integrator should see in the feed, never a
+      // value on a UNS Node. Decoded Sparkplug lives on its own screen.
+      if (isSparkplugTopic(msg.topic)) {
+        return;
+      }
+```
+
+Leave the three patch calls below it exactly as they are.
+
+- [ ] **Step 18: Run it again**
+
+Run: `cd 11_frontend && npx vitest run src/context/UNSContext.feed.test.tsx`
+
+Expected: PASS, three tests.
+
+- [ ] **Step 19: Write the live-feed rendering test**
+
+Step 17 made live Sparkplug reachable; this asserts what it looks like when it arrives.
+`map-nodes.ts:59`–`:61` stores a `BytesPayload` as its base64 string, so the row renders bytes and
+a badge — never a metric name, which could only come from a browser-side decode.
+
+Create `11_frontend/src/components/home/LiveMqttFeed.sparkplug.test.tsx`:
+
+```tsx
+import { describe, expect, it, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import { LiveMqttFeed } from './LiveMqttFeed';
+import type { MqttMessage } from '../../types/uns';
+
+const SPB_MESSAGE: MqttMessage = {
+  id: 'spBv1.0/Enterprise/DDATA/EdgeNode_01/Device_A:1',
+  topic: 'spBv1.0/Enterprise/DDATA/EdgeNode_01/Device_A',
+  payload: 'AAECAw==',
+  timestamp: '2026-09-02T06:15:00.000Z',
+  isSparkplug: true,
+};
+
+vi.mock('../../context/UNSContext', () => ({
+  useUNS: () => ({
+    mqttFeed: [SPB_MESSAGE],
+    isFeedPaused: false,
+    setIsFeedPaused: vi.fn(),
+    feedTopicFilter: '',
+    setFeedTopicFilter: vi.fn(),
+    clearMqttFeed: vi.fn(),
+    followSelection: false,
+    setFollowSelection: vi.fn(),
+    selectedNode: null,
+    jumpToTopicInTree: vi.fn(),
+    settings: { maxFeedBuffer: 200 },
+  }),
+}));
+
+describe('LiveMqttFeed with Sparkplug', () => {
+  it('badges live Sparkplug and shows the bytes it received, not decoded metrics', () => {
+    render(<LiveMqttFeed />);
+
+    expect(screen.getByText('SPB')).toBeInTheDocument();
+    expect(screen.getByText(SPB_MESSAGE.topic)).toBeInTheDocument();
+    expect(screen.getByText('AAECAw==')).toBeInTheDocument();
+    // A decoded metric name could only come from a browser-side protobuf decode.
+    expect(screen.queryByText(/Temperature/i)).toBeNull();
+  });
+});
+```
+
+- [ ] **Step 20: Run it**
+
+Run: `cd 11_frontend && npx vitest run src/components/home/LiveMqttFeed.sparkplug.test.tsx`
+
+Expected: PASS on the first run. The rendering half of this screen was already correct — the test
+exists so it stays that way once Step 17 has made it reachable. If it fails on `SPB`, check that
+`settings` in the mock carries every field `LiveMqttFeed` destructures.
+
+- [ ] **Step 21: Fix the same misattribution in PayloadInspector**
+
+In `11_frontend/src/components/home/PayloadInspector.tsx`, replace the two lines of copy inside
+the Sparkplug panel (`:262`–`:266`):
+
+```tsx
+                <span className="text-purple-900 dark:text-[#A855F7] font-semibold text-[11px]">Sparkplug B topic</span>
+                <p className="text-[10px] text-purple-700 dark:text-[#94A3B8]">
+                  Published as protobuf and decoded by the platform on ingest. Open Sparkplug to
+                  read the decoded metrics.
+                </p>
+```
+
+Leave the `Open in Sparkplug` button and its `jumpToSparkplug(selectedNode.name)` call as they
+are — Step 11 makes that jump work a second time.
+
+- [ ] **Step 22: Type-check and run everything**
+
+```bash
+cd 11_frontend
+npx tsc --noEmit
+npx vitest run
+```
+
+Expected: clean, all green. If `tsc` complains about an unused `SparkplugMetric` import in
+`SparkplugView.tsx`, it is still used by `renderMetricValue`'s parameter — the error is more
+likely `SparkplugNode` in the test fixture missing a field you kept. `isSparkplugTopic` is still
+imported and used in `UNSContext.tsx` after Step 17; do not remove the import.
+
+- [ ] **Step 23: Commit**
+
+```bash
+cd 11_frontend
+git add src/lib/uns/base64.ts src/lib/uns/base64.test.ts src/lib/uns/map-nodes.ts \
+        src/types/uns.ts src/services/graphql/queries.ts src/services/graphql/types.ts \
+        src/context/UNSContext.tsx src/context/UNSContext.feed.test.tsx \
+        src/components/sparkplug/SparkplugView.tsx \
+        src/components/sparkplug/SparkplugView.test.tsx \
+        src/components/home/PayloadInspector.tsx \
+        src/components/home/LiveMqttFeed.sparkplug.test.tsx
+git commit -m "fix(frontend): keep Sparkplug honest — no decoding, no invented sizes
+
+Live Sparkplug reaches the feed now. UNSContext discarded every spBv1.0/
+message before it got there, which made the SPB badge unreachable code; the
+guard is split so Sparkplug shows up as broker traffic and still never
+patches an ISA-95 node.
+
+Decoded metrics come only from getSpbNodesByMetric, and the screen now says
+where decoding happens: on ingest, in the platform, not in 07_uns_graphql and
+not in the browser. Byte counts come from base64ByteLength instead of
+halving a base64 string, and an unknown size prints no number. The hardcoded
+online:true and its green dot are gone — a graph read carries no liveness —
+along with the CovestroAG heuristic and the seq 0 default. uuid and body are
+no longer requested: body is an opaque blob this console must not decode.
+Jumping to a second metric now re-queries instead of showing the first."
+```
+
+**Definition of done:**
+- A live `spBv1.0/` message appears in the MQTT feed with its base64 payload and an `SPB` badge,
+  asserted by test.
+- No `spBv1.0/` message ever patches a UNS Node's payload, asserted by test.
+- `getSpbNodesByMetric` is the only source of decoded Sparkplug values, asserted by test.
+- `package.json` contains no protobuf, sparkplug or tahu dependency, asserted by test.
+- `[Binary Data: 32 bytes]` cannot be produced: a size is printed only when
+  `base64ByteLength` returned one, and `Binary data` alone otherwise.
+- `SparkplugNode.online` does not exist; `grep -n "online" 11_frontend/src/types/uns.ts` is
+  empty, and no node header pulses.
+- `sequenceNumber` is required and rendered as given — no `?? 0`.
+- `CovestroAG` appears nowhere in `SparkplugView.tsx`.
+- `07_uns_graphql Sparkplug mapper` appears nowhere in `11_frontend/src`.
+- `uuid` and `body` are absent from `GET_SPB_NODES_BY_METRIC_QUERY` and `GraphqlSpbNode`.
+- Opening a Sparkplug node, returning, and opening a different one queries the second metric.
+- `npx tsc --noEmit` clean; `npx vitest run` green.
+
+---
+
+## Task 23: ALARMS — evaluate every message in the feed, not only the newest one
+
+Spec section 8 says the console evaluates Alert Rules in the browser, and ADR-0005 accepted that.
+Neither says it may skip readings. It does.
+
+`AlarmContext.tsx`'s evaluation effect (`:639`–`:751` before Task 20 edits it) opens:
+
+```tsx
+  useEffect(() => {
+    if (mqttFeed.length === 0) return;
+    const latestMessage = mqttFeed[0];
+```
+
+`mqttFeed` is newest-first (`UNSContext.tsx:370`, `[msg, ...prev]`), so this evaluates exactly one
+reading per effect run and drops every other message that arrived in the same React commit.
+
+**Why that loses breaches, with numbers from this repo.** `99_simulator` publishes on an interval
+per topic, and the default subscription is `['#']` — every topic in the plant, into one feed.
+React batches state updates, so a commit that lands three messages evaluates one and discards two.
+The two discarded ones are not "nearly the same reading": with `['#']` they are usually *different
+topics*, so a rule watching topic B never sees B's message at all when A and C arrive in the same
+batch. The faster the plant publishes, the more rules go quiet — which is the worst possible
+failure direction for an alarm system, because nothing on screen changes when it happens. The
+`No Active Incidents` panel Task 20 rewords is reassuring precisely when this bug is at its worst.
+
+**Two more defects in the same effect, both of which get worse once the loop is fixed:**
+
+1. **Side effects run inside a state updater.** `playAlarmChime`, `setRules`, `reportEvaluation`
+   and `logAlarmAudit` are all called from inside the `setActiveAlarms((prev) => …)` callback
+   (`:700`–`:724`). React may invoke an updater more than once, and `src/main.tsx` wraps the app in
+   `<StrictMode>`, which does exactly that in development. So today a single breach increments
+   `triggerCount` twice, writes two audit entries, POSTs two evaluations and plays the chime twice
+   in `npm run dev`. Evaluating a whole batch multiplies that. An updater has to be pure.
+2. **Order inside a batch is unspecified.** Once several messages are evaluated per run, a value
+   that breached and then recovered inside one batch must end on the recovery, or an
+   `autoResolveOnNormal` rule latches an alarm that the plant has already cleared. That means
+   oldest-first, and it means the decision for message *n+1* has to see the alarms message *n*
+   produced — which a `setActiveAlarms` call cannot provide, because the state has not committed
+   yet.
+
+All three point the same way: make the decision a pure function over
+`(messages, rules, alarms)`, let it fold a batch, and let the context perform the side effects it
+returns. That is also the only shape in which "a burst of three messages raises one alarm" is
+testable without a broker.
+
+**Ordering with the rest of this plan.** This task runs **after Task 20**, which deletes
+`INITIAL_RULES`, `INITIAL_ACTIVE_ALARMS`, `INITIAL_ALARM_AUDIT` and `restoreDefaultRules`, and
+replaces the inline topic matcher with `topicMatchesFilter` from `src/lib/uns/topic-match.ts`
+(Task 14). Line numbers in this task refer to the file **as Task 20 leaves it**, so locate the code
+by name. The topic matcher is not re-litigated here: the evaluator calls
+`topicMatchesFilter(rule.topic, message.topic)` and nothing else.
+
+**What does not change.** Every observable decision keeps today's rule, so that a reviewer can
+check this task by reading the diff rather than the plant:
+
+- A breach with no live alarm for that rule raises one, `ACTIVE_UNACK`.
+- A breach with a live alarm (`ACTIVE_UNACK` or `ACTIVE_ACK`) updates `currentValue` and
+  `conditionDescription` only — no second alarm, no second audit entry, no chime, and **no**
+  `recordAlertRuleEvaluation(id, true)`, because today's `reportEvaluation(rule.id, true)` sits in
+  the new-alarm branch.
+- A non-breach reports a quiet evaluation, and resolves a live alarm only when
+  `autoResolveOnNormal` is set.
+- The metric is read as `payload[rule.metricField] ?? payload.value ?? payload[lowercased]`, and a
+  message whose payload is not an object is skipped entirely.
+- `delaySeconds` is still ignored, and escalation still never fires. Both are Task 24; naming them
+  here so nobody reads this task's tests as proof that they work.
+
+**Files:**
+- Create: `11_frontend/src/lib/alarms/evaluate.ts`
+- Modify: `11_frontend/src/context/AlarmContext.tsx` — the `evaluateCondition` helper and the
+  evaluation `useEffect` are replaced, `testTriggerRule` follows the rename and loses its invented
+  fallback topic, and `activeAlarmsRef` and `lastEvaluatedIdRef` are added
+- Test: `11_frontend/src/lib/alarms/evaluate.test.ts` (create)
+- Test: `11_frontend/src/context/AlarmContext.evaluation.test.tsx` (create)
+
+`AlarmContext.test.tsx` from Task 20 is left alone. It owns seeding, the hand-over to the platform
+and the topic matcher; this task's file owns feed coverage. Two focused files beat one that fails
+for six unrelated reasons.
+
+**Interfaces:**
+- Consumes: `topicMatchesFilter(filter: string, topic: string): boolean` from
+  `src/lib/uns/topic-match.ts` (Task 14); `unsGraphQLClient.recordAlertRuleEvaluation(ruleId, triggered)`
+  (already in the repo, unchanged); `AlertRule`, `ActiveAlarm` from `src/types/alarm.ts`;
+  `MqttMessage` from `src/types/uns.ts`.
+- Produces, in `src/lib/alarms/evaluate.ts`:
+  ```ts
+  /** What one rule decided about one message. The context turns these into side effects. */
+  export type AlarmOutcome =
+    | { kind: 'TRIGGERED'; rule: AlertRule; alarm: ActiveAlarm; description: string }
+    | { kind: 'UPDATED'; rule: AlertRule; alarm: ActiveAlarm; description: string }
+    | { kind: 'CLEARED'; rule: AlertRule; alarm: ActiveAlarm; value: unknown }
+    | { kind: 'QUIET'; rule: AlertRule };
+
+  export interface AlarmEvaluation {
+    /** The same array reference when no rule changed anything. */
+    alarms: ActiveAlarm[];
+    outcomes: AlarmOutcome[];
+  }
+
+  /** Injected so a test can assert on ids and timestamps instead of guessing them. */
+  export interface AlarmClock {
+    now: () => string;
+    newAlarmId: () => string;
+  }
+
+  export function conditionResult(
+    rule: AlertRule,
+    value: unknown,
+  ): { breached: boolean; description: string };
+
+  /** `messages` must be oldest-first. */
+  export function evaluateFeed(
+    messages: MqttMessage[],
+    rules: AlertRule[],
+    alarms: ActiveAlarm[],
+    clock: AlarmClock,
+  ): AlarmEvaluation;
+  ```
+  No change to `AlarmContextType`. Nothing outside `AlarmContext.tsx` imports this module.
+
+- [ ] **Step 1: Write the failing evaluator test**
+
+Create `11_frontend/src/lib/alarms/evaluate.test.ts`. The clock is a counter, so every assertion
+names an exact id.
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { conditionResult, evaluateFeed } from './evaluate';
+import type { ActiveAlarm, AlertRule } from '../../types/alarm';
+import type { MqttMessage } from '../../types/uns';
+
+const LINE = 'CovestroAG/Dormagen/Production/Line1';
+
+function clock() {
+  let n = 0;
+  return {
+    now: () => '2026-09-02T10:00:00.000Z',
+    newAlarmId: () => `alm-${(n += 1)}`,
+  };
+}
+
+function rule(overrides: Partial<AlertRule> = {}): AlertRule {
+  return {
+    id: 'r-temp',
+    name: 'Line 1 temperature high',
+    description: '',
+    enabled: true,
+    severity: 'HIGH',
+    category: 'TEMPERATURE',
+    topic: `${LINE}/#`,
+    metricField: 'temp',
+    condition: 'GREATER_THAN',
+    thresholdValue: 80,
+    unit: '°C',
+    targetRoles: ['operator'],
+    autoResolveOnNormal: false,
+    actions: { inAppNotification: true, audioChime: false, mqttPublishOnTrigger: false, emailWebhook: false },
+    triggerCount: 0,
+    createdAt: '2026-09-01T00:00:00.000Z',
+    updatedAt: '2026-09-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function message(id: string, topic: string, payload: MqttMessage['payload']): MqttMessage {
+  return { id, topic, payload, timestamp: '2026-09-02T10:00:00.000Z' };
+}
+
+describe('conditionResult', () => {
+  it('reads the threshold the way the rule was written', () => {
+    expect(conditionResult(rule(), 91).breached).toBe(true);
+    expect(conditionResult(rule(), 80).breached).toBe(false);
+    expect(conditionResult(rule({ condition: 'LESS_THAN' }), 12).breached).toBe(true);
+    expect(conditionResult(rule({ condition: 'EQUALS', thresholdValue: 'FAULT' }), 'fault').breached).toBe(true);
+    expect(
+      conditionResult(rule({ condition: 'RANGE_OUTSIDE', thresholdValue: 10, thresholdUpperValue: 20 }), 25).breached,
+    ).toBe(true);
+    expect(conditionResult(rule({ condition: 'CONTAINS', thresholdValue: 'trip' }), 'RELIEF TRIP').breached).toBe(true);
+  });
+
+  it('treats a missing value as not breached, never as zero', () => {
+    expect(conditionResult(rule(), null).breached).toBe(false);
+    expect(conditionResult(rule(), undefined).breached).toBe(false);
+    expect(conditionResult(rule({ condition: 'LESS_THAN' }), null).breached).toBe(false);
+  });
+
+  it('describes the comparison in the rule’s own unit', () => {
+    expect(conditionResult(rule(), 91).description).toBe('temp (91 °C) > 80 °C');
+  });
+});
+
+describe('evaluateFeed', () => {
+  it('sees a breach that is not the newest message in the batch', () => {
+    const messages = [
+      message('m1', `${LINE}/Cell1`, { temp: 60 }),
+      message('m2', `${LINE}/Cell1`, { temp: 91 }), // the one today's code drops
+      message('m3', `${LINE}/Cell2`, { other: 1 }),
+    ];
+
+    const { alarms, outcomes } = evaluateFeed(messages, [rule()], [], clock());
+
+    expect(alarms).toHaveLength(1);
+    expect(alarms[0]).toMatchObject({
+      id: 'alm-1',
+      ruleId: 'r-temp',
+      topic: `${LINE}/Cell1`,
+      status: 'ACTIVE_UNACK',
+      currentValue: 91,
+      triggeredAt: '2026-09-02T10:00:00.000Z',
+    });
+    expect(outcomes.filter((o) => o.kind === 'TRIGGERED')).toHaveLength(1);
+  });
+
+  it('raises one alarm per rule for a burst, and keeps the last value', () => {
+    const messages = [
+      message('m1', `${LINE}/Cell1`, { temp: 91 }),
+      message('m2', `${LINE}/Cell1`, { temp: 96 }),
+      message('m3', `${LINE}/Cell1`, { temp: 99 }),
+    ];
+
+    const { alarms, outcomes } = evaluateFeed(messages, [rule()], [], clock());
+
+    expect(alarms).toHaveLength(1);
+    expect(alarms[0].currentValue).toBe(99);
+    expect(outcomes.filter((o) => o.kind === 'TRIGGERED')).toHaveLength(1);
+    expect(outcomes.filter((o) => o.kind === 'UPDATED')).toHaveLength(2);
+  });
+
+  it('ends on the recovery when a value breaches and recovers inside one batch', () => {
+    const messages = [
+      message('m1', `${LINE}/Cell1`, { temp: 91 }),
+      message('m2', `${LINE}/Cell1`, { temp: 64 }),
+    ];
+
+    const { alarms, outcomes } = evaluateFeed(
+      messages,
+      [rule({ autoResolveOnNormal: true })],
+      [],
+      clock(),
+    );
+
+    expect(alarms).toHaveLength(1);
+    expect(alarms[0].status).toBe('RESOLVED');
+    expect(alarms[0].clearedAt).toBe('2026-09-02T10:00:00.000Z');
+    expect(outcomes.map((o) => o.kind)).toEqual(['TRIGGERED', 'QUIET', 'CLEARED']);
+  });
+
+  it('leaves a live alarm alone when the rule does not auto-resolve', () => {
+    const live: ActiveAlarm = {
+      id: 'alm-existing',
+      ruleId: 'r-temp',
+      ruleName: 'Line 1 temperature high',
+      topic: `${LINE}/Cell1`,
+      severity: 'HIGH',
+      category: 'TEMPERATURE',
+      conditionDescription: 'temp (91 °C) > 80 °C',
+      currentValue: 91,
+      status: 'ACTIVE_ACK',
+      triggeredAt: '2026-09-02T09:00:00.000Z',
+      targetRoles: ['operator'],
+    };
+
+    const { alarms, outcomes } = evaluateFeed(
+      [message('m1', `${LINE}/Cell1`, { temp: 64 })],
+      [rule()],
+      [live],
+      clock(),
+    );
+
+    expect(alarms).toEqual([live]);
+    expect(outcomes).toEqual([{ kind: 'QUIET', rule: rule() }]);
+  });
+
+  it('returns the same array when nothing changed, so the context does not set state', () => {
+    const alarms: ActiveAlarm[] = [];
+    const result = evaluateFeed([message('m1', 'Other/Line', { temp: 91 })], [rule()], alarms, clock());
+
+    expect(result.alarms).toBe(alarms);
+    expect(result.outcomes).toEqual([]);
+  });
+
+  it('ignores disabled rules and non-object payloads', () => {
+    const disabled = evaluateFeed(
+      [message('m1', `${LINE}/Cell1`, { temp: 91 })],
+      [rule({ enabled: false })],
+      [],
+      clock(),
+    );
+    expect(disabled.alarms).toHaveLength(0);
+    expect(disabled.outcomes).toEqual([]);
+
+    const bytes = evaluateFeed([message('m2', `${LINE}/Cell1`, 'AAECAw==')], [rule()], [], clock());
+    expect(bytes.outcomes).toEqual([]);
+  });
+
+  it('falls back to a payload `value` key when the rule names no field it can find', () => {
+    const { alarms } = evaluateFeed(
+      [message('m1', `${LINE}/Cell1`, { value: 91 })],
+      [rule()],
+      [],
+      clock(),
+    );
+    expect(alarms).toHaveLength(1);
+  });
+
+  it('reports a quiet evaluation once per matching message, per rule', () => {
+    const { outcomes } = evaluateFeed(
+      [
+        message('m1', `${LINE}/Cell1`, { temp: 60 }),
+        message('m2', `${LINE}/Cell1`, { temp: 61 }),
+      ],
+      [rule()],
+      [],
+      clock(),
+    );
+    expect(outcomes.filter((o) => o.kind === 'QUIET')).toHaveLength(2);
+  });
+});
+```
+
+Two of these tests carry the contract the context depends on and are easy to weaken by accident:
+`returns the same array when nothing changed` asserts reference identity with `toBe`, which is what
+lets the effect skip `setActiveAlarms`; and `leaves a live alarm alone when the rule does not
+auto-resolve` asserts on `outcomes` rather than on state, because a `QUIET` outcome with no
+`CLEARED` beside it is the whole behaviour.
+
+- [ ] **Step 2: Run it and watch it fail**
+
+Run: `cd 11_frontend && npx vitest run src/lib/alarms/evaluate.test.ts`
+
+Expected: FAIL — `Failed to resolve import "./evaluate"`.
+
+- [ ] **Step 3: Write the evaluator**
+
+Create `11_frontend/src/lib/alarms/evaluate.ts`. `conditionResult` is `evaluateCondition` moved out
+of `AlarmContext.tsx` unchanged except for its name and the `desc` → `description` field, so the
+comparison semantics an operator already relies on do not shift underneath them.
+
+```ts
+/**
+ * Alert Rule evaluation, as a fold over the messages the console has seen.
+ *
+ * ADR-0005 put evaluation in the browser. That is only defensible if it evaluates every
+ * reading it received, and if the decision is a pure function — the version that lived inside
+ * a setActiveAlarms updater fired its side effects twice under StrictMode and could only ever
+ * see one message per commit.
+ *
+ * Nothing here reaches for a clock or a random number: both arrive as `clock`, so a test can
+ * name the ids and timestamps it expects.
+ */
+
+import type { ActiveAlarm, AlertRule } from '../../types/alarm'
+import type { MqttMessage } from '../../types/uns'
+import { topicMatchesFilter } from '../uns/topic-match'
+
+export type AlarmOutcome =
+  | { kind: 'TRIGGERED'; rule: AlertRule; alarm: ActiveAlarm; description: string }
+  | { kind: 'UPDATED'; rule: AlertRule; alarm: ActiveAlarm; description: string }
+  | { kind: 'CLEARED'; rule: AlertRule; alarm: ActiveAlarm; value: unknown }
+  | { kind: 'QUIET'; rule: AlertRule }
+
+export interface AlarmEvaluation {
+  alarms: ActiveAlarm[]
+  outcomes: AlarmOutcome[]
+}
+
+export interface AlarmClock {
+  now: () => string
+  newAlarmId: () => string
+}
+
+function withUnit(rule: AlertRule, value: unknown): string {
+  return rule.unit ? `${value} ${rule.unit}` : `${value}`
+}
+
+/** True when `value` breaches `rule`, plus the sentence an operator reads on the alarm row. */
+export function conditionResult(
+  rule: AlertRule,
+  value: unknown,
+): { breached: boolean; description: string } {
+  if (value === undefined || value === null) {
+    return { breached: false, description: 'Value is null/undefined' }
+  }
+
+  const numVal = typeof value === 'number' ? value : parseFloat(String(value))
+  const numThresh =
+    typeof rule.thresholdValue === 'number' ? rule.thresholdValue : parseFloat(String(rule.thresholdValue))
+  const comparable = !isNaN(numVal) && !isNaN(numThresh)
+
+  switch (rule.condition) {
+    case 'GREATER_THAN':
+      return {
+        breached: comparable && numVal > numThresh,
+        description: `${rule.metricField} (${withUnit(rule, value)}) > ${withUnit(rule, rule.thresholdValue)}`,
+      }
+    case 'LESS_THAN':
+      return {
+        breached: comparable && numVal < numThresh,
+        description: `${rule.metricField} (${withUnit(rule, value)}) < ${withUnit(rule, rule.thresholdValue)}`,
+      }
+    case 'EQUALS':
+      return {
+        breached: String(value).toLowerCase() === String(rule.thresholdValue).toLowerCase(),
+        description: `${rule.metricField} (${value}) == ${rule.thresholdValue}`,
+      }
+    case 'NOT_EQUALS':
+      return {
+        breached: String(value).toLowerCase() !== String(rule.thresholdValue).toLowerCase(),
+        description: `${rule.metricField} (${value}) != ${rule.thresholdValue}`,
+      }
+    case 'RANGE_OUTSIDE': {
+      const upper = rule.thresholdUpperValue ?? numThresh
+      return {
+        breached: !isNaN(numVal) && (numVal < numThresh || numVal > upper),
+        description: `${rule.metricField} (${value}) outside [${numThresh}, ${upper}]${
+          rule.unit ? ' ' + rule.unit : ''
+        }`,
+      }
+    }
+    case 'CONTAINS':
+      return {
+        breached: String(value).toLowerCase().includes(String(rule.thresholdValue).toLowerCase()),
+        description: `${rule.metricField} contains "${rule.thresholdValue}"`,
+      }
+    default:
+      // STALE_TIMEOUT needs a clock the feed does not carry. It is configurable and inert;
+      // Task 24 is where the editor stops offering it.
+      return { breached: false, description: '' }
+  }
+}
+
+/** The alarm this rule already has on screen, if any. */
+function liveAlarm(alarms: ActiveAlarm[], ruleId: string): ActiveAlarm | undefined {
+  return alarms.find(
+    (a) => a.ruleId === ruleId && (a.status === 'ACTIVE_UNACK' || a.status === 'ACTIVE_ACK'),
+  )
+}
+
+/**
+ * Fold `messages` — oldest first — over `rules` and `alarms`.
+ *
+ * Oldest first matters: a value that breached and recovered inside one batch has to end on
+ * the recovery, or an autoResolveOnNormal rule latches an alarm the plant already cleared.
+ * `alarms` is returned by reference when no rule changed anything, so the caller can skip
+ * setState entirely.
+ */
+export function evaluateFeed(
+  messages: MqttMessage[],
+  rules: AlertRule[],
+  alarms: ActiveAlarm[],
+  clock: AlarmClock,
+): AlarmEvaluation {
+  let next = alarms
+  const outcomes: AlarmOutcome[] = []
+
+  for (const message of messages) {
+    if (!message.payload || typeof message.payload !== 'object') continue
+    const payload = message.payload as Record<string, unknown>
+
+    for (const rule of rules) {
+      if (!rule.enabled) continue
+      if (!topicMatchesFilter(rule.topic, message.topic)) continue
+
+      const value =
+        payload[rule.metricField] ?? payload['value'] ?? payload[rule.metricField.toLowerCase()]
+      if (value === undefined) continue
+
+      const { breached, description } = conditionResult(rule, value)
+      const existing = liveAlarm(next, rule.id)
+
+      if (breached && existing) {
+        const updated: ActiveAlarm = { ...existing, currentValue: value, conditionDescription: description }
+        next = next.map((a) => (a.id === existing.id ? updated : a))
+        outcomes.push({ kind: 'UPDATED', rule, alarm: updated, description })
+        continue
+      }
+
+      if (breached) {
+        const alarm: ActiveAlarm = {
+          id: clock.newAlarmId(),
+          ruleId: rule.id,
+          ruleName: rule.name,
+          topic: message.topic,
+          severity: rule.severity,
+          category: rule.category,
+          conditionDescription: description,
+          currentValue: value,
+          unit: rule.unit,
+          status: 'ACTIVE_UNACK',
+          triggeredAt: clock.now(),
+          targetRoles: rule.targetRoles,
+          escalated: false,
+        }
+        next = [alarm, ...next]
+        outcomes.push({ kind: 'TRIGGERED', rule, alarm, description })
+        continue
+      }
+
+      // A quiet evaluation is still an evaluation: it is what tells the platform this rule is
+      // being applied at all. Throttling belongs to the caller, not here.
+      outcomes.push({ kind: 'QUIET', rule })
+
+      if (existing && rule.autoResolveOnNormal) {
+        const resolved: ActiveAlarm = {
+          ...existing,
+          status: 'RESOLVED',
+          clearedAt: clock.now(),
+          currentValue: value,
+        }
+        next = next.map((a) => (a.id === existing.id ? resolved : a))
+        outcomes.push({ kind: 'CLEARED', rule, alarm: resolved, value })
+      }
+    }
+  }
+
+  return { alarms: next, outcomes }
+}
+```
+
+- [ ] **Step 4: Run the evaluator test**
+
+Run: `cd 11_frontend && npx vitest run src/lib/alarms/evaluate.test.ts`
+
+Expected: PASS, ten tests. If `describes the comparison in the rule’s own unit` fails on spacing,
+compare against `AlarmContext.tsx`'s original template literal — the description strings are
+deliberately byte-identical to what shipped, because they are already stored in
+`activeAlarms` in operators' browsers.
+
+- [ ] **Step 5: Write the failing context test**
+
+Create `11_frontend/src/context/AlarmContext.evaluation.test.tsx`. The feed has to *grow* between
+commits, which a plain module-level array cannot do — the provider would never re-render. A
+`useSyncExternalStore` in the mock gives a feed the test can push to inside `act`.
+
+```tsx
+import React from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, render } from '@testing-library/react';
+import { AlarmProvider, useAlarms } from './AlarmContext';
+import { unsGraphQLClient } from '../services/graphql/client';
+import type { AlertRule } from '../types/alarm';
+import type { MqttMessage } from '../types/uns';
+
+const LINE = 'CovestroAG/Dormagen/Production/Line1';
+
+let feed: MqttMessage[] = [];
+const listeners = new Set<() => void>();
+const subscribeFeed = (fn: () => void) => {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+};
+const getFeed = () => feed;
+
+/** Prepend to the feed the way UNSContext does, and let the provider see it. */
+function push(...messages: MqttMessage[]) {
+  act(() => {
+    for (const message of messages) {
+      feed = [message, ...feed];
+    }
+    listeners.forEach((fn) => fn());
+  });
+}
+
+vi.mock('./UNSContext', () => ({
+  useUNS: () => ({ mqttFeed: React.useSyncExternalStore(subscribeFeed, getFeed) }),
+}));
+
+vi.mock('./AuthContext', () => ({
+  useAuth: () => ({ currentUser: { id: 'u-test', name: 'Test Operator', role: 'operator' } }),
+}));
+
+vi.mock('../services/graphql/client', () => ({
+  unsGraphQLClient: {
+    getAlertRules: vi.fn(),
+    saveAlertRules: vi.fn(),
+    saveAlertRule: vi.fn(),
+    setAlertRuleEnabled: vi.fn(),
+    deleteAlertRule: vi.fn(),
+    recordAlertRuleEvaluation: vi.fn(),
+  },
+}));
+
+const mocked = vi.mocked(unsGraphQLClient);
+
+function rule(overrides: Partial<AlertRule> = {}): AlertRule {
+  return {
+    id: 'r-temp',
+    name: 'Line 1 temperature high',
+    description: '',
+    enabled: true,
+    severity: 'HIGH',
+    category: 'TEMPERATURE',
+    topic: `${LINE}/#`,
+    metricField: 'temp',
+    condition: 'GREATER_THAN',
+    thresholdValue: 80,
+    unit: '°C',
+    targetRoles: ['operator'],
+    autoResolveOnNormal: false,
+    // Off, so jsdom needs no AudioContext.
+    actions: { inAppNotification: true, audioChime: false, mqttPublishOnTrigger: false, emailWebhook: false },
+    triggerCount: 0,
+    createdAt: '2026-09-01T00:00:00.000Z',
+    updatedAt: '2026-09-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function message(id: string, topic: string, payload: MqttMessage['payload']): MqttMessage {
+  return { id, topic, payload, timestamp: '2026-09-02T10:00:00.000Z' };
+}
+
+type Ctx = ReturnType<typeof useAlarms>;
+let ctx: Ctx | null = null;
+
+const Probe: React.FC = () => {
+  ctx = useAlarms();
+  return null;
+};
+
+async function mount() {
+  render(
+    <AlarmProvider>
+      <Probe />
+    </AlarmProvider>,
+  );
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
+describe('AlarmProvider evaluation coverage', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    feed = [];
+    ctx = null;
+    mocked.getAlertRules.mockResolvedValue([rule()]);
+    mocked.saveAlertRules.mockResolvedValue([]);
+    mocked.recordAlertRuleEvaluation.mockResolvedValue(undefined as never);
+    // toggleRuleEnabled chains .then() on this, so it has to be a promise.
+    mocked.setAlertRuleEnabled.mockResolvedValue(null as never);
+  });
+
+  afterEach(() => {
+    listeners.clear();
+    vi.resetAllMocks();
+  });
+
+  // The defect this task closes.
+  it('catches a breach that is not the newest message in the batch', async () => {
+    await mount();
+
+    push(
+      message('m1', `${LINE}/Cell1`, { temp: 60 }),
+      message('m2', `${LINE}/Cell1`, { temp: 91 }),
+      message('m3', `${LINE}/Cell2`, { unrelated: 1 }),
+    );
+
+    expect(ctx?.activeAlarms).toHaveLength(1);
+    expect(ctx?.activeAlarms[0].currentValue).toBe(91);
+  });
+
+  it('counts one trigger and writes one audit entry per breach', async () => {
+    await mount();
+
+    push(message('m1', `${LINE}/Cell1`, { temp: 91 }));
+
+    expect(ctx?.activeAlarms).toHaveLength(1);
+    expect(ctx?.auditLog.filter((e) => e.action === 'TRIGGERED')).toHaveLength(1);
+    expect(ctx?.rules[0].triggerCount).toBe(1);
+    expect(mocked.recordAlertRuleEvaluation).toHaveBeenCalledTimes(1);
+    expect(mocked.recordAlertRuleEvaluation).toHaveBeenCalledWith('r-temp', true);
+  });
+
+  it('does not re-evaluate a message it has already seen', async () => {
+    await mount();
+
+    push(message('m1', `${LINE}/Cell1`, { temp: 91 }));
+    const triggers = ctx?.auditLog.filter((e) => e.action === 'TRIGGERED').length;
+
+    push(message('m2', `${LINE}/Cell2`, { unrelated: 1 }));
+
+    expect(ctx?.auditLog.filter((e) => e.action === 'TRIGGERED')).toHaveLength(triggers!);
+    expect(ctx?.activeAlarms).toHaveLength(1);
+  });
+
+  it('still re-evaluates the newest message when the rules change', async () => {
+    mocked.getAlertRules.mockResolvedValue([rule({ enabled: false })]);
+    await mount();
+
+    push(message('m1', `${LINE}/Cell1`, { temp: 91 }));
+    expect(ctx?.activeAlarms).toHaveLength(0);
+
+    // Enabling a rule while a value is already breaching must raise the alarm now, not on
+    // whatever the plant happens to publish next.
+    await act(async () => {
+      ctx?.toggleRuleEnabled('r-temp', true);
+    });
+
+    expect(ctx?.activeAlarms).toHaveLength(1);
+  });
+
+  it('auto-resolves when a breach and a recovery arrive in the same batch', async () => {
+    mocked.getAlertRules.mockResolvedValue([rule({ autoResolveOnNormal: true })]);
+    await mount();
+
+    push(
+      message('m1', `${LINE}/Cell1`, { temp: 91 }),
+      message('m2', `${LINE}/Cell1`, { temp: 64 }),
+    );
+
+    expect(ctx?.activeAlarms).toHaveLength(1);
+    expect(ctx?.activeAlarms[0].status).toBe('RESOLVED');
+  });
+});
+```
+
+`toggleRuleEnabled(ruleId, enabled)` is already on `AlarmContextType` (`:324`) and takes both
+arguments, so this test adds nothing to the context. It reaches
+`unsGraphQLClient.setAlertRuleEnabled` — its own narrow mutation, not `saveAlertRule` — and chains
+`.then()` on the result, which is why that mock has to resolve rather than return `undefined`.
+
+- [ ] **Step 6: Run it and watch the right things fail**
+
+Run: `cd 11_frontend && npx vitest run src/context/AlarmContext.evaluation.test.tsx`
+
+Expected: the first test FAILS with `0` alarms — `m2`'s breach was dropped. The second may pass or
+fail depending on whether Testing Library's `act` triggers the double updater invocation; either
+way it is pinned after Step 7.
+
+- [ ] **Step 7: Replace the effect in AlarmContext**
+
+In `11_frontend/src/context/AlarmContext.tsx`:
+
+1. Add the import beside the others:
+   ```ts
+   import { evaluateFeed, type AlarmClock } from '../lib/alarms/evaluate'
+   ```
+   and remove the now-unused `topicMatchesFilter` import if the evaluation effect was its only
+   caller — check with `grep -n "topicMatchesFilter" src/context/AlarmContext.tsx` after the edit.
+
+2. Add a module-level clock, next to `STORAGE_KEYS`. It is module scope so it never becomes an
+   effect dependency:
+   ```ts
+   const ALARM_CLOCK: AlarmClock = {
+     now: () => new Date().toISOString(),
+     newAlarmId: () => `alm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+   }
+   ```
+
+3. Delete the whole `evaluateCondition` helper (`:578`–`:636` in the shipped file). It now lives in
+   `lib/alarms/evaluate.ts` as `conditionResult`. It has **two** callers, not one: the evaluation
+   effect, and `testTriggerRule` (`:898`). Fix the second one now, or the build breaks:
+
+   ```tsx
+       const evalResult = conditionResult(rule, testValue);
+   ```
+
+   and its use one line further down, where `desc` became `description`:
+
+   ```tsx
+         conditionDescription: `${evalResult.description} (Manual Diagnostic Trigger)`,
+   ```
+
+   While in that object, the `topic` line invents a plant path for a wildcard rule:
+
+   ```tsx
+         topic: rule.topic === '*' ? 'CovestroAG/Dormagen/Polyurethane/Reactor_01/temperature' : rule.topic,
+   ```
+
+   `Reactor_01` is one of the fabrications Task 20 deleted from `INITIAL_RULES`; this is the last
+   copy of it in the file, and it labels an engineer's diagnostic alarm with a vessel that does not
+   exist. A rule on `*` genuinely has no topic, so say so:
+
+   ```tsx
+         topic: rule.topic,
+   ```
+
+4. Add these two refs above the evaluation effect:
+   ```tsx
+   /**
+    * The alarms the evaluator folds over.
+    *
+    * A ref, not a dependency: depending on `activeAlarms` would re-run evaluation every time
+    * an operator acknowledged something. Declared before the evaluation effect so that on a
+    * commit which changed both, this one runs first.
+    */
+   const activeAlarmsRef = useRef(activeAlarms);
+   useEffect(() => {
+     activeAlarmsRef.current = activeAlarms;
+   }, [activeAlarms]);
+
+   /** The newest message already evaluated. Everything above it in the feed is new. */
+   const lastEvaluatedIdRef = useRef<string | null>(null);
+   ```
+
+5. Replace the entire evaluation `useEffect` — from `if (mqttFeed.length === 0) return;` through
+   the closing `}, [mqttFeed, rules, playAlarmChime, logAlarmAudit, reportEvaluation]);` — with:
+
+   ```tsx
+   // Evaluate every message that arrived since the last run, against every enabled rule.
+   useEffect(() => {
+     if (mqttFeed.length === 0) return;
+
+     // The feed is newest-first. Everything above the last message we evaluated is new.
+     // findIndex returns -1 when that message has aged out of the ring buffer, and 0 when
+     // nothing arrived and this run was caused by a rules change — Math.max(1, …) turns both
+     // into "evaluate the newest message", which is exactly what this effect used to do.
+     const seenIndex = lastEvaluatedIdRef.current
+       ? mqttFeed.findIndex((m) => m.id === lastEvaluatedIdRef.current)
+       : -1;
+     const fresh = mqttFeed.slice(0, Math.max(1, seenIndex)).reverse();
+     lastEvaluatedIdRef.current = mqttFeed[0].id;
+
+     const { alarms, outcomes } = evaluateFeed(fresh, rules, activeAlarmsRef.current, ALARM_CLOCK);
+
+     if (alarms !== activeAlarmsRef.current) {
+       // Written before setState so that StrictMode's second pass folds over the alarms this
+       // pass produced, instead of raising every one of them a second time.
+       activeAlarmsRef.current = alarms;
+       setActiveAlarms(alarms);
+     }
+
+     for (const outcome of outcomes) {
+       if (outcome.kind === 'QUIET') {
+         reportEvaluation(outcome.rule.id, false);
+         continue;
+       }
+       if (outcome.kind === 'TRIGGERED') {
+         if (outcome.rule.actions.audioChime) {
+           playAlarmChime(outcome.rule.severity);
+         }
+         // The counter is the platform's — every console watching this rule adds to the same
+         // total — and is incremented here too so the number moves without a round trip.
+         setRules((prev) =>
+           prev.map((r) =>
+             r.id === outcome.rule.id
+               ? { ...r, triggerCount: r.triggerCount + 1, lastTriggeredAt: ALARM_CLOCK.now() }
+               : r,
+           ),
+         );
+         reportEvaluation(outcome.rule.id, true);
+         logAlarmAudit(
+           outcome.alarm.id,
+           outcome.rule.name,
+           outcome.alarm.topic,
+           outcome.rule.severity,
+           'TRIGGERED',
+           `Live threshold breach: ${outcome.description}. Target roles: ${outcome.rule.targetRoles.join(', ')}`,
+         );
+         continue;
+       }
+       if (outcome.kind === 'CLEARED') {
+         logAlarmAudit(
+           outcome.alarm.id,
+           outcome.rule.name,
+           outcome.alarm.topic,
+           outcome.rule.severity,
+           'CLEARED',
+           `Value returned to safe range (${String(outcome.value)}). Auto-resolved.`,
+         );
+       }
+       // UPDATED changes a value on an alarm already on screen. No chime, no audit entry and
+       // no evaluation report — that is what shipped, and repeating any of them would turn a
+       // steady breach into a stream of duplicates.
+     }
+   }, [mqttFeed, rules, playAlarmChime, logAlarmAudit, reportEvaluation]);
+   ```
+
+Note what moved and what did not: every side effect is now outside a state updater, and
+`setActiveAlarms` receives a value rather than a callback, because the evaluator has already done
+the folding.
+
+- [ ] **Step 8: Run both test files**
+
+```bash
+cd 11_frontend
+npx vitest run src/lib/alarms/evaluate.test.ts src/context/AlarmContext.evaluation.test.tsx
+```
+
+Expected: PASS. If `still re-evaluates the newest message when the rules change` fails, the effect
+is missing the `Math.max(1, …)`: with `seenIndex === 0` a bare `slice(0, 0)` evaluates nothing.
+
+- [ ] **Step 9: Confirm Task 20's test still passes, and the suite with it**
+
+```bash
+cd 11_frontend
+npx tsc --noEmit
+npx vitest run
+```
+
+Expected: green, including `src/context/AlarmContext.test.tsx`. That file's `raises an alarm when a
+filter with both + and # covers the topic` case exercises the new path with a one-message feed, so
+it is the check that this task preserved the single-message behaviour.
+
+- [ ] **Step 10: Verify the dev-mode duplication is gone by hand**
+
+```bash
+cd 11_frontend && npm run dev
+```
+
+With the simulator running, configure one rule that breaches, and watch the Alarms audit trail: one
+`TRIGGERED` entry, and `triggerCount` moving by one. Before this task, StrictMode produced two of
+each. Stop the dev server when done.
+
+- [ ] **Step 11: Commit**
+
+```bash
+cd 11_frontend
+git add src/lib/alarms/evaluate.ts src/lib/alarms/evaluate.test.ts \
+        src/context/AlarmContext.tsx src/context/AlarmContext.evaluation.test.tsx
+git commit -m "fix(frontend): evaluate every message in the feed against every rule
+
+The evaluation effect read mqttFeed[0] and dropped the rest of the batch. With
+the default '#' subscription the messages in one React commit are usually
+different topics, so a rule watching topic B simply never saw B whenever A and
+C arrived alongside it — an alarm system going quiet with nothing on screen to
+say so.
+
+Evaluation is now a pure fold in lib/alarms/evaluate.ts over the messages that
+arrived since the last run, oldest first, so a breach that recovered inside one
+batch ends on the recovery. The side effects moved out of the setActiveAlarms
+updater: under StrictMode that updater ran twice, double-counting every trigger
+and writing two audit entries per breach in dev.
+
+Single-message behaviour is unchanged, including a rules change re-evaluating
+the newest reading."
+```
+
+**Definition of done:**
+- A breach anywhere in a batch raises its alarm, asserted by test at both the evaluator and the
+  provider level.
+- A breach and a recovery in the same batch end `RESOLVED` when the rule auto-resolves.
+- One breach produces one audit entry, one `triggerCount` increment and one
+  `recordAlertRuleEvaluation(id, true)` — asserted by test, and confirmed by hand in StrictMode.
+- A message already evaluated is not evaluated again; a rules change still re-evaluates the newest.
+- No side effect is called from inside a `set*` updater in `AlarmContext.tsx`:
+  `grep -n "setActiveAlarms((prev" src/context/AlarmContext.tsx` returns only the acknowledge,
+  resolve and note actions, none of which log from inside the callback.
+- `evaluateCondition` no longer exists in `AlarmContext.tsx`; `conditionResult` is its only
+  implementation, and `testTriggerRule` calls it.
+- `grep -rn "Reactor_01" 11_frontend/src` is empty.
+- `npx tsc --noEmit` clean; `npx vitest run` green.
+
+---
+
+## Task 24: ALARMS ▸ rule editor — separate what this console does from what it only records
+
+Task 20 deleted the fictional rules and Task 23 made evaluation cover the whole feed. What is left
+is the form that authors a rule, and it promises four things the platform does not do — plus it
+hides three settings the platform's own schema stores.
+
+**The seven findings, verified against the server schema and the ADR:**
+
+1. **`mqttPublishOnTrigger` publishes nothing, and defaults to on.** The checkbox at
+   `AlertRuleEditorModal.tsx:508`–`:519` reads `Publish to MQTT Alarm Topic`, the topic input at
+   `:531`–`:545` appears when it is ticked, and `:96`–`:98` default it to **`true`** for every new
+   rule. Nothing in `11_frontend/src` publishes to MQTT and nothing can: the browser never connects
+   to the broker, and ADR-0005 rejected the MQTT write path for exactly this class of data —
+   *"Publishing rules to MQTT and letting the historian persist them was rejected."* There is no
+   mutation that asks the server to publish on the console's behalf either.
+2. **`emailWebhook` and `webhookUrl` have no controls at all.** They are state at `:100`–`:103`,
+   they are written on save at `:167`–`:168`, and `setEmailWebhook`/`setWebhookUrl` are never
+   called. So every rule this console saves carries `emailWebhook: false` and
+   `webhookUrl: 'https://alerts.plant.internal/webhook'` — an invented host, silently persisted to
+   shared Postgres, that no engineer chose and no engineer can change here.
+3. **`delaySeconds` has no control either**, and nothing debounces. State at `:79`, saved at
+   `:157`, `setDelaySeconds` never called. A rule authored elsewhere with a 30-second delay is
+   round-tripped intact and then evaluated with no delay at all.
+4. **Escalation is configurable and inert.** The role select (`:441`–`:457`) and the timeout
+   (`:461`–`:475`) both save. `grep -n "escalat" src/context/AlarmContext.tsx` finds only
+   `escalated: false` assignments — no timer, no comparison against
+   `escalationTimeoutMinutes`, and although `AlarmAuditEntry['action']` includes `'ESCALATED'`,
+   nothing ever writes one. "Escalation Target Role (If Unacknowledged)" describes a service that
+   does not exist.
+5. **`inAppNotification` is read by nobody.**
+   `grep -rn "inAppNotification" src/` finds the type, the two mapper directions, the GraphQL
+   selection set and this checkbox. No component consults it before showing an alarm, so
+   `In-App Incident Banner` is on the same footing as the MQTT box: stored, not honoured.
+6. **`STALE_TIMEOUT` cannot fire.** It is offered as a condition (`:52`, *"Stale Timeout (No update
+   for X min)"*) and as a category (`:36`). Task 23's `conditionResult` returns
+   `breached: false` for it, because a feed carries arrivals and a stale timeout is an *absence* —
+   detecting it needs a timer over `lastUpdated` per topic, which is a feature, not a fix. Offering
+   it unlabelled means an operator can author a rule that is guaranteed never to trip.
+7. **The form is pre-filled with the plant Task 20 deleted.** `:69` defaults `topic` to
+   `CovestroAG/Dormagen/Polyurethane/Reactor_01/temperature`, `:70` defaults `metricField` to
+   `temp_celsius`, `:99` defaults the alarm topic to `alarms/plant/critical`. `Reactor_01` and
+   `Polyurethane` appear nowhere in `conf/` or `99_simulator/`. A new rule therefore opens
+   pre-aimed at a vessel that does not exist, and one click on Save writes it to shared Postgres.
+
+**Why the answer is labelling, not deletion.** Six of these seven fields are real columns on the
+server's Alert Rule: `07_uns_graphql/src/uns_graphql/type/alert_rule.py:106`–`:117` declares
+`delay_seconds`, `escalation_role`, `escalation_timeout_minutes`, `mqtt_publish_on_trigger`,
+`mqtt_alarm_topic`, `email_webhook` and `webhook_url`, and `queries.ts:249`–`:258` already selects
+all of them. They are not frontend inventions — they are the dispatch policy a future service will
+read, and ADR-0005 says so plainly: *"Moving evaluation into a service is now possible — the rules
+are readable by anything with a database connection — but it is not done here."*
+
+Deleting the controls would mean an OT engineer cannot record the escalation policy their site
+already runs on paper, and would leave three fields being written from invented defaults. Keeping
+them unlabelled is the lie. So: keep every field, give the three hidden ones real controls, and
+split the form so it says which settings this console acts on and which it only stores. That is one
+honest sentence away from the current file and it costs no capability.
+
+**Files:**
+- Modify: `11_frontend/src/components/alarms/AlertRuleEditorModal.tsx`
+- Test: `11_frontend/src/components/alarms/AlertRuleEditorModal.test.tsx` (create)
+
+**Interfaces:**
+- Consumes: `BrowserEvaluationNotice` from `src/components/alarms/BrowserEvaluationNotice.tsx`
+  (Task 14); `useAlarms().createRule` and `.updateRule`, `useUNS().allLoadedNodes` — all already
+  used by this file and unchanged.
+- Produces: no new export, and no change to `AlertRule`. The saved object keeps every field it
+  writes today; only the defaults and the labels change. Test ids: `rule-editor`,
+  `rule-editor-acts`, `rule-editor-recorded`, `rule-editor-save`, `rule-editor-error`.
+
+- [ ] **Step 1: Confirm the four claims that matter, in the tree**
+
+```bash
+cd 11_frontend
+grep -rn "inAppNotification" src/ | grep -v "types/alarm\|map-alert-rules\|queries.ts\|graphql/types\|AlertRuleEditorModal\|AlarmContext"
+grep -n "escalat" src/context/AlarmContext.tsx
+grep -rn "mqttAlarmTopic\|webhookUrl" src/ | grep -v "types/alarm\|map-alert-rules\|queries.ts\|graphql/types\|AlertRuleEditorModal\|AlarmContext"
+grep -rn "Reactor_01\|temp_celsius\|alerts.plant.internal" src/
+```
+
+Expected: the first and third commands print nothing — no consumer reads `inAppNotification`,
+`mqttAlarmTopic` or `webhookUrl`. The second prints only `escalated: false` lines. The fourth prints
+only `AlertRuleEditorModal.tsx`, because Task 20 and Task 23 removed the rest. If any of these turns
+up a real consumer, that field moves into the "acts now" group in Step 4 instead — the split is a
+statement of fact, so it has to follow whatever the tree says today.
+
+- [ ] **Step 2: Write the failing editor test**
+
+Create `11_frontend/src/components/alarms/AlertRuleEditorModal.test.tsx`:
+
+```tsx
+import React from 'react';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { AlertRuleEditorModal } from './AlertRuleEditorModal';
+
+const createRule = vi.fn();
+const updateRule = vi.fn();
+
+vi.mock('../../context/AlarmContext', () => ({
+  useAlarms: () => ({ createRule, updateRule }),
+}));
+
+vi.mock('../../context/UNSContext', () => ({
+  useUNS: () => ({ allLoadedNodes: [] }),
+}));
+
+describe('AlertRuleEditorModal', () => {
+  beforeEach(() => {
+    createRule.mockReset();
+    updateRule.mockReset();
+  });
+
+  it('opens with no plant pre-filled', () => {
+    render(<AlertRuleEditorModal rule={null} onClose={vi.fn()} />);
+
+    expect(screen.getByLabelText(/topic/i)).toHaveValue('');
+    expect(screen.getByLabelText(/metric field/i)).toHaveValue('');
+    expect(screen.queryByDisplayValue(/Reactor_01/)).toBeNull();
+    expect(screen.queryByDisplayValue(/alerts\.plant\.internal/)).toBeNull();
+    expect(screen.queryByDisplayValue(/alarms\/plant\/critical/)).toBeNull();
+  });
+
+  it('will not save a rule with no topic', async () => {
+    const user = userEvent.setup();
+    render(<AlertRuleEditorModal rule={null} onClose={vi.fn()} />);
+
+    await user.type(screen.getByLabelText(/rule name/i), 'Line 1 temp high');
+    await user.click(screen.getByTestId('rule-editor-save'));
+
+    expect(createRule).not.toHaveBeenCalled();
+    expect(screen.getByTestId('rule-editor-error')).toHaveTextContent(/topic/i);
+  });
+
+  it('says which settings this console acts on and which it only stores', () => {
+    render(<AlertRuleEditorModal rule={null} onClose={vi.fn()} />);
+
+    const acts = screen.getByTestId('rule-editor-acts');
+    expect(acts).toHaveTextContent(/Industrial audio chime/i);
+    expect(acts).toHaveTextContent(/Auto-resolve/i);
+
+    const recorded = screen.getByTestId('rule-editor-recorded');
+    expect(recorded).toHaveTextContent(/nothing acts on these yet/i);
+    expect(recorded).toHaveTextContent(/Publish to an MQTT alarm topic/i);
+    expect(recorded).toHaveTextContent(/Escalate if unacknowledged/i);
+    expect(recorded).toHaveTextContent(/In-app incident banner/i);
+  });
+
+  it('gives the three hidden fields real controls', async () => {
+    const user = userEvent.setup();
+    render(<AlertRuleEditorModal rule={null} onClose={vi.fn()} />);
+
+    await user.type(screen.getByLabelText(/rule name/i), 'Line 1 temp high');
+    await user.type(screen.getByLabelText(/^topic/i), 'CovestroAG/Dormagen/Production/Line1/temp');
+    await user.type(screen.getByLabelText(/metric field/i), 'temp');
+    await user.clear(screen.getByLabelText(/trigger delay/i));
+    await user.type(screen.getByLabelText(/trigger delay/i), '30');
+    await user.click(screen.getByLabelText(/send a webhook/i));
+    await user.type(screen.getByLabelText(/webhook url/i), 'https://ops.example.test/hook');
+    await user.click(screen.getByTestId('rule-editor-save'));
+
+    expect(createRule).toHaveBeenCalledTimes(1);
+    expect(createRule.mock.calls[0][0]).toMatchObject({
+      topic: 'CovestroAG/Dormagen/Production/Line1/temp',
+      metricField: 'temp',
+      delaySeconds: 30,
+      actions: {
+        emailWebhook: true,
+        webhookUrl: 'https://ops.example.test/hook',
+        // Nothing publishes to MQTT, so a new rule must not claim it does.
+        mqttPublishOnTrigger: false,
+      },
+    });
+  });
+
+  it('marks the condition this console cannot evaluate', () => {
+    render(<AlertRuleEditorModal rule={null} onClose={vi.fn()} />);
+
+    expect(
+      screen.getByRole('option', { name: /stale timeout .*not evaluated here/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('round-trips a rule authored elsewhere without changing what it did not touch', async () => {
+    const user = userEvent.setup();
+    const existing = {
+      id: 'r-1',
+      name: 'Authored by another tool',
+      description: '',
+      enabled: true,
+      severity: 'HIGH' as const,
+      category: 'PRESSURE' as const,
+      topic: 'CovestroAG/Dormagen/Production/Line1/pressure',
+      metricField: 'bar',
+      condition: 'GREATER_THAN' as const,
+      thresholdValue: 135,
+      unit: 'bar',
+      delaySeconds: 45,
+      targetRoles: ['engineer' as const],
+      escalationRole: 'admin' as const,
+      escalationTimeoutMinutes: 20,
+      autoResolveOnNormal: true,
+      actions: {
+        inAppNotification: true,
+        audioChime: false,
+        mqttPublishOnTrigger: true,
+        mqttAlarmTopic: 'alarms/line1/pressure',
+        emailWebhook: true,
+        webhookUrl: 'https://ops.example.test/existing',
+      },
+      triggerCount: 3,
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:00:00.000Z',
+    };
+
+    render(<AlertRuleEditorModal rule={existing} onClose={vi.fn()} />);
+    await user.click(screen.getByTestId('rule-editor-save'));
+
+    expect(updateRule).toHaveBeenCalledTimes(1);
+    expect(updateRule.mock.calls[0][1]).toMatchObject({
+      delaySeconds: 45,
+      escalationTimeoutMinutes: 20,
+      actions: {
+        mqttPublishOnTrigger: true,
+        mqttAlarmTopic: 'alarms/line1/pressure',
+        emailWebhook: true,
+        webhookUrl: 'https://ops.example.test/existing',
+      },
+    });
+  });
+});
+```
+
+The last test is the one that keeps this task honest in the other direction: labelling a field as
+"not acted on" is not a licence to drop it on save.
+
+- [ ] **Step 3: Run it and watch it fail**
+
+Run: `cd 11_frontend && npx vitest run src/components/alarms/AlertRuleEditorModal.test.tsx`
+
+Expected: FAIL on nearly every case — the topic is pre-filled with `Reactor_01`, there are no
+`rule-editor-*` test ids, the delay and webhook controls do not exist, and no label distinguishes
+the two groups. `will not save a rule with no topic` fails only on the missing test ids, not on the
+check itself: `handleSave` already rejects a blank topic at `:119`–`:121` with *"Target topic path is
+required."* That is the behaviour the test pins; do not add a second check for it.
+
+- [ ] **Step 4: Blank the invented defaults**
+
+In `11_frontend/src/components/alarms/AlertRuleEditorModal.tsx`, replace the defaults at `:69`–`:70`:
+
+```tsx
+  // No default plant. A rule aimed at a vessel nobody chose is one Save away from shared Postgres.
+  const [topic, setTopic] = useState(rule?.topic || '');
+  const [metricField, setMetricField] = useState(rule?.metricField || '');
+```
+
+and at `:96`–`:103`:
+
+```tsx
+  // Off by default: nothing in this console publishes to MQTT (ADR-0005), so a new rule must
+  // not be born claiming that it does.
+  const [mqttPublishOnTrigger, setMqttPublishOnTrigger] = useState(
+    rule?.actions.mqttPublishOnTrigger ?? false
+  );
+  const [mqttAlarmTopic, setMqttAlarmTopic] = useState(rule?.actions.mqttAlarmTopic || '');
+  const [emailWebhook, setEmailWebhook] = useState(rule?.actions.emailWebhook ?? false);
+  const [webhookUrl, setWebhookUrl] = useState(rule?.actions.webhookUrl || '');
+```
+
+Leave `thresholdValue`, `thresholdUpperValue`, `unit` and `severity` alone: `85`, `120`, `°C` and
+`HIGH` are form conveniences, not claims about this plant, and an engineer overwrites them while
+typing the threshold they came to type.
+
+- [ ] **Step 5: Label the condition that cannot fire, and stop the header promising dispatch**
+
+Still in the same file, replace the `STALE_TIMEOUT` entry in `CONDITIONS` (`:52`):
+
+```tsx
+  {
+    label: 'Stale Timeout (no update for X seconds) — not evaluated here',
+    value: 'STALE_TIMEOUT',
+  },
+```
+
+Add the reason directly under the condition select, so the label is not the only explanation. Place
+it after the `</select>` that renders `CONDITIONS.map` (`:343`–`:350`):
+
+```tsx
+              {condition === 'STALE_TIMEOUT' && (
+                <p className="mt-1 text-[10px] text-amber-700 dark:text-[#FFC107]">
+                  This console evaluates rules from messages as they arrive, so it cannot see a
+                  message that never came. The rule is stored, and will be evaluated once a service
+                  does the watching.
+                </p>
+              )}
+```
+
+`handleSave` already rejects a blank name, topic, metric field and empty `targetRoles`
+(`:118`–`:134`). Leave all four checks exactly as they are — Step 4 only removed the pre-fill that
+was hiding the topic check from anyone who never cleared the field. Do not restate the messages.
+
+The modal subtitle at `:196`–`:198` is the last promise in the header:
+
+```tsx
+              <p className="text-[10px] text-[#64748B] dark:text-[#94A3B8] text-pretty">
+                Threshold conditions and role targeting, evaluated in this browser.
+              </p>
+```
+
+`dispatch channels` comes out because sections 4 and 5 now say precisely which channels work.
+
+Give the error paragraph and the Save button their test ids while you are in the file:
+`data-testid="rule-editor-error"` on the element that renders `validationError`, and
+`data-testid="rule-editor-save"` on the Save button in the footer. Put
+`data-testid="rule-editor"` on the modal's outermost panel.
+
+Every input this test addresses by label needs a real association, not a nearby `<label>` with no
+`htmlFor`. Give each control an `id` and its label a matching `htmlFor` — `rule-name`, `rule-topic`,
+`rule-metric-field`, `rule-condition`, `rule-delay`, `rule-webhook`, `rule-webhook-url`. That is
+also what makes the form keyboard-navigable, which the spec's focus-ring requirement assumes.
+
+- [ ] **Step 6: Split section 4 into what happens and what is stored**
+
+Replace the whole of section 4 — from the `4. Dispatch Actions & Notifications` heading (`:483`)
+through the closing `</div>` of the `mqttPublishOnTrigger &&` block (`:546`) — with two groups. The
+escalation pair moves here too, out of section 3.
+
+```tsx
+          {/* Section 4: what this console does when the condition breaches */}
+          <div
+            data-testid="rule-editor-acts"
+            className="space-y-3 p-3 rounded-lg bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#E2E8F0] dark:border-[#1E293B]"
+          >
+            <div className="text-[11px] font-mono font-bold text-amber-700 dark:text-[#FFC107] uppercase tracking-wider">
+              4. What this console does on a breach
+            </div>
+            <BrowserEvaluationNotice />
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <label
+                htmlFor="rule-audio-chime"
+                className="flex items-center gap-2 p-2 rounded bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] cursor-pointer"
+              >
+                <input
+                  id="rule-audio-chime"
+                  type="checkbox"
+                  checked={audioChime}
+                  onChange={(e) => setAudioChime(e.target.checked)}
+                  className="accent-[#FFC107]"
+                />
+                <Volume2 className="w-3.5 h-3.5 text-rose-400" />
+                <span className="text-[11px] text-[#0F172A] dark:text-[#F8FAFC]">
+                  Industrial audio chime, in this browser
+                </span>
+              </label>
+
+              <label
+                htmlFor="rule-auto-resolve"
+                className="flex items-center gap-2 p-2 rounded bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] cursor-pointer"
+              >
+                <input
+                  id="rule-auto-resolve"
+                  type="checkbox"
+                  checked={autoResolveOnNormal}
+                  onChange={(e) => setAutoResolveOnNormal(e.target.checked)}
+                  className="accent-[#FFC107]"
+                />
+                <Check className="w-3.5 h-3.5 text-sky-400" />
+                <span className="text-[11px] text-[#0F172A] dark:text-[#F8FAFC]">
+                  Auto-resolve when the value returns to range
+                </span>
+              </label>
+            </div>
+          </div>
+
+          {/* Section 5: stored on the rule, honoured by nothing that exists yet */}
+          <div
+            data-testid="rule-editor-recorded"
+            className="space-y-3 p-3 rounded-lg bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-dashed border-[#CBD5E1] dark:border-[#334155]"
+          >
+            <div className="text-[11px] font-mono font-bold text-[#64748B] dark:text-[#94A3B8] uppercase tracking-wider">
+              5. Dispatch policy — recorded, not performed
+            </div>
+            <p className="text-[11px] text-[#64748B]">
+              These are stored on the rule and shared with every console, and{' '}
+              <strong>nothing acts on these yet</strong>. Dispatching a notification and escalating
+              an unacknowledged alarm need a service that runs when nobody has the console open;
+              this browser cannot publish to the broker or send a webhook. Record the policy your
+              site runs on here, and it is waiting when that service arrives.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <label
+                htmlFor="rule-in-app"
+                className="flex items-center gap-2 p-2 rounded bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] cursor-pointer"
+              >
+                <input
+                  id="rule-in-app"
+                  type="checkbox"
+                  checked={inAppNotification}
+                  onChange={(e) => setInAppNotification(e.target.checked)}
+                  className="accent-[#FFC107]"
+                />
+                <Bell className="w-3.5 h-3.5 text-amber-600 dark:text-[#FFC107]" />
+                <span className="text-[11px] text-[#0F172A] dark:text-[#F8FAFC]">
+                  In-app incident banner
+                </span>
+              </label>
+
+              <label
+                htmlFor="rule-mqtt-publish"
+                className="flex items-center gap-2 p-2 rounded bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] cursor-pointer"
+              >
+                <input
+                  id="rule-mqtt-publish"
+                  type="checkbox"
+                  checked={mqttPublishOnTrigger}
+                  onChange={(e) => setMqttPublishOnTrigger(e.target.checked)}
+                  className="accent-[#FFC107]"
+                />
+                <Send className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="text-[11px] text-[#0F172A] dark:text-[#F8FAFC]">
+                  Publish to an MQTT alarm topic
+                </span>
+              </label>
+
+              <label
+                htmlFor="rule-webhook"
+                className="flex items-center gap-2 p-2 rounded bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] cursor-pointer"
+              >
+                <input
+                  id="rule-webhook"
+                  type="checkbox"
+                  checked={emailWebhook}
+                  onChange={(e) => setEmailWebhook(e.target.checked)}
+                  className="accent-[#FFC107]"
+                />
+                <Mail className="w-3.5 h-3.5 text-violet-400" />
+                <span className="text-[11px] text-[#0F172A] dark:text-[#F8FAFC]">
+                  Send a webhook
+                </span>
+              </label>
+
+              <div>
+                <label
+                  htmlFor="rule-delay"
+                  className="block text-[11px] text-[#64748B] dark:text-[#94A3B8] mb-1 font-medium"
+                >
+                  Trigger delay
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    id="rule-delay"
+                    type="number"
+                    value={delaySeconds}
+                    onChange={(e) => setDelaySeconds(Number(e.target.value))}
+                    min={0}
+                    max={3600}
+                    className="flex-1 bg-white dark:bg-[#111114] border border-[#CBD5E1] dark:border-[#1E293B] rounded-md px-2.5 py-1.5 text-xs text-[#0F172A] dark:text-[#F8FAFC] font-mono focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107]"
+                  />
+                  <span className="text-[#64748B] font-mono text-[11px]">Seconds</span>
+                </div>
+              </div>
+            </div>
+
+            {mqttPublishOnTrigger && (
+              <div>
+                <label
+                  htmlFor="rule-mqtt-topic"
+                  className="block text-[11px] text-[#64748B] dark:text-[#94A3B8] mb-1 font-medium"
+                >
+                  MQTT alarm topic
+                </label>
+                <input
+                  id="rule-mqtt-topic"
+                  type="text"
+                  value={mqttAlarmTopic}
+                  onChange={(e) => setMqttAlarmTopic(e.target.value)}
+                  placeholder="alarms/&lt;area&gt;/&lt;incident&gt;"
+                  className="w-full bg-white dark:bg-[#111114] border border-[#CBD5E1] dark:border-[#1E293B] rounded-md px-2.5 py-1.5 text-xs text-[#0F172A] dark:text-[#F8FAFC] font-mono focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107]"
+                />
+              </div>
+            )}
+
+            {emailWebhook && (
+              <div>
+                <label
+                  htmlFor="rule-webhook-url"
+                  className="block text-[11px] text-[#64748B] dark:text-[#94A3B8] mb-1 font-medium"
+                >
+                  Webhook URL
+                </label>
+                <input
+                  id="rule-webhook-url"
+                  type="url"
+                  value={webhookUrl}
+                  onChange={(e) => setWebhookUrl(e.target.value)}
+                  placeholder="https://"
+                  className="w-full bg-white dark:bg-[#111114] border border-[#CBD5E1] dark:border-[#1E293B] rounded-md px-2.5 py-1.5 text-xs text-[#0F172A] dark:text-[#F8FAFC] font-mono focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107]"
+                />
+              </div>
+            )}
+
+            <div className="pt-2 border-t border-[#E2E8F0] dark:border-[#1E293B] grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label
+                  htmlFor="rule-escalation-role"
+                  className="block text-[11px] text-[#64748B] dark:text-[#94A3B8] mb-1 font-medium"
+                >
+                  Escalate if unacknowledged, to
+                </label>
+                <select
+                  id="rule-escalation-role"
+                  value={escalationRole}
+                  onChange={(e) => setEscalationRole(e.target.value as UserRole)}
+                  className="w-full bg-white dark:bg-[#111114] border border-[#CBD5E1] dark:border-[#1E293B] rounded-md px-2.5 py-1.5 text-xs text-[#0F172A] dark:text-[#F8FAFC] font-mono focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107] cursor-pointer"
+                >
+                  {PREDEFINED_ROLES.map((r) => (
+                    <option key={r} value={r}>
+                      {ROLE_CONFIGS[r]?.label || r}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="rule-escalation-timeout"
+                  className="block text-[11px] text-[#64748B] dark:text-[#94A3B8] mb-1 font-medium"
+                >
+                  Escalate after
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    id="rule-escalation-timeout"
+                    type="number"
+                    value={escalationTimeoutMinutes}
+                    onChange={(e) => setEscalationTimeoutMinutes(Number(e.target.value))}
+                    min={1}
+                    max={120}
+                    className="flex-1 bg-white dark:bg-[#111114] border border-[#CBD5E1] dark:border-[#1E293B] rounded-md px-2.5 py-1.5 text-xs text-[#0F172A] dark:text-[#F8FAFC] font-mono focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107]"
+                  />
+                  <span className="text-[#64748B] font-mono text-[11px]">Minutes</span>
+                </div>
+              </div>
+            </div>
+          </div>
+```
+
+Then delete the old escalation block from section 3 — the `{/* Escalation Policy */}` div at
+`:440`–`:476` — since it now lives in section 5. Section 3 keeps the role selector, which does act:
+`myRoleAlarms` in `AlarmContext.tsx` filters on `targetRoles`.
+
+Add the import at the top of the file:
+
+```tsx
+import { BrowserEvaluationNotice } from './BrowserEvaluationNotice';
+```
+
+`Sliders`, `Shield`, `Layers`, `Radio` and `ChevronDown` are used elsewhere in the file; `Mail` was
+imported at `:10` and finally has a use. Run `npx tsc --noEmit` after this step and delete any icon
+import that is now unused rather than guessing which.
+
+- [ ] **Step 7: Run the editor test**
+
+Run: `cd 11_frontend && npx vitest run src/components/alarms/AlertRuleEditorModal.test.tsx`
+
+Expected: PASS, six tests. If `gives the three hidden fields real controls` fails because
+`getByLabelText(/^topic/i)` matched two elements, the MQTT alarm topic label is colliding — it reads
+`MQTT alarm topic`, which `/^topic/i` should not match; check that the ISA-95 topic field's label
+really begins with the word Topic.
+
+- [ ] **Step 8: Check the rest of the suite and the types**
+
+```bash
+cd 11_frontend
+npx tsc --noEmit
+npx vitest run
+```
+
+Expected: green. `AlarmManagementView.test.tsx` (Task 20) renders the list, not the modal, so it
+should be unaffected; if it opens the editor, update its assertions to the new section headings
+rather than reverting them here.
+
+- [ ] **Step 9: Commit**
+
+```bash
+cd 11_frontend
+git add src/components/alarms/AlertRuleEditorModal.tsx \
+        src/components/alarms/AlertRuleEditorModal.test.tsx
+git commit -m "fix(frontend): say which alarm actions this console performs
+
+The rule editor offered an MQTT publish, an escalation policy and an in-app
+banner that nothing honours, hid delaySeconds, emailWebhook and webhookUrl
+behind no controls at all while still writing them, and opened pre-aimed at
+Reactor_01 with a webhook pointed at alerts.plant.internal.
+
+Every field stays — they are real columns on the server's Alert Rule and the
+dispatch policy a future service will read (ADR-0005) — but the form now
+separates what happens on a breach from what is only recorded, gives the three
+hidden fields controls, marks STALE_TIMEOUT as something this console cannot
+evaluate, and starts a new rule with no plant and no MQTT claim.
+
+Values authored elsewhere round-trip untouched."
+```
+
+**Definition of done:**
+- A new rule opens with an empty topic and metric field, and
+  `grep -rn "Reactor_01\|temp_celsius\|alerts.plant.internal\|alarms/plant/critical" 11_frontend/src`
+  is empty.
+- A new rule saves with `mqttPublishOnTrigger: false`.
+- `delaySeconds`, `emailWebhook` and `webhookUrl` are settable in the form, asserted by test.
+- Saving a rule authored elsewhere preserves every dispatch field it arrived with, asserted by test.
+- The form states, in words an operator can read, that dispatch and escalation are recorded and not
+  performed, and `BrowserEvaluationNotice` appears in the editor.
+- `STALE_TIMEOUT` is labelled as not evaluated here, and selecting it explains why.
+- Every input the tests address has an `id` and a `<label htmlFor>`.
 - `npx tsc --noEmit` clean; `npx vitest run` green.
