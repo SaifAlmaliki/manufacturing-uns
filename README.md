@@ -162,6 +162,30 @@ Point it at the published MQTT port (`localhost:1883`) while the stack from Opti
 Typical flow: **simulator or plant devices → MQTT → mapper clients → Neo4j / Timescale / Kafka → GraphQL → UI**,
 with **mapper clients → Prometheus → Grafana** alongside it for platform health.
 
+### Docker images
+
+Pulled images:
+
+- `emqx/emqx:latest` — MQTT broker; devices, the simulator, and mapper clients publish/subscribe here.
+- `postgres:12` — one-shot `psql` client that creates the historian database, user, tables, and policies.
+- `neo4j:latest` — graph database that stores the current ISA-95 namespace as a tree.
+- `prom/prometheus:latest` — scrapes `/metrics` from the mapper clients.
+- `quay.io/keycloak/keycloak:26.0` — OIDC realm (`uns`) for console, GraphQL, and Grafana sign-in.
+- `apache/kafka:latest` — Kafka broker for streaming UNS messages to other systems.
+- `timescale/timescaledb:latest-pg16` — time-series historian that keeps MQTT event history.
+- `grafana/grafana:latest` — dashboards for process visualization, OEE, and platform health.
+
+Images built from this repo (`manufacturing-uns-<service>`):
+
+- `uns_frontend` — web console for the namespace tree, live feed, historian, and Grafana.
+- `asset_model_setup` — one-shot job that creates `model` / `console` schemas and imports the plant hierarchy.
+- `oee_client` — computes shift OEE from historised metrics and publishes `<line>/KPI/ShiftOee`.
+- `uns_simulator` — synthetic PLC / HMI / SCADA publisher for local demos.
+- `opcua_client` — read-only OPC UA connector that publishes PLC/SCADA tags into the UNS.
+- `spb_mapper_client` — Sparkplug B translator: protobuf in, ISA-95 JSON out.
+- `graphdb_client` — MQTT subscriber that writes the live namespace into Neo4j.
+- `historian_client` — MQTT subscriber that writes events into TimescaleDB.
+
 ---
 
 ## **Technology Choices**
