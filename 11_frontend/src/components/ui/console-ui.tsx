@@ -43,10 +43,16 @@ export const PageShell: React.FC<PageShellProps> = ({ children, scroll = true, i
 interface PageContentProps {
   children: React.ReactNode;
   className?: string;
+  /** Drop the 1400px cap — use on data-heavy pages like alarms and historian. */
+  fullWidth?: boolean;
 }
 
-export const PageContent: React.FC<PageContentProps> = ({ children, className = '' }) => (
-  <div className={`mx-auto max-w-[1400px] space-y-4 p-4 md:p-6 ${className}`}>{children}</div>
+export const PageContent: React.FC<PageContentProps> = ({ children, className = '', fullWidth = false }) => (
+  <div
+    className={`space-y-3 p-3 md:p-4 lg:px-6 ${fullWidth ? 'w-full max-w-none' : 'mx-auto max-w-[1400px]'} ${className}`}
+  >
+    {children}
+  </div>
 );
 
 interface ConsoleCardProps {
@@ -66,17 +72,39 @@ interface PageStatProps {
   icon: React.ReactNode;
   iconBg?: string;
   valueClassName?: string;
+  compact?: boolean;
 }
 
-export const PageStat: React.FC<PageStatProps> = ({ label, value, icon, iconBg = 'bg-[#FF7A00]/15', valueClassName = 'text-white' }) => (
-  <div className={`${consoleTokens.card} flex items-center justify-between p-4`}>
-    <div>
-      <div className="text-xs text-zinc-500">{label}</div>
-      <div className={`mt-1 text-xl font-semibold tabular-nums ${valueClassName}`}>{value}</div>
+export const PageStat: React.FC<PageStatProps> = ({
+  label,
+  value,
+  icon,
+  iconBg = 'bg-[#FF7A00]/15',
+  valueClassName = 'text-white',
+  compact = false,
+}) => {
+  if (compact) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/50 px-2.5 py-1.5">
+        <div className={`flex size-7 shrink-0 items-center justify-center rounded-md ${iconBg}`}>{icon}</div>
+        <div className="min-w-0">
+          <div className="text-[10px] leading-none text-zinc-500">{label}</div>
+          <div className={`text-sm font-semibold tabular-nums leading-tight ${valueClassName}`}>{value}</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`${consoleTokens.card} flex items-center justify-between p-4`}>
+      <div>
+        <div className="text-xs text-zinc-500">{label}</div>
+        <div className={`mt-1 text-xl font-semibold tabular-nums ${valueClassName}`}>{value}</div>
+      </div>
+      <div className={`flex size-10 items-center justify-center rounded-xl ${iconBg}`}>{icon}</div>
     </div>
-    <div className={`flex size-10 items-center justify-center rounded-xl ${iconBg}`}>{icon}</div>
-  </div>
-);
+  );
+};
 
 interface SegmentTab {
   id: string;

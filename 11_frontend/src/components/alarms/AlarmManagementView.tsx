@@ -11,7 +11,6 @@ import {
   Shield,
   Layers,
   Search,
-  Filter,
   CheckCheck,
   RefreshCw,
   TrendingUp,
@@ -43,6 +42,38 @@ import {
 } from '../ui/console-ui';
 
 type AlarmSubTab = 'active' | 'rules' | 'matrix' | 'audit';
+
+function AlarmPanel({
+  icon,
+  title,
+  description,
+  variant = 'default',
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  variant?: 'default' | 'offline' | 'success';
+}) {
+  const variantClass =
+    variant === 'offline'
+      ? 'border-rose-500/30 bg-rose-500/5'
+      : variant === 'success'
+        ? 'border-emerald-500/20 bg-emerald-500/5'
+        : '';
+
+  return (
+    <ConsoleCard
+      padding="lg"
+      className={`flex min-h-[min(420px,calc(100dvh-12rem))] w-full flex-col items-center justify-center gap-3 text-center ${variantClass}`}
+    >
+      {icon}
+      <div className="max-w-2xl space-y-2">
+        <h3 className="text-lg font-semibold text-white">{title}</h3>
+        <p className="text-sm text-zinc-400 text-pretty">{description}</p>
+      </div>
+    </ConsoleCard>
+  );
+}
 
 export const AlarmManagementView: React.FC = () => {
   const {
@@ -161,117 +192,122 @@ export const AlarmManagementView: React.FC = () => {
 
   return (
     <PageShell id="alarm-management-view" scroll={false} className="flex flex-col">
-      <PageContent className="shrink-0 space-y-4 pb-4">
-        <ConsoleCard className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-3">
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-red-500/15">
-              <Bell className="size-5 text-red-400" />
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <PageContent fullWidth className="flex min-h-full flex-col gap-3 pb-4">
+          {/* Toolbar: compact KPIs + actions — page title lives in the app header */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <PageStat compact label="Critical" value={criticalAlarmsCount} valueClassName={criticalAlarmsCount > 0 ? 'text-red-400' : 'text-white'} icon={<AlertTriangle className="size-3.5 text-red-400" />} iconBg="bg-red-500/15" />
+              <PageStat compact label="My Pending" value={myUnacknowledgedCount} valueClassName={myUnacknowledgedCount > 0 ? 'text-[#FF7A00]' : 'text-white'} icon={<UserCheck className="size-3.5 text-[#FF7A00]" />} />
+              <PageStat compact label="Plant Active" value={activeAlarms.filter((a) => a.status !== 'RESOLVED').length} icon={<Bell className="size-3.5 text-zinc-400" />} iconBg="bg-zinc-800" />
+              <PageStat compact label="Rules" value={`${rules.filter((r) => r.enabled).length}/${rules.length}`} valueClassName="text-emerald-400" icon={<Sliders className="size-3.5 text-emerald-400" />} iconBg="bg-emerald-500/15" />
             </div>
-            <div>
-              <h2 className="text-base font-semibold text-white">Alarm Management</h2>
-              <p className="text-sm text-zinc-500">Real-time threshold alerts and incident lifecycle</p>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <BtnGhost onClick={toggleAudioMute} title={isMuted ? 'Unmute' : 'Mute audio'} className="px-2.5 py-1.5 text-xs">
+                {isMuted ? <VolumeX className="size-3.5 text-red-400" /> : <Volume2 className="size-3.5 text-[#FF7A00]" />}
+                <span className="hidden sm:inline">{isMuted ? 'Muted' : 'Audio'}</span>
+              </BtnGhost>
+              {myUnacknowledgedCount > 0 && (
+                <BtnSecondary id="bulk-ack-alarms-btn" onClick={() => bulkAcknowledgeAll()} className="px-2.5 py-1.5 text-xs">
+                  <CheckCheck className="size-3.5" />
+                  Ack ({myUnacknowledgedCount})
+                </BtnSecondary>
+              )}
+              <BtnPrimary
+                id="create-alert-rule-btn"
+                onClick={handleOpenCreateRule}
+                disabled={!canPersistRules}
+                className="px-2.5 py-1.5 text-xs"
+                title={
+                  canPersistRules
+                    ? 'Create a new alert rule in Postgres'
+                    : 'Start the GraphQL backend (port 8000) to create alert rules'
+                }
+              >
+                <Plus className="size-3.5" />
+                New Rule
+              </BtnPrimary>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <BtnGhost onClick={toggleAudioMute} title={isMuted ? 'Unmute' : 'Mute audio'}>
-              {isMuted ? <VolumeX className="size-4 text-red-400" /> : <Volume2 className="size-4 text-[#FF7A00]" />}
-              <span>{isMuted ? 'Muted' : 'Audio On'}</span>
-            </BtnGhost>
-            {myUnacknowledgedCount > 0 && (
-              <BtnSecondary id="bulk-ack-alarms-btn" onClick={() => bulkAcknowledgeAll()}>
-                <CheckCheck className="size-4" />
-                Ack All ({myUnacknowledgedCount})
-              </BtnSecondary>
-            )}
-            <BtnPrimary
-              id="create-alert-rule-btn"
-              onClick={handleOpenCreateRule}
-              disabled={!canPersistRules}
-              title={
-                canPersistRules
-                  ? 'Create a new alert rule in Postgres'
-                  : 'Start the GraphQL backend (port 8000) to create alert rules'
-              }
-            >
-              <Plus className="size-4" />
-              New Rule
-            </BtnPrimary>
-          </div>
-        </ConsoleCard>
-
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <PageStat label="Critical" value={criticalAlarmsCount} valueClassName={criticalAlarmsCount > 0 ? 'text-red-400' : 'text-white'} icon={<AlertTriangle className="size-5 text-red-400" />} iconBg="bg-red-500/15" />
-          <PageStat label="My Pending" value={myUnacknowledgedCount} valueClassName={myUnacknowledgedCount > 0 ? 'text-[#FF7A00]' : 'text-white'} icon={<UserCheck className="size-5 text-[#FF7A00]" />} />
-          <PageStat label="Plant Active" value={activeAlarms.filter((a) => a.status !== 'RESOLVED').length} icon={<Bell className="size-5 text-zinc-400" />} iconBg="bg-zinc-800" />
-          <PageStat label="Rules Active" value={`${rules.filter((r) => r.enabled).length} / ${rules.length}`} valueClassName="text-emerald-400" icon={<Sliders className="size-5 text-emerald-400" />} iconBg="bg-emerald-500/15" />
-        </div>
 
         <SegmentTabs tabs={alarmTabs} active={activeSubTab} onChange={(id) => setActiveSubTab(id as AlarmSubTab)} />
 
         {!isPlatformLive && !rulesLoading && (
-          <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200 font-mono">
-            Platform offline — showing no alarm data until GraphQL on port 8000 is reachable.
+          <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+            Platform offline — no alarm data until GraphQL on port 8000 is reachable.
           </div>
         )}
-      </PageContent>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 md:px-6 md:pb-6">
+        <div className="min-h-0 flex-1">
         {activeSubTab === 'active' && (
-          <div className="space-y-4">
-            {/* Filter Bar */}
-            <ConsoleCard className="flex flex-wrap items-center justify-between gap-3">
-              <SegmentTabs
-                tabs={[
-                  { id: 'my_role', label: `My Role (${currentUser.role})` },
-                  { id: 'all', label: `All (${activeAlarms.length})` },
-                ]}
-                active={roleFilter}
-                onChange={(id) => setRoleFilter(id as 'my_role' | 'all')}
-              />
-              <div className="flex min-w-[240px] flex-1 items-center gap-2 sm:max-w-sm">
+          <div className="flex h-full flex-col gap-2">
+            {/* Role tabs + search + severity — one toolbar row */}
+            <div className="flex flex-wrap items-center gap-1 rounded-xl border border-zinc-800 bg-zinc-900/60 p-1">
+              {(
+                [
+                  { id: 'my_role' as const, label: `My Role (${currentUser.role})` },
+                  { id: 'all' as const, label: `All (${activeAlarms.length})` },
+                ] as const
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setRoleFilter(tab.id)}
+                  className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                    roleFilter === tab.id ? consoleTokens.tabActive : consoleTokens.tabInactive
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+              <div className="mx-0.5 hidden h-7 w-px shrink-0 bg-zinc-700 sm:block" aria-hidden />
+              <div className="relative min-w-[140px] flex-1 px-0.5">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-zinc-500" />
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search alarms..."
-                  className={consoleTokens.input + ' flex-1 py-2 text-sm'}
+                  placeholder="Search alarms…"
+                  className="w-full rounded-lg border-0 bg-zinc-800/60 py-1.5 pl-8 pr-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/40"
                 />
-                <select
-                  value={severityFilter}
-                  onChange={(e) => setSeverityFilter(e.target.value)}
-                  className={consoleTokens.input + ' w-auto py-2 text-sm'}
-                >
-                  <option value="ALL">All</option>
-                  <option value="CRITICAL">Critical</option>
-                  <option value="HIGH">High</option>
-                  <option value="WARNING">Warning</option>
-                  <option value="INFO">Info</option>
-                </select>
               </div>
-            </ConsoleCard>
+              <select
+                value={severityFilter}
+                onChange={(e) => setSeverityFilter(e.target.value)}
+                className="shrink-0 rounded-lg border-0 bg-zinc-800/60 px-2.5 py-1.5 text-sm text-zinc-300 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/40"
+              >
+                <option value="ALL">All severities</option>
+                <option value="CRITICAL">Critical</option>
+                <option value="HIGH">High</option>
+                <option value="WARNING">Warning</option>
+                <option value="INFO">Info</option>
+              </select>
+            </div>
 
             {/* Alarms List */}
             {!isPlatformLive ? (
-              <div className="bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 rounded-xl p-12 text-center space-y-3">
-                <AlertTriangle className="w-12 h-12 text-rose-500 dark:text-rose-400 mx-auto opacity-80" />
-                <h3 className="font-bold text-rose-900 dark:text-rose-200 text-sm text-balance">Platform offline</h3>
-                <p className="text-xs text-rose-800/90 dark:text-rose-300/80 max-w-md mx-auto text-pretty font-mono">
-                  {rulesError ??
-                    'Active incidents require a live GraphQL connection and MQTT feed. Start the backend stack, then refresh this page.'}
-                </p>
-              </div>
+              <AlarmPanel
+                variant="offline"
+                icon={<AlertTriangle className="size-14 text-rose-400 opacity-90" />}
+                title="Platform offline"
+                description={
+                  rulesError ??
+                  'Active incidents require a live GraphQL connection and MQTT feed. Start the backend stack, then refresh this page.'
+                }
+              />
             ) : displayedAlarms.length === 0 ? (
-              <div className="bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] rounded-xl p-12 text-center text-[#64748B] space-y-3">
-                <CheckCircle2 className="w-12 h-12 text-emerald-500 dark:text-emerald-400 mx-auto opacity-70" />
-                <h3 className="font-bold text-[#0F172A] dark:text-[#F8FAFC] text-sm text-balance">No active incidents</h3>
-                <p className="text-xs text-[#64748B] dark:text-[#94A3B8] max-w-md mx-auto text-pretty">
-                  {roleFilter === 'my_role'
+              <AlarmPanel
+                variant="success"
+                icon={<CheckCircle2 className="size-14 text-emerald-400 opacity-80" />}
+                title="No active incidents"
+                description={
+                  roleFilter === 'my_role'
                     ? `No live alarms are routed to role '${currentUser.role}'.`
-                    : 'No configured alert rules have been breached on the live MQTT feed.'}
-                </p>
-              </div>
+                    : 'No configured alert rules have been breached on the live MQTT feed.'
+                }
+              />
             ) : (
-              <div className="space-y-3">
+              <div className="grid gap-4 xl:grid-cols-2">
                 {displayedAlarms.map((alarm) => {
                   const severityColor =
                     alarm.severity === 'CRITICAL'
@@ -283,27 +319,32 @@ export const AlarmManagementView: React.FC = () => {
                           : 'bg-zinc-500';
 
                   return (
-                    <ConsoleCard key={alarm.id} className="space-y-3">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="flex min-w-0 flex-1 items-start gap-3">
-                          <span className={`mt-1.5 size-2.5 shrink-0 rounded-full ${severityColor}`} />
-                          <div className="min-w-0">
-                            <h3 className="truncate text-sm font-semibold text-white">{alarm.ruleName}</h3>
-                            <p className="mt-0.5 text-sm text-zinc-400">{alarm.conditionDescription}</p>
-                            <p className="mt-1 truncate text-xs text-zinc-600">{alarm.topic}</p>
+                    <ConsoleCard key={alarm.id} padding="lg" className="flex flex-col gap-4">
+                      <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div className="flex min-w-0 flex-1 items-start gap-4">
+                          <span className={`mt-2 size-3 shrink-0 rounded-full ${severityColor}`} />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="text-base font-semibold text-white">{alarm.ruleName}</h3>
+                              <span className={`rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase ${getStatusBadge(alarm.status)}`}>
+                                {alarm.status.replace('_', ' ')}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-sm text-zinc-300">{alarm.conditionDescription}</p>
+                            <p className="mt-2 break-all font-mono text-xs text-zinc-500">{alarm.topic}</p>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <div className="text-lg font-semibold tabular-nums text-[#FF7A00]">
+                        <div className="shrink-0 text-right">
+                          <div className="text-2xl font-semibold tabular-nums text-[#FF7A00]">
                             {String(alarm.currentValue)} {alarm.unit || ''}
                           </div>
-                          <div className="text-xs text-zinc-500">
-                            {new Date(alarm.triggeredAt).toLocaleTimeString()}
+                          <div className="mt-1 text-xs text-zinc-500">
+                            {new Date(alarm.triggeredAt).toLocaleString()}
                           </div>
                         </div>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-2 border-t border-zinc-800 pt-3">
+                      <div className="flex flex-wrap items-center gap-2 border-t border-zinc-800 pt-4">
                         {alarm.status === 'ACTIVE_UNACK' && (
                           <BtnPrimary onClick={() => setAcknowledgingAlarm(alarm)} className="py-1.5 text-xs">
                             <CheckCircle2 className="size-3.5" />
@@ -336,180 +377,120 @@ export const AlarmManagementView: React.FC = () => {
         )}
 
         {activeSubTab === 'rules' && (
-          <div className="space-y-4">
+          <div className="space-y-2">
             {!canPersistRules && (
-              <div className="bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 rounded-lg p-3 flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
-                <div className="space-y-1">
-                  <p className="text-[11px] font-semibold text-rose-800 dark:text-rose-300 text-pretty">
-                    Platform offline — alert rules are stored in Postgres, not in the browser
-                  </p>
-                  <p className="text-[11px] text-rose-700/90 dark:text-rose-300/80 text-pretty font-mono">
-                    {rulesError ??
-                      'Start the backend stack (`uv run uns_compose up -d graphql_server` from the repo root), then click refresh.'}
-                  </p>
-                </div>
+              <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+                {rulesError ?? 'Platform offline — rules are stored in Postgres via GraphQL.'}
               </div>
             )}
-            {/* Rules Header & Create Action */}
-            <div className="bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] rounded-lg p-3 flex items-center justify-between">
-              <div>
-                <h2 className="font-display font-bold text-sm text-[#0F172A] dark:text-[#F8FAFC] text-balance">Configured Alert Rules</h2>
-                <p className="text-[11px] text-[#64748B] dark:text-[#94A3B8] text-pretty">
-                  Define telemetry thresholds, evaluation conditions, and the predefined roles that receive alerts.
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                {/* Whether these rules reach the next shift, or stop at this browser. */}
-                {rulesOrigin === 'SERVER' ? (
-                  <span
-                    title="Stored in the platform database — every console at this site sees these rules"
-                    className="px-2 py-1 rounded-md bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30 font-mono text-[10px] uppercase flex items-center gap-1"
-                  >
-                    <Database className="w-3 h-3" />
-                    Platform
-                  </span>
-                ) : (
-                  <span
-                    title="These rules exist only in this browser. Other consoles will not evaluate them."
-                    className="px-2 py-1 rounded-md bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30 font-mono text-[10px] uppercase flex items-center gap-1"
-                  >
-                    <MonitorSmartphone className="w-3 h-3" />
-                    This Browser
-                  </span>
-                )}
-                <button
-                  onClick={() => void refreshRules()}
-                  title="Reload the rules the platform holds"
-                  className="p-1.5 rounded-lg border border-[#E2E8F0] dark:border-[#1E293B] text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC] transition-colors cursor-pointer"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={handleOpenCreateRule}
-                  disabled={!canPersistRules}
-                  title={
-                    canPersistRules
-                      ? 'Add alert rule'
-                      : 'GraphQL backend must be online to persist rules to Postgres'
-                  }
-                  className="px-3 py-1.5 bg-amber-500 dark:bg-[#FFC107] hover:bg-amber-400 dark:hover:bg-[#FFB300] disabled:opacity-40 disabled:cursor-not-allowed text-[#0B0B0C] font-bold rounded-lg text-xs font-mono transition-colors cursor-pointer flex items-center gap-1.5"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Add Rule</span>
-                </button>
-              </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {rulesOrigin === 'SERVER' ? (
+                <span className="flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 font-mono text-[10px] uppercase text-emerald-400">
+                  <Database className="size-3.5" />
+                  Platform
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1 font-mono text-[10px] uppercase text-amber-400">
+                  <MonitorSmartphone className="size-3.5" />
+                  Offline
+                </span>
+              )}
+              <BtnGhost onClick={() => void refreshRules()} title="Reload rules" className="px-2 py-1.5">
+                <RefreshCw className="size-3.5" />
+              </BtnGhost>
+              <BtnPrimary onClick={handleOpenCreateRule} disabled={!canPersistRules} className="px-2.5 py-1.5 text-xs">
+                <Plus className="size-3.5" />
+                Add Rule
+              </BtnPrimary>
             </div>
 
-            {rulesError && (
-              <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg p-3 flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-                <p className="text-[11px] text-amber-800 dark:text-amber-300 text-pretty font-mono">{rulesError}</p>
+            {rulesError && canPersistRules && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200 font-mono">
+                {rulesError}
               </div>
             )}
 
-            {/* Rules Table */}
-            <div className="bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] rounded-xl overflow-hidden">
+            <ConsoleCard padding="none" className="overflow-hidden">
               {rulesLoading ? (
-                <div className="p-12 text-center text-[#64748B] text-xs font-mono">Loading alert rules from platform…</div>
+                <div className="p-16 text-center font-mono text-sm text-zinc-500">Loading alert rules from platform…</div>
               ) : rules.length === 0 ? (
-                <div className="p-12 text-center text-[#64748B] space-y-2">
-                  <Sliders className="w-10 h-10 mx-auto opacity-40" />
-                  <p className="text-sm text-[#0F172A] dark:text-[#F8FAFC] font-semibold">No alert rules configured</p>
-                  <p className="text-xs max-w-md mx-auto text-pretty">
-                    {canPersistRules
+                <AlarmPanel
+                  icon={<Sliders className="size-14 text-zinc-500 opacity-60" />}
+                  title="No alert rules configured"
+                  description={
+                    canPersistRules
                       ? 'Create your first rule — it will be stored in the console.alert_rules Postgres table.'
-                      : 'Connect to the GraphQL backend to load and manage rules.'}
-                  </p>
-                </div>
+                      : 'Connect to the GraphQL backend to load and manage rules.'
+                  }
+                />
               ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs">
+                <table className="w-full min-w-[960px] text-left border-collapse text-sm">
                   <thead>
-                    <tr className="border-b border-[#E2E8F0] dark:border-[#1E293B] bg-[#F8FAFC] dark:bg-[#0B0B0C] text-[#64748B] font-mono text-[10px] uppercase">
-                      <th className="py-2.5 px-3">Status</th>
-                      <th className="py-2.5 px-3">Rule Name &amp; Target Topic</th>
-                      <th className="py-2.5 px-3">Condition &amp; Threshold</th>
-                      <th className="py-2.5 px-3">Severity</th>
-                      <th className="py-2.5 px-3">Triggered Roles</th>
-                      <th className="py-2.5 px-3 text-center">Triggers</th>
-                      <th className="py-2.5 px-3 text-right">Actions</th>
+                    <tr className="border-b border-zinc-800 bg-zinc-900/80 font-mono text-[11px] uppercase text-zinc-500">
+                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">Rule Name &amp; Target Topic</th>
+                      <th className="px-4 py-3">Condition &amp; Threshold</th>
+                      <th className="px-4 py-3">Severity</th>
+                      <th className="px-4 py-3">Triggered Roles</th>
+                      <th className="px-4 py-3 text-center">Triggers</th>
+                      <th className="px-4 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#E2E8F0] dark:divide-[#1E293B]/60 font-mono text-[11px]">
+                  <tbody className="divide-y divide-zinc-800/80 font-mono text-xs">
                     {rules.map((rule) => (
-                      <tr key={rule.id} className="hover:bg-slate-50 dark:hover:bg-[#1E293B]/20 transition-colors">
-                        {/* Toggle Enabled */}
-                        <td className="py-3 px-3">
+                      <tr key={rule.id} className="transition-colors hover:bg-zinc-800/30">
+                        <td className="px-4 py-4">
                           <button
                             onClick={() => toggleRuleEnabled(rule.id, !rule.enabled)}
-                            className={`w-9 h-5 rounded-full p-0.5 transition-colors cursor-pointer flex items-center ${
-                              rule.enabled ? 'bg-emerald-500 justify-end' : 'bg-[#CBD5E1] dark:bg-[#1E293B] justify-start'
+                            className={`flex h-5 w-9 cursor-pointer items-center rounded-full p-0.5 transition-colors ${
+                              rule.enabled ? 'justify-end bg-emerald-500' : 'justify-start bg-zinc-700'
                             }`}
                             title={rule.enabled ? 'Disable Rule' : 'Enable Rule'}
                           >
-                            <span className="w-4 h-4 rounded-full bg-white shadow-sm block" />
+                            <span className="block size-4 rounded-full bg-white shadow-sm" />
                           </button>
                         </td>
-
-                        {/* Name & Topic */}
-                        <td className="py-3 px-3 min-w-[220px]">
-                          <div className="font-bold text-[#0F172A] dark:text-[#F8FAFC]">{rule.name}</div>
-                          <div className="text-[10px] text-[#64748B] dark:text-[#94A3B8] truncate max-w-xs">{rule.topic}</div>
+                        <td className="min-w-[280px] px-4 py-4">
+                          <div className="font-semibold text-white">{rule.name}</div>
+                          <div className="mt-1 max-w-md truncate text-xs text-zinc-500">{rule.topic}</div>
                         </td>
-
-                        {/* Condition & Threshold */}
-                        <td className="py-3 px-3">
-                          <span className="px-2 py-0.5 rounded bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#E2E8F0] dark:border-[#1E293B] text-amber-700 dark:text-[#FFC107] font-semibold">
+                        <td className="px-4 py-4">
+                          <span className="rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1 font-semibold text-[#FF7A00]">
                             {rule.metricField} {rule.condition.replace('_', ' ')} {String(rule.thresholdValue)} {rule.unit || ''}
                           </span>
                         </td>
-
-                        {/* Severity */}
-                        <td className="py-3 px-3">
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold border ${getSeverityBadge(
-                              rule.severity
-                            )}`}
-                          >
+                        <td className="px-4 py-4">
+                          <span className={`rounded border px-2 py-0.5 text-[10px] font-bold ${getSeverityBadge(rule.severity)}`}>
                             {rule.severity}
                           </span>
                         </td>
-
-                        {/* Target Roles */}
-                        <td className="py-3 px-3">
+                        <td className="px-4 py-4">
                           <div className="flex flex-wrap gap-1">
                             {rule.targetRoles.map((role) => (
                               <span
                                 key={role}
-                                className="px-1.5 py-0.2 rounded bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#E2E8F0] dark:border-[#1E293B] text-[9px] text-[#64748B] dark:text-[#94A3B8]"
+                                className="rounded border border-zinc-700 bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400"
                               >
                                 {role}
                               </span>
                             ))}
                           </div>
                         </td>
-
-                        {/* Triggers Count */}
-                        <td className="py-3 px-3 text-center text-[#0F172A] dark:text-[#F8FAFC] font-bold tabular-nums">
+                        <td className="px-4 py-4 text-center font-bold tabular-nums text-white">
                           {rule.triggerCount}
                         </td>
-
-                        {/* Actions */}
-                        <td className="py-3 px-3 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              onClick={() => handleOpenEditRule(rule)}
-                              className="px-2 py-1 bg-[#F1F5F9] dark:bg-[#1E293B] hover:bg-slate-200 dark:hover:bg-[#334155] text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC] rounded text-[10px] transition-colors cursor-pointer"
-                            >
+                        <td className="px-4 py-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <BtnSecondary onClick={() => handleOpenEditRule(rule)} className="px-2.5 py-1 text-xs">
                               Edit
-                            </button>
-                            <button
+                            </BtnSecondary>
+                            <BtnGhost
                               onClick={() => deleteRule(rule.id)}
-                              className="px-2 py-1 bg-[#F1F5F9] dark:bg-[#1E293B] hover:bg-rose-50 dark:hover:bg-rose-950/40 text-[#64748B] hover:text-rose-600 dark:hover:text-rose-400 rounded text-[10px] transition-colors cursor-pointer"
+                              className="px-2.5 py-1 text-xs text-rose-400 hover:text-rose-300"
                             >
                               Delete
-                            </button>
+                            </BtnGhost>
                           </div>
                         </td>
                       </tr>
@@ -518,13 +499,15 @@ export const AlarmManagementView: React.FC = () => {
                 </table>
               </div>
               )}
-            </div>
+            </ConsoleCard>
           </div>
         )}
 
         {activeSubTab === 'matrix' && <RoleAlertMatrix />}
 
         {activeSubTab === 'audit' && <AlarmAuditLog />}
+        </div>
+        </PageContent>
       </div>
 
       {/* Alert Rule Editor Modal */}

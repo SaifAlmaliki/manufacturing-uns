@@ -26,21 +26,47 @@ function getGreeting(): string {
   return 'Good evening';
 }
 
-function getPageSubtitle(path: string): string {
+function getPageHeading(
+  path: string,
+  firstName: string,
+): { title: string; subtitle?: string } {
+  if (path.startsWith('/alerts')) {
+    return { title: 'Alarm Management' };
+  }
+  if (path.startsWith('/historian')) {
+    return { title: 'Historian', subtitle: 'Explore historic events and telemetry trends.' };
+  }
+  if (path.startsWith('/sparkplug')) {
+    return { title: 'Sparkplug B', subtitle: 'Decode Sparkplug B edge node payloads.' };
+  }
+  if (path.startsWith('/streams')) {
+    return { title: 'Kafka Streams', subtitle: 'Watch live Kafka event streams.' };
+  }
+  if (path.startsWith('/system')) {
+    return { title: 'System Health', subtitle: 'Platform health, subsystems, and settings.' };
+  }
+  if (path.startsWith('/simulator')) {
+    return { title: 'Simulator', subtitle: 'Control synthetic plant data generation.' };
+  }
+  if (path.startsWith('/users')) {
+    return { title: 'Users', subtitle: 'Manage users, roles, and access permissions.' };
+  }
   if (path === '/dashboard') {
-    return "Here's what's happening across your plant namespace today.";
+    return {
+      title: `${getGreeting()}, ${firstName} 👋`,
+      subtitle: "Here's what's happening across your plant namespace today.",
+    };
   }
   if (path.startsWith('/tree')) {
-    return 'Browse the ISA-95 namespace tree and inspect live payloads.';
+    return {
+      title: `${getGreeting()}, ${firstName} 👋`,
+      subtitle: 'Browse the ISA-95 namespace tree and inspect live payloads.',
+    };
   }
-  if (path.startsWith('/alerts')) return 'Monitor and manage active process alarms.';
-  if (path.startsWith('/historian')) return 'Explore historic events and telemetry trends.';
-  if (path.startsWith('/sparkplug')) return 'Decode Sparkplug B edge node payloads.';
-  if (path.startsWith('/streams')) return 'Watch live Kafka event streams.';
-  if (path.startsWith('/system')) return 'Platform health, subsystems, and settings.';
-  if (path.startsWith('/simulator')) return 'Control synthetic plant data generation.';
-  if (path.startsWith('/users')) return 'Manage users, roles, and access permissions.';
-  return 'Unified Namespace management console.';
+  return {
+    title: `${getGreeting()}, ${firstName} 👋`,
+    subtitle: 'Unified Namespace management console.',
+  };
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -76,9 +102,10 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   const firstName = currentUser.name.split(/[\s(]/)[0];
+  const { title, subtitle } = getPageHeading(location.pathname, firstName);
 
   return (
-    <header className="z-30 flex h-16 shrink-0 items-center justify-between border-b border-zinc-800/80 bg-[#0a0a0b] px-4 md:px-6">
+    <header className="z-30 flex h-14 shrink-0 items-center justify-between border-b border-zinc-800/80 bg-[#0a0a0b] px-4 md:px-6">
       <div className="flex min-w-0 items-center gap-3">
         <button
           id="mobile-sidebar-toggle-btn"
@@ -90,12 +117,10 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
 
         <div className="min-w-0">
-          <h1 className="truncate text-lg font-semibold text-white md:text-xl">
-            {getGreeting()}, {firstName} 👋
-          </h1>
-          <p className="hidden truncate text-sm text-zinc-500 sm:block">
-            {getPageSubtitle(location.pathname)}
-          </p>
+          <h1 className="truncate text-base font-semibold text-white md:text-lg">{title}</h1>
+          {subtitle && (
+            <p className="hidden truncate text-xs text-zinc-500 sm:block">{subtitle}</p>
+          )}
         </div>
       </div>
 
