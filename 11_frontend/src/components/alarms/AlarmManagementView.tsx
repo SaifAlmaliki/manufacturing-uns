@@ -63,6 +63,8 @@ export const AlarmManagementView: React.FC = () => {
     clearResolvedAlarms,
     rulesOrigin,
     rulesError,
+    rulesLoading,
+    canPersistRules,
     refreshRules,
   } = useAlarms();
 
@@ -124,6 +126,7 @@ export const AlarmManagementView: React.FC = () => {
   };
 
   const handleOpenCreateRule = () => {
+    if (!canPersistRules) return;
     setEditingRule(null);
     setIsRuleModalOpen(true);
   };
@@ -180,7 +183,16 @@ export const AlarmManagementView: React.FC = () => {
                 Ack All ({myUnacknowledgedCount})
               </BtnSecondary>
             )}
-            <BtnPrimary id="create-alert-rule-btn" onClick={handleOpenCreateRule}>
+            <BtnPrimary
+              id="create-alert-rule-btn"
+              onClick={handleOpenCreateRule}
+              disabled={!canPersistRules}
+              title={
+                canPersistRules
+                  ? 'Create a new alert rule in Postgres'
+                  : 'Start the GraphQL backend (port 8000) to create alert rules'
+              }
+            >
               <Plus className="size-4" />
               New Rule
             </BtnPrimary>
@@ -318,6 +330,20 @@ export const AlarmManagementView: React.FC = () => {
 
         {activeSubTab === 'rules' && (
           <div className="space-y-4">
+            {!canPersistRules && (
+              <div className="bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 rounded-lg p-3 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="text-[11px] font-semibold text-rose-800 dark:text-rose-300 text-pretty">
+                    Platform offline — alert rules are stored in Postgres, not in the browser
+                  </p>
+                  <p className="text-[11px] text-rose-700/90 dark:text-rose-300/80 text-pretty font-mono">
+                    {rulesError ??
+                      'Start the backend stack (`uv run uns_compose up -d graphql_server` from the repo root), then click refresh.'}
+                  </p>
+                </div>
+              </div>
+            )}
             {/* Rules Header & Create Action */}
             <div className="bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] rounded-lg p-3 flex items-center justify-between">
               <div>
@@ -354,7 +380,13 @@ export const AlarmManagementView: React.FC = () => {
                 </button>
                 <button
                   onClick={handleOpenCreateRule}
-                  className="px-3 py-1.5 bg-amber-500 dark:bg-[#FFC107] hover:bg-amber-400 dark:hover:bg-[#FFB300] text-[#0B0B0C] font-bold rounded-lg text-xs font-mono transition-colors cursor-pointer flex items-center gap-1.5"
+                  disabled={!canPersistRules}
+                  title={
+                    canPersistRules
+                      ? 'Add alert rule'
+                      : 'GraphQL backend must be online to persist rules to Postgres'
+                  }
+                  className="px-3 py-1.5 bg-amber-500 dark:bg-[#FFC107] hover:bg-amber-400 dark:hover:bg-[#FFB300] disabled:opacity-40 disabled:cursor-not-allowed text-[#0B0B0C] font-bold rounded-lg text-xs font-mono transition-colors cursor-pointer flex items-center gap-1.5"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Add Rule</span>
@@ -371,6 +403,19 @@ export const AlarmManagementView: React.FC = () => {
 
             {/* Rules Table */}
             <div className="bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] rounded-xl overflow-hidden">
+              {rulesLoading ? (
+                <div className="p-12 text-center text-[#64748B] text-xs font-mono">Loading alert rules from platform…</div>
+              ) : rules.length === 0 ? (
+                <div className="p-12 text-center text-[#64748B] space-y-2">
+                  <Sliders className="w-10 h-10 mx-auto opacity-40" />
+                  <p className="text-sm text-[#0F172A] dark:text-[#F8FAFC] font-semibold">No alert rules configured</p>
+                  <p className="text-xs max-w-md mx-auto text-pretty">
+                    {canPersistRules
+                      ? 'Create your first rule — it will be stored in the console.alert_rules Postgres table.'
+                      : 'Connect to the GraphQL backend to load and manage rules.'}
+                  </p>
+                </div>
+              ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse text-xs">
                   <thead>
@@ -472,6 +517,7 @@ export const AlarmManagementView: React.FC = () => {
                   </tbody>
                 </table>
               </div>
+              )}
             </div>
           </div>
         )}

@@ -59,7 +59,7 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({
   rule,
   onClose,
 }) => {
-  const { createRule, updateRule } = useAlarms();
+  const { createRule, updateRule, canPersistRules, rulesError } = useAlarms();
   const { allLoadedNodes } = useUNS();
 
   const [name, setName] = useState(rule?.name || '');
@@ -103,6 +103,7 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({
   );
 
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const toggleRole = (r: UserRole) => {
     setTargetRoles((prev) => {
@@ -115,7 +116,14 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({
     });
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (!canPersistRules) {
+      setValidationError(
+        rulesError ??
+          'The platform database is offline. Start GraphQL on port 8000 before saving alert rules.',
+      );
+      return;
+    }
     if (!name.trim()) {
       setValidationError('Rule name is required.');
       return;
@@ -169,13 +177,20 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({
       },
     };
 
-    if (rule) {
-      updateRule(rule.id, payload);
-    } else {
-      createRule(payload);
+    setIsSaving(true);
+    setValidationError(null);
+    try {
+      if (rule) {
+        await updateRule(rule.id, payload);
+      } else {
+        await createRule(payload);
+      }
+      onClose();
+    } catch (error) {
+      setValidationError(error instanceof Error ? error.message : 'Alert rule could not be saved.');
+    } finally {
+      setIsSaving(false);
     }
-
-    onClose();
   };
 
   return (
@@ -557,10 +572,11 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({
 
           <button
             type="button"
-            onClick={handleSave}
-            className="px-5 py-2 rounded-lg bg-amber-500 dark:bg-[#FFC107] hover:bg-amber-400 dark:hover:bg-[#FFB300] text-[#0B0B0C] font-bold text-xs font-mono transition-colors cursor-pointer shadow-sm"
+            onClick={() => void handleSave()}
+            disabled={isSaving || !canPersistRules}
+            className="px-5 py-2 rounded-lg bg-amber-500 dark:bg-[#FFC107] hover:bg-amber-400 dark:hover:bg-[#FFB300] disabled:opacity-40 disabled:cursor-not-allowed text-[#0B0B0C] font-bold text-xs font-mono transition-colors cursor-pointer shadow-sm"
           >
-            {rule ? 'Update Alert Rule' : 'Create Alert Rule'}
+            {isSaving ? 'Saving…' : rule ? 'Update Alert Rule' : 'Create Alert Rule'}
           </button>
         </div>
       </div>

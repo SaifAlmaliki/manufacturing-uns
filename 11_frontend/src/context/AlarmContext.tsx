@@ -2,11 +2,10 @@
  * Alarm & Alert Rule Management Context
  * Real-time threshold evaluation, role-targeted triggers, audio alerts, and audit logging.
  *
- * Alert Rules are plant configuration and live in Postgres, reached over GraphQL
- * (ADR-0005). localStorage is only a cache now, so that a console whose backend is
- * unreachable still renders the rules it last saw instead of an empty alarm list.
- * The active alarms and the audit trail are still browser-local — evaluation happens
- * here, and moving it to a service is a separate piece of work.
+ * Alert Rules are plant configuration and live in Postgres (`console.alert_rules`),
+ * reached over GraphQL (ADR-0005). The console shows only platform data — no demo
+ * seed when the backend is offline. Active alarms and the audit trail are still
+ * browser-local; evaluation happens here, and moving it to a service is separate work.
  */
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
@@ -24,7 +23,8 @@ import { useAuth } from './AuthContext';
 import { useUNS } from './UNSContext';
 
 const STORAGE_KEYS = {
-  RULES: 'uns_alert_rules_v1',
+  /** v2: prior v1 often held demo seed rules; server is the source of truth now. */
+  RULES: 'uns_alert_rules_v2',
   ACTIVE_ALARMS: 'uns_active_alarms_v1',
   ALARM_AUDIT: 'uns_alarm_audit_v1',
   AUDIO_MUTED: 'uns_alarm_audio_muted',
@@ -39,7 +39,8 @@ const STORAGE_KEYS = {
  */
 export type AlertRuleOrigin = 'SERVER' | 'BROWSER';
 
-const INITIAL_RULES: AlertRule[] = [
+/** Demo rules for explicit "restore defaults" only — never shown when the platform is unreachable. */
+export const DEMO_ALERT_RULES: AlertRule[] = [
   {
     id: 'rule-temp-01',
     name: 'Reactor 01 Core Temp High-High',
@@ -210,96 +211,6 @@ const INITIAL_RULES: AlertRule[] = [
   },
 ];
 
-const INITIAL_ACTIVE_ALARMS: ActiveAlarm[] = [
-  {
-    id: 'alm-act-001',
-    ruleId: 'rule-temp-01',
-    ruleName: 'Reactor 01 Core Temp High-High',
-    topic: 'CovestroAG/Dormagen/Polyurethane/Reactor_01/temperature',
-    severity: 'CRITICAL',
-    category: 'TEMPERATURE',
-    conditionDescription: 'temp_celsius (88.4 °C) > 85.0 °C',
-    currentValue: 88.4,
-    unit: '°C',
-    status: 'ACTIVE_UNACK',
-    triggeredAt: new Date(Date.now() - 1000 * 60 * 4).toISOString(),
-    targetRoles: ['operator', 'engineer', 'admin'],
-    escalated: false,
-  },
-  {
-    id: 'alm-act-002',
-    ruleId: 'rule-press-02',
-    ruleName: 'Extrusion Line 2 Pressure Relief Trip',
-    topic: 'CovestroAG/Krefeld_Uerdingen/Polycarbonates/Extrusion_Line_02/pressure',
-    severity: 'HIGH',
-    category: 'PRESSURE',
-    conditionDescription: 'pressure_bar (139.2 bar) > 135.0 bar',
-    currentValue: 139.2,
-    unit: 'bar',
-    status: 'ACTIVE_ACK',
-    triggeredAt: new Date(Date.now() - 1000 * 60 * 22).toISOString(),
-    acknowledgedAt: new Date(Date.now() - 1000 * 60 * 18).toISOString(),
-    acknowledgedBy: 'Marcus Weber (Operator)',
-    notes: 'Hydraulic bleed bypass valve engaged. Cooling cycle in progress.',
-    targetRoles: ['operator', 'engineer'],
-    escalated: false,
-  },
-  {
-    id: 'alm-act-003',
-    ruleId: 'rule-vib-03',
-    ruleName: 'MDI Distillation Pump Vibration RMS',
-    topic: 'CovestroAG/Leverkusen/MDI/Distillation_Column/vibration',
-    severity: 'WARNING',
-    category: 'VIBRATION',
-    conditionDescription: 'vibration_rms (4.82 mm/s) > 4.50 mm/s',
-    currentValue: 4.82,
-    unit: 'mm/s',
-    status: 'ACTIVE_UNACK',
-    triggeredAt: new Date(Date.now() - 1000 * 60 * 55).toISOString(),
-    targetRoles: ['engineer', 'admin'],
-    escalated: false,
-  },
-];
-
-const INITIAL_ALARM_AUDIT: AlarmAuditEntry[] = [
-  {
-    id: 'aud-alm-101',
-    timestamp: new Date(Date.now() - 1000 * 60 * 4).toISOString(),
-    alarmId: 'alm-act-001',
-    ruleName: 'Reactor 01 Core Temp High-High',
-    topic: 'CovestroAG/Dormagen/Polyurethane/Reactor_01/temperature',
-    severity: 'CRITICAL',
-    action: 'TRIGGERED',
-    actorName: 'UNS Ingestion Engine',
-    actorRole: 'admin',
-    details: 'Exceeded threshold 85°C (Current value: 88.4°C). Routed to Operator, Engineer, Admin.',
-  },
-  {
-    id: 'aud-alm-102',
-    timestamp: new Date(Date.now() - 1000 * 60 * 18).toISOString(),
-    alarmId: 'alm-act-002',
-    ruleName: 'Extrusion Line 2 Pressure Relief Trip',
-    topic: 'CovestroAG/Krefeld_Uerdingen/Polycarbonates/Extrusion_Line_02/pressure',
-    severity: 'HIGH',
-    action: 'ACKNOWLEDGED',
-    actorName: 'Marcus Weber',
-    actorRole: 'operator',
-    details: 'Acknowledged incident with operator note: Hydraulic bleed bypass valve engaged.',
-  },
-  {
-    id: 'aud-alm-103',
-    timestamp: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
-    alarmId: 'alm-prev-099',
-    ruleName: 'Antwerp Curing Oven Scrubber Flow Low',
-    topic: 'CovestroAG/Antwerp/Elastomers/Curing_Oven/flow',
-    severity: 'HIGH',
-    action: 'RESOLVED',
-    actorName: 'Elena Rostova',
-    actorRole: 'engineer',
-    details: 'Flow restored to 152 m³/h. Alarm cleared and marked resolved.',
-  },
-];
-
 interface AlarmContextType {
   rules: AlertRule[];
   activeAlarms: ActiveAlarm[];
@@ -309,6 +220,9 @@ interface AlarmContextType {
   // Where the rules came from, and what went wrong reaching the server
   rulesOrigin: AlertRuleOrigin;
   rulesError: string | null;
+  rulesLoading: boolean;
+  /** True when GraphQL returned rules from Postgres — CRUD is allowed. */
+  canPersistRules: boolean;
   refreshRules: () => Promise<void>;
 
   // Computed role-specific counts & filters
@@ -317,9 +231,9 @@ interface AlarmContextType {
   totalUnacknowledgedCount: number;
   criticalAlarmsCount: number;
   
-  // Rule Management (CRUD)
-  createRule: (ruleData: Omit<AlertRule, 'id' | 'createdAt' | 'updatedAt' | 'triggerCount'>) => AlertRule;
-  updateRule: (ruleId: string, updates: Partial<AlertRule>) => void;
+  // Rule Management (CRUD) — persists to Postgres via GraphQL; rejects when platform is offline
+  createRule: (ruleData: Omit<AlertRule, 'id' | 'createdAt' | 'updatedAt' | 'triggerCount'>) => Promise<AlertRule>;
+  updateRule: (ruleId: string, updates: Partial<AlertRule>) => Promise<void>;
   deleteRule: (ruleId: string) => void;
   toggleRuleEnabled: (ruleId: string, enabled: boolean) => void;
   testTriggerRule: (ruleId: string) => void;
@@ -340,23 +254,12 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const { currentUser } = useAuth();
   const { mqttFeed } = useUNS();
 
-  // The cached rules render first so the alarm list is never briefly empty; the
-  // server's answer replaces them as soon as it arrives.
-  const [rules, setRules] = useState<AlertRule[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.RULES);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {
-      // ignore
-    }
-    return INITIAL_RULES;
-  });
+  // Rules come from Postgres via GraphQL. No demo seed — empty until the platform responds.
+  const [rules, setRules] = useState<AlertRule[]>([]);
 
   const [rulesOrigin, setRulesOrigin] = useState<AlertRuleOrigin>('BROWSER');
   const [rulesError, setRulesError] = useState<string | null>(null);
+  const [rulesLoading, setRulesLoading] = useState(true);
 
   // Read by the loader without making it depend on every keystroke in the rule editor.
   const rulesRef = useRef(rules);
@@ -374,7 +277,7 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch {
       // ignore
     }
-    return INITIAL_ACTIVE_ALARMS;
+    return [];
   });
 
   const [auditLog, setAuditLog] = useState<AlarmAuditEntry[]>(() => {
@@ -382,12 +285,12 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const saved = localStorage.getItem(STORAGE_KEYS.ALARM_AUDIT);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) return parsed;
       }
     } catch {
       // ignore
     }
-    return INITIAL_ALARM_AUDIT;
+    return [];
   });
 
   const [isMuted, setIsMuted] = useState<boolean>(() => {
@@ -407,29 +310,24 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
    * somebody deliberately deleted elsewhere.
    */
   const refreshRules = useCallback(async () => {
-    const stored = await unsGraphQLClient.getAlertRules();
+    setRulesLoading(true);
+    try {
+      const stored = await unsGraphQLClient.getAlertRules();
 
-    if (stored === null) {
-      setRulesOrigin('BROWSER');
-      setRulesError('Alert Rules could not be read from the platform. Showing this browser\'s cached copy.');
-      return;
-    }
+      if (stored === null) {
+        setRules([]);
+        setRulesOrigin('BROWSER');
+        setRulesError(
+          'Alert Rules could not be read from the platform (GraphQL offline). Start the backend on port 8000, then refresh.',
+        );
+        return;
+      }
 
-    if (stored.length > 0) {
       setRules(stored);
       setRulesOrigin('SERVER');
       setRulesError(null);
-      return;
-    }
-
-    try {
-      const imported = await unsGraphQLClient.saveAlertRules(rulesRef.current);
-      setRules(imported);
-      setRulesOrigin('SERVER');
-      setRulesError(null);
-    } catch (error) {
-      setRulesOrigin('BROWSER');
-      setRulesError(error instanceof Error ? error.message : 'Alert Rules could not be stored');
+    } finally {
+      setRulesLoading(false);
     }
   }, []);
 
@@ -771,37 +669,24 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return activeAlarms.filter((a) => a.severity === 'CRITICAL' && a.status === 'ACTIVE_UNACK').length;
   }, [activeAlarms]);
 
-  /**
-   * Persist a whole rule, and adopt the row the server stored.
-   *
-   * The UI has already changed by the time this runs — an alarm form that waits for a
-   * round trip feels broken — so a failure surfaces as `rulesError` rather than by
-   * reverting under the operator's cursor. `refreshRules` is how they get back to
-   * whatever the platform actually holds.
-   */
-  const persistRule = useCallback((rule: AlertRule) => {
-    unsGraphQLClient
-      .saveAlertRule(rule)
-      .then((saved) => {
-        setRules((prev) => prev.map((r) => (r.id === saved.id ? saved : r)));
-        setRulesOrigin('SERVER');
-        setRulesError(null);
-      })
-      .catch((error: unknown) => {
-        setRulesOrigin('BROWSER');
-        setRulesError(
-          `'${rule.name}' is only stored in this browser: ${
-            error instanceof Error ? error.message : 'the platform rejected it'
-          }`
-        );
-      });
-  }, []);
+  const canPersistRules = rulesOrigin === 'SERVER' && !rulesLoading;
+
+  const requirePersistableRules = useCallback(() => {
+    if (!canPersistRules) {
+      throw new Error(
+        rulesError ??
+          'The platform database is not reachable. Alert Rules are stored in Postgres via GraphQL on port 8000.',
+      );
+    }
+  }, [canPersistRules, rulesError]);
 
   // Operations
-  const createRule = useCallback((
+  const createRule = useCallback(async (
     ruleData: Omit<AlertRule, 'id' | 'createdAt' | 'updatedAt' | 'triggerCount'>
-  ): AlertRule => {
-    const newRule: AlertRule = {
+  ): Promise<AlertRule> => {
+    requirePersistableRules();
+
+    const draft: AlertRule = {
       ...ruleData,
       id: `rule-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       triggerCount: 0,
@@ -809,37 +694,41 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       updatedAt: new Date().toISOString(),
     };
 
-    setRules((prev) => [newRule, ...prev]);
-    persistRule(newRule);
+    const saved = await unsGraphQLClient.saveAlertRule(draft);
+    setRules((prev) => [saved, ...prev]);
+    setRulesOrigin('SERVER');
+    setRulesError(null);
     logAlarmAudit(
-      newRule.id,
-      newRule.name,
-      newRule.topic,
-      newRule.severity,
+      saved.id,
+      saved.name,
+      saved.topic,
+      saved.severity,
       'RULE_UPDATED',
-      `Created new alert rule targeted to roles: ${newRule.targetRoles.join(', ')}`
+      `Created new alert rule targeted to roles: ${saved.targetRoles.join(', ')}`,
     );
-    return newRule;
-  }, [logAlarmAudit, persistRule]);
+    return saved;
+  }, [logAlarmAudit, requirePersistableRules]);
 
-  const updateRule = useCallback((ruleId: string, updates: Partial<AlertRule>) => {
-    // Merged here rather than sent as a patch: the server stores whole rules, because
-    // there is no safe meaning for "change the threshold of an alarm I have not read".
+  const updateRule = useCallback(async (ruleId: string, updates: Partial<AlertRule>) => {
+    requirePersistableRules();
+
     const current = rulesRef.current.find((r) => r.id === ruleId);
     if (!current) return;
 
     const updated: AlertRule = { ...current, ...updates, updatedAt: new Date().toISOString() };
-    setRules((prev) => prev.map((r) => (r.id === ruleId ? updated : r)));
-    persistRule(updated);
+    const saved = await unsGraphQLClient.saveAlertRule(updated);
+    setRules((prev) => prev.map((r) => (r.id === saved.id ? saved : r)));
+    setRulesOrigin('SERVER');
+    setRulesError(null);
     logAlarmAudit(
-      updated.id,
-      updated.name,
-      updated.topic,
-      updated.severity,
+      saved.id,
+      saved.name,
+      saved.topic,
+      saved.severity,
       'RULE_UPDATED',
-      `Updated alert rule configuration (Target Roles: ${updated.targetRoles.join(', ')})`
+      `Updated alert rule configuration (Target Roles: ${saved.targetRoles.join(', ')})`,
     );
-  }, [logAlarmAudit, persistRule]);
+  }, [logAlarmAudit, requirePersistableRules]);
 
   const deleteRule = useCallback((ruleId: string) => {
     const target = rules.find((r) => r.id === ruleId);
@@ -1024,12 +913,12 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
    * local, so those really are just cleared here.
    */
   const restoreDefaultRules = useCallback(() => {
-    const defaultIds = new Set(INITIAL_RULES.map((r) => r.id));
+    const defaultIds = new Set(DEMO_ALERT_RULES.map((r) => r.id));
     const strays = rulesRef.current.filter((r) => !defaultIds.has(r.id)).map((r) => r.id);
 
-    setRules(INITIAL_RULES);
-    setActiveAlarms(INITIAL_ACTIVE_ALARMS);
-    setAuditLog(INITIAL_ALARM_AUDIT);
+    setRules(DEMO_ALERT_RULES);
+    setActiveAlarms([]);
+    setAuditLog([]);
     try {
       localStorage.removeItem(STORAGE_KEYS.ACTIVE_ALARMS);
       localStorage.removeItem(STORAGE_KEYS.ALARM_AUDIT);
@@ -1039,8 +928,9 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     void (async () => {
       try {
+        requirePersistableRules();
         await Promise.all(strays.map((id) => unsGraphQLClient.deleteAlertRule(id)));
-        const restored = await unsGraphQLClient.saveAlertRules(INITIAL_RULES);
+        const restored = await unsGraphQLClient.saveAlertRules(DEMO_ALERT_RULES);
         setRules(restored);
         setRulesOrigin('SERVER');
         setRulesError(null);
@@ -1049,11 +939,11 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setRulesError(
           `The defaults were restored in this browser only: ${
             error instanceof Error ? error.message : 'the platform could not be reached'
-          }`
+          }`,
         );
       }
     })();
-  }, []);
+  }, [requirePersistableRules]);
 
   return (
     <AlarmContext.Provider
@@ -1064,6 +954,8 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         isMuted,
         rulesOrigin,
         rulesError,
+        rulesLoading,
+        canPersistRules,
         refreshRules,
         myRoleAlarms,
         myUnacknowledgedCount,

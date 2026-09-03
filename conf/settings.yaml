@@ -38,6 +38,8 @@ default:
     graphql_path: "/graphql"
     simulator_host: "localhost"
     simulator_port: 8099
+    # Vite dev proxies /grafana here. Compose keeps Grafana's 3000 unpublished; nginx on 8088 does.
+    grafana_proxy_target: "http://localhost:8088"
     cors_origins:
       - "http://localhost:5173"
       - "http://127.0.0.1:5173"

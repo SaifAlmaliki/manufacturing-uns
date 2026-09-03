@@ -1,0 +1,24 @@
+# Local three-terminal dev (npm run stack / sim / ui).
+#
+# The simulator is opt-in via profile "docker-sim" so `npm run stack` does not start it.
+# Run `npm run sim` in a second terminal — it attaches to the simulator container and
+# streams logs. Port 8099 is published here only (for Vite on :5173); the main compose
+# file keeps it unpublished by default.
+
+services:
+  uns_simulator:
+    profiles: ["docker-sim"]
+    ports:
+      - "8099:8099"
+
+  uns_frontend:
+    depends_on:
+      - graphql_server
+      - uns_grafana
+
+  uns_prometheus:
+    depends_on:
+      - historian_client
+      - graphdb_client
+      - opcua_client
+      - oee_client
