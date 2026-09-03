@@ -63,3 +63,32 @@ def test_fixture_declares_s7_eip_and_opcua_at_documentation_hosts():
             assert mapping.find("includeTimestamp").text == "true"
             assert mapping.find("maxQos").text == "1"
     assert [el for el in root.iter() if el.tag.endswith("southboundMapping")] == []
+
+
+def _compose() -> dict:
+    return yaml.safe_load(_COMPOSE_FILE.read_text(encoding="utf-8"))
+
+
+def test_broker_image_is_hivemq_edge():
+    assert _compose()["services"]["uns_mqtt_broker"]["image"] == "hivemq/hivemq-edge:latest"
+
+
+def test_broker_publishes_mqtt_1883_and_console_18080():
+    ports = _compose()["services"]["uns_mqtt_broker"]["ports"]
+    assert "1883:1883" in ports
+    assert "18080:8080" in ports
+    assert "8080:8080" not in ports
+    assert "1884:1884" not in ports
+    assert "8090:8090" not in ports
+
+
+def test_broker_mounts_repo_config_read_only():
+    volumes = _compose()["services"]["uns_mqtt_broker"]["volumes"]
+    assert "./conf/hivemq/config.xml:/opt/hivemq/conf/config.xml:ro" in volumes
+
+
+def test_broker_healthcheck_does_not_call_emqx():
+    check = _compose()["services"]["uns_mqtt_broker"]["healthcheck"]["test"]
+    joined = " ".join(check)
+    assert "emqx" not in joined
+    assert "1883" in joined

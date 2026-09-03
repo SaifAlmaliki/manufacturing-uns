@@ -26,20 +26,20 @@
 # Do not keep a second root .env for credentials.
 services:
   uns_mqtt_broker:
-    image: "emqx/emqx:latest"
+    image: "hivemq/hivemq-edge:latest"
     ports:
-      # MQTT Ports
       - "1883:1883" # MQTT, unencrypted, unauthenticated
-      - "1884:1884" # MQTT, unencrypted, authenticated
-      # WebSocket Ports
-      - "8080:8080" # MQTT over WebSockets, unencrypted, unauthenticated
-      - "8090:8090" # MQTT over WebSockets, unencrypted, authenticated
+      - "18080:8080" # HiveMQ Edge console / API. Not MQTT-WS.
+    volumes:
+      - ./conf/hivemq/config.xml:/opt/hivemq/conf/config.xml:ro
+    # Healthy = MQTT TCP is accepting connections, not "every PLC is up".
+    # /dev/tcp is bash; the official image is Debian-based.
     healthcheck:
-      test: ["CMD", "/opt/emqx/bin/emqx", "ctl", "status"]
+      test: ["CMD-SHELL", "timeout 2 bash -c 'echo > /dev/tcp/127.0.0.1/1883' || exit 1"]
       interval: 5s
-      timeout: 25s
+      timeout: 5s
       retries: 12
-      start_period: 40s
+      start_period: 90s
 
   uns_timescale_db:
     image: "timescale/timescaledb:latest-pg16"
