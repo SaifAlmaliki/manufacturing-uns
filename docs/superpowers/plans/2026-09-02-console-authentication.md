@@ -6309,7 +6309,7 @@ that are not in it. Add them in the file's existing style, and only these:
 Do not add "user", "permission" or "session" as defined terms. They are ordinary words here and
 defining them would invite the reader to think they mean something specific.
 
-- [ ] **Step 5: Read the plan against the ADR**
+- [x] **Step 5: Read the plan against the ADR**
 
 The point of writing the record last is that it is a proofreading pass. Read ADR-0009 beside the
 twelve tasks and check every claim it makes is one the code actually implements:
