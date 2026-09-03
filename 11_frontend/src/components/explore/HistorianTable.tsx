@@ -4,6 +4,7 @@ import { HistoricEvent } from '../../types/uns';
 import { JsonViewer } from '../common/JsonViewer';
 import { useUNS } from '../../context/UNSContext';
 import { useAuth } from '../../context/AuthContext';
+import { BtnSecondary, ConsoleCard } from '../ui/console-ui';
 
 interface HistorianTableProps {
   events: HistoricEvent[];
@@ -19,7 +20,6 @@ export const HistorianTable: React.FC<HistorianTableProps> = ({ events, isLoadin
 
   const canExport = hasPermission('export_csv');
 
-  // Filter events
   const filteredEvents = events.filter((ev) => {
     if (!filterText) return true;
     const q = filterText.toLowerCase();
@@ -30,11 +30,9 @@ export const HistorianTable: React.FC<HistorianTableProps> = ({ events, isLoadin
     );
   });
 
-  // UI-only CSV Export implementation
   const handleExportCsv = () => {
     if (!canExport || events.length === 0) return;
 
-    // Collect all field names across events
     const allKeys = new Set<string>(['timestamp', 'topic', 'publisher', 'id']);
     events.forEach((ev) => {
       if (typeof ev.payload === 'object' && ev.payload !== null) {
@@ -56,7 +54,6 @@ export const HistorianTable: React.FC<HistorianTableProps> = ({ events, isLoadin
           val = (ev.payload as Record<string, unknown>)[header] ?? '';
         }
 
-        // Escape CSV values
         const strVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
         return `"${strVal.replace(/"/g, '""')}"`;
       });
@@ -74,74 +71,66 @@ export const HistorianTable: React.FC<HistorianTableProps> = ({ events, isLoadin
   };
 
   return (
-    <div id="historian-table-container" className="bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] rounded-lg overflow-hidden flex flex-col">
-      {/* Table Header Controls */}
-      <div className="p-3 bg-white dark:bg-[#111114] border-b border-[#E2E8F0] dark:border-[#1E293B] flex flex-wrap items-center justify-between gap-2 text-xs">
+    <ConsoleCard id="historian-table-container" padding="none" className="flex flex-col overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 px-3 py-2">
         <div className="flex items-center gap-2">
-          <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-[#10B981]" />
-          <span className="font-bold text-[#0F172A] dark:text-[#F8FAFC] font-mono uppercase tracking-wider text-[11px]">Historical Records</span>
-          <span className="px-1.5 py-0.2 rounded bg-slate-200 dark:bg-[#1E293B] text-[#475569] dark:text-[#94A3B8] font-mono text-[9px]">
+          <FileSpreadsheet className="size-4 text-emerald-400" />
+          <span className="text-xs font-semibold text-white">Historical Records</span>
+          <span className="rounded-md bg-zinc-800 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-zinc-400">
             {filteredEvents.length} / {events.length} rows
           </span>
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Quick Search */}
           <div className="relative">
-            <Search className="w-3 h-3 text-[#64748B] absolute left-2 top-2 pointer-events-none" />
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-500" />
             <input
-              type="text"
-              placeholder="Search table..."
+              type="search"
+              placeholder="Search table…"
               value={filterText}
               onChange={(e) => setFilterText(e.target.value)}
-              className="bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#CBD5E1] dark:border-[#1E293B] rounded pl-7 pr-2 py-1 text-[11px] text-[#0F172A] dark:text-[#F8FAFC] placeholder-[#64748B] focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107] font-mono w-40 sm:w-52"
+              className="w-40 rounded-lg border-0 bg-zinc-800/60 py-1.5 pl-8 pr-2 text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/40 sm:w-52"
             />
           </div>
 
-          {/* Export CSV Button with RBAC Permission Check */}
-          <button
+          <BtnSecondary
             id="export-historian-csv-btn"
             onClick={handleExportCsv}
             disabled={!canExport || events.length === 0}
-            className={`flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-mono font-medium transition-colors ${
-              canExport
-                ? 'bg-[#10B981]/15 border border-[#10B981]/40 hover:bg-[#10B981]/25 text-[#10B981] disabled:opacity-40 cursor-pointer'
-                : 'bg-[#1E293B]/40 border border-[#1E293B] text-[#64748B] cursor-not-allowed opacity-60'
-            }`}
+            className="px-2.5 py-1.5 text-xs"
             title={canExport ? 'Export loaded historical rows to CSV' : 'Export CSV permission restricted by Administrator'}
           >
-            {canExport ? <Download className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5 text-rose-400" />}
-            <span>Export CSV</span>
-          </button>
+            {canExport ? <Download className="size-3.5" /> : <Lock className="size-3.5 text-rose-400" />}
+            Export CSV
+          </BtnSecondary>
         </div>
       </div>
 
-      {/* Table Content */}
-      <div className="overflow-x-auto max-h-[420px] scrollbar-thin scrollbar-thumb-[#CBD5E1] dark:scrollbar-thumb-[#1E293B]">
-        <table className="w-full text-left text-[11px] font-mono">
-          <thead className="bg-[#F1F5F9] dark:bg-[#0B0B0C] text-[#475569] dark:text-[#94A3B8] text-[10px] sticky top-0 border-b border-[#E2E8F0] dark:border-[#1E293B] z-10 uppercase tracking-wider">
+      <div className="max-h-[420px] overflow-x-auto">
+        <table className="w-full text-left font-mono text-[11px]">
+          <thead className="sticky top-0 z-10 border-b border-zinc-800 bg-[#111114] text-[10px] uppercase tracking-wider text-zinc-500">
             <tr>
-              <th className="w-8 py-2 px-3"></th>
-              <th className="py-2 px-3">Timestamp</th>
-              <th className="py-2 px-3">Topic</th>
-              <th className="py-2 px-3">Publisher</th>
-              <th className="py-2 px-3">Payload Summary</th>
-              <th className="py-2 px-3 text-right">Actions</th>
+              <th className="w-8 px-3 py-2"></th>
+              <th className="px-3 py-2">Timestamp</th>
+              <th className="px-3 py-2">Topic</th>
+              <th className="px-3 py-2">Publisher</th>
+              <th className="px-3 py-2">Payload Summary</th>
+              <th className="px-3 py-2 text-right">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#E2E8F0] dark:divide-[#1E293B]">
+          <tbody className="divide-y divide-zinc-800">
             {isLoading ? (
               <tr>
-                <td colSpan={6} className="py-12 text-center text-[#64748B]">
-                  <div className="inline-block animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-amber-500 dark:border-[#FFC107] mb-2"></div>
+                <td colSpan={6} className="py-12 text-center text-zinc-500">
+                  <div className="mb-2 inline-block size-5 animate-spin rounded-full border-t-2 border-b-2 border-[#FF7A00]"></div>
                   <p>Querying Timescale historian records...</p>
                 </td>
               </tr>
             ) : filteredEvents.length === 0 ? (
               <tr>
-                <td colSpan={6} className="py-8 text-center text-[#64748B]">
+                <td colSpan={6} className="py-8 text-center text-zinc-500">
                   <p>No historical records match the selected query criteria.</p>
-                  <p className="text-[10px] mt-1 text-[#94A3B8]">Try the &quot;all&quot; time range or verify Timescale ingestion is running.</p>
+                  <p className="mt-1 text-[10px] text-zinc-600">Try the &quot;all&quot; time range or verify Timescale ingestion is running.</p>
                 </td>
               </tr>
             ) : (
@@ -153,50 +142,49 @@ export const HistorianTable: React.FC<HistorianTableProps> = ({ events, isLoadin
                   <React.Fragment key={ev.id}>
                     <tr
                       onClick={() => setExpandedEventId(isExpanded ? null : ev.id)}
-                      className={`hover:bg-slate-100 dark:hover:bg-[#1E293B]/40 cursor-pointer transition-colors ${
-                        isExpanded ? 'bg-slate-100 dark:bg-[#1E293B]/60' : ''
+                      className={`cursor-pointer transition-colors hover:bg-zinc-800/40 ${
+                        isExpanded ? 'bg-zinc-800/60' : ''
                       }`}
                     >
-                      <td className="py-2 px-3 text-[#64748B]">
-                        {isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-amber-600 dark:text-[#FFC107]" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                      <td className="px-3 py-2 text-zinc-500">
+                        {isExpanded ? <ChevronDown className="size-3.5 text-[#FF7A00]" /> : <ChevronRight className="size-3.5" />}
                       </td>
-                      <td className="py-2 px-3 text-[#334155] dark:text-[#E2E8F0] whitespace-nowrap">{timeStr}</td>
-                      <td className="py-2 px-3 text-amber-700 dark:text-[#FFC107] font-medium max-w-xs truncate" title={ev.topic}>
+                      <td className="whitespace-nowrap px-3 py-2 text-zinc-200">{timeStr}</td>
+                      <td className="max-w-xs truncate px-3 py-2 font-medium text-[#FF7A00]" title={ev.topic}>
                         {ev.topic}
                       </td>
-                      <td className="py-2 px-3 text-[#475569] dark:text-[#94A3B8] whitespace-nowrap">
-                        <span className="px-1.5 py-0.5 rounded bg-[#F1F5F9] dark:bg-[#0B0B0C] border border-[#E2E8F0] dark:border-[#1E293B] text-[10px]">
+                      <td className="whitespace-nowrap px-3 py-2 text-zinc-400">
+                        <span className="rounded border border-zinc-800 bg-zinc-900 px-1.5 py-0.5 text-[10px]">
                           {ev.publisher || 'n/a'}
                         </span>
                       </td>
-                      <td className="py-2 px-3 text-[#475569] dark:text-[#94A3B8] max-w-md truncate">
+                      <td className="max-w-md truncate px-3 py-2 text-zinc-400">
                         {typeof ev.payload === 'object' && ev.payload !== null
                           ? JSON.stringify(ev.payload)
                           : String(ev.payload)}
                       </td>
-                      <td className="py-2 px-3 text-right">
+                      <td className="px-3 py-2 text-right">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             jumpToTopicInTree(ev.topic);
                           }}
-                          className="p-1 hover:bg-slate-200 dark:hover:bg-[#334155] rounded text-[#64748B] hover:text-amber-600 dark:hover:text-[#FFC107] transition-colors cursor-pointer"
+                          className="rounded p-1 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-[#FF7A00]"
                           title="Jump to topic in hierarchy"
                         >
-                          <ExternalLink className="w-3 h-3" />
+                          <ExternalLink className="size-3" />
                         </button>
                       </td>
                     </tr>
 
-                    {/* Expanded Payload Row */}
                     {isExpanded && (
-                      <tr className="bg-[#F8FAFC] dark:bg-[#0B0B0C]">
+                      <tr className="bg-zinc-950/60">
                         <td colSpan={6} className="p-3">
-                          <div className="pl-6 space-y-2">
+                          <div className="space-y-2 pl-6">
                             <JsonViewer data={ev.payload} title={`RECORD PAYLOAD • ${ev.id}`} maxHeight="max-h-52" />
                             {ev.properties && Object.keys(ev.properties).length > 0 && (
-                              <div className="text-[10px] text-[#94A3B8] flex items-center gap-2">
-                                <span className="font-semibold text-[#F8FAFC]">Properties:</span>
+                              <div className="flex items-center gap-2 text-[10px] text-zinc-500">
+                                <span className="font-semibold text-zinc-200">Properties:</span>
                                 <span>{JSON.stringify(ev.properties)}</span>
                               </div>
                             )}
@@ -212,14 +200,13 @@ export const HistorianTable: React.FC<HistorianTableProps> = ({ events, isLoadin
         </table>
       </div>
 
-      {/* Pagination Status Notice (Phase 3 requirement: Schema limitation today) */}
-      <div className="p-2.5 bg-[#F8FAFC] dark:bg-[#0B0B0C] border-t border-[#E2E8F0] dark:border-[#1E293B] flex items-center justify-between text-[10px] font-mono text-[#64748B]">
+      <div className="flex items-center justify-between border-t border-zinc-800 px-3 py-2 font-mono text-[10px] text-zinc-500">
         <div className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 dark:bg-[#FFC107]" />
+          <span className="size-1.5 rounded-full bg-[#FF7A00]" />
           <span>Pagination: Backend GraphQL schema returns single query batch (Pagination blocked pending GraphQL schema)</span>
         </div>
         <span>Total loaded: {events.length} rows</span>
       </div>
-    </div>
+    </ConsoleCard>
   );
 };

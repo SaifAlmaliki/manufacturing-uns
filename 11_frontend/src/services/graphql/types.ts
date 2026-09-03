@@ -59,8 +59,8 @@ export type GraphqlHistoricalEvent = {
 export type GraphqlMqttMessage = {
   topic: string
   payload:
-    | { __typename: 'JSONPayload'; data: unknown }
-    | { __typename: 'BytesPayload'; data: string }
+    | { __typename: 'JSONPayload'; json: unknown }
+    | { __typename: 'BytesPayload'; bytes: string }
     | null
 }
 

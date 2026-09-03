@@ -77,41 +77,63 @@ class AsyncMQTTDevice:
 
         Each device may run several tier publishers concurrently; aiomqtt's client context
         is reusable but not reentrant, so connection attempts are serialized here.
+
+        A failed ``__aenter__`` is not registered on the ExitStack, so ``aclose()`` will
+        not call ``__aexit__``. aiomqtt 2.5.1 can leave its reentrancy lock held in that
+        case; the next retry on the same client then fails forever with
+        "reusable, but not reentrant". Drop the poisoned client and build a new one.
         """
         if self.connected:
             return True
-        async with self._connect_lock:
-            if self.connected:
-                return True
-            cap = float(getattr(MQTTConfig, "retry_interval", 10) or 10)
-            delay = 1.0
-            while True:
+        cap = float(getattr(MQTTConfig, "retry_interval", 10) or 10)
+        delay = 1.0
+        while True:
+            async with self._connect_lock:
+                if self.connected:
+                    return True
                 self._stack = contextlib.AsyncExitStack()
                 try:
                     await self._stack.enter_async_context(self.client)
                 except Exception as exc:
                     self.reconnects += 1
                     self.last_error = str(exc)
-                    await self._stack.aclose()
-                    self._stack = None
+                    await self._discard_client()
                     LOGGER.warning("Device %s could not connect (%s); retrying in %.1fs", self.device_id, exc, delay)
-                    await asyncio.sleep(delay)
-                    delay = min(delay * 2.0, cap)
-                    continue
-                self.connected = True
-                LOGGER.info("Device %s connected to the broker", self.device_id)
-                return True
+                else:
+                    self.connected = True
+                    self.last_error = None
+                    LOGGER.info("Device %s connected to the broker", self.device_id)
+                    return True
+            await asyncio.sleep(delay)
+            delay = min(delay * 2.0, cap)
+
+    async def _discard_client(self) -> None:
+        """Release a client that failed to enter, then replace it.
+
+        ``enter_async_context`` does not push ``__aexit__`` when ``__aenter__`` raises, so
+        the stack alone cannot unlock aiomqtt. Call ``__aexit__`` ourselves, then build a
+        fresh client — a paho socket left mid-handshake cannot be reused (aiomqtt #269).
+        """
+        stack, self._stack = self._stack, None
+        if stack is not None:
+            with contextlib.suppress(Exception):
+                await stack.aclose()
+        if self.client is not None:
+            with contextlib.suppress(Exception):
+                await self.client.__aexit__(None, None, None)
+        self.client = self._build_client()
 
     async def disconnect(self) -> None:
         """Close the connection. Safe to call when already disconnected."""
-        self.connected = False
-        if self._stack is None:
-            return
-        stack, self._stack = self._stack, None
-        try:
-            await stack.aclose()
-        except Exception as exc:
-            LOGGER.debug("Device %s disconnect raised %s", self.device_id, exc)
+        async with self._connect_lock:
+            self.connected = False
+            if self._stack is None:
+                return
+            stack, self._stack = self._stack, None
+            try:
+                await stack.aclose()
+            except Exception as exc:
+                LOGGER.debug("Device %s disconnect raised %s", self.device_id, exc)
 
     def health(self) -> dict[str, Any]:
         """Connection and publish counters. Published as device health by sub-project B."""

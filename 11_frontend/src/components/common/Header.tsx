@@ -34,7 +34,7 @@ function getPageHeading(
     return { title: 'Alarm Management' };
   }
   if (path.startsWith('/historian')) {
-    return { title: 'Historian', subtitle: 'Explore historic events and telemetry trends.' };
+    return { title: 'Historian' };
   }
   if (path.startsWith('/sparkplug')) {
     return { title: 'Sparkplug B', subtitle: 'Decode Sparkplug B edge node payloads.' };

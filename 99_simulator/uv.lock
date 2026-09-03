@@ -918,7 +918,10 @@ dependencies = [
 requires-dist = [{ name = "dynaconf", specifier = "~=3.2" }]
 
 [package.metadata.requires-dev]
-test = [{ name = "pytest", specifier = ">=9.0.3,<10" }]
+test = [
+    { name = "pytest", specifier = ">=9.0.3,<10" },
+    { name = "pytest-timeout", specifier = ">=2.4.0,<3" },
+]
 
 [[package]]
 name = "uns-simulator"

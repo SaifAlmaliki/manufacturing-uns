@@ -83,7 +83,7 @@ conf/
     realm.json                             CREATE  the whole realm: clients, roles, dev users
     README.md                              CREATE  what this is, and that it is not for production
   settings.yaml                            MODIFY  an `auth:` block: issuer, audience, jwks path, leeway
-  .secrets.yaml.template                   MODIFY  keycloak.admin_password, keycloak.grafana_client_secret
+  .secrets_template.yaml                   MODIFY  keycloak.admin_password, keycloak.grafana_client_secret
 docker-compose.yml                         MODIFY  uns_keycloak service; graphql_server and
                                                    uns_grafana gain auth env; anonymous Grafana out
 00_uns_config/
@@ -162,7 +162,7 @@ plan depends on.
 
 **Files:**
 - Create: `conf/keycloak/realm.json`, `conf/keycloak/README.md`
-- Modify: `conf/settings.yaml`, `conf/.secrets.yaml.template`, `docker-compose.yml`,
+- Modify: `conf/settings.yaml`, `conf/.secrets_template.yaml`, `docker-compose.yml`,
   `00_uns_config/src/uns_config/compose_env.py`, `00_uns_config/test/test_compose_env.py`
 - Test: `00_uns_config/test/test_keycloak_realm.py` (create)
 
@@ -183,7 +183,7 @@ plan depends on.
 cd 00_uns_config
 uv run pytest test/test_compose_env.py -q
 grep -n "COMPOSE_ENV_KEYS" -A 3 src/uns_config/compose_env.py
-grep -n "keycloak" ../conf/settings.yaml ../conf/.secrets.yaml.template
+grep -n "keycloak" ../conf/settings.yaml ../conf/.secrets_template.yaml
 ```
 
 Expected: the suite passes, `COMPOSE_ENV_KEYS` is the three-tuple
@@ -521,8 +521,9 @@ Add an `auth:` block to the `default:` section, after the `urls:` block:
 
 - [ ] **Step 7: Add the two secrets to the template**
 
-In `conf/.secrets.yaml.template`, under `default:`, following the placeholder style already
-there:
+In `conf/.secrets_template.yaml` (that is the real filename in this tree, not
+`.secrets.yaml.template` — Step 1's fallback applied), under `default:`, following the
+placeholder style already there:
 
 ```yaml
   keycloak:
@@ -615,13 +616,17 @@ the thing that proxies it:
       KC_HOSTNAME: http://localhost:8088/auth
       KC_HOSTNAME_STRICT: "false"
       KC_HTTP_ENABLED: "true"
+      # Without this the management interface (9000, where /health/ready lives) never
+      # starts and the healthcheck below refuses every connection.
+      KC_HEALTH_ENABLED: "true"
       KC_PROXY_HEADERS: xforwarded
       UNS_KEYCLOAK_GRAFANA_CLIENT_SECRET: ${UNS_keycloak__grafana_client_secret}
     volumes:
       - ./conf/keycloak:/opt/keycloak/data/import:ro
     healthcheck:
-      # 26.x serves health on the management port, which start-dev exposes on 9000.
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '\"status\": \"UP\"'"]
+      # 26.x serves health on the management port, which start-dev exposes on 9000, and
+      # --http-relative-path applies there too — hence /auth/health/ready, not /health/ready.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && echo -e 'GET /auth/health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '\"status\": \"UP\"'"]
       interval: 10s
       timeout: 5s
       retries: 20
@@ -820,7 +825,7 @@ accepted. Embedding stays enabled."
   advertises the console's origin, verified by hand.
 - Keycloak's 8080 is not published, and `docker-compose.yml` states
   `GF_AUTH_ANONYMOUS_ENABLED: "false"` with `GF_AUTH_ANONYMOUS_ORG_ROLE` gone.
-- `conf/.secrets.yaml.template` names both new secrets, and `compose_environment` refuses to run
+- `conf/.secrets_template.yaml` names both new secrets, and `compose_environment` refuses to run
   without them.
 - `conf/keycloak/README.md` says the passwords are development-only and that editing the running
   realm does not persist.

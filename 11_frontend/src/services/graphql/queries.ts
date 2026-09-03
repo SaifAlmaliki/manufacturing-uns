@@ -319,10 +319,10 @@ export const SUBSCRIBE_MQTT_MESSAGES = `
       payload {
         __typename
         ... on JSONPayload {
-          data
+          json: data
         }
         ... on BytesPayload {
-          data
+          bytes: data
         }
       }
     }

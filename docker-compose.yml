@@ -358,6 +358,38 @@ services:
       uns_kafka_broker:
         condition: service_healthy
 
+  # Identity provider for the console and Grafana (ADR-0009). The console proxies /auth
+  # on its own origin, so tokens carry exactly one issuer and Grafana's session cookie
+  # is same-origin; publishing 8080 would invite a second issuer URL.
+  uns_keycloak:
+    image: "quay.io/keycloak/keycloak:26.0"
+    # 8080 stays unpublished. The console proxies /auth (nginx on 8088), so the realm has
+    # exactly one issuer URL.
+    command: ["start-dev", "--import-realm", "--http-relative-path=/auth"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${UNS_keycloak__admin_password}
+      # Tokens must carry the issuer the browser used, not the container hostname, or the
+      # console's OIDC library rejects its own token.
+      KC_HOSTNAME: http://localhost:8088/auth
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+      # Without this the management interface (9000, where /health/ready lives) never
+      # starts and the healthcheck below refuses every connection.
+      KC_HEALTH_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      UNS_KEYCLOAK_GRAFANA_CLIENT_SECRET: ${UNS_keycloak__grafana_client_secret}
+    volumes:
+      - ./conf/keycloak:/opt/keycloak/data/import:ro
+    healthcheck:
+      # 26.x serves health on the management port, which start-dev exposes on 9000, and
+      # --http-relative-path applies there too — hence /auth/health/ready, not /health/ready.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && echo -e 'GET /auth/health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '\"status\": \"UP\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 40s
+
   uns_frontend:
     build:
       context: .
@@ -374,6 +406,9 @@ services:
       # nginx.conf proxies /grafana to it. Without this, System Operations shows the SPA
       # fallback instead of the dashboards.
       - uns_grafana
+      # nginx.conf proxies /auth to it — same reason: nginx refuses to start when an
+      # upstream hostname does not resolve.
+      - uns_keycloak
 
   uns_prometheus:
     image: "prom/prometheus:latest"
@@ -393,8 +428,31 @@ services:
     # 3000 stays unpublished: the console proxies /grafana (nginx on 8088, Vite in
     # development). Publishing 3000 collided with whatever already bound it on the host.
     environment:
-      GF_AUTH_ANONYMOUS_ENABLED: "true"
-      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      # ADR-0001 accepted anonymous access with org role Admin as a known gap and named OIDC
+      # as the target. This is that target: anonymous is explicitly off — not merely absent,
+      # so the file states the decision rather than relying on Grafana's default.
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      # The console embeds Grafana in an iframe and the operator has already signed in to the
+      # same realm on the same origin, so a second visible sign-in step would be noise.
+      GF_AUTH_OAUTH_AUTO_LOGIN: "true"
+      GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
+      GF_AUTH_GENERIC_OAUTH_NAME: Keycloak
+      GF_AUTH_GENERIC_OAUTH_CLIENT_ID: uns-grafana
+      GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: ${UNS_keycloak__grafana_client_secret}
+      GF_AUTH_GENERIC_OAUTH_SCOPES: "openid profile email roles"
+      # The browser is redirected to the auth URL, so it is the published origin. The token
+      # and userinfo calls are Grafana's own, server to server, so they use the container name.
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: "http://localhost:8088/auth/realms/uns/protocol/openid-connect/auth"
+      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: "http://uns_keycloak:8080/auth/realms/uns/protocol/openid-connect/token"
+      GF_AUTH_GENERIC_OAUTH_API_URL: "http://uns_keycloak:8080/auth/realms/uns/protocol/openid-connect/userinfo"
+      # admin -> Admin, engineer -> Editor, everything else Viewer (spec section 9). The
+      # realm's uns-grafana client publishes a flat multivalued `roles` claim, which is what
+      # this path reads. An operator gets Viewer: a plant dashboard is not something a shift
+      # operator should be able to rewrite mid-shift.
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "contains(roles[*], 'admin') && 'Admin' || contains(roles[*], 'engineer') && 'Editor' || 'Viewer'"
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_STRICT: "false"
+      # Removing anonymity without keeping embedding on breaks all three console embeds.
       GF_SECURITY_ALLOW_EMBEDDING: "true"
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
       GF_SERVER_ROOT_URL: "http://localhost:8088/grafana/"
@@ -421,6 +479,10 @@ services:
       # demo has the engine running before anybody opens the dashboard.
       oee_client:
         condition: service_started
+      # OAuth endpoints point at Keycloak; without this the first login can race a
+      # half-started IdP and fail with a confusing upstream error.
+      uns_keycloak:
+        condition: service_healthy
 
 volumes:
   opcua_spool:

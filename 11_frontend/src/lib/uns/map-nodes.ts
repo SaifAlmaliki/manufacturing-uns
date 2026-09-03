@@ -54,10 +54,10 @@ export function graphqlHistoricalEventToHistoricEvent(event: GraphqlHistoricalEv
 export function graphqlMqttMessageToMqttMessage(message: GraphqlMqttMessage): MqttMessage {
   let payload: PayloadValue = null
   if (message.payload?.__typename === 'JSONPayload') {
-    const parsed = parseJsonPayload(message.payload.data)
-    payload = parsed.ok ? asPayloadValue(parsed.value) : asPayloadValue(message.payload.data)
+    const parsed = parseJsonPayload(message.payload.json)
+    payload = parsed.ok ? asPayloadValue(parsed.value) : asPayloadValue(message.payload.json)
   } else if (message.payload?.__typename === 'BytesPayload') {
-    payload = message.payload.data
+    payload = message.payload.bytes
   }
 
   return {

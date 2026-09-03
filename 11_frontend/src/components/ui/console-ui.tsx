@@ -61,11 +61,12 @@ interface ConsoleCardProps {
   children: React.ReactNode;
   className?: string;
   padding?: 'none' | 'sm' | 'md' | 'lg';
+  id?: string;
 }
 
-export const ConsoleCard: React.FC<ConsoleCardProps> = ({ children, className = '', padding = 'md' }) => {
+export const ConsoleCard: React.FC<ConsoleCardProps> = ({ children, className = '', padding = 'md', id }) => {
   const pad = padding === 'none' ? '' : padding === 'sm' ? 'p-3' : padding === 'lg' ? 'p-6' : 'p-5';
-  return <div className={`${consoleTokens.card} ${pad} ${className}`}>{children}</div>;
+  return <div id={id} className={`${consoleTokens.card} ${pad} ${className}`}>{children}</div>;
 };
 
 interface PageStatProps {

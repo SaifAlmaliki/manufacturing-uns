@@ -1,0 +1,143 @@
+{
+  "realm": "uns",
+  "enabled": true,
+  "displayName": "Unified Namespace",
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "accessTokenLifespan": 900,
+  "ssoSessionIdleTimeout": 3600,
+  "roles": {
+    "realm": [
+      { "name": "admin", "description": "Configure the platform and administer users" },
+      { "name": "engineer", "description": "Author Alert Rules and correct downtime reasons" },
+      { "name": "operator", "description": "Run the plant view, silence and acknowledge alarms" },
+      { "name": "auditor", "description": "Read everything, change nothing" },
+      { "name": "viewer", "description": "Read the plant view" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "uns-console",
+      "name": "UNS operations console",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": true,
+      "redirectUris": [
+        "http://localhost:8088/*",
+        "http://127.0.0.1:8088/*",
+        "http://localhost:5173/*",
+        "http://127.0.0.1:5173/*"
+      ],
+      "webOrigins": [
+        "http://localhost:8088",
+        "http://127.0.0.1:8088",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:8088/*##http://localhost:5173/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "audience-uns-console",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "uns-console",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "uns-grafana",
+      "name": "Grafana",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "secret": "${UNS_KEYCLOAK_GRAFANA_CLIENT_SECRET}",
+      "redirectUris": ["http://localhost:8088/grafana/login/generic_oauth"],
+      "webOrigins": ["http://localhost:8088"],
+      "protocolMappers": [
+        {
+          "name": "realm-roles-as-a-claim",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "admin.user",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "admin.user@example.test",
+      "firstName": "Ada",
+      "lastName": "Admin",
+      "credentials": [{ "type": "password", "value": "development-only", "temporary": false }],
+      "realmRoles": ["admin"]
+    },
+    {
+      "username": "engineer.user",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "engineer.user@example.test",
+      "firstName": "Erin",
+      "lastName": "Engineer",
+      "credentials": [{ "type": "password", "value": "development-only", "temporary": false }],
+      "realmRoles": ["engineer"]
+    },
+    {
+      "username": "operator.user",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "operator.user@example.test",
+      "firstName": "Omar",
+      "lastName": "Operator",
+      "credentials": [{ "type": "password", "value": "development-only", "temporary": false }],
+      "realmRoles": ["operator"]
+    },
+    {
+      "username": "auditor.user",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "auditor.user@example.test",
+      "firstName": "Ana",
+      "lastName": "Auditor",
+      "credentials": [{ "type": "password", "value": "development-only", "temporary": false }],
+      "realmRoles": ["auditor"]
+    },
+    {
+      "username": "viewer.user",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "viewer.user@example.test",
+      "firstName": "Vik",
+      "lastName": "Viewer",
+      "credentials": [{ "type": "password", "value": "development-only", "temporary": false }],
+      "realmRoles": ["viewer"]
+    }
+  ]
+}

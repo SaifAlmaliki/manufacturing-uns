@@ -46,6 +46,23 @@ default:
       - "http://localhost:8088"
       - "http://127.0.0.1:8088"
 
+  auth:
+    # The realm is reached through the console's own nginx (/auth), so the issuer is the
+    # console's origin and not a second host. That is also what makes Grafana's session
+    # cookie same-origin for the three embedded dashboards.
+    realm: "uns"
+    base_url: "http://localhost:8088/auth"
+    issuer: "http://localhost:8088/auth/realms/uns"
+    console_client_id: "uns-console"
+    grafana_client_id: "uns-grafana"
+    # The access token's `aud`, set by the audience mapper in conf/keycloak/realm.json.
+    audience: "uns-console"
+    # Seconds of tolerance on exp/nbf. A laptop clock is not the realm's clock.
+    leeway_seconds: 30
+    # Inside the compose network the GraphQL service resolves Keycloak by service name, so
+    # its JWKS fetch does not depend on the frontend container being up.
+    internal_base_url: "http://uns_keycloak:8080"
+
   mqtt:
     host: "localhost"
     port: 1883

@@ -1,19 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  Search,
-  Calendar,
-  Clock,
-  Filter,
-  Layers,
-  Database,
-  Tag,
-  Server,
-  RefreshCw,
-  Sliders,
-  AlertCircle,
-} from 'lucide-react';
+import { RefreshCw, AlertCircle } from 'lucide-react';
 import { useUNS } from '../../context/UNSContext';
-import { HistoricEvent, UnsNode, BinaryOperator } from '../../types/uns';
+import { HistoricEvent, BinaryOperator } from '../../types/uns';
 import { HistorianTable } from './HistorianTable';
 import { unsGraphQLClient } from '../../services/graphql/client';
 import { historianTopic } from '../../lib/uns/topics';
@@ -28,9 +16,7 @@ import {
   PageShell,
   PageContent,
   ConsoleCard,
-  SegmentTabs,
-  ConsoleInput,
-  ConsoleSelect,
+  FilterToolbar,
   BtnPrimary,
   consoleTokens,
 } from '../ui/console-ui';
@@ -38,8 +24,25 @@ import {
 type QueryMode = 'topic_time' | 'publishers' | 'property_event' | 'property_nodes';
 type TimePreset = '5m' | '15m' | '1h' | '6h' | '24h' | 'all' | 'custom';
 
+const MODE_TABS: { id: QueryMode; label: string }[] = [
+  { id: 'topic_time', label: 'By Topic' },
+  { id: 'publishers', label: 'By Publisher' },
+  { id: 'property_event', label: 'By Property' },
+  { id: 'property_nodes', label: 'Nodes by Property' },
+];
+
+const TIME_OPTIONS: { value: TimePreset; label: string }[] = [
+  { value: '5m', label: 'Last 5m' },
+  { value: '15m', label: 'Last 15m' },
+  { value: '1h', label: 'Last 1h' },
+  { value: '6h', label: 'Last 6h' },
+  { value: '24h', label: 'Last 24h' },
+  { value: 'all', label: 'All time' },
+  { value: 'custom', label: 'Custom' },
+];
+
 export const ExploreView: React.FC = () => {
-  const { historianInitialTopic, allLoadedNodes, selectedNode } = useUNS();
+  const { historianInitialTopic, selectedNode } = useUNS();
   const { isDark } = useTheme();
 
   const [mode, setMode] = useState<QueryMode>('topic_time');
@@ -47,26 +50,20 @@ export const ExploreView: React.FC = () => {
     historianInitialTopic || selectedNode?.topic || ''
   );
 
-  // Time range presets
   const [timePreset, setTimePreset] = useState<TimePreset>('1h');
   const [customStartTime, setCustomStartTime] = useState(() => new Date(Date.now() - 3600 * 1000).toISOString().slice(0, 16));
   const [customEndTime, setCustomEndTime] = useState(() => new Date().toISOString().slice(0, 16));
 
-  // Publisher filter
   const [publishersInput, setPublishersInput] = useState('');
 
-  // Property query
   const [propKeysInput, setPropKeysInput] = useState('site');
   const [propOperator, setPropOperator] = useState<BinaryOperator>('OR');
   const [excludeTopicsInput, setExcludeTopicsInput] = useState('spBv1.0/#');
 
-  // Results
   const [events, setEvents] = useState<HistoricEvent[]>([]);
-  const [matchingNodes, setMatchingNodes] = useState<UnsNode[]>([]);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Calculate start & end ISO strings based on preset
   const getTimeBounds = useCallback((): { start?: string; end?: string } => {
     if (timePreset === 'all') return {};
     const now = Date.now();
@@ -86,7 +83,6 @@ export const ExploreView: React.FC = () => {
     return historianTopic(trimmed);
   };
 
-  // Execute Query
   const runQuery = useCallback(async () => {
     setLoading(true);
     setErrorMsg(null);
@@ -133,7 +129,6 @@ export const ExploreView: React.FC = () => {
           excludeTopics.length ? excludeTopics : undefined,
           excludeTopics.length > 0,
         );
-        setMatchingNodes(res);
         setEvents(
           res.map((n) => ({
             id: `node_${n.topic}`,
@@ -151,7 +146,6 @@ export const ExploreView: React.FC = () => {
     }
   }, [mode, topicInput, publishersInput, propKeysInput, propOperator, excludeTopicsInput, getTimeBounds]);
 
-  // Run query on initial mount or when initial topic changes
   useEffect(() => {
     if (historianInitialTopic) {
       setTopicInput(historianInitialTopic);
@@ -171,202 +165,123 @@ export const ExploreView: React.FC = () => {
       : grafanaRangeFromPreset(timePreset);
   const grafanaTopic = grafanaTopicFilter(topicInput) || 'CovestroAG';
 
-  const modeTabs = [
-    { id: 'topic_time', label: 'By Topic' },
-    { id: 'publishers', label: 'By Publisher' },
-    { id: 'property_event', label: 'By Property' },
-    { id: 'property_nodes', label: 'Nodes by Property' },
+  const primarySearch =
+    mode === 'topic_time'
+      ? { value: topicInput, onChange: setTopicInput, placeholder: 'UNS topic…' }
+      : mode === 'publishers'
+        ? { value: publishersInput, onChange: setPublishersInput, placeholder: 'Publishers, comma-separated…' }
+        : { value: propKeysInput, onChange: setPropKeysInput, placeholder: 'Property keys, comma-separated…' };
+
+  const filterSelects = [
+    ...(mode === 'property_event'
+      ? [
+          {
+            value: propOperator,
+            onChange: (value: string) => setPropOperator(value as BinaryOperator),
+            'aria-label': 'Property operator',
+            options: [
+              { value: 'OR', label: 'OR' },
+              { value: 'AND', label: 'AND' },
+              { value: 'NOT', label: 'NOT' },
+            ],
+          },
+        ]
+      : []),
+    ...(mode !== 'property_nodes'
+      ? [
+          {
+            value: timePreset,
+            onChange: (value: string) => setTimePreset(value as TimePreset),
+            'aria-label': 'Time range',
+            options: TIME_OPTIONS,
+          },
+        ]
+      : []),
   ];
 
   return (
-    <PageShell id="explore-historian-view">
-      <PageContent className="space-y-4">
-      <ConsoleCard className="space-y-4">
-        <div className="flex flex-col gap-4 border-b border-zinc-800 pb-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-3">
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#FF7A00]/15">
-              <Database className="size-5 text-[#FF7A00]" />
-            </div>
-            <div>
-              <h2 className="text-base font-semibold text-white">Historian Explorer</h2>
-              <p className="text-sm text-zinc-500">Query historic events from TimescaleDB</p>
-            </div>
-          </div>
-          <SegmentTabs
-            tabs={modeTabs}
-            active={mode}
-            onChange={(id) => setMode(id as QueryMode)}
-          />
-        </div>
-
-        {/* Dynamic Form Inputs according to Mode */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-          {/* Mode 1: Topic + Time */}
-          {mode === 'topic_time' && (
-            <div className="md:col-span-6 space-y-1">
-              <label className="text-[#64748B] dark:text-[#94A3B8] text-[10px] flex items-center gap-1">
-                <Layers className="w-3 h-3 text-amber-600 dark:text-[#FFC107]" />
-                <span>UNS TOPIC:</span>
-              </label>
-              <input
-                type="text"
-                value={topicInput}
-                onChange={(e) => setTopicInput(e.target.value)}
-                placeholder="e.g. CovestroAG/Dormagen/.../telemetry"
-                className={consoleTokens.input}
-              />
-            </div>
-          )}
-
-          {/* Mode 2: Publisher Filter */}
-          {mode === 'publishers' && (
-            <div className="md:col-span-6 space-y-1">
-              <label className="text-[#94A3B8] text-[10px] flex items-center gap-1">
-                <Server className="w-3 h-3 text-[#FFC107]" />
-                <span>PUBLISHERS (COMMA-SEPARATED):</span>
-              </label>
-              <input
-                type="text"
-                value={publishersInput}
-                onChange={(e) => setPublishersInput(e.target.value)}
-                placeholder="edge:siemens_s7_1500, edge:beckhoff_twincat"
-                className={consoleTokens.input}
-              />
-            </div>
-          )}
-
-          {/* Mode 3: Property + Operator Filter */}
-          {mode === 'property_event' && (
-            <>
-              <div className="md:col-span-4 space-y-1">
-                <label className="text-[#94A3B8] text-[10px]">PROPERTY KEYS (comma-separated):</label>
-                <input
-                  type="text"
-                  value={propKeysInput}
-                  onChange={(e) => setPropKeysInput(e.target.value)}
-                  placeholder="site, cell_id"
-                  className={consoleTokens.input}
-                />
-              </div>
-              <div className="md:col-span-2 space-y-1">
-                <label className="text-[#94A3B8] text-[10px]">OPERATOR:</label>
-                <select
-                  value={propOperator}
-                  onChange={(e) => setPropOperator(e.target.value as BinaryOperator)}
-                  className={consoleTokens.input}
+    <PageShell id="explore-historian-view" scroll={false} className="flex flex-col">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <PageContent fullWidth className="flex min-h-full flex-col gap-3 pb-4">
+          <FilterToolbar
+            tabs={{
+              items: MODE_TABS,
+              active: mode,
+              onChange: (id) => setMode(id as QueryMode),
+            }}
+            search={primarySearch}
+            selects={filterSelects}
+            trailing={
+              <>
+                {mode === 'property_nodes' && (
+                  <input
+                    type="text"
+                    value={excludeTopicsInput}
+                    onChange={(e) => setExcludeTopicsInput(e.target.value)}
+                    placeholder="Exclude topics…"
+                    aria-label="Exclude topics"
+                    className="min-w-[140px] flex-1 rounded-lg border-0 bg-zinc-800/60 px-2.5 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/40"
+                  />
+                )}
+                <BtnPrimary
+                  id="execute-graphql-historian-query-btn"
+                  onClick={runQuery}
+                  disabled={loading}
+                  className="px-2.5 py-1.5 text-xs"
                 >
-                  <option value="OR">OR</option>
-                  <option value="AND">AND</option>
-                  <option value="NOT">NOT</option>
-                </select>
-              </div>
-            </>
-          )}
-
-          {mode === 'property_nodes' && (
-            <>
-              <div className="md:col-span-4 space-y-1">
-                <label className="text-[#94A3B8] text-[10px]">PROPERTY KEYS (comma-separated):</label>
-                <input
-                  type="text"
-                  value={propKeysInput}
-                  onChange={(e) => setPropKeysInput(e.target.value)}
-                  placeholder="site, standard"
-                  className={consoleTokens.input}
-                />
-              </div>
-              <div className="md:col-span-4 space-y-1">
-                <label className="text-[#94A3B8] text-[10px]">EXCLUDE TOPICS (comma-separated):</label>
-                <input
-                  type="text"
-                  value={excludeTopicsInput}
-                  onChange={(e) => setExcludeTopicsInput(e.target.value)}
-                  placeholder="spBv1.0/#"
-                  className={consoleTokens.input}
-                />
-              </div>
-            </>
-          )}
-
-          {/* Time Range Selector (for time-based queries) */}
-          {mode !== 'property_nodes' && (
-            <div className="md:col-span-4 space-y-1">
-              <label className="text-[#64748B] dark:text-[#94A3B8] text-[10px] flex items-center gap-1">
-                <Clock className="w-3 h-3 text-amber-600 dark:text-[#FFC107]" />
-                <span>TIME RANGE:</span>
-              </label>
-              <div className="flex items-center gap-1 bg-[#F1F5F9] dark:bg-[#0B0B0C] p-0.5 rounded border border-[#E2E8F0] dark:border-[#1E293B]">
-                {(['5m', '15m', '1h', '6h', '24h', 'all', 'custom'] as const).map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => setTimePreset(p)}
-                    className={`flex-1 py-1 rounded text-[10px] font-mono transition-colors cursor-pointer ${
-                      timePreset === p ? 'bg-amber-500 dark:bg-[#FFC107] text-[#0B0B0C] font-bold' : 'text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC]'
-                    }`}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Execute Query Button */}
-          <div className="md:col-span-2">
-            <BtnPrimary id="execute-graphql-historian-query-btn" onClick={runQuery} disabled={loading} className="w-full justify-center">
-              <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
-              <span>{loading ? 'Querying...' : 'Run Query'}</span>
-            </BtnPrimary>
-          </div>
-        </div>
-
-        {/* Custom Date Picker row if custom selected */}
-        {timePreset === 'custom' && mode !== 'property_nodes' && (
-          <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-[#E2E8F0] dark:border-[#1E293B] text-[10px]">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[#64748B] dark:text-[#94A3B8]">Start ISO:</span>
-              <input
-                type="datetime-local"
-                value={customStartTime}
-                onChange={(e) => setCustomStartTime(e.target.value)}
-                className="bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#CBD5E1] dark:border-[#1E293B] rounded px-2 py-0.5 text-[#0F172A] dark:text-[#F8FAFC] font-mono text-[10px]"
-              />
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-[#64748B] dark:text-[#94A3B8]">End ISO:</span>
-              <input
-                type="datetime-local"
-                value={customEndTime}
-                onChange={(e) => setCustomEndTime(e.target.value)}
-                className="bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#CBD5E1] dark:border-[#1E293B] rounded px-2 py-0.5 text-[#0F172A] dark:text-[#F8FAFC] font-mono text-[10px]"
-              />
-            </div>
-          </div>
-        )}
-
-        {errorMsg && (
-          <div className="flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
-            <AlertCircle className="size-4 shrink-0" />
-            <span>{errorMsg}</span>
-          </div>
-        )}
-      </ConsoleCard>
-
-      {mode !== 'property_nodes' && (
-        <ConsoleCard padding="none" className="h-[520px] overflow-hidden">
-          <GrafanaEmbed
-            uid={GRAFANA_DASHBOARDS.process.uid}
-            theme={isDark ? 'dark' : 'light'}
-            title="Process Visualization"
-            vars={{ topic: grafanaTopic }}
-            from={grafanaTime.from}
-            to={grafanaTime.to}
+                  <RefreshCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} />
+                  {loading ? 'Querying…' : 'Run Query'}
+                </BtnPrimary>
+              </>
+            }
           />
-        </ConsoleCard>
-      )}
 
-      <HistorianTable events={events} isLoading={loading} topicTitle={topicInput} />
-      </PageContent>
+          {timePreset === 'custom' && mode !== 'property_nodes' && (
+            <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-500">
+              <label className="flex items-center gap-1.5">
+                Start
+                <input
+                  type="datetime-local"
+                  value={customStartTime}
+                  onChange={(e) => setCustomStartTime(e.target.value)}
+                  className={`${consoleTokens.input} w-auto py-1.5 text-xs`}
+                />
+              </label>
+              <label className="flex items-center gap-1.5">
+                End
+                <input
+                  type="datetime-local"
+                  value={customEndTime}
+                  onChange={(e) => setCustomEndTime(e.target.value)}
+                  className={`${consoleTokens.input} w-auto py-1.5 text-xs`}
+                />
+              </label>
+            </div>
+          )}
+
+          {errorMsg && (
+            <div className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+              <AlertCircle className="size-3.5 shrink-0" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+
+          {mode !== 'property_nodes' && (
+            <ConsoleCard padding="none" className="h-[420px] overflow-hidden">
+              <GrafanaEmbed
+                uid={GRAFANA_DASHBOARDS.process.uid}
+                theme={isDark ? 'dark' : 'light'}
+                title="Process Visualization"
+                vars={{ topic: grafanaTopic }}
+                from={grafanaTime.from}
+                to={grafanaTime.to}
+              />
+            </ConsoleCard>
+          )}
+
+          <HistorianTable events={events} isLoading={loading} topicTitle={topicInput} />
+        </PageContent>
+      </div>
     </PageShell>
   );
 };

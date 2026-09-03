@@ -15,6 +15,10 @@ from uns_simulator.signals import SignalSpec
 
 # Dummy replacements to avoid external dependencies and network I/O
 class DummyClient:
+    # Consumed across rebuilt clients so connect() retries can still be scripted after
+    # a failed enter discards the previous instance (aiomqtt cannot reuse a poisoned one).
+    remaining_enter_failures = 0
+
     def __init__(self, *args, **kwargs):
         self.published: list[tuple[str, dict]] = []
         self.enter_count = 0
@@ -23,6 +27,9 @@ class DummyClient:
 
     async def __aenter__(self):
         self.enter_count += 1
+        if DummyClient.remaining_enter_failures > 0:
+            DummyClient.remaining_enter_failures -= 1
+            raise OSError("broker refused the connection")
         if self.fail_on_enter > 0:
             self.fail_on_enter -= 1
             raise OSError("broker refused the connection")
@@ -51,6 +58,7 @@ class FakeHierarchy:
 
 @pytest.fixture(autouse=True)
 def patch_mqtt_and_models(monkeypatch):
+    DummyClient.remaining_enter_failures = 0
     # Patch aiomqtt.Client used inside devices module
     # ensure attribute exists
     monkeypatch.setattr(devices, "aiomqtt", devices.aiomqtt)
@@ -215,8 +223,8 @@ async def test_connect_retries_with_backoff_and_counts_reconnects(monkeypatch):
         sleeps.append(seconds)
 
     monkeypatch.setattr(devices.asyncio, "sleep", fake_sleep)
+    DummyClient.remaining_enter_failures = 3
     device = AsyncMQTTDevice("dev", FakeHierarchy(), {})
-    device.client.fail_on_enter = 3
     assert await device.connect() is True
     assert device.connected is True
     assert sleeps == [1.0, 2.0, 4.0], "backoff must double"
@@ -232,8 +240,8 @@ async def test_backoff_is_capped_at_the_configured_retry_interval(monkeypatch):
 
     monkeypatch.setattr(devices.asyncio, "sleep", fake_sleep)
     monkeypatch.setattr(devices.MQTTConfig, "retry_interval", 5, raising=False)
+    DummyClient.remaining_enter_failures = 6
     device = AsyncMQTTDevice("dev", FakeHierarchy(), {})
-    device.client.fail_on_enter = 6
     await device.connect()
     assert max(sleeps) == 5.0
     assert sleeps[-1] == 5.0
