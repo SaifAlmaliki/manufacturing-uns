@@ -30,6 +30,16 @@ import { UserRole, ROLE_CONFIGS } from '../../types/rbac';
 import { AlertRuleEditorModal } from './AlertRuleEditorModal';
 import { RoleAlertMatrix } from './RoleAlertMatrix';
 import { AlarmAuditLog } from './AlarmAuditLog';
+import {
+  PageShell,
+  PageContent,
+  ConsoleCard,
+  PageStat,
+  SegmentTabs,
+  BtnPrimary,
+  BtnSecondary,
+  BtnGhost,
+} from '../ui/console-ui';
 
 type AlarmSubTab = 'active' | 'rules' | 'matrix' | 'audit';
 
@@ -138,197 +148,59 @@ export const AlarmManagementView: React.FC = () => {
     }
   };
 
+  const alarmTabs = [
+    { id: 'active', label: 'Active Incidents', icon: Bell, badge: myUnacknowledgedCount || undefined },
+    { id: 'rules', label: 'Alert Rules', icon: Sliders, badge: rules.length },
+    { id: 'matrix', label: 'Role Matrix', icon: Shield },
+    { id: 'audit', label: 'Audit Trail', icon: Clock },
+  ];
+
   return (
-    <div id="alarm-management-view" className="flex-1 flex flex-col h-full bg-[#F8FAFC] dark:bg-[#050505] text-[#0F172A] dark:text-[#F8FAFC] font-sans text-xs overflow-hidden transition-colors">
-      {/* Top Banner: Metric Statistics & Role Filter */}
-      <div className="p-3 md:p-4 bg-white dark:bg-[#111114] border-b border-[#E2E8F0] dark:border-[#1E293B] flex flex-wrap items-center justify-between gap-3 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 flex items-center justify-center text-rose-600 dark:text-rose-400">
-            <Bell className="w-5 h-5 animate-bounce" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="font-display font-bold text-sm sm:text-base text-[#0F172A] dark:text-[#F8FAFC] text-balance">
-                Alarm &amp; Alert Management
-              </h1>
-              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#F1F5F9] dark:bg-[#1E293B] text-amber-700 dark:text-[#FFC107] border border-[#E2E8F0] dark:border-[#334155]">
-                ISA-18.2 Compliant
-              </span>
+    <PageShell id="alarm-management-view" scroll={false} className="flex flex-col">
+      <PageContent className="shrink-0 space-y-4 pb-4">
+        <ConsoleCard className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-red-500/15">
+              <Bell className="size-5 text-red-400" />
             </div>
-            <p className="text-[11px] text-[#64748B] dark:text-[#94A3B8] mt-0.5 text-pretty">
-              Real-time threshold triggering, role-targeted notification routing, and incident lifecycle management.
-            </p>
-          </div>
-        </div>
-
-        {/* Global Action Tools: Audio Mute, Bulk Ack, Create Rule */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Audio Chime Mute Toggle */}
-          <button
-            id="alarm-audio-mute-toggle-btn"
-            onClick={toggleAudioMute}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-mono transition-colors cursor-pointer ${
-              isMuted
-                ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300'
-                : 'bg-white dark:bg-[#0B0B0C] border-[#CBD5E1] dark:border-[#1E293B] hover:border-amber-500 dark:hover:border-[#FFC107] text-[#64748B] hover:text-amber-700 dark:hover:text-[#FFC107]'
-            }`}
-            title={isMuted ? 'Unmute Audio Chime' : 'Mute Alarm Audio Chimes'}
-          >
-            {isMuted ? <VolumeX className="w-4 h-4 text-rose-500 dark:text-rose-400" /> : <Volume2 className="w-4 h-4 text-amber-600 dark:text-[#FFC107]" />}
-            <span className="hidden sm:inline">{isMuted ? 'Muted' : 'Audio On'}</span>
-          </button>
-
-          {/* Bulk Acknowledge */}
-          {myUnacknowledgedCount > 0 && (
-            <button
-              id="bulk-ack-alarms-btn"
-              onClick={() => bulkAcknowledgeAll()}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-600/20 hover:bg-emerald-100 dark:hover:bg-emerald-600/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/40 rounded-lg text-xs font-mono font-semibold transition-colors cursor-pointer"
-              title="Acknowledge all pending alarms for your role"
-            >
-              <CheckCheck className="w-4 h-4" />
-              <span>Ack All ({myUnacknowledgedCount})</span>
-            </button>
-          )}
-
-          {/* New Rule Button */}
-          <button
-            id="create-alert-rule-btn"
-            onClick={handleOpenCreateRule}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 dark:bg-[#FFC107] hover:bg-amber-400 dark:hover:bg-[#FFB300] text-[#0B0B0C] font-bold rounded-lg text-xs font-mono transition-colors cursor-pointer shadow-sm"
-          >
-            <Plus className="w-4 h-4" />
-            <span>New Alert Rule</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Metric Stat Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3 bg-[#F8FAFC] dark:bg-[#0B0B0C] border-b border-[#E2E8F0] dark:border-[#1E293B] shrink-0 text-xs">
-        {/* Critical Alarms */}
-        <div className="bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] rounded-lg p-2.5 flex items-center justify-between">
-          <div>
-            <div className="text-[10px] text-[#64748B] uppercase font-mono tracking-wider">Critical Alarms</div>
-            <div className={`text-base sm:text-lg font-mono font-bold tabular-nums ${criticalAlarmsCount > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-[#0F172A] dark:text-[#F8FAFC]'}`}>
-              {criticalAlarmsCount}
+            <div>
+              <h2 className="text-base font-semibold text-white">Alarm Management</h2>
+              <p className="text-sm text-zinc-500">Real-time threshold alerts and incident lifecycle</p>
             </div>
           </div>
-          <div className="w-8 h-8 rounded-lg bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 flex items-center justify-center text-rose-600 dark:text-rose-400">
-            <AlertTriangle className="w-4 h-4" />
-          </div>
-        </div>
-
-        {/* My Unacknowledged */}
-        <div className="bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] rounded-lg p-2.5 flex items-center justify-between">
-          <div>
-            <div className="text-[10px] text-[#64748B] uppercase font-mono tracking-wider">My Role Pending</div>
-            <div className={`text-base sm:text-lg font-mono font-bold tabular-nums ${myUnacknowledgedCount > 0 ? 'text-amber-600 dark:text-[#FFC107]' : 'text-[#0F172A] dark:text-[#F8FAFC]'}`}>
-              {myUnacknowledgedCount}
-            </div>
-          </div>
-          <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 flex items-center justify-center text-amber-600 dark:text-[#FFC107]">
-            <UserCheck className="w-4 h-4" />
-          </div>
-        </div>
-
-        {/* Total Active Incidents */}
-        <div className="bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] rounded-lg p-2.5 flex items-center justify-between">
-          <div>
-            <div className="text-[10px] text-[#64748B] uppercase font-mono tracking-wider">Plant Active</div>
-            <div className="text-base sm:text-lg font-mono font-bold tabular-nums text-[#0F172A] dark:text-[#F8FAFC]">
-              {activeAlarms.filter((a) => a.status !== 'RESOLVED').length}
-            </div>
-          </div>
-          <div className="w-8 h-8 rounded-lg bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#E2E8F0] dark:border-[#1E293B] flex items-center justify-center text-[#64748B] dark:text-[#94A3B8]">
-            <Bell className="w-4 h-4" />
-          </div>
-        </div>
-
-        {/* Active Rules Count */}
-        <div className="bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] rounded-lg p-2.5 flex items-center justify-between">
-          <div>
-            <div className="text-[10px] text-[#64748B] uppercase font-mono tracking-wider">Configured Rules</div>
-            <div className="text-base sm:text-lg font-mono font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
-              {rules.filter((r) => r.enabled).length} / {rules.length}
-            </div>
-          </div>
-          <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-            <Sliders className="w-4 h-4" />
-          </div>
-        </div>
-      </div>
-
-      {/* Sub-Navigation Tabs */}
-      <div className="px-3 md:px-4 bg-white dark:bg-[#111114] border-b border-[#E2E8F0] dark:border-[#1E293B] flex items-center justify-between shrink-0 overflow-x-auto scrollbar-none">
-        <div className="flex items-center gap-1 min-w-max">
-          <button
-            id="subtab-active-alarms"
-            onClick={() => setActiveSubTab('active')}
-            className={`px-3 py-2.5 border-b-2 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
-              activeSubTab === 'active'
-                ? 'border-amber-500 dark:border-[#FFC107] text-amber-700 dark:text-[#FFC107]'
-                : 'border-transparent text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC]'
-            }`}
-          >
-            <Bell className="w-3.5 h-3.5" />
-            <span>Active Incidents</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <BtnGhost onClick={toggleAudioMute} title={isMuted ? 'Unmute' : 'Mute audio'}>
+              {isMuted ? <VolumeX className="size-4 text-red-400" /> : <Volume2 className="size-4 text-[#FF7A00]" />}
+              <span>{isMuted ? 'Muted' : 'Audio On'}</span>
+            </BtnGhost>
             {myUnacknowledgedCount > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full bg-rose-500 text-white font-mono text-[9px] font-bold tabular-nums">
-                {myUnacknowledgedCount}
-              </span>
+              <BtnSecondary id="bulk-ack-alarms-btn" onClick={() => bulkAcknowledgeAll()}>
+                <CheckCheck className="size-4" />
+                Ack All ({myUnacknowledgedCount})
+              </BtnSecondary>
             )}
-          </button>
+            <BtnPrimary id="create-alert-rule-btn" onClick={handleOpenCreateRule}>
+              <Plus className="size-4" />
+              New Rule
+            </BtnPrimary>
+          </div>
+        </ConsoleCard>
 
-          <button
-            id="subtab-alert-rules"
-            onClick={() => setActiveSubTab('rules')}
-            className={`px-3 py-2.5 border-b-2 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
-              activeSubTab === 'rules'
-                ? 'border-amber-500 dark:border-[#FFC107] text-amber-700 dark:text-[#FFC107]'
-                : 'border-transparent text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC]'
-            }`}
-          >
-            <Sliders className="w-3.5 h-3.5" />
-            <span>Alert Rule Configuration</span>
-            <span className="px-1.5 py-0.2 rounded bg-[#F1F5F9] dark:bg-[#1E293B] text-[#64748B] dark:text-[#94A3B8] font-mono text-[9px] tabular-nums">
-              {rules.length}
-            </span>
-          </button>
-
-          <button
-            id="subtab-role-matrix"
-            onClick={() => setActiveSubTab('matrix')}
-            className={`px-3 py-2.5 border-b-2 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
-              activeSubTab === 'matrix'
-                ? 'border-amber-500 dark:border-[#FFC107] text-amber-700 dark:text-[#FFC107]'
-                : 'border-transparent text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC]'
-            }`}
-          >
-            <Shield className="w-3.5 h-3.5" />
-            <span>Role Trigger Matrix</span>
-          </button>
-
-          <button
-            id="subtab-alarm-audit"
-            onClick={() => setActiveSubTab('audit')}
-            className={`px-3 py-2.5 border-b-2 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
-              activeSubTab === 'audit'
-                ? 'border-amber-500 dark:border-[#FFC107] text-amber-700 dark:text-[#FFC107]'
-                : 'border-transparent text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC]'
-            }`}
-          >
-            <Clock className="w-3.5 h-3.5" />
-            <span>Alarm Audit Trail</span>
-          </button>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <PageStat label="Critical" value={criticalAlarmsCount} valueClassName={criticalAlarmsCount > 0 ? 'text-red-400' : 'text-white'} icon={<AlertTriangle className="size-5 text-red-400" />} iconBg="bg-red-500/15" />
+          <PageStat label="My Pending" value={myUnacknowledgedCount} valueClassName={myUnacknowledgedCount > 0 ? 'text-[#FF7A00]' : 'text-white'} icon={<UserCheck className="size-5 text-[#FF7A00]" />} />
+          <PageStat label="Plant Active" value={activeAlarms.filter((a) => a.status !== 'RESOLVED').length} icon={<Bell className="size-5 text-zinc-400" />} iconBg="bg-zinc-800" />
+          <PageStat label="Rules Active" value={`${rules.filter((r) => r.enabled).length} / ${rules.length}`} valueClassName="text-emerald-400" icon={<Sliders className="size-5 text-emerald-400" />} iconBg="bg-emerald-500/15" />
         </div>
-      </div>
 
-      {/* Main View Area based on SubTab */}
-      <div className="flex-1 overflow-y-auto p-3 sm:p-4 scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-[#1E293B]">
+        <SegmentTabs tabs={alarmTabs} active={activeSubTab} onChange={(id) => setActiveSubTab(id as AlarmSubTab)} />
+      </PageContent>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 md:px-6 md:pb-6">
         {activeSubTab === 'active' && (
           <div className="space-y-4">
             {/* Filter Bar */}
-            <div className="bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] rounded-lg p-3 flex flex-wrap items-center justify-between gap-3">
+            <ConsoleCard className="flex flex-wrap items-center justify-between gap-3">
               {/* Left: Role Scope Switcher */}
               <div className="flex items-center gap-1 bg-[#F1F5F9] dark:bg-[#0B0B0C] p-1 rounded-lg border border-[#E2E8F0] dark:border-[#1E293B]">
                 <button
@@ -386,7 +258,7 @@ export const AlarmManagementView: React.FC = () => {
                   Clear Resolved
                 </button>
               </div>
-            </div>
+            </ConsoleCard>
 
             {/* Alarms List */}
             {displayedAlarms.length === 0 ? (
@@ -847,6 +719,6 @@ export const AlarmManagementView: React.FC = () => {
           </div>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 };

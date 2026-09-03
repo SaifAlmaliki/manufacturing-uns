@@ -55,7 +55,7 @@ export const LandingView: React.FC = () => {
       login(roleId);
     }
     if (isAuthenticated || roleId) {
-      navigate('/tree');
+      navigate('/dashboard');
     } else {
       navigate('/login');
     }

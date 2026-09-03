@@ -11,6 +11,13 @@ import {
 import { SparkplugNode, SparkplugMetric } from '../../types/uns';
 import { unsGraphQLClient } from '../../services/graphql/client';
 import { useUNS } from '../../context/UNSContext';
+import {
+  PageShell,
+  PageContent,
+  ConsoleCard,
+  ConsoleInput,
+  BtnPrimary,
+} from '../ui/console-ui';
 
 export const SparkplugView: React.FC = () => {
   const { jumpToTopicInTree, sparkplugInitialMetric } = useUNS();
@@ -79,53 +86,43 @@ export const SparkplugView: React.FC = () => {
   };
 
   return (
-    <div id="sparkplug-explorer-view" className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#050505] text-[#F8FAFC] font-mono text-xs">
-      {/* Top Banner & SCADA Host Clarification */}
-      <div className="bg-[#111114] border border-[#1E293B] rounded-lg p-4 space-y-3 shadow-lg">
-        <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[#1E293B]">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded bg-[#0B0B0C] border border-[#1E293B] flex items-center justify-center text-purple-400">
-              <Radio className="w-4 h-4" />
+    <PageShell id="sparkplug-explorer-view">
+      <PageContent className="space-y-4">
+      <ConsoleCard className="space-y-4">
+        <div className="flex flex-col gap-4 border-b border-zinc-800 pb-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#FF7A00]/15">
+              <Radio className="size-5 text-[#FF7A00]" />
             </div>
             <div>
-              <h2 className="font-bold text-[#F8FAFC] text-xs uppercase tracking-wider">Sparkplug B Explorer</h2>
-              <p className="text-[10px] text-[#64748B] font-mono">
-                Decoded edge nodes &amp; metrics from 07_uns_graphql Sparkplug mapper
-              </p>
+              <h2 className="text-base font-semibold text-white">Sparkplug B</h2>
+              <p className="text-sm text-zinc-500">Decoded edge nodes and metrics from GraphQL</p>
             </div>
           </div>
-
-          {/* Hard Rule Notice */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-purple-950/30 border border-purple-800/40 text-[10px] text-purple-300">
-            <Shield className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-            <span>Mapper is Telemetry-Only • UI does NOT issue NCMD/DCMD</span>
+          <div className="flex items-center gap-1.5 rounded-xl border border-purple-500/30 bg-purple-500/10 px-3 py-1.5 text-xs text-purple-300">
+            <Shield className="size-3.5 shrink-0" />
+            <span>Telemetry-only — no NCMD/DCMD</span>
           </div>
         </div>
 
-        {/* Search & Filter Bar */}
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 min-w-[240px]">
-            <Search className="w-3.5 h-3.5 text-[#64748B] absolute left-2.5 top-2 pointer-events-none" />
-            <input
+          <div className="relative min-w-[240px] flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-500" />
+            <ConsoleInput
               type="text"
               value={metricQuery}
               onChange={(e) => setMetricQuery(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && fetchSpbData()}
               placeholder="Search by metric name, ISA-95 path, or alias..."
-              className="w-full bg-[#0B0B0C] border border-[#1E293B] rounded pl-8 pr-3 py-1.5 text-[#F8FAFC] text-[11px] focus:outline-none focus:border-[#FFC107]"
+              className="pl-9"
             />
           </div>
-
-          <button
-            onClick={fetchSpbData}
-            disabled={loading}
-            className="px-3 py-1.5 bg-[#FFC107] hover:bg-[#FFB300] disabled:opacity-50 text-[#0B0B0C] font-bold rounded transition-colors flex items-center gap-1.5 cursor-pointer font-mono text-xs"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            <span>Search Metrics</span>
-          </button>
+          <BtnPrimary onClick={fetchSpbData} disabled={loading}>
+            <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
+            Search Metrics
+          </BtnPrimary>
         </div>
-      </div>
+      </ConsoleCard>
 
       {/* Edge Nodes & Metrics List */}
       <div className="space-y-4">
@@ -290,6 +287,7 @@ export const SparkplugView: React.FC = () => {
           </div>
         </div>
       )}
-    </div>
+      </PageContent>
+    </PageShell>
   );
 };

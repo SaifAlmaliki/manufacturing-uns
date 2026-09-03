@@ -13,7 +13,6 @@ export const AppLayout: React.FC = () => {
   const { health, allLoadedNodes, staleNodesCount, setActiveTab } = useUNS();
   const { canAccessTab } = useAuth();
 
-  // Desktop sidebar collapse preference (stored in localStorage)
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
     try {
       return localStorage.getItem('uns_sidebar_collapsed') === 'true';
@@ -22,16 +21,12 @@ export const AppLayout: React.FC = () => {
     }
   });
 
-  // Mobile/Tablet drawer state
   const [isMobileOpen, setIsMobileOpen] = useState(false);
-
-  // Drawers
   const [isBookmarksOpen, setIsBookmarksOpen] = useState(false);
   const [isStaleDrawerOpen, setIsStaleDrawerOpen] = useState(false);
 
-  // Map route to tab ID for RBAC checks
   const getTabIdFromPath = (path: string): string => {
-    if (path === '/' || path.startsWith('/tree')) return 'home';
+    if (path === '/dashboard' || path === '/tree') return 'home';
     if (path.startsWith('/alerts')) return 'alarms';
     if (path.startsWith('/historian')) return 'explore';
     if (path.startsWith('/sparkplug')) return 'sparkplug';
@@ -45,12 +40,10 @@ export const AppLayout: React.FC = () => {
   const currentTabId = getTabIdFromPath(location.pathname);
   const tabAccess = canAccessTab(currentTabId);
 
-  // Keep activeTab in sync with route
   useEffect(() => {
-    setActiveTab(currentTabId as any);
+    setActiveTab(currentTabId as Parameters<typeof setActiveTab>[0]);
   }, [currentTabId, setActiveTab]);
 
-  // Handle toggle desktop collapse
   const handleToggleCollapse = () => {
     setIsCollapsed((prev) => {
       const next = !prev;
@@ -63,9 +56,11 @@ export const AppLayout: React.FC = () => {
     });
   };
 
+  const connectionLabel =
+    health.status === 'LIVE' ? 'Connected' : health.status === 'DEGRADED' ? 'Degraded' : 'Offline';
+
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#F8FAFC] dark:bg-[#050505] text-[#0F172A] dark:text-[#E2E8F0] font-sans select-none text-[11px] transition-colors duration-150">
-      {/* Left Application Sidebar / Left Menu */}
+    <div className="flex h-dvh w-screen overflow-hidden bg-[#0a0a0b] text-zinc-100 font-sans">
       <Sidebar
         isCollapsed={isCollapsed}
         onToggleCollapse={handleToggleCollapse}
@@ -75,23 +70,20 @@ export const AppLayout: React.FC = () => {
         onOpenStaleDrawer={() => setIsStaleDrawerOpen(true)}
       />
 
-      {/* Main Content Pane */}
-      <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden bg-[#F8FAFC] dark:bg-[#050505]">
-        {/* Responsive Header Bar */}
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Header
           onOpenBookmarks={() => setIsBookmarksOpen(true)}
           onOpenStaleDrawer={() => setIsStaleDrawerOpen(true)}
           onToggleMobileSidebar={() => setIsMobileOpen((prev) => !prev)}
         />
 
-        {/* Dynamic Route View Content with Zero-Trust RBAC Guard */}
-        <main className="flex-1 flex overflow-hidden min-h-0 bg-[#F8FAFC] dark:bg-[#050505]">
+        <main className="flex min-h-0 flex-1 overflow-hidden bg-[#0a0a0b]">
           {!tabAccess.allowed ? (
             <AccessRestricted
               featureKey={tabAccess.requiredFeature}
               featureName={tabAccess.featureName}
               onNavigateHome={() => {
-                window.location.hash = '#/tree';
+                window.location.hash = '#/dashboard';
               }}
             />
           ) : (
@@ -99,38 +91,45 @@ export const AppLayout: React.FC = () => {
           )}
         </main>
 
-        {/* Industrial High Density Status Footer */}
-        <footer className="h-6 bg-[#FFFFFF] dark:bg-[#111114] border-t border-[#E2E8F0] dark:border-[#1E293B] px-3 md:px-4 flex items-center justify-between text-[9px] uppercase tracking-wider text-[#64748B] font-mono shrink-0 select-none shadow-sm">
-          <div className="flex items-center gap-3 sm:gap-4">
-            <span className="text-[#334155] dark:text-[#94A3B8] font-medium">GQL: 8000</span>
-            <span className="hidden sm:inline text-[#64748B]">VITE: 3000</span>
-            <span className="hidden md:inline text-[#64748B]">SCHEMA: 2026.08.28-v2</span>
-            <span className="text-emerald-600 dark:text-emerald-400 font-bold">MODE: {health.mode}</span>
+        <footer className="flex h-8 shrink-0 items-center justify-between border-t border-zinc-800/80 bg-[#111114] px-4 text-xs text-zinc-500">
+          <div className="flex items-center gap-3">
+            <span
+              className={`flex items-center gap-1.5 font-medium ${
+                health.status === 'LIVE'
+                  ? 'text-emerald-500'
+                  : health.status === 'DEGRADED'
+                    ? 'text-amber-500'
+                    : 'text-red-500'
+              }`}
+            >
+              <span
+                className={`size-1.5 rounded-full ${
+                  health.status === 'LIVE'
+                    ? 'bg-emerald-500'
+                    : health.status === 'DEGRADED'
+                      ? 'bg-amber-500'
+                      : 'bg-red-500'
+                }`}
+              />
+              {connectionLabel}
+            </span>
+            <span className="hidden text-zinc-600 sm:inline">·</span>
+            <span className="hidden tabular-nums sm:inline">
+              {allLoadedNodes.length} nodes
+            </span>
           </div>
 
-          <div className="flex items-center gap-3 sm:gap-4">
-            <span className="flex items-center gap-1.5 text-emerald-600 dark:text-[#10B981] font-semibold">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-[#10B981] animate-pulse" />
-              <span className="hidden sm:inline">Connected to UNS Backend</span>
-              <span className="sm:hidden">Connected</span>
-            </span>
-            <span className="text-[#334155] dark:text-[#94A3B8] font-medium">Nodes: {allLoadedNodes.length || 28}</span>
+          <div className="flex items-center gap-3 tabular-nums">
             {staleNodesCount > 0 && (
-              <span className="text-amber-600 dark:text-[#FFC107] font-bold">Stale: {staleNodesCount}</span>
+              <span className="font-medium text-amber-500">{staleNodesCount} stale</span>
             )}
+            <span className="hidden text-zinc-600 md:inline">Mode: {health.mode}</span>
           </div>
         </footer>
       </div>
 
-      {/* Global Slide-Over Drawers */}
-      <BookmarksDrawer
-        isOpen={isBookmarksOpen}
-        onClose={() => setIsBookmarksOpen(false)}
-      />
-      <StaleNodesDrawer
-        isOpen={isStaleDrawerOpen}
-        onClose={() => setIsStaleDrawerOpen(false)}
-      />
+      <BookmarksDrawer isOpen={isBookmarksOpen} onClose={() => setIsBookmarksOpen(false)} />
+      <StaleNodesDrawer isOpen={isStaleDrawerOpen} onClose={() => setIsStaleDrawerOpen(false)} />
     </div>
   );
 };

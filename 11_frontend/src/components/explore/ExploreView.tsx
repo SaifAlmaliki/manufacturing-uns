@@ -14,8 +14,8 @@ import {
 } from 'lucide-react';
 import { useUNS } from '../../context/UNSContext';
 import { HistoricEvent, UnsNode, BinaryOperator } from '../../types/uns';
-import { unsGraphQLClient } from '../../services/graphql/client';
 import { HistorianTable } from './HistorianTable';
+import { unsGraphQLClient } from '../../services/graphql/client';
 import { historianTopic } from '../../lib/uns/topics';
 import { useTheme } from '../../context/ThemeContext';
 import {
@@ -24,6 +24,16 @@ import {
   grafanaRangeFromPreset,
   grafanaTopicFilter,
 } from '../common/GrafanaEmbed';
+import {
+  PageShell,
+  PageContent,
+  ConsoleCard,
+  SegmentTabs,
+  ConsoleInput,
+  ConsoleSelect,
+  BtnPrimary,
+  consoleTokens,
+} from '../ui/console-ui';
 
 type QueryMode = 'topic_time' | 'publishers' | 'property_event' | 'property_nodes';
 type TimePreset = '5m' | '15m' | '1h' | '6h' | '24h' | 'all' | 'custom';
@@ -161,54 +171,32 @@ export const ExploreView: React.FC = () => {
       : grafanaRangeFromPreset(timePreset);
   const grafanaTopic = grafanaTopicFilter(topicInput) || 'CovestroAG';
 
-  return (
-    <div id="explore-historian-view" className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#F8FAFC] dark:bg-[#050505] text-[#0F172A] dark:text-[#F8FAFC] font-mono text-xs transition-colors">
-      {/* Top Query Builder Card */}
-      <div className="bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] rounded-lg p-4 space-y-3 shadow-lg">
-        {/* Mode Selector Tabs */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[#E2E8F0] dark:border-[#1E293B]">
-          <div className="flex items-center gap-2">
-            <Database className="w-4 h-4 text-amber-600 dark:text-[#FFC107]" />
-            <span className="font-bold text-[#0F172A] dark:text-[#F8FAFC] text-xs uppercase tracking-wider font-mono">
-              Timescale Historian &amp; UNS Explorer
-            </span>
-          </div>
+  const modeTabs = [
+    { id: 'topic_time', label: 'By Topic' },
+    { id: 'publishers', label: 'By Publisher' },
+    { id: 'property_event', label: 'By Property' },
+    { id: 'property_nodes', label: 'Nodes by Property' },
+  ];
 
-          {/* Mode Tabs */}
-          <div className="flex flex-wrap items-center gap-1 bg-[#F1F5F9] dark:bg-[#0B0B0C] p-1 rounded border border-[#E2E8F0] dark:border-[#1E293B]">
-            <button
-              onClick={() => setMode('topic_time')}
-              className={`px-2.5 py-1 rounded text-[10px] font-mono transition-colors cursor-pointer ${
-                mode === 'topic_time' ? 'bg-amber-500 dark:bg-[#FFC107] text-[#0B0B0C] font-bold' : 'text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC]'
-              }`}
-            >
-              getHistoricEvents (Topic + Time)
-            </button>
-            <button
-              onClick={() => setMode('publishers')}
-              className={`px-2.5 py-1 rounded text-[10px] font-mono transition-colors cursor-pointer ${
-                mode === 'publishers' ? 'bg-amber-500 dark:bg-[#FFC107] text-[#0B0B0C] font-bold' : 'text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC]'
-              }`}
-            >
-              getHistoricEventsByPublishers
-            </button>
-            <button
-              onClick={() => setMode('property_event')}
-              className={`px-2.5 py-1 rounded text-[10px] font-mono transition-colors cursor-pointer ${
-                mode === 'property_event' ? 'bg-amber-500 dark:bg-[#FFC107] text-[#0B0B0C] font-bold' : 'text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC]'
-              }`}
-            >
-              getHistoricEventsByProperty
-            </button>
-            <button
-              onClick={() => setMode('property_nodes')}
-              className={`px-2.5 py-1 rounded text-[10px] font-mono transition-colors cursor-pointer ${
-                mode === 'property_nodes' ? 'bg-amber-500 dark:bg-[#FFC107] text-[#0B0B0C] font-bold' : 'text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC]'
-              }`}
-            >
-              getUnsNodesByProperty
-            </button>
+  return (
+    <PageShell id="explore-historian-view">
+      <PageContent className="space-y-4">
+      <ConsoleCard className="space-y-4">
+        <div className="flex flex-col gap-4 border-b border-zinc-800 pb-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#FF7A00]/15">
+              <Database className="size-5 text-[#FF7A00]" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-white">Historian Explorer</h2>
+              <p className="text-sm text-zinc-500">Query historic events from TimescaleDB</p>
+            </div>
           </div>
+          <SegmentTabs
+            tabs={modeTabs}
+            active={mode}
+            onChange={(id) => setMode(id as QueryMode)}
+          />
         </div>
 
         {/* Dynamic Form Inputs according to Mode */}
@@ -225,7 +213,7 @@ export const ExploreView: React.FC = () => {
                 value={topicInput}
                 onChange={(e) => setTopicInput(e.target.value)}
                 placeholder="e.g. CovestroAG/Dormagen/.../telemetry"
-                className="w-full bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#CBD5E1] dark:border-[#1E293B] rounded px-2.5 py-1.5 text-[#0F172A] dark:text-[#F8FAFC] text-[11px] focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107]"
+                className={consoleTokens.input}
               />
             </div>
           )}
@@ -242,7 +230,7 @@ export const ExploreView: React.FC = () => {
                 value={publishersInput}
                 onChange={(e) => setPublishersInput(e.target.value)}
                 placeholder="edge:siemens_s7_1500, edge:beckhoff_twincat"
-                className="w-full bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#CBD5E1] dark:border-[#1E293B] rounded px-2.5 py-1.5 text-[#0F172A] dark:text-[#F8FAFC] text-[11px] focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107]"
+                className={consoleTokens.input}
               />
             </div>
           )}
@@ -257,7 +245,7 @@ export const ExploreView: React.FC = () => {
                   value={propKeysInput}
                   onChange={(e) => setPropKeysInput(e.target.value)}
                   placeholder="site, cell_id"
-                  className="w-full bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#CBD5E1] dark:border-[#1E293B] rounded px-2.5 py-1.5 text-[#0F172A] dark:text-[#F8FAFC] text-[11px] focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107]"
+                  className={consoleTokens.input}
                 />
               </div>
               <div className="md:col-span-2 space-y-1">
@@ -265,7 +253,7 @@ export const ExploreView: React.FC = () => {
                 <select
                   value={propOperator}
                   onChange={(e) => setPropOperator(e.target.value as BinaryOperator)}
-                  className="w-full bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#CBD5E1] dark:border-[#1E293B] rounded px-2 py-1.5 text-[#0F172A] dark:text-[#F8FAFC] text-[11px] focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107]"
+                  className={consoleTokens.input}
                 >
                   <option value="OR">OR</option>
                   <option value="AND">AND</option>
@@ -284,7 +272,7 @@ export const ExploreView: React.FC = () => {
                   value={propKeysInput}
                   onChange={(e) => setPropKeysInput(e.target.value)}
                   placeholder="site, standard"
-                  className="w-full bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#CBD5E1] dark:border-[#1E293B] rounded px-2.5 py-1.5 text-[#0F172A] dark:text-[#F8FAFC] text-[11px] focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107]"
+                  className={consoleTokens.input}
                 />
               </div>
               <div className="md:col-span-4 space-y-1">
@@ -294,7 +282,7 @@ export const ExploreView: React.FC = () => {
                   value={excludeTopicsInput}
                   onChange={(e) => setExcludeTopicsInput(e.target.value)}
                   placeholder="spBv1.0/#"
-                  className="w-full bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#CBD5E1] dark:border-[#1E293B] rounded px-2.5 py-1.5 text-[#0F172A] dark:text-[#F8FAFC] text-[11px] focus:outline-none focus:border-amber-500 dark:focus:border-[#FFC107]"
+                  className={consoleTokens.input}
                 />
               </div>
             </>
@@ -325,15 +313,10 @@ export const ExploreView: React.FC = () => {
 
           {/* Execute Query Button */}
           <div className="md:col-span-2">
-            <button
-              id="execute-graphql-historian-query-btn"
-              onClick={runQuery}
-              disabled={loading}
-              className="w-full bg-amber-500 dark:bg-[#FFC107] hover:bg-amber-600 dark:hover:bg-[#FFB300] text-[#0B0B0C] font-bold py-1.5 rounded transition-colors flex items-center justify-center gap-1.5 cursor-pointer font-mono text-xs"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <BtnPrimary id="execute-graphql-historian-query-btn" onClick={runQuery} disabled={loading} className="w-full justify-center">
+              <RefreshCw className={`size-4 ${loading ? 'animate-spin' : ''}`} />
               <span>{loading ? 'Querying...' : 'Run Query'}</span>
-            </button>
+            </BtnPrimary>
           </div>
         </div>
 
@@ -362,19 +345,15 @@ export const ExploreView: React.FC = () => {
         )}
 
         {errorMsg && (
-          <div className="p-2.5 rounded bg-rose-950/40 border border-rose-800 text-rose-300 flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0" />
+          <div className="flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
+            <AlertCircle className="size-4 shrink-0" />
             <span>{errorMsg}</span>
           </div>
         )}
-      </div>
+      </ConsoleCard>
 
-      {/* Grafana Process Visualization — ADR-0002: GraphQL does not serve bucketed trends. */}
       {mode !== 'property_nodes' && (
-        <div
-          id="historian-grafana-trend"
-          className="h-[520px] rounded-lg overflow-hidden border border-[#E2E8F0] dark:border-[#1E293B] bg-[#111114]"
-        >
+        <ConsoleCard padding="none" className="h-[520px] overflow-hidden">
           <GrafanaEmbed
             uid={GRAFANA_DASHBOARDS.process.uid}
             theme={isDark ? 'dark' : 'light'}
@@ -383,11 +362,11 @@ export const ExploreView: React.FC = () => {
             from={grafanaTime.from}
             to={grafanaTime.to}
           />
-        </div>
+        </ConsoleCard>
       )}
 
-      {/* Historical Data Table with CSV Export */}
       <HistorianTable events={events} isLoading={loading} topicTitle={topicInput} />
-    </div>
+      </PageContent>
+    </PageShell>
   );
 };

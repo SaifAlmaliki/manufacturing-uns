@@ -1,28 +1,26 @@
-import React from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import React, { useState } from 'react';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
+  LayoutDashboard,
   Layers,
+  Bell,
   Search,
   Radio,
   Workflow,
   Activity,
   Shield,
+  FlaskConical,
   Lock,
+  X,
   ChevronLeft,
   ChevronRight,
-  Database,
-  Server,
-  Zap,
-  Bookmark,
-  AlertTriangle,
-  X,
-  Bell,
-  FlaskConical,
+  Command,
 } from 'lucide-react';
 import { useUNS } from '../../context/UNSContext';
 import { useAuth } from '../../context/AuthContext';
 import { useAlarms } from '../../context/AlarmContext';
 import { FeatureKey } from '../../types/rbac';
+import { UserSessionMenu } from '../common/UserSessionMenu';
 
 interface SidebarProps {
   isCollapsed: boolean;
@@ -33,199 +31,107 @@ interface SidebarProps {
   onOpenStaleDrawer: () => void;
 }
 
-interface NavSectionItem {
+interface NavItem {
   to: string;
   tabId: string;
   label: string;
-  shortLabel: string;
   icon: React.FC<{ className?: string }>;
-  description: string;
   featureKey: FeatureKey;
-  badge?: string | number;
   adminOnly?: boolean;
 }
+
+const MAIN_MENU: NavItem[] = [
+  { to: '/dashboard', tabId: 'home', label: 'Dashboard', icon: LayoutDashboard, featureKey: 'uns_tree' },
+  { to: '/tree', tabId: 'home', label: 'UNS Tree', icon: Layers, featureKey: 'uns_tree' },
+  { to: '/alerts', tabId: 'alarms', label: 'Alarms', icon: Bell, featureKey: 'alarms' },
+  { to: '/historian', tabId: 'explore', label: 'Historian', icon: Search, featureKey: 'historian' },
+  { to: '/sparkplug', tabId: 'sparkplug', label: 'Sparkplug B', icon: Radio, featureKey: 'sparkplug' },
+  { to: '/streams', tabId: 'streams', label: 'Streams', icon: Workflow, featureKey: 'streams' },
+];
+
+const PLATFORM_MENU: NavItem[] = [
+  { to: '/system', tabId: 'system', label: 'System Health', icon: Activity, featureKey: 'system_ops' },
+  { to: '/simulator', tabId: 'simulator', label: 'Simulator', icon: FlaskConical, featureKey: 'simulator_ops' },
+  { to: '/users', tabId: 'users', label: 'Users & Access', icon: Shield, featureKey: 'user_management', adminOnly: true },
+];
 
 export const Sidebar: React.FC<SidebarProps> = ({
   isCollapsed,
   onToggleCollapse,
   isMobileOpen,
   onCloseMobile,
-  onOpenBookmarks,
-  onOpenStaleDrawer,
 }) => {
   const location = useLocation();
-  const { allLoadedNodes, bookmarks, staleNodesCount, health, settings } = useUNS();
-  const { canAccessTab, currentUser, isAdmin } = useAuth();
+  const navigate = useNavigate();
+  const { settings, health } = useUNS();
+  const { canAccessTab, isAdmin } = useAuth();
   const { myUnacknowledgedCount } = useAlarms();
+  const [searchQuery, setSearchQuery] = useState('');
 
-  const coreNavItems: NavSectionItem[] = [
-    {
-      to: '/tree',
-      tabId: 'home',
-      label: 'UNS Tree & Graph',
-      shortLabel: 'UNS Tree',
-      icon: Layers,
-      description: 'ISA-95 Namespace Hierarchy',
-      featureKey: 'uns_tree',
-      badge: allLoadedNodes.length > 0 ? allLoadedNodes.length : undefined,
-    },
-    {
-      to: '/alerts',
-      tabId: 'alarms',
-      label: 'Alarm Management',
-      shortLabel: 'Alarms',
-      icon: Bell,
-      description: 'Role-Based Alert Rules',
-      featureKey: 'alarms',
-      badge: myUnacknowledgedCount > 0 ? myUnacknowledgedCount : undefined,
-    },
-    {
-      to: '/historian',
-      tabId: 'explore',
-      label: 'Historian Explorer',
-      shortLabel: 'Historian',
-      icon: Search,
-      description: 'TimescaleDB Historic Events',
-      featureKey: 'historian',
-      badge: 'Timescale',
-    },
-    {
-      to: '/sparkplug',
-      tabId: 'sparkplug',
-      label: 'Sparkplug B Decoder',
-      shortLabel: 'Sparkplug B',
-      icon: Radio,
-      description: 'Edge Protobuf & Metrics',
-      featureKey: 'sparkplug',
-      badge: 'v1.0',
-    },
-    {
-      to: '/streams',
-      tabId: 'streams',
-      label: 'Kafka Event Streams',
-      shortLabel: 'Kafka',
-      icon: Workflow,
-      description: 'Live Topic Streaming',
-      featureKey: 'streams',
-      badge: 'Live',
-    },
-  ];
+  const isActive = (item: NavItem) => {
+    if (item.to === '/dashboard') {
+      return location.pathname === '/dashboard';
+    }
+    if (item.to === '/tree') {
+      return location.pathname === '/tree';
+    }
+    return location.pathname === item.to || location.pathname.startsWith(`${item.to}/`);
+  };
 
-  const opsNavItems: NavSectionItem[] = [
-    {
-      to: '/system',
-      tabId: 'system',
-      label: 'System Operations',
-      shortLabel: 'System Ops',
-      icon: Activity,
-      description: 'Grafana: platform, process, OEE',
-      featureKey: 'system_ops',
-    },
-    {
-      to: '/simulator',
-      tabId: 'simulator',
-      label: 'Simulator Control',
-      shortLabel: 'Simulator',
-      icon: FlaskConical,
-      description: 'Synthetic Plant Data Generator',
-      featureKey: 'simulator_ops',
-      badge: 'SIM',
-    },
-    {
-      to: '/users',
-      tabId: 'users',
-      label: 'Users & RBAC Console',
-      shortLabel: 'Users & RBAC',
-      icon: Shield,
-      description: 'Role-Based Access Control',
-      featureKey: 'user_management',
-      badge: 'ADMIN',
-      adminOnly: true,
-    },
-  ];
+  const filteredMain = MAIN_MENU.filter((item) => {
+    if (!searchQuery) return true;
+    return item.label.toLowerCase().includes(searchQuery.toLowerCase());
+  });
 
-  const renderNavLink = (item: NavSectionItem) => {
+  const filteredPlatform = PLATFORM_MENU.filter((item) => {
+    if (item.adminOnly && !isAdmin) return false;
+    if (!searchQuery) return true;
+    return item.label.toLowerCase().includes(searchQuery.toLowerCase());
+  });
+
+  const renderNavItem = (item: NavItem) => {
     const Icon = item.icon;
     const access = canAccessTab(item.tabId);
-    const isLocked = !access.allowed;
-    const isActive = location.pathname === item.to || (item.to === '/tree' && location.pathname === '/');
+    const locked = !access.allowed;
+    const active = isActive(item);
+    const showAlarmDot = item.tabId === 'alarms' && myUnacknowledgedCount > 0;
+
+    const handleClick = (e: React.MouseEvent) => {
+      if (locked) {
+        e.preventDefault();
+        return;
+      }
+      onCloseMobile();
+    };
 
     return (
       <NavLink
-        key={item.to}
-        to={item.to}
-        onClick={onCloseMobile}
-        id={`sidebar-link-${item.tabId}`}
-        className={`group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-mono transition-all duration-150 cursor-pointer ${
-          isActive
-            ? 'bg-amber-500 dark:bg-[#FFC107] text-slate-950 dark:text-[#0B0B0C] font-bold shadow-xs'
-            : isLocked
-            ? 'text-slate-400 dark:text-[#64748B] hover:text-slate-600 dark:hover:text-[#94A3B8] hover:bg-slate-100 dark:hover:bg-[#1E293B]/40'
-            : 'text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC] hover:bg-slate-100 dark:hover:bg-[#1E293B]'
-        } ${isCollapsed ? 'justify-center px-2' : ''}`}
-        title={isCollapsed ? `${item.label} - ${item.description}` : undefined}
+        key={`${item.to}-${item.label}`}
+        to={locked ? '#' : item.to}
+        onClick={handleClick}
+        className={`group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
+          active
+            ? 'bg-[#FF7A00] text-white'
+            : locked
+              ? 'text-zinc-500 cursor-not-allowed'
+              : 'text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-100'
+        } ${isCollapsed ? 'justify-center px-2.5' : ''}`}
+        title={isCollapsed ? item.label : undefined}
       >
-        {/* Active Route Bar Indicator on Left Edge */}
-        {isActive && (
-          <div className="absolute left-0 top-1.5 bottom-1.5 w-1 bg-slate-950 dark:bg-[#0B0B0C] rounded-r" />
-        )}
-
-        <div className="relative shrink-0 flex items-center justify-center">
-          <Icon
-            className={`w-4 h-4 transition-transform group-hover:scale-110 ${
-              isActive ? 'text-slate-950 dark:text-[#0B0B0C]' : isLocked ? 'text-slate-400 dark:text-[#475569]' : 'text-amber-600 dark:text-[#FFC107]'
-            }`}
-          />
-          {isLocked && (
-            <div className="absolute -top-1 -right-1 bg-white dark:bg-[#0B0B0C] rounded-full p-0.5 border border-rose-300 dark:border-rose-600/50">
-              <Lock className="w-2.5 h-2.5 text-rose-500 dark:text-rose-400" />
-            </div>
-          )}
-        </div>
-
-        {/* Text and Badges (Hidden when desktop collapsed) */}
+        <Icon className={`size-[18px] shrink-0 ${active ? 'text-white' : locked ? 'text-zinc-600' : 'text-zinc-400 group-hover:text-zinc-200'}`} />
         {!isCollapsed && (
-          <div className="flex-1 min-w-0 flex items-center justify-between">
-            <div className="min-w-0">
-              <div className="truncate font-serif font-bold tracking-tight text-[12px] leading-tight">
-                {item.label}
-              </div>
-              <div
-                className={`text-[9px] font-sans truncate transition-colors ${
-                  isActive ? 'text-slate-900/80 dark:text-[#0B0B0C]/75 font-medium' : 'text-[#64748B]'
-                }`}
-              >
-                {item.description}
-              </div>
-            </div>
-
-            {item.badge && (
-              <span
-                className={`ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0 uppercase tracking-wider ${
-                  isActive
-                    ? 'bg-slate-950 dark:bg-[#0B0B0C] text-amber-400 dark:text-[#FFC107]'
-                    : item.badge === 'ADMIN'
-                    ? 'bg-rose-50 dark:bg-rose-950/80 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300'
-                    : item.badge === 'Live'
-                    ? 'bg-emerald-50 dark:bg-emerald-950/80 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
-                    : 'bg-slate-100 dark:bg-[#0B0B0C] border border-[#CBD5E1] dark:border-[#1E293B] text-slate-700 dark:text-[#94A3B8]'
-                }`}
-              >
-                {item.badge}
+          <>
+            <span className="flex-1 truncate">{item.label}</span>
+            {locked && <Lock className="size-3.5 text-zinc-600" />}
+            {showAlarmDot && !locked && (
+              <span className="flex size-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-semibold text-white tabular-nums">
+                {myUnacknowledgedCount > 9 ? '9+' : myUnacknowledgedCount}
               </span>
             )}
-          </div>
+          </>
         )}
-
-        {/* Tooltip for collapsed view */}
-        {isCollapsed && (
-          <div className="hidden group-hover:block absolute left-full ml-2.5 px-2.5 py-1.5 bg-white dark:bg-[#1E293B] text-[#0F172A] dark:text-[#F8FAFC] text-[11px] rounded shadow-xl whitespace-nowrap z-50 border border-[#CBD5E1] dark:border-[#334155] font-mono pointer-events-none">
-            <div className="font-bold flex items-center gap-1.5">
-              <span>{item.label}</span>
-              {isLocked && <span className="text-rose-600 dark:text-rose-400 text-[9px]">(Locked)</span>}
-            </div>
-            <div className="text-[9px] text-[#64748B] dark:text-[#94A3B8]">{item.description}</div>
-          </div>
+        {isCollapsed && showAlarmDot && !locked && (
+          <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-red-500" />
         )}
       </NavLink>
     );
@@ -234,199 +140,137 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const sidebarContent = (
     <aside
       id="application-left-menu"
-      className={`h-full flex flex-col bg-[#FFFFFF] dark:bg-[#111114] border-r border-[#E2E8F0] dark:border-[#1E293B] select-none text-xs font-mono transition-all duration-200 ${
-        isCollapsed ? 'w-16' : 'w-64'
+      className={`flex h-full flex-col bg-[#111114] border-r border-zinc-800/80 select-none transition-all duration-200 ${
+        isCollapsed ? 'w-[72px]' : 'w-[260px]'
       }`}
     >
-      {/* Sidebar Header / Brand */}
-      <div className="h-13 border-b border-[#E2E8F0] dark:border-[#1E293B] px-3.5 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-6 h-6 bg-amber-500 dark:bg-[#FFC107] rounded flex items-center justify-center shadow-xs shrink-0">
-            <div className="w-2.5 h-2.5 bg-slate-950 dark:bg-[#0B0B0C] rounded-full" />
+      {/* Brand */}
+      <div className="flex h-16 shrink-0 items-center justify-between border-b border-zinc-800/80 px-4">
+        <div className={`flex items-center gap-3 min-w-0 ${isCollapsed ? 'justify-center w-full' : ''}`}>
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[#FF7A00]">
+            <span className="text-lg font-bold text-white">U</span>
           </div>
-
           {!isCollapsed && (
             <div className="min-w-0 leading-tight">
-              <span className="font-serif font-bold tracking-tight text-sm text-[#0F172A] dark:text-[#F8FAFC] block">
-                UNS<span className="text-amber-600 dark:text-[#FFC107]">CONSOLE</span>
-              </span>
-              <span className="text-[#64748B] text-[9px] font-sans font-normal tracking-wide block truncate">
-                {settings.organization || 'IIoT Unified Namespace'}
-              </span>
+              <div className="truncate text-[15px] font-semibold text-white">UNS Console</div>
+              <div className="truncate text-xs text-zinc-500">
+                {settings.organization || 'Smart Manufacturing'}
+              </div>
             </div>
           )}
         </div>
-
-        {/* Mobile close button or Desktop collapse toggle */}
-        <div className="flex items-center gap-1">
-          {/* Mobile Drawer Close */}
+        {!isCollapsed && (
           <button
             onClick={onCloseMobile}
-            className="lg:hidden p-1 rounded hover:bg-slate-100 dark:hover:bg-[#1E293B] text-[#64748B] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC] cursor-pointer"
-            title="Close navigation"
+            className="lg:hidden rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
+            aria-label="Close navigation"
           >
-            <X className="w-4 h-4" />
+            <X className="size-4" />
           </button>
-
-          {/* Desktop Collapse Rail Toggle */}
-          <button
-            onClick={onToggleCollapse}
-            className="hidden lg:flex p-1 rounded hover:bg-slate-100 dark:hover:bg-[#1E293B] text-[#64748B] dark:text-[#94A3B8] hover:text-amber-600 dark:hover:text-[#FFC107] cursor-pointer transition-colors"
-            title={isCollapsed ? 'Expand sidebar (Ctrl+[)' : 'Collapse sidebar'}
-          >
-            {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-          </button>
-        </div>
+        )}
       </div>
 
-      {/* Main Navigation Items */}
-      <div className="flex-1 overflow-y-auto overflow-x-hidden p-2.5 space-y-4 scrollbar-thin scrollbar-thumb-slate-300 dark:scrollbar-thumb-[#1E293B]">
-        {/* Core UNS Section */}
+      {/* Search */}
+      {!isCollapsed && (
+        <div className="shrink-0 px-3 pt-4 pb-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-500" />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search menu..."
+              className="w-full rounded-xl border border-zinc-800 bg-zinc-900/80 py-2.5 pl-9 pr-12 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-[#FF7A00]/50 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/30"
+            />
+            <kbd className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-500 sm:flex">
+              <Command className="size-2.5" />K
+            </kbd>
+          </div>
+        </div>
+      )}
+
+      {/* Navigation */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-2 space-y-6">
         <div className="space-y-1">
           {!isCollapsed && (
-            <div className="px-2 pb-1 text-[9px] font-bold text-[#64748B] uppercase tracking-widest flex items-center justify-between">
-              <span>UNS Domain</span>
-              <span className="text-[8px] bg-[#F1F5F9] dark:bg-[#1E293B] px-1.5 py-0.5 rounded text-[#475569] dark:text-[#94A3B8] border border-[#E2E8F0] dark:border-[#334155]">ISA-95</span>
+            <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-zinc-600">
+              Main Menu
             </div>
           )}
-          {coreNavItems.map(renderNavLink)}
+          {filteredMain.map(renderNavItem)}
         </div>
 
-        {/* System & Ops Section */}
-        <div className="space-y-1 pt-2 border-t border-[#E2E8F0] dark:border-[#1E293B]/70">
-          {!isCollapsed && (
-            <div className="px-2 pb-1 text-[9px] font-bold text-[#64748B] uppercase tracking-widest">
-              <span>Platform Ops</span>
-            </div>
-          )}
-          {opsNavItems.map(renderNavLink)}
-        </div>
-
-        {/* Quick Utilities in Expanded Mode */}
-        {!isCollapsed && (
-          <div className="space-y-1.5 pt-2 border-t border-[#E2E8F0] dark:border-[#1E293B]/70">
-            <div className="px-2 pb-1 text-[9px] font-bold text-[#64748B] uppercase tracking-widest">
-              <span>Console Shortcuts</span>
-            </div>
-
-            <button
-              onClick={() => {
-                onOpenBookmarks();
-                onCloseMobile();
-              }}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-[#F8FAFC] dark:bg-[#0B0B0C] border border-[#E2E8F0] dark:border-[#1E293B] hover:border-amber-400 dark:hover:border-[#FFC107]/50 text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC] transition-colors cursor-pointer text-left"
-            >
-              <div className="flex items-center gap-2">
-                <Bookmark className="w-3.5 h-3.5 text-amber-600 dark:text-[#FFC107]" />
-                <span className="text-[10px]">Saved Bookmarks</span>
+        {filteredPlatform.length > 0 && (
+          <div className="space-y-1">
+            {!isCollapsed && (
+              <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-zinc-600">
+                Platform
               </div>
-              <span className="px-1.5 py-0.5 rounded bg-[#E2E8F0] dark:bg-[#1E293B] text-amber-700 dark:text-[#FFC107] text-[9px] font-bold">
-                {bookmarks.length}
-              </span>
-            </button>
-
-            {staleNodesCount > 0 && (
-              <button
-                onClick={() => {
-                  onOpenStaleDrawer();
-                  onCloseMobile();
-                }}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800/60 text-amber-800 dark:text-[#FFC107] hover:bg-amber-100 dark:hover:bg-amber-950/60 transition-colors cursor-pointer text-left"
-              >
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-[#FFC107] animate-pulse" />
-                  <span className="text-[10px]">Stale Node Alerts</span>
-                </div>
-                <span className="px-1.5 py-0.5 rounded bg-white dark:bg-[#0B0B0C] text-amber-800 dark:text-[#FFC107] text-[9px] font-bold border border-amber-300 dark:border-amber-700">
-                  {staleNodesCount}
-                </span>
-              </button>
             )}
+            {filteredPlatform.map(renderNavItem)}
           </div>
         )}
       </div>
 
-      {/* Subsystem Health Live Indicators Footer */}
-      {!isCollapsed ? (
-        <div className="p-3 bg-[#F8FAFC] dark:bg-[#0B0B0C] border-t border-[#E2E8F0] dark:border-[#1E293B] space-y-2 shrink-0">
-          <div className="flex items-center justify-between text-[9px] text-[#64748B]">
-            <span className="uppercase tracking-wider font-semibold">Subsystems</span>
-            <span className="text-emerald-600 dark:text-[#10B981] flex items-center gap-1 font-bold">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 dark:bg-[#10B981] animate-pulse" />
-              <span>GQL 8000</span>
+      {/* Status card */}
+      {!isCollapsed && (
+        <div className="mx-3 mb-3 shrink-0 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4">
+          <div className="mb-2 flex items-center gap-2">
+            <span
+              className={`size-2 rounded-full ${
+                health.status === 'LIVE'
+                  ? 'bg-emerald-500'
+                  : health.status === 'DEGRADED'
+                    ? 'bg-amber-500'
+                    : 'bg-red-500'
+              }`}
+            />
+            <span className="text-xs font-medium text-zinc-300">
+              {health.status === 'LIVE' ? 'Platform Connected' : `Status: ${health.status}`}
             </span>
           </div>
-
-          <div className="grid grid-cols-3 gap-1 text-[8px] text-center font-mono">
-            <div className="px-1.5 py-1 rounded bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] text-emerald-700 dark:text-[#10B981] font-semibold">
-              MQTT: ON
-            </div>
-            <div className="px-1.5 py-1 rounded bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] text-emerald-700 dark:text-[#10B981] font-semibold">
-              NEO4J: OK
-            </div>
-            <div className="px-1.5 py-1 rounded bg-white dark:bg-[#111114] border border-[#E2E8F0] dark:border-[#1E293B] text-emerald-700 dark:text-[#10B981] font-semibold">
-              KAFKA: ON
-            </div>
-          </div>
-
-          {/* Current User Session Bar */}
-          <div className="pt-1.5 border-t border-[#E2E8F0] dark:border-[#1E293B] flex items-center justify-between">
-            <div className="flex items-center gap-2 min-w-0">
-              <div className={`w-5 h-5 rounded-full ${currentUser.avatarColor} text-slate-950 font-bold flex items-center justify-center text-[9px] shrink-0`}>
-                {currentUser.name.charAt(0)}
-              </div>
-              <div className="min-w-0">
-                <div className="text-[10px] text-[#0F172A] dark:text-[#F8FAFC] font-semibold truncate leading-none">
-                  {currentUser.name}
-                </div>
-                <div className="text-[8px] text-[#64748B] dark:text-[#94A3B8] uppercase truncate mt-0.5">
-                  {currentUser.role}
-                </div>
-              </div>
-            </div>
-            {isAdmin && (
-              <span className="px-1.5 py-0.5 rounded bg-rose-50 dark:bg-rose-950 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-[8px] font-bold">
-                ROOT
-              </span>
-            )}
-          </div>
-        </div>
-      ) : (
-        <div className="p-2 bg-[#F8FAFC] dark:bg-[#0B0B0C] border-t border-[#E2E8F0] dark:border-[#1E293B] flex flex-col items-center gap-2 shrink-0">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 dark:bg-[#10B981] animate-pulse" title="GraphQL Subsystem Connected" />
-          <div className={`w-6 h-6 rounded-full ${currentUser.avatarColor} text-slate-950 font-bold flex items-center justify-center text-[10px]`} title={`${currentUser.name} (${currentUser.role})`}>
-            {currentUser.name.charAt(0)}
-          </div>
+          <p className="mb-3 text-xs leading-relaxed text-zinc-500">
+            Real-time UNS data from your plant namespace.
+          </p>
+          <button
+            onClick={() => {
+              navigate('/system');
+              onCloseMobile();
+            }}
+            className="w-full rounded-xl bg-[#FF7A00] py-2 text-xs font-semibold text-white transition-colors hover:bg-[#e66e00]"
+          >
+            View System Health
+          </button>
         </div>
       )}
+
+      {/* Collapse toggle (desktop) */}
+      <div className="hidden shrink-0 border-t border-zinc-800/80 lg:block">
+        <button
+          onClick={onToggleCollapse}
+          className="flex w-full items-center justify-center gap-2 py-2.5 text-xs text-zinc-500 transition-colors hover:bg-zinc-800/50 hover:text-zinc-300"
+          aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {isCollapsed ? <ChevronRight className="size-4" /> : <ChevronLeft className="size-4" />}
+          {!isCollapsed && <span>Collapse</span>}
+        </button>
+      </div>
+
+      {/* User profile */}
+      <div className={`shrink-0 border-t border-zinc-800/80 p-3 ${isCollapsed ? 'flex justify-center' : ''}`}>
+        <UserSessionMenu variant={isCollapsed ? 'compact' : 'sidebar'} />
+      </div>
     </aside>
   );
 
   return (
     <>
-      {/* Desktop & Tablet Persistent Sidebar */}
-      <div className="hidden lg:block h-full shrink-0">
-        {sidebarContent}
-      </div>
+      <div className="hidden h-full shrink-0 lg:block">{sidebarContent}</div>
 
-      {/* Mobile Drawer Overlay */}
       {isMobileOpen && (
-        <div
-          id="mobile-sidebar-drawer"
-          className="lg:hidden fixed inset-0 z-50 flex"
-          role="dialog"
-          aria-modal="true"
-        >
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 bg-black/75 backdrop-blur-xs transition-opacity duration-200 animate-fade-in"
-            onClick={onCloseMobile}
-          />
-
-          {/* Drawer Panel */}
-          <div className="relative w-72 max-w-[85vw] h-full shadow-2xl z-10 animate-slide-right">
-            {sidebarContent}
-          </div>
+        <div id="mobile-sidebar-drawer" className="fixed inset-0 z-50 flex lg:hidden" role="dialog" aria-modal="true">
+          <div className="fixed inset-0 bg-black/70" onClick={onCloseMobile} />
+          <div className="relative z-10 h-full w-[280px] max-w-[85vw] shadow-2xl">{sidebarContent}</div>
         </div>
       )}
     </>

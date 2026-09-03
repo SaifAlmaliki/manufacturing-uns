@@ -48,7 +48,7 @@ export const LoginView: React.FC = () => {
       const success = login(selectedUserId || email, password);
       setIsLoading(false);
       if (success) {
-        navigate('/tree');
+        navigate('/dashboard');
       } else {
         setErrorMsg('Invalid enterprise credentials. Please check your email or select a demo role.');
       }

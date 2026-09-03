@@ -18,6 +18,7 @@ import { AppLayout } from './components/layout/AppLayout';
 import { LandingView } from './components/landing/LandingView';
 import { LoginView } from './components/auth/LoginView';
 import { HomeView } from './components/home/HomeView';
+import { DashboardView } from './components/dashboard/DashboardView';
 import { ExploreView } from './components/explore/ExploreView';
 import { SparkplugView } from './components/sparkplug/SparkplugView';
 import { KafkaStreamsView } from './components/streams/KafkaStreamsView';
@@ -57,6 +58,7 @@ export default function App() {
 
                 {/* 3. Protected Enterprise Console Platform */}
                 <Route element={<ProtectedConsoleLayout />}>
+                  <Route path="/dashboard" element={<DashboardView />} />
                   <Route path="/tree" element={<HomeView />} />
                   <Route path="/alerts" element={<AlarmManagementView />} />
                   <Route path="/historian" element={<ExploreView />} />

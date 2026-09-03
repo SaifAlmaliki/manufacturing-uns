@@ -16,6 +16,7 @@ import { KafkaMessage } from '../../types/uns';
 import { unsGraphQLClient } from '../../services/graphql/client';
 import { JsonViewer } from '../common/JsonViewer';
 import { useUNS } from '../../context/UNSContext';
+import { PageShell, ConsoleCard, BtnPrimary, BtnSecondary, consoleTokens } from '../ui/console-ui';
 
 export const KafkaStreamsView: React.FC = () => {
   const { kafkaInitialTopic } = useUNS();
@@ -106,7 +107,7 @@ export const KafkaStreamsView: React.FC = () => {
   };
 
   return (
-    <div id="kafka-streams-view" className="flex-1 flex flex-col h-full bg-[#F8FAFC] dark:bg-[#050505] text-[#0F172A] dark:text-[#F8FAFC] font-mono text-xs overflow-hidden transition-colors">
+    <PageShell id="kafka-streams-view" scroll={false} className="flex flex-col">
       {/* Mobile / Tablet Tab Switcher on < lg */}
       <div className="lg:hidden bg-white dark:bg-[#111114] border-b border-[#E2E8F0] dark:border-[#1E293B] p-2.5 shrink-0">
         <div className="flex items-center bg-[#F1F5F9] dark:bg-[#0B0B0C] p-1 rounded-lg border border-[#E2E8F0] dark:border-[#1E293B] gap-1">
@@ -137,11 +138,11 @@ export const KafkaStreamsView: React.FC = () => {
 
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 h-full overflow-hidden">
         {/* Left Column: Streams Feed (7 cols on lg) */}
-        <div className={`lg:col-span-7 flex flex-col h-full border-r border-[#E2E8F0] dark:border-[#1E293B] bg-white dark:bg-[#111114] overflow-hidden ${
+        <div className={`lg:col-span-7 flex flex-col h-full border-r border-zinc-800 bg-[#111114] overflow-hidden ${
           mobileTab === 'detail' ? 'hidden lg:flex' : 'flex'
         }`}>
           {/* Controls Bar */}
-          <div className="p-3 bg-white dark:bg-[#111114] border-b border-[#E2E8F0] dark:border-[#1E293B] space-y-2.5 shrink-0">
+          <div className="p-3 border-b border-zinc-800 space-y-2.5 shrink-0">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded bg-[#F1F5F9] dark:bg-[#0B0B0C] border border-[#E2E8F0] dark:border-[#1E293B] flex items-center justify-center text-amber-600 dark:text-[#FFC107]">
@@ -363,6 +364,6 @@ export const KafkaStreamsView: React.FC = () => {
           )}
         </div>
       </div>
-    </div>
+    </PageShell>
   );
 };

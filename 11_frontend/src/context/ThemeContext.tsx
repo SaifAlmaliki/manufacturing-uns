@@ -24,8 +24,8 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch {
       // ignore
     }
-    // STRICT DEFAULT IS LIGHT UI
-    return 'light';
+    // FlowBoard-inspired default: dark console theme
+    return 'dark';
   });
 
   useEffect(() => {
@@ -40,8 +40,8 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       root.classList.add('dark');
       root.classList.remove('light');
       root.setAttribute('data-theme', 'dark');
-      document.body.style.backgroundColor = '#050505';
-      document.body.style.color = '#E2E8F0';
+      document.body.style.backgroundColor = '#0a0a0b';
+      document.body.style.color = '#fafafa';
     } else {
       root.classList.add('light');
       root.classList.remove('dark');
