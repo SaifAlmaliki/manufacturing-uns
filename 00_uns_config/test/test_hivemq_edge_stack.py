@@ -92,3 +92,34 @@ def test_broker_healthcheck_does_not_call_emqx():
     joined = " ".join(check)
     assert "emqx" not in joined
     assert "1883" in joined
+
+
+def _dev_compose() -> dict:
+    # Compose merge tags (!reset) are not understood by PyYAML; strip for file contracts.
+    text = _DEV_COMPOSE_FILE.read_text(encoding="utf-8").replace(": !reset\n", ":\n")
+    return yaml.safe_load(text)
+
+
+def _prometheus() -> dict:
+    return yaml.safe_load(_PROMETHEUS_FILE.read_text(encoding="utf-8"))
+
+
+def test_opcua_client_is_not_a_compose_service():
+    assert "opcua_client" not in _compose()["services"]
+    assert "opcua_spool" not in (_compose().get("volumes") or {})
+
+
+def test_prometheus_does_not_scrape_opcua_client():
+    jobs = {job["job_name"]: job for job in _prometheus()["scrape_configs"]}
+    assert "uns_opcua" not in jobs
+    targets = [
+        t
+        for job in _prometheus()["scrape_configs"]
+        for t in job["static_configs"][0]["targets"]
+    ]
+    assert "opcua_client:9093" not in targets
+
+
+def test_prometheus_compose_does_not_depend_on_opcua_client():
+    assert "opcua_client" not in _compose()["services"]["uns_prometheus"]["depends_on"]
+    assert "opcua_client" not in _dev_compose()["services"]["uns_prometheus"]["depends_on"]

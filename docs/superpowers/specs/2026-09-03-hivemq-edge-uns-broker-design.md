@@ -3,7 +3,7 @@
 Date: 2026-09-03
 Modules: `docker-compose.yml`, `docker-compose.dev.yml`, `conf/hivemq/`,
 `08_uns_observability/prometheus/prometheus.yml`, `README.md`
-Status: Draft — awaiting review
+Status: Approved
 
 Supersedes the **Compose deployment** of `10_uns_opcua` from
 [2026-09-01-opcua-edge-connector-design.md](./2026-09-01-opcua-edge-connector-design.md).

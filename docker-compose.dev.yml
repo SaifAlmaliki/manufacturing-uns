@@ -18,5 +18,4 @@ services:
     depends_on: !reset
       - historian_client
       - graphdb_client
-      - opcua_client
       - oee_client

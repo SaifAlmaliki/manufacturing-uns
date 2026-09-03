@@ -141,7 +141,7 @@ Point it at the published MQTT port (`localhost:1883`) while the stack from Opti
 
 | Docker Desktop name | Role |
 | --- | --- |
-| `uns_mqtt_broker` | MQTT backbone (EMQX). Devices, the simulator, and all mapper clients publish/subscribe here. Host ports: `1883` (MQTT), `8080` (MQTT over WebSocket). |
+| `uns_mqtt_broker` | MQTT backbone (HiveMQ Edge). Devices, the simulator, mapper clients, and Edge protocol adapters (S7, EtherNet/IP, OPC UA) publish/subscribe here. Host ports: `1883` (MQTT), `18080` (Edge console). |
 | `uns_neo4j_db` | Graph database that stores the current ISA-95 namespace as a tree of nodes. Host ports: `7474` (browser), `7687` (Bolt). |
 | `uns_timescale_db` | Time-series historian (TimescaleDB / Postgres) that keeps a history of MQTT events. Host port: `5432`. |
 | `tsdb_setup_script` | One-shot job that creates the historian database, user, tables (`unifiednamespace` + `uns_metrics`), continuous aggregates, and the compression / retention policies. It **exits after success** — a gray/stopped icon is normal, not a failure. |
@@ -149,7 +149,6 @@ Point it at the published MQTT port (`localhost:1883`) while the stack from Opti
 | `uns_kafka_broker` | Kafka broker for streaming UNS messages to other systems. Host port: `9092`. |
 | `graphdb_client` | MQTT subscriber that writes live namespace messages into Neo4j (current state / tree). |
 | `historian_client` | MQTT subscriber that writes events into TimescaleDB (history) and binds each distinct topic to the Asset Model after a successful persist. Shares one Postgres engine with `09_uns_model` (ADR-0004). |
-| `opcua_client` | Read-only OPC UA edge connector: subscribes to PLC/SCADA nodes and publishes into the UNS with a disk-backed store-and-forward spool. Host port: `9093` (Prometheus metrics). With no `opcua.servers` configured it logs that there is nothing to collect, stays up serving Prometheus metrics on `9093`, and does not connect to a PLC. |
 | `spb_mapper_client` | Sparkplug B translator: listens on Sparkplug topics, decodes protobuf, republishes JSON on the ISA-95 UNS topics. |
 | `kafka_mapper_client` | MQTT-to-Kafka bridge: copies UNS MQTT messages onto Kafka topics. |
 | `uns_simulator` | Synthetic PLC / HMI / SCADA publisher used for local demos. Not for production. |
@@ -166,7 +165,7 @@ with **mapper clients → Prometheus → Grafana** alongside it for platform hea
 
 Pulled images:
 
-- `emqx/emqx:latest` — MQTT broker; devices, the simulator, and mapper clients publish/subscribe here.
+- `hivemq/hivemq-edge:latest` — MQTT broker plus northbound S7, EtherNet/IP, and OPC UA adapters.
 - `postgres:12` — one-shot `psql` client that creates the historian database, user, tables, and policies.
 - `neo4j:latest` — graph database that stores the current ISA-95 namespace as a tree.
 - `prom/prometheus:latest` — scrapes `/metrics` from the mapper clients.
@@ -181,7 +180,6 @@ Images built from this repo (`manufacturing-uns-<service>`):
 - `asset_model_setup` — one-shot job that creates `model` / `console` schemas and imports the plant hierarchy.
 - `oee_client` — computes shift OEE from historised metrics and publishes `<line>/KPI/ShiftOee`.
 - `uns_simulator` — synthetic PLC / HMI / SCADA publisher for local demos.
-- `opcua_client` — read-only OPC UA connector that publishes PLC/SCADA tags into the UNS.
 - `spb_mapper_client` — Sparkplug B translator: protobuf in, ISA-95 JSON out.
 - `graphdb_client` — MQTT subscriber that writes the live namespace into Neo4j.
 - `historian_client` — MQTT subscriber that writes events into TimescaleDB.
