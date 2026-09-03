@@ -4733,7 +4733,7 @@ Three facts from the file, verified:
   Default `auth` reads `authClient` and `onExpired` calls `authClient.signIn()`.
 - Nothing consumes this further.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `11_frontend/src/services/graphql/client-auth.test.ts`:
 
@@ -4909,14 +4909,14 @@ client for the real name of its health subscription (`healthListeners` at `:75` 
 one) and either assert on it properly or delete those three lines and keep the `onExpired`
 assertion, which is the part spec test 10 actually requires.
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `cd 11_frontend && npx vitest run src/services/graphql/client-auth.test.ts`
 
 Expected: the constructor rejects a third argument; no `Authorization` header; `connection_init`
 has no payload.
 
-- [ ] **Step 3: Take the auth hooks in the constructor**
+- [x] **Step 3: Take the auth hooks in the constructor**
 
 In `client.ts`, above the class:
 
@@ -4952,7 +4952,7 @@ and a `private auth: AuthHooks` field beside the others at `:68`–`:80`. Assign
 **before** `initWebSocket()` runs at `:89` — the socket's `onopen` reads it, and a client
 constructed at module scope opens its socket during construction.
 
-- [ ] **Step 4: Put the token on the request, and stop turning 401 into nothing**
+- [x] **Step 4: Put the token on the request, and stop turning 401 into nothing**
 
 Rewrite `executeQuery` (`:154`–`:188`):
 
@@ -5026,7 +5026,7 @@ each of them surface `error` is the surfaces plan's work on truthful empty state
 here would touch thirty methods in a commit about tokens. What this task guarantees is that a
 401 is never silent — `onExpired()` fires, and the user is sent to the realm.
 
-- [ ] **Step 5: Put the token in `connection_init`**
+- [x] **Step 5: Put the token in `connection_init`**
 
 At `:115`–`:120`, replace the payload-less init:
 
@@ -5070,7 +5070,7 @@ health signal so a rejected subscription is distinguishable from a stopped conta
 If `RecordingSocket` in the test does not pass an event to `onclose`, that is fine — no test
 asserts this path. Add one if it is cheap; do not leave the branch untested *and* unmentioned.
 
-- [ ] **Step 6: Reconnect the socket when the session changes**
+- [x] **Step 6: Reconnect the socket when the session changes**
 
 A socket opened before sign-in was rejected, and nothing currently reopens it. In
 `AuthContext`'s effect, or wherever the client instance lives, call the client's existing
@@ -5083,7 +5083,7 @@ If that turns out to need more than a few lines, add a `public reconnect()` that
 sign-in — the plant tree's live updates come through it, and a console whose subscriptions
 silently never connect is the exact class of defect this whole plan is about.
 
-- [ ] **Step 7: Run the suite**
+- [x] **Step 7: Run the suite**
 
 ```bash
 cd 11_frontend

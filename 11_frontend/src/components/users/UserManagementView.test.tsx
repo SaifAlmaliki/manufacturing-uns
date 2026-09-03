@@ -4,7 +4,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const fetchRealmMembers = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/auth/directory', () => ({ fetchRealmMembers }));
 
-const auth = vi.hoisted(() => ({ isAdmin: true, roles: ['admin'] as const, currentUser: null, hasPermission: () => true }));
+const auth = vi.hoisted(() => ({
+  isAdmin: true,
+  roles: ['admin'] as ('admin' | 'operator')[],
+  currentUser: null as null,
+  hasPermission: () => true,
+}));
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => auth }));
 
 import { UserManagementView } from './UserManagementView';

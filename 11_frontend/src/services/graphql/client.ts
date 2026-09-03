@@ -61,12 +61,31 @@ import type {
   GraphqlTopicContext,
   GraphqlUnsNode,
 } from './types'
+import { authClient } from '../../lib/auth/oidc'
+
+/**
+ * How this client gets a token. Injected so the tests never construct a real UserManager,
+ * and read per request rather than captured, so a silent renew takes effect immediately.
+ */
+export interface AuthHooks {
+  token(): string | null
+  refresh(): Promise<string | null>
+  /** Called when a refreshed token is still refused. Sends the user back to the realm. */
+  onExpired(): void
+}
+
+const defaultAuthHooks: AuthHooks = {
+  token: () => authClient.accessToken(),
+  refresh: () => authClient.refresh(),
+  onExpired: () => { void authClient.signIn() },
+}
 
 type BinaryOperator = 'OR' | 'AND' | 'NOT'
 
 export class UnsGraphQLClient {
   private httpUrl: string
   private wsUrl: string
+  private auth: AuthHooks
   private ws: WebSocket | null = null
   private wsConnected = false
   private wsProtocolReady = false
@@ -79,13 +98,19 @@ export class UnsGraphQLClient {
     { topics: string[]; onMessage: (msg: MqttMessage) => void; wsSubId?: string }
   >()
 
-  constructor(httpUrl = '/graphql', wsUrl?: string) {
+  constructor(httpUrl = '/graphql', wsUrl?: string, auth: AuthHooks = defaultAuthHooks) {
+    this.auth = auth
     this.httpUrl = httpUrl
     this.wsUrl =
       wsUrl ||
       (typeof window !== 'undefined'
         ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/graphql`
         : 'ws://localhost:8000/graphql')
+    this.initWebSocket()
+  }
+
+  /** Tear down and reopen the subscription socket — e.g. after sign-in grants a token. */
+  public reconnect() {
     this.initWebSocket()
   }
 
@@ -115,7 +140,15 @@ export class UnsGraphQLClient {
       this.ws.onopen = () => {
         this.wsConnected = true
         this.wsProtocolReady = false
-        this.ws?.send(JSON.stringify({ type: 'connection_init' }))
+        const token = this.auth.token()
+        // graphql-transport-ws puts credentials here because a browser cannot set a header on
+        // a handshake. AuthenticatedGraphQLRouter.on_ws_connect reads exactly this key.
+        this.ws?.send(
+          JSON.stringify({
+            type: 'connection_init',
+            payload: token ? { Authorization: `Bearer ${token}` } : {},
+          }),
+        )
         this.notifyHealth()
       }
 
@@ -141,9 +174,14 @@ export class UnsGraphQLClient {
         this.notifyHealth()
       }
 
-      this.ws.onclose = () => {
+      this.ws.onclose = (event) => {
         this.wsConnected = false
         this.wsProtocolReady = false
+        if (event.code === 4403) {
+          // The realm refused this socket. Not a network fault, and not something a retry
+          // fixes without a new token.
+          this.auth.onExpired()
+        }
         this.notifyHealth()
       }
     } catch {
@@ -151,22 +189,45 @@ export class UnsGraphQLClient {
     }
   }
 
+  private authHeaders(): Record<string, string> {
+    const token = this.auth.token()
+    // Absent rather than `Bearer `: an empty bearer is a malformed header the server logs as
+    // a bad token instead of as an anonymous request.
+    return token ? { Authorization: `Bearer ${token}` } : {}
+  }
+
   private async executeQuery<T>(
     query: string,
     variables: Record<string, unknown> = {},
+    retryOnUnauthorized = true,
   ): Promise<{ data: T | null; error?: string }> {
     const t0 = performance.now()
     try {
+      const hadToken = this.auth.token() !== null
       const response = await fetch(this.httpUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json',
+          ...this.authHeaders(),
         },
         body: JSON.stringify({ query, variables }),
       })
 
       this.lastPingMs = Math.round(performance.now() - t0)
+
+      if (response.status === 401) {
+        // One refresh, then the realm. Never a loop: a 401 that survives a fresh token is a
+        // permission or configuration problem, and retrying it forever hides that.
+        if (retryOnUnauthorized && hadToken && (await this.auth.refresh()) !== null) {
+          return this.executeQuery<T>(query, variables, false)
+        }
+        this.auth.onExpired()
+        // An expired session is not an empty result. Every caller of this method turns
+        // `{data: null}` into `[]`, and an operator reads an empty plant tree as a quiet
+        // plant rather than as a session that ended.
+        return { data: null, error: 'Your session has expired. Signing in again.' }
+      }
 
       if (response.ok) {
         const json = await response.json()
@@ -600,3 +661,12 @@ export class UnsGraphQLClient {
 }
 
 export const unsGraphQLClient = new UnsGraphQLClient()
+
+// A socket opened before sign-in was rejected with 4403; reconnect when a session appears.
+if (typeof window !== 'undefined') {
+  authClient.onSession((session) => {
+    if (session) {
+      unsGraphQLClient.reconnect()
+    }
+  })
+}
