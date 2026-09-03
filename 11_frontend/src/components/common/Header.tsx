@@ -49,7 +49,7 @@ function getPageHeading(
     return { title: 'Simulator', subtitle: 'Control synthetic plant data generation.' };
   }
   if (path.startsWith('/users')) {
-    return { title: 'Users', subtitle: 'Manage users, roles, and access permissions.' };
+    return { title: 'Users' };
   }
   if (path === '/dashboard') {
     return {
