@@ -6,4 +6,13 @@
             <bind-address>0.0.0.0</bind-address>
         </tcp-listener>
     </mqtt-listeners>
+    <admin-api>
+        <enabled>true</enabled>
+        <listeners>
+            <http-listener>
+                <port>8080</port>
+                <bind-address>0.0.0.0</bind-address>
+            </http-listener>
+        </listeners>
+    </admin-api>
 </hivemq>

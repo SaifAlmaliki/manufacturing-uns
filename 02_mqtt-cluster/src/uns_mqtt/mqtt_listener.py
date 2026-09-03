@@ -148,8 +148,10 @@ class UnsMQTTClient(mqtt_client.Client):
                 LOGGER.debug(
                     "Connection established. Returned code=%s", return_code)
                 for topic in self.topics:
+                    # Do not reuse CONNECT properties on SUBSCRIBE; HiveMQ Edge
+                    # 2026.13 disconnects that as a Malformed packet.
                     self.subscribe(topic, self.qos, options=None,
-                                   properties=properties)
+                                   properties=None)
 
                 LOGGER.info(
                     "Successfully connected %s to MQTT Broker", self)

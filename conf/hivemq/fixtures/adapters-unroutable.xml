@@ -6,6 +6,15 @@
             <bind-address>0.0.0.0</bind-address>
         </tcp-listener>
     </mqtt-listeners>
+    <admin-api>
+        <enabled>true</enabled>
+        <listeners>
+            <http-listener>
+                <port>8080</port>
+                <bind-address>0.0.0.0</bind-address>
+            </http-listener>
+        </listeners>
+    </admin-api>
     <protocol-adapters>
         <protocol-adapter>
             <adapterId>fixture-s7</adapterId>
@@ -65,7 +74,6 @@
             <protocolId>opcua</protocolId>
             <config>
                 <uri>opc.tcp://192.0.2.1:4840</uri>
-                <opcuaToMqtt/>
             </config>
             <northboundMappings>
                 <northboundMapping>

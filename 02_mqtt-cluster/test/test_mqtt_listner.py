@@ -24,6 +24,9 @@ from pathlib import Path
 
 import pytest
 
+from paho.mqtt.packettypes import PacketTypes
+from paho.mqtt.properties import Properties
+
 from uns_mqtt.mqtt_listener import MQTTVersion, UnsMQTTClient
 
 EMQX_HOST = "broker.emqx.io"  # test the client against the hosted emqx broker
@@ -541,3 +544,41 @@ def test_get_payload_as_dict(topic: str, payload_msg, expected_result):
     assert result == expected_result, f""" message:{payload_msg},
             Expected Result:{expected_result},
             Actual Result: {result}"""
+
+
+def test_on_connect_subscribe_does_not_reuse_connect_properties():
+    """SUBSCRIBE must not carry CONNECT properties; HiveMQ Edge treats that as Malformed packet."""
+    uns_client = UnsMQTTClient(
+        client_id=f"test_subscribe_props_{time.time()}-{random.randint(0, 1000)}",  # noqa: S311
+        clean_session=True,
+        protocol=MQTTVersion.MQTTv5,
+        transport="tcp",
+        reconnect_on_failure=True,
+    )
+    uns_client.topics = ["test/uns/#"]
+    uns_client.qos = 1
+    captured: list[dict] = []
+
+    def fake_subscribe(topic, qos=0, options=None, properties=None):
+        captured.append(
+            {
+                "topic": topic,
+                "qos": qos,
+                "options": options,
+                "properties": properties,
+            },
+        )
+        return (0, 0)
+
+    uns_client.subscribe = fake_subscribe
+    connect_properties = Properties(PacketTypes.CONNECT)
+    uns_client.on_connect(uns_client, None, {}, 0, connect_properties)
+
+    assert captured, "subscribe was not called on successful connect"
+    for call in captured:
+        assert call["topic"] == "test/uns/#"
+        assert call["qos"] == 1
+        assert call["properties"] is None, (
+            "SUBSCRIBE must not reuse CONNECT properties"
+        )
+        assert call["properties"] is not connect_properties

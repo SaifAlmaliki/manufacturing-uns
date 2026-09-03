@@ -32,6 +32,17 @@ def test_default_config_listens_on_1883():
     assert "1883" in ports
 
 
+def test_default_config_binds_admin_http_on_8080_all_interfaces():
+    root = _xml(_HIVEMQ_CONFIG)
+    listeners = [el for el in root.iter() if el.tag.endswith("http-listener")]
+    assert listeners, "admin-api http-listener missing"
+    listener = listeners[0]
+    ports = [el.text for el in listener.iter() if el.tag.endswith("port")]
+    binds = [el.text for el in listener.iter() if el.tag.endswith("bind-address")]
+    assert "8080" in ports
+    assert "0.0.0.0" in binds
+
+
 def test_default_config_has_no_protocol_adapters():
     root = _xml(_HIVEMQ_CONFIG)
     adapters = [el for el in root.iter() if el.tag.endswith("protocol-adapter")]
