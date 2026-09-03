@@ -6198,7 +6198,7 @@ router rather than per-resolver) will look like oversights to whoever reads the 
 
 **Interfaces:** documentation only.
 
-- [ ] **Step 1: Match the house style**
+- [x] **Step 1: Match the house style**
 
 ```bash
 cd /c/Dev/manufacturing-uns
@@ -6209,7 +6209,7 @@ head -40 docs/adr/0008-*.md
 Read one existing record before writing. Match its heading structure, its front matter if it has
 any, and its length — a record three times longer than its neighbours does not get read.
 
-- [ ] **Step 2: Write ADR-0009**
+- [x] **Step 2: Write ADR-0009**
 
 Create `docs/adr/0009-oidc-authentication-for-console-and-graphql.md`, in whatever section
 structure Step 1 found. The substance, which is what matters:
@@ -6269,7 +6269,7 @@ reverse-proxy-enforced auth like oauth2-proxy in front of `/graphql` (the servic
 know who the caller was, and `assignDowntimeReason` has to record it); keeping tokens in
 `localStorage` for a refresh-survivable session (the same class of exposure the old design had).
 
-- [ ] **Step 3: Amend ADR-0005**
+- [x] **Step 3: Amend ADR-0005**
 
 ADR-0005 is the narrow-mutation-surface record and it contains the sentence *"There is no
 authorization in this service."* That is now false, and it is the kind of false sentence somebody
@@ -6294,7 +6294,7 @@ Every hit outside `docs/adr/` is a code comment that is now wrong. Fix those too
 check `mutations/alert_rule.py`'s module docstring and `mutations/oee.py`'s, since Task 6 already
 rewrote the `assigned_by` description but not necessarily the surrounding prose.
 
-- [ ] **Step 4: Add the vocabulary to CONTEXT.md**
+- [x] **Step 4: Add the vocabulary to CONTEXT.md**
 
 `CONTEXT.md` is the vocabulary the whole platform is described in, and this plan introduced terms
 that are not in it. Add them in the file's existing style, and only these:

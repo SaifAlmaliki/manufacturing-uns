@@ -62,6 +62,15 @@ authorization in this service — the `notifyRoles` on a rule say who gets told,
 who may edit — so the deployment has to keep the endpoint off untrusted networks
 until authentication exists.
 
+> **Updated (2026-09):** this service now authenticates every request and
+> authorizes every mutation against the caller's realm roles. See ADR-0009 for
+> the design and `07_uns_graphql/src/uns_graphql/auth/require.py` for the table.
+> The argument above — that the mutation surface stays narrow, and that a write
+> belongs here only because the console has no backend of its own — is unchanged,
+> and authentication does not widen it. The paragraph it amends is left visible:
+> a record of a decision that has moved on is more useful than one that pretends
+> it never said otherwise.
+
 Rules authored before this change are in browser storage, which the server cannot
 see. `saveAlertRules` exists so a console can hand over everything it has in one
 round trip on first load; a browser that is never opened again keeps its rules to

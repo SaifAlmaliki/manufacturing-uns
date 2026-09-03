@@ -516,10 +516,13 @@ uv run pytest -m "not integrationtest" ./12_uns_oee
    - Prometheus `remote_write` from edge to enterprise is not configured; the current setup is
      enterprise-only.
 
-1. **Grafana runs with anonymous access.** `GF_AUTH_ANONYMOUS_ENABLED=true` with the `Admin` role,
-   matching the rest of this stack, which has no authentication anywhere. This is a deliberate but
-   real security gap: anyone who can reach the console (`8088`) can open `/grafana` and read plant
-   process data. See [ADR 0001](./docs/adr/0001-grafana-for-visualization-and-observability.md).
-   Do not expose these ports outside a trusted network.
+1. **Grafana and the GraphQL service require sign-in; the data services still do not.** Grafana
+   and the console authenticate against the Keycloak `uns` realm, served under `/auth` on the
+   console's own origin (`8088`), and `/graphql` refuses a request without a realm token. Realm
+   roles map to Grafana org roles (`admin`→Admin, `engineer`→Editor, anything else→Viewer). The
+   MQTT broker, Neo4j, TimescaleDB and Kafka still have no authentication on this deployment —
+   see [ADR 0009](./docs/adr/0009-oidc-authentication-for-console-and-graphql.md) for what is
+   covered and what is not, and [ADR 0001](./docs/adr/0001-grafana-for-visualization-and-observability.md)
+   for the Grafana choice. Do not expose these ports outside a trusted network.
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/mkashwin/unifiednamespace)

@@ -115,3 +115,21 @@ plant, not part of the Asset Model — the model says what exists, an Alert Rule
 what matters about it. Distinct from the alarm it raises, which is one occurrence of
 the rule being true.
 _Avoid_: alarm, alert, threshold, notification rule
+
+### Access
+
+**Realm**:
+The Keycloak realm `uns` — the authority on who exists and what Console Roles they
+hold. Served under `/auth` on the console's own origin, so its issuer and its
+session cookie are first-party.
+_Avoid_: auth server, IdP, identity provider
+
+**Console Role**:
+One of `admin`, `engineer`, `operator`, `auditor`, `viewer`. The GraphQL enum
+spells them upper case; the console spells them lower case; they are the same five.
+_Avoid_: permission, group, scope
+
+**Identity**:
+Who a validated token says the caller is: subject, username, Console Roles.
+Constructed only by `identity_from_token`; nothing else gets to say who is calling.
+_Avoid_: user, account, principal
