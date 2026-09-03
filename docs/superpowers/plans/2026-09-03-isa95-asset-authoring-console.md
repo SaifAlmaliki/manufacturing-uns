@@ -15,7 +15,7 @@
 ## Global Constraints
 
 - **Work from `11_frontend/`.** Every `npm` command in this plan runs there. Do not create a venv or a second `node_modules` anywhere else.
-- **`npm run lint` is `tsc --noEmit`, and it must stay clean.** There is no ESLint. TypeScript is the only automated guard on components, which is why the types in Task 2 are worth getting exactly right.
+- **`npm run lint` is `tsc --noEmit`, and it must stay clean.** There is no ESLint, so this is the only automated guard on components — and it is weaker than it looks: `11_frontend/tsconfig.json` sets neither `strict` nor `noUnusedLocals`. With `strictNullChecks` off, a missing null check compiles, and reading a field off a `null` Asset is a runtime crash `lint` will not report; an unused import passes too. Do not turn `strict` on in this plan — the existing console does not compile under it and fixing that is its own piece of work. So: handle nullability in code (`?.`, `?? null`, an explicit `if (!draft)` branch) rather than relying on the compiler, and treat the types in Task 2 as a contract you are holding yourself to. That is exactly why they are worth getting exactly right.
 - **Punctuation follows the directory.** `src/lib/`, `src/services/` and `platform/` are written **without** semicolons and with single quotes. `src/components/`, `src/context/` and `src/types/` are written **with** semicolons. Match the neighbours of the file you are in; do not reformat existing lines.
 - **Every file opens with a block comment** saying what it is for and naming any non-obvious decision, in the voice of `src/lib/alarms/map-alert-rules.ts` and `src/context/AlarmContext.tsx`. Not a one-line restatement of the filename.
 - **Two spellings that will bite silently:**
@@ -78,6 +78,7 @@ Modified at the repo root: `CONTEXT.md` (two glossary entries, Task 11).
   - `previewNames(pattern: string, count: number, start: number, taken: Iterable<string>): NamePreview[]`
   - `type NamePreview = { name: string; collides: boolean }`
   - `patternError(pattern: string, count: number): string | null`
+  - `hasPlaceholder(pattern: string): boolean` — exported for the tests and for `patternError`; no component needs it, since a component wants the message, not the predicate.
 
 - [ ] **Step 1: Add Vitest**
 
@@ -5071,7 +5072,7 @@ Finally, sign in as an operator and confirm every field, the Save button and the
 - [ ] **Step 5: Commit**
 
 ```bash
-git add 11_frontend/src/components/model 11_frontend/src/services/graphql 11_frontend/src/App.tsx
+git add 11_frontend/src/components/model 11_frontend/src/App.tsx
 git commit -m "feat(frontend): add the Asset Template editor with concurrent-edit guard"
 ```
 
