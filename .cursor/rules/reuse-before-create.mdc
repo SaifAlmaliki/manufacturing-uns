@@ -1,0 +1,26 @@
+---
+description: Search for and reuse existing functions/components before creating new ones
+alwaysApply: true
+---
+
+# Reuse Before Create
+
+Maintainability and scalability depend on reuse. Before adding any new function, component, hook, util, type, or module:
+
+1. **Search first** — grep/search the codebase for existing names, behaviors, and nearby patterns (same domain, same layer, similar API).
+2. **Prefer extend over invent** — extend, compose, or thinly wrap what already exists instead of a parallel implementation.
+3. **Match existing seams** — place new code next to similar code; follow established module boundaries and naming.
+4. **Only create when necessary** — introduce something new only when no suitable reuse target exists, and document why in a short comment or PR note if non-obvious.
+
+## Checklist (before writing new code)
+
+- [ ] Searched for existing helpers/components with the same responsibility
+- [ ] Checked sibling modules and shared packages for a reusable piece
+- [ ] Confirmed the new surface does not duplicate an existing API
+
+```text
+❌ BAD: New fetchAssetTree() when listAssets() / useAssetTree() already exist
+✅ GOOD: Reuse or compose the existing API; add only the missing piece
+```
+
+When both a fix and a new abstraction are possible, prefer the smaller change that reuses current code.
