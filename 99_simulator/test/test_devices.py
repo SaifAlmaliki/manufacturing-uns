@@ -448,3 +448,39 @@ async def test_concurrent_tier_publishers_share_one_broker_connection():
     assert device.connected is True
     assert device.client.enter_count == 1
     assert len(device.client.published) == 2
+
+
+class _StickyLockClient(DummyClient):
+    """aiomqtt 2.5.1: some failed __aenter__ paths acquire the reentrancy lock and never release it.
+
+    enter_async_context does not call __aexit__ when __aenter__ raises, so a retry on the
+    same client raises 'reusable, but not reentrant' forever — the live MES/EM/FM loop.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.entered = False
+
+    async def __aenter__(self):
+        if self.entered:
+            raise RuntimeError("The client context manager is reusable, but not reentrant")
+        self.entered = True
+        self.enter_count += 1
+        if self.fail_on_enter > 0:
+            self.fail_on_enter -= 1
+            raise TimeoutError("connection timed out")
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        self.entered = False
+        return False
+
+
+@pytest.mark.asyncio
+async def test_connect_recovers_when_aiomqtt_leaves_its_reentrancy_lock_held():
+    device = AsyncMQTTDevice("dev", FakeHierarchy(), {})
+    device.client = _StickyLockClient()
+    device.client.fail_on_enter = 1
+    assert await asyncio.wait_for(device.connect(), timeout=2.0) is True
+    assert device.connected is True
+    assert device.reconnects == 1

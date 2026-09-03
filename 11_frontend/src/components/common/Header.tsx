@@ -43,7 +43,7 @@ function getPageHeading(
     return { title: 'Kafka Streams', subtitle: 'Watch live Kafka event streams.' };
   }
   if (path.startsWith('/system')) {
-    return { title: 'System Health', subtitle: 'Platform health, subsystems, and settings.' };
+    return { title: 'System Health' };
   }
   if (path.startsWith('/simulator')) {
     return { title: 'Simulator', subtitle: 'Control synthetic plant data generation.' };

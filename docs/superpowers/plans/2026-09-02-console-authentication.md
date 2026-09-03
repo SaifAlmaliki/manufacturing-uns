@@ -14,7 +14,43 @@
 
 - The Vitest harness this plan's frontend tests run in is created by foundation-plan Task 1. There is no `vitest` in `11_frontend/package.json` today.
 - Surfaces-plan Task 21 deletes `createUser`, `updateUser`, `deleteUser`, `toggleUserFeaturePermission`, `resetUserToRoleDefaults`, `auditLogs` and `restoreDefaults` from `AuthContext`, and deletes `CreateUserModal.tsx` and `EditUserModal.tsx`. This plan's Task 8 rewrites what is left. Running it first means rewriting code that is about to be deleted.
-- Surfaces-plan Task 12 creates `GrafanaEmbed`, which is the one place Task 11 adds the `Sign in to Grafana` fallback. Without it the fallback would have to be written three times.
+- Surfaces-plan Task 6 rewrites `GrafanaEmbed` (the component already exists; that task gives it its final shape), which is the one place Task 11 adds the `Sign in to Grafana` fallback. Without it the fallback would have to be written three times.
+
+---
+
+## Pre-flight: check the dependencies before Task 1
+
+Verified on 2026-09-03, and worth re-verifying on the day work starts — the two dependency
+plans existed but **neither had landed**: every checkbox in both was unticked,
+`11_frontend/package.json` had no `vitest`, and `CreateUserModal.tsx`, `EditUserModal.tsx` and
+the seven `AuthContext` write/audit APIs were all still present.
+
+```bash
+cd /c/Dev/manufacturing-uns
+grep -c -- "- \[x\]" docs/superpowers/plans/2026-09-02-console-foundation.md \
+  docs/superpowers/plans/2026-09-02-console-surfaces.md
+grep -n "vitest" 11_frontend/package.json
+ls 11_frontend/src/components/users/
+```
+
+The decision rule:
+
+- **Foundation not landed (no `vitest` in `package.json`):** every frontend test step in this
+  plan (`npx vitest run …` in Tasks 2, 7, 8, 9, 10, 11) fails at the command line, not at an
+  assertion. Land the foundation plan first — or at minimum its Task 1, the Vitest harness —
+  before touching `11_frontend`. Do not let `npx` fetch Vitest ad hoc: the harness is jsdom,
+  Testing Library and the `vitest.config.ts` these tests are written against, not just the
+  runner.
+- **Surfaces not landed:** this plan already carries its own fallbacks, and they are the ones
+  to use. Tasks 8 and 10 delete the user modals and the `AuthContext` write APIs if Task 21 has
+  not; Task 8's `TAB_FEATURES` takes its labels from the current navigation, not the renamed
+  one; Task 10 renders its empty states without the surfaces plan's `EmptyState` component;
+  Task 11 mounts `AuthenticationPanel` on the existing `SystemHealthView`.
+- **What is executable without either dependency:** Tasks 1, 3, 4, 5 and 6 are Python and
+  compose work, plus the Python half of Task 2 (Steps 1–5). When the dependencies are still
+  open, a sensible order is Tasks 1–6 with Task 2's frontend steps (6–9) deferred, then the
+  frontend tasks once the harness exists. Task 6's schema change is deliberately free for the
+  console — see its preamble — so landing the backend half first strands nothing.
 
 ---
 
@@ -69,8 +105,9 @@ docker-compose.yml                         MODIFY  uns_keycloak service; graphql
   test/auth/keys.py                         CREATE  test-only RSA keypair + token minting
   test/auth/test_jwks.py                    CREATE  caching and the single refetch
   test/auth/test_token.py                   CREATE  signature, expiry, issuer, audience, roles
-  test/auth/test_unauthenticated.py         CREATE  every operation rejected with no token
-  test/auth/test_mutation_roles.py          CREATE  one test per cell of the role table
+  test/auth/test_context.py                 CREATE  the context dependency, unit-tested without a server
+  test/auth/test_graphql_gate.py            CREATE  every operation rejected with no token
+  test/auth/test_require.py                 CREATE  one test per cell of the role table
   test/mutations/test_oee.py                MODIFY  assigned_by comes from the token now
 09_uns_model/
   src/uns_model/oee_results.py              MODIFY  assign_reason requires an identity
@@ -86,12 +123,12 @@ docker-compose.yml                         MODIFY  uns_keycloak service; graphql
   src/components/auth/LoginView.tsx          MODIFY  password field deleted, one Sign in button
   src/components/auth/LoginView.test.tsx     CREATE
   src/services/graphql/client.ts             MODIFY  Authorization header, connection_init payload, 401
-  src/services/graphql/client.auth.test.ts   CREATE
-  src/services/keycloak/admin.ts             CREATE  realm membership read through GraphQL's proxy path
+  src/services/graphql/client-auth.test.ts   CREATE
+  src/lib/auth/directory.ts                  CREATE  the realm's membership, read same-origin via /auth
   src/components/users/UserManagementView.tsx MODIFY realm membership, or it says it cannot reach it
-  src/components/users/UserManagementView.test.tsx MODIFY the list is realm data now
+  src/components/users/UserManagementView.test.tsx CREATE the list is realm data now
   src/components/common/GrafanaEmbed.tsx     MODIFY  the Sign in to Grafana fallback
-  src/components/health/AuthenticationPanel.tsx CREATE what sign-in protects, and what it does not
+  src/components/system/AuthenticationPanel.tsx CREATE what sign-in protects, and what it does not
   nginx.conf                                 MODIFY  /auth proxy to Keycloak, /grafana unchanged
   platform/settings.ts                       MODIFY  the realm's identity into PlatformSettings
   src/lib/platform/config.ts                 MODIFY  the same four keys, browser side
@@ -111,7 +148,7 @@ Five decisions this structure locks in.
 
 **The console reaches Keycloak through `/auth` on its own origin,** proxied by the same nginx that already proxies `/graphql`, `/simulator` and `/grafana`. This is not cosmetic: it is what makes Grafana's session cookie same-origin (spec section 10) and it means the console's redirect URIs never change between the dev port and the compose port.
 
-**`AuthenticationPanel` is a new HEALTH panel, not a line appended to an existing one.** Surfaces-plan Task 19 builds `HealthView` from four panels including `NotObservablePanel` — "what a browser cannot reach". What sign-in does and does not protect is a different claim about a different thing, and the spec asks for it as its own statement (section 11).
+**`AuthenticationPanel` is a new HEALTH panel, not a line appended to an existing one.** What sign-in does and does not protect is a claim of its own, and the spec asks for it as its own statement (section 11). It lives in `components/system/` and Task 11 mounts it on the `SystemHealthView` that exists today; when the surfaces plan's Task 19 builds its four-panel `HealthView` (with `NotObservablePanel` — "what a browser cannot reach"), the panel moves there unchanged.
 
 ---
 
@@ -250,7 +287,10 @@ def test_compose_imports_the_realm_and_does_not_publish_a_second_port():
 def test_grafana_is_no_longer_anonymous():
     compose = yaml.safe_load(_COMPOSE_FILE.read_text(encoding="utf-8"))
     env = compose["services"]["uns_grafana"]["environment"]
-    assert "GF_AUTH_ANONYMOUS_ENABLED" not in env
+    # Explicit "false", not merely absent: the file states the decision, and an absent key
+    # would leave Grafana's own default in charge.
+    assert env.get("GF_AUTH_ANONYMOUS_ENABLED") == "false"
+    assert "GF_AUTH_ANONYMOUS_ORG_ROLE" not in env
     assert env["GF_AUTH_GENERIC_OAUTH_ENABLED"] == "true"
     # Removing anonymity without keeping embedding on breaks all three console embeds.
     assert env["GF_SECURITY_ALLOW_EMBEDDING"] == "true"
@@ -592,6 +632,11 @@ the thing that proxies it:
 which is exactly right for a stack whose header says `DO NOT USE FOR PRODUCTION DEPLOYMENT`, and
 wrong for anything else. The ADR in Task 12 records that.
 
+One expectation to set before it surprises anybody at Step 13: Keycloak 26's hostname v2
+deprecates `KC_HOSTNAME_STRICT`, so the container logs a deprecation warning at boot. That is
+expected — the setting still takes effect in 26.x, and Step 13's discovery document, not a quiet
+log, is the arbiter of whether the realm advertises the right URLs.
+
 Add it to `uns_frontend`'s `depends_on` (`docker-compose.yml:370`–`:377`), with the same shape
 of comment its three siblings have:
 
@@ -611,26 +656,45 @@ of comment its three siblings have:
 
 - [ ] **Step 10: Point Grafana at the realm**
 
-Replace the three anonymous settings in `uns_grafana`'s `environment`
-(`docker-compose.yml:396`–`:398`) — keeping `GF_SECURITY_ALLOW_EMBEDDING`, which the embeds need
-either way:
+Replace the anonymous settings in `uns_grafana`'s `environment` (`docker-compose.yml:396`–`:398`).
+This is the **whole** Grafana compose change — Task 11 only verifies it, because an environment
+specified in two tasks is how earlier drafts of this plan ended up with two values for
+`GF_AUTH_GENERIC_OAUTH_NAME`:
 
 ```yaml
-      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      # ADR-0001 accepted anonymous access with org role Admin as a known gap and named OIDC
+      # as the target. This is that target: anonymous is explicitly off — not merely absent,
+      # so the file states the decision rather than relying on Grafana's default.
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      # The console embeds Grafana in an iframe and the operator has already signed in to the
+      # same realm on the same origin, so a second visible sign-in step would be noise.
+      GF_AUTH_OAUTH_AUTO_LOGIN: "true"
       GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
-      GF_AUTH_GENERIC_OAUTH_NAME: "Unified Namespace"
+      GF_AUTH_GENERIC_OAUTH_NAME: Keycloak
       GF_AUTH_GENERIC_OAUTH_CLIENT_ID: uns-grafana
       GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: ${UNS_keycloak__grafana_client_secret}
-      GF_AUTH_GENERIC_OAUTH_SCOPES: "openid email profile roles"
-      # The browser reaches the realm on the console's origin; Grafana reaches it by service
-      # name. Auth and token URLs differ for that reason and both are correct.
+      GF_AUTH_GENERIC_OAUTH_SCOPES: "openid profile email roles"
+      # The browser is redirected to the auth URL, so it is the published origin. The token
+      # and userinfo calls are Grafana's own, server to server, so they use the container name.
       GF_AUTH_GENERIC_OAUTH_AUTH_URL: "http://localhost:8088/auth/realms/uns/protocol/openid-connect/auth"
       GF_AUTH_GENERIC_OAUTH_TOKEN_URL: "http://uns_keycloak:8080/auth/realms/uns/protocol/openid-connect/token"
       GF_AUTH_GENERIC_OAUTH_API_URL: "http://uns_keycloak:8080/auth/realms/uns/protocol/openid-connect/userinfo"
-      # admin -> Admin, engineer -> Editor, everything else Viewer (spec section 9).
+      # admin -> Admin, engineer -> Editor, everything else Viewer (spec section 9). The
+      # realm's uns-grafana client publishes a flat multivalued `roles` claim, which is what
+      # this path reads. An operator gets Viewer: a plant dashboard is not something a shift
+      # operator should be able to rewrite mid-shift.
       GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "contains(roles[*], 'admin') && 'Admin' || contains(roles[*], 'engineer') && 'Editor' || 'Viewer'"
       GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_STRICT: "false"
+      # Removing anonymity without keeping embedding on breaks all three console embeds.
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
 ```
+
+`GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_STRICT: "false"` deserves its comment. With it `true`, a
+realm user who holds none of the five is refused a Grafana session entirely; with it `false` the
+JMESPath's final `|| 'Viewer'` gives them a read-only one. `false` is the right choice *here*
+because the console already gates the HEALTH screen on `system_ops`, so nobody reaches the
+iframe without a role that the console recognises. If that gate is ever removed, this flips.
 
 Add Keycloak to `uns_grafana`'s `depends_on`:
 
@@ -639,9 +703,10 @@ Add Keycloak to `uns_grafana`'s `depends_on`:
         condition: service_healthy
 ```
 
-`GF_AUTH_ANONYMOUS_ENABLED` and `GF_AUTH_ANONYMOUS_ORG_ROLE` are deleted here. Task 11 handles
-what that does to the three embeds; the fallback if it proves unworkable is spec section 10's,
-and Task 12's ADR records which of the two outcomes actually happened.
+`GF_AUTH_ANONYMOUS_ORG_ROLE` is deleted here, and anonymous is set to `"false"` in writing
+rather than left to a default. Task 11 handles what the switch does to the three embeds; the
+fallback if it proves unworkable is spec section 10's, and Task 12's ADR records which of the
+two outcomes actually happened.
 
 - [ ] **Step 11: Proxy `/auth`**
 
@@ -685,8 +750,8 @@ the proxy would have to point at `localhost:8088/auth` — through the very ngin
 avoid. The honest consequence, stated rather than papered over: **`npm run dev` needs the
 `uns_frontend` container up to sign in.** That is already true of the Grafana embeds, whose
 `urls.grafana_proxy_target` default of `http://localhost:3000` addresses a port this compose
-file does not publish either. Write this line now and expect `tsc` to fail on it until Task 2 lands; Step 12 only
-runs the Python suite.
+file does not publish either. Note that Step 12 only runs the Python suite — nothing in this
+task type-checks the console.
 
 - [ ] **Step 12: Run the tests**
 
@@ -695,7 +760,7 @@ cd 00_uns_config
 uv run pytest -q
 ```
 
-Expected: green, including all nine cases in `test_keycloak_realm.py`. If
+Expected: green, including all eight cases in `test_keycloak_realm.py`. If
 `test_compose_imports_the_realm_and_does_not_publish_a_second_port` fails on `command`, check
 that the compose value is a YAML list and not a string — `"start-dev --import-realm"` as one
 string makes `"--import-realm" in keycloak["command"]` a substring test that passes for the
@@ -704,7 +769,7 @@ wrong reason, and the list form is what the test is written against.
 - [ ] **Step 13: Bring it up once, by hand**
 
 ```bash
-cd /c/Dev/unifiednamespace
+cd /c/Dev/manufacturing-uns
 uv run uns_compose up -d --build uns_keycloak uns_frontend
 curl -s http://localhost:8088/auth/realms/uns/.well-known/openid-configuration | head -c 400
 ```
@@ -749,12 +814,12 @@ accepted. Embedding stays enabled."
 
 **Definition of done:**
 - `conf/keycloak/realm.json` is committed and imported by `--import-realm`.
-- `00_uns_config/test/test_keycloak_realm.py` passes all nine cases, and `uv run pytest -q` in
+- `00_uns_config/test/test_keycloak_realm.py` passes all eight cases, and `uv run pytest -q` in
   `00_uns_config` is green.
 - The discovery document at `http://localhost:8088/auth/realms/uns/.well-known/openid-configuration`
   advertises the console's origin, verified by hand.
-- Keycloak's 8080 is not published, and `GF_AUTH_ANONYMOUS_ENABLED` is gone from
-  `docker-compose.yml`.
+- Keycloak's 8080 is not published, and `docker-compose.yml` states
+  `GF_AUTH_ANONYMOUS_ENABLED: "false"` with `GF_AUTH_ANONYMOUS_ORG_ROLE` gone.
 - `conf/.secrets.yaml.template` names both new secrets, and `compose_environment` refuses to run
   without them.
 - `conf/keycloak/README.md` says the passwords are development-only and that editing the running
@@ -1919,10 +1984,15 @@ REALM_KEY = make_key("gate-key")
 OPERATIONS = [
     # Queries. Every one of them, per success criterion 2.
     ("getUnsNodes", "{ getUnsNodes(topics: [\"a/b\"]) { topic } }"),
-    ("getHistoricEvents", "{ getHistoricEventsByTopics(topics: [\"a/b\"]) { topic } }"),
+    ("getHistoricEvents",
+     "{ getHistoricEventsByPublishers(publishers: [\"client-1\"]) { topic } }"),
     ("getAssets", "{ getAssets { path } }"),
     ("getAlertRules", "{ getAlertRules { id } }"),
-    ("getShiftResults", "{ getShiftResults(assetPath: \"a\") { shiftStart } }"),
+    # The OEE query's datetime arguments are published as `from`/`to` (strawberry.argument
+    # renames them), and the field is oeeShiftResults, not getShiftResults.
+    ("oeeShiftResults",
+     "{ oeeShiftResults(assetPath: \"a\", from: \"2026-01-01T00:00:00Z\", "
+     "to: \"2026-01-01T08:00:00Z\") { shiftStart } }"),
     # All six mutations, per finding 3.
     ("saveAlertRule", 'mutation { saveAlertRule(rule: {id: "r", name: "n", severity: '
                       'CRITICAL, category: TEMPERATURE, topic: "a/b", metricField: "value", '
@@ -2852,7 +2922,7 @@ only thing in this plan that exercises the document against the actual schema.
 - [ ] **Step 1: Find the callers before changing the signature**
 
 ```bash
-cd /c/Dev/unifiednamespace
+cd /c/Dev/manufacturing-uns
 grep -rn "assignedBy\|assign_reason\|assignDowntimeReason" \
   --include="*.ts" --include="*.tsx" --include="*.py" \
   11_frontend/src 07_uns_graphql/src 09_uns_model/src
@@ -3100,7 +3170,7 @@ a placeholder for whatever the file's existing fixture is called; read `:380` an
 - [ ] **Step 7: Confirm the console never names an author, and fix it if it does**
 
 ```bash
-cd /c/Dev/unifiednamespace/11_frontend
+cd /c/Dev/manufacturing-uns/11_frontend
 grep -rn "assignDowntimeReason\|assignedBy" src/
 ```
 
@@ -3255,7 +3325,7 @@ the server refuses the document rather than honouring it.
 - [ ] **Step 10: Commit**
 
 ```bash
-cd /c/Dev/unifiednamespace
+cd /c/Dev/manufacturing-uns
 git add 07_uns_graphql/src/uns_graphql/mutations/oee.py 07_uns_graphql/test/mutations/test_oee.py \
         09_uns_model/src/uns_model/oee_results.py 09_uns_model/test/test_oee_results.py
 # Add 11_frontend/src/services/graphql/ only if Step 7 found something to fix. In the intended
@@ -3954,11 +4024,14 @@ The provider keeps the shape its consumers use — spec section 6: *"`AuthContex
 public shape … so the components consuming it do not all change at once"* — and everything
 behind it is replaced.
 
-**Read the surfaces plan's Task 21 before starting.** It has already deleted `auditLogs`,
+**Read the surfaces plan's Task 21 before starting.** It deletes `auditLogs`,
 `createUser`, `updateUser`, `deleteUser`, `toggleUserFeaturePermission`,
 `resetUserToRoleDefaults` and `restoreDefaults`, together with both user modals. This task
-starts from that reduced file. If Task 21 has not landed, land it first; doing them in the other
-order means writing an OIDC provider around seven methods that are about to be deleted.
+starts from that reduced file. If Task 21 has not landed (see the Pre-flight section — as of
+2026-09-03 it had not), the deletion is this task's first move instead: the modals and the
+seven methods go here rather than being wrapped, and the surfaces plan's Task 21 becomes a
+no-op when it lands. The one ordering that is wrong is doing neither — an OIDC provider around
+seven methods that are about to be deleted.
 
 What is left after Task 21, from `AuthContext.tsx:117`–`:135`: `currentUser`, `users`,
 `isAdmin`, `isAuthenticated`, `login`, `logout`, `switchUser`, `hasPermission`,
@@ -4412,9 +4485,10 @@ export const useAuth = () => {
 ```
 
 `TAB_FEATURES` is the `switch` from `:376`–`:409` turned into a table beside the provider. Copy
-the eight entries across verbatim — the same tab keys and the same `FeatureKey` values — but take
-the *labels* from the surfaces plan's navigation, which renamed the screens away from internal
-module names:
+the eight entries across verbatim — the same tab keys and the same `FeatureKey` values — and take
+the *labels* from the navigation that actually shipped: the surfaces plan renames the screens
+away from internal module names, and if it has not landed (as of 2026-09-03 it had not), the
+labels come from the current navigation and the surfaces plan renames them later:
 
 ```tsx
 const TAB_FEATURES: Record<string, { feature: FeatureKey; name: string }> = {
@@ -4429,9 +4503,10 @@ const TAB_FEATURES: Record<string, { feature: FeatureKey; name: string }> = {
 };
 ```
 
-Check the surfaces plan's navigation task for the tab keys it ships and use those. If it renamed
-a route key, this table's keys change with it; a stale key here silently falls back to `home` and
-gates the wrong screen.
+When the surfaces plan lands, check its navigation task for the tab keys it ships and adopt
+those. If it renamed a route key, this table's keys change with it; a stale key here silently
+falls back to `home` and gates the wrong screen. Until then, the existing switch's keys are the
+authority.
 
 `session.roles[0]` is a lossy narrowing and it is worth being explicit about why it is
 acceptable here. `UserAccount.role` is a single `UserRole`, but a realm user can hold several —
@@ -5567,7 +5642,10 @@ The four states the directory tab renders, and the exact words for the two that 
 ```
 
 Use whichever `EmptyState` the surfaces plan settled on; if it takes different props, match them.
-The wording matters more than the component: the `forbidden` copy names the missing role, because
+If the surfaces plan has not landed and no `EmptyState` exists in `src/` (there is none as of
+2026-09-03), render the same copy in the panel style this screen already uses rather than
+introducing a new component in a commit about the directory. The wording matters more than the
+component: the `forbidden` copy names the missing role, because
 that is the one thing an operator's administrator can act on.
 
 Each row shows: display name, username, email, the role badge from
@@ -5634,7 +5712,7 @@ the Keycloak volume dropped to take effect.**
 - [ ] **Step 9: Commit**
 
 ```bash
-cd /c/Dev/unifiednamespace
+cd /c/Dev/manufacturing-uns
 git add conf/keycloak/realm.json 00_uns_config/test/test_keycloak_realm.py \
         11_frontend/src/lib/auth/directory.ts 11_frontend/src/lib/auth/directory.test.ts \
         11_frontend/src/components/users
@@ -5701,7 +5779,7 @@ otherwise, in the spec's own words.
 - [ ] **Step 1: Read what is there**
 
 ```bash
-cd /c/Dev/unifiednamespace
+cd /c/Dev/manufacturing-uns
 sed -n '391,406p' docker-compose.yml
 grep -n "grafana" conf/nginx*.conf 11_frontend/nginx*.conf 11_frontend/vite.config.ts 2>/dev/null
 ```
@@ -5715,54 +5793,28 @@ edit dashboards.
 Also note the proxy path — the iframe's `src` is `/grafana/d/...`, same origin as the console.
 That is what makes Step 5's fallback detectable at all.
 
-- [ ] **Step 2: Turn on OIDC in the compose service**
+- [ ] **Step 2: Verify the compose service matches Task 1**
 
-Replace the two anonymous lines in `docker-compose.yml`'s `uns_grafana` environment:
+Task 1 Step 10 already made the whole Grafana compose change — anonymous explicitly `"false"`,
+`generic_oauth` against the realm, `GF_AUTH_OAUTH_AUTO_LOGIN`, the role mapping, and the
+`uns_keycloak` dependency. This task does not edit `docker-compose.yml` again; it verifies the
+change survived and nothing drifted:
 
-```yaml
-    environment:
-      # ADR-0001 accepted anonymous access with org role Admin as a known gap and named OIDC
-      # as the target. This is that target. Anonymous is off: reaching port 8088 is no longer
-      # the same thing as being allowed to edit a plant dashboard.
-      GF_AUTH_ANONYMOUS_ENABLED: "false"
-      GF_AUTH_DISABLE_LOGIN_FORM: "true"
-      # The console embeds Grafana in an iframe and the operator has already signed in to the
-      # same realm on the same origin, so a second visible sign-in step would be noise.
-      GF_AUTH_OAUTH_AUTO_LOGIN: "true"
-      GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
-      GF_AUTH_GENERIC_OAUTH_NAME: Keycloak
-      GF_AUTH_GENERIC_OAUTH_CLIENT_ID: uns-grafana
-      GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: ${UNS_keycloak__grafana_client_secret}
-      GF_AUTH_GENERIC_OAUTH_SCOPES: "openid profile email roles"
-      # The browser is redirected to these, so they are the published URLs. The token and
-      # userinfo calls are Grafana's own, server to server, so they use the container name.
-      GF_AUTH_GENERIC_OAUTH_AUTH_URL: "http://localhost:8088/auth/realms/uns/protocol/openid-connect/auth"
-      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: "http://uns_keycloak:8080/auth/realms/uns/protocol/openid-connect/token"
-      GF_AUTH_GENERIC_OAUTH_API_URL: "http://uns_keycloak:8080/auth/realms/uns/protocol/openid-connect/userinfo"
-      # The realm's uns-grafana client publishes a flat multivalued `roles` claim, which is
-      # what this path reads. An operator gets Viewer: a plant dashboard is not something a
-      # shift operator should be able to rewrite mid-shift.
-      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "contains(roles[*], 'admin') && 'Admin' || contains(roles[*], 'engineer') && 'Editor' || 'Viewer'"
-      # Somebody with no console role gets no Grafana account, rather than a Viewer one.
-      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_STRICT: "false"
-      GF_SECURITY_ALLOW_EMBEDDING: "true"
-      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
-      GF_SERVER_ROOT_URL: "http://localhost:8088/grafana/"
-      GF_INSTALL_PLUGINS: grafana-mqtt-datasource
-      UNS_HISTORIAN_PASSWORD: ${UNS_historian__password}
-    depends_on:
-      uns_keycloak:
-        condition: service_healthy
+```bash
+cd /c/Dev/manufacturing-uns
+grep -n "GF_AUTH_ANONYMOUS_ENABLED\|GF_AUTH_OAUTH_AUTO_LOGIN\|GF_AUTH_GENERIC_OAUTH_NAME" docker-compose.yml
 ```
 
-Merge that `depends_on` entry into the existing block rather than replacing it — the other seven
-conditions all still apply.
+Expected: one match each — `"false"`, `"true"`, `Keycloak` — all in `uns_grafana`'s environment.
+If anything is missing or doubled, reconcile `uns_grafana`'s environment to Task 1 Step 10's
+block here, rather than editing anything else.
 
-`ROLE_ATTRIBUTE_STRICT: "false"` deserves the comment it has. With it `true`, a realm user who
-holds none of the five is refused a Grafana session entirely; with it `false` the JMESPath's
-final `|| 'Viewer'` gives them a read-only one. `false` is the right choice *here* because the
-console already gates the HEALTH screen on `system_ops`, so nobody reaches the iframe without a
-role that the console recognises. If that gate is ever removed, this flips.
+One value deserves re-reading rather than just grepping. `GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_STRICT: "false"`
+decides what a realm user with none of the five console roles gets: with it `true` they are
+refused a Grafana session entirely; with it `false` the JMESPath's final `|| 'Viewer'` gives
+them a read-only one. `false` is right *here* because the console already gates the HEALTH
+screen on `system_ops`, so nobody reaches the iframe without a recognised role. If that gate is
+ever removed, this flips.
 
 - [ ] **Step 3: Add the secret plumbing check**
 
@@ -5771,7 +5823,7 @@ reaches compose, because a missing interpolation here is a Grafana that starts a
 every sign-in with an opaque `invalid_client`:
 
 ```bash
-cd /c/Dev/unifiednamespace
+cd /c/Dev/manufacturing-uns
 uv run python -m uns_config.compose_env > /dev/null && docker compose config | grep -A 2 GENERIC_OAUTH_CLIENT_SECRET
 ```
 
@@ -6049,10 +6101,14 @@ This is the step that finds the real problems, because Grafana's OIDC round trip
 unit-tested.
 
 ```bash
-cd /c/Dev/unifiednamespace
-docker compose up -d uns_keycloak uns_grafana
+cd /c/Dev/manufacturing-uns
+uv run uns_compose up -d uns_keycloak uns_grafana
 docker compose logs -f uns_grafana | grep -i "oauth\|invalid_client\|error"
 ```
+
+(`uns_compose`, not plain `docker compose`, for the `up`: only the wrapper loads
+`conf/.secrets.yaml`, and without it `GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET` interpolates to empty
+and every sign-in fails with an opaque `invalid_client`. Reading logs needs no secrets.)
 
 Then in the browser:
 
@@ -6085,7 +6141,7 @@ pointing at ADR-0009, which Task 12 writes:
 - [ ] **Step 11: Commit**
 
 ```bash
-cd /c/Dev/unifiednamespace
+cd /c/Dev/manufacturing-uns
 git add docker-compose.yml docs/adr/0001-*.md \
         11_frontend/src/components/common/GrafanaEmbed.tsx \
         11_frontend/src/components/common/GrafanaEmbed.test.tsx \
@@ -6140,7 +6196,7 @@ router rather than per-resolver) will look like oversights to whoever reads the 
 - [ ] **Step 1: Match the house style**
 
 ```bash
-cd /c/Dev/unifiednamespace
+cd /c/Dev/manufacturing-uns
 ls docs/adr/
 head -40 docs/adr/0008-*.md
 ```
@@ -6226,7 +6282,7 @@ Find the exact sentence and leave it visible rather than deleting it; a record o
 has moved on is more useful than a rewritten one that pretends it never said otherwise:
 
 ```bash
-cd /c/Dev/unifiednamespace && grep -rn "no authorization in this service" docs/ 07_uns_graphql/
+cd /c/Dev/manufacturing-uns && grep -rn "no authorization in this service" docs/ 07_uns_graphql/
 ```
 
 Every hit outside `docs/adr/` is a code comment that is now wrong. Fix those too — in particular
@@ -6254,7 +6310,7 @@ The point of writing the record last is that it is a proofreading pass. Read ADR
 twelve tasks and check every claim it makes is one the code actually implements:
 
 ```bash
-cd /c/Dev/unifiednamespace
+cd /c/Dev/manufacturing-uns
 grep -rn "MUTATION_ROLES" 07_uns_graphql/src/ | head
 grep -rn "localStorage" 11_frontend/src/lib/auth/ 11_frontend/src/context/AuthContext.tsx
 grep -rn "GF_AUTH_ANONYMOUS_ENABLED" docker-compose.yml
@@ -6272,7 +6328,7 @@ wrong. An ADR that describes a design the code does not have is worse than no AD
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /c/Dev/unifiednamespace
+cd /c/Dev/manufacturing-uns
 git add docs/adr/0009-oidc-authentication-for-console-and-graphql.md docs/adr/0005-*.md CONTEXT.md
 git commit -m "docs(adr): record how authentication works and what it does not cover
 
