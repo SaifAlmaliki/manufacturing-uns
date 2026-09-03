@@ -5781,7 +5781,7 @@ otherwise, in the spec's own words.
   is rendered by `SystemHealthView`.
 - Nothing consumes this further.
 
-- [ ] **Step 1: Read what is there**
+- [x] **Step 1: Read what is there**
 
 ```bash
 cd /c/Dev/manufacturing-uns
@@ -5798,7 +5798,7 @@ edit dashboards.
 Also note the proxy path — the iframe's `src` is `/grafana/d/...`, same origin as the console.
 That is what makes Step 5's fallback detectable at all.
 
-- [ ] **Step 2: Verify the compose service matches Task 1**
+- [x] **Step 2: Verify the compose service matches Task 1**
 
 Task 1 Step 10 already made the whole Grafana compose change — anonymous explicitly `"false"`,
 `generic_oauth` against the realm, `GF_AUTH_OAUTH_AUTO_LOGIN`, the role mapping, and the
@@ -5836,7 +5836,7 @@ Expected: a non-empty value. Use whatever command Task 1's step actually establi
 generating the compose env — read Task 1 rather than trusting this line — and if the value comes
 out empty, fix it here before going further.
 
-- [ ] **Step 4: Write the failing embed test**
+- [x] **Step 4: Write the failing embed test**
 
 Create `11_frontend/src/components/common/GrafanaEmbed.test.tsx`:
 
@@ -5909,7 +5909,7 @@ describe('GrafanaEmbed', () => {
 });
 ```
 
-- [ ] **Step 5: Add the fallback to `GrafanaEmbed`**
+- [x] **Step 5: Add the fallback to `GrafanaEmbed`**
 
 Keep `GRAFANA_DASHBOARDS`, `GrafanaDashboardId`, `grafanaTopicFilter`, `grafanaRangeFromPreset`
 and `grafanaKioskPath` exactly as they are — `SystemHealthView.tsx:5`–`:8` imports the first
@@ -5973,7 +5973,7 @@ the wrapper's `w-full h-full min-h-0` passes through — but check every other c
 `GrafanaEmbed` for one that relied on the iframe being the direct child, and check the panel is
 still full height in the browser rather than collapsed to nothing.
 
-- [ ] **Step 6: Write the failing authentication panel test**
+- [x] **Step 6: Write the failing authentication panel test**
 
 Create `11_frontend/src/components/system/AuthenticationPanel.test.tsx`:
 
@@ -6018,7 +6018,7 @@ describe('AuthenticationPanel', () => {
 });
 ```
 
-- [ ] **Step 7: Write `AuthenticationPanel.tsx`**
+- [x] **Step 7: Write `AuthenticationPanel.tsx`**
 
 Create `11_frontend/src/components/system/AuthenticationPanel.tsx`. Four facts, no more: who is
 signed in, which roles they hold, where the realm is, and what sign-in does and does not cover.
@@ -6080,7 +6080,7 @@ export const AuthenticationPanel: React.FC = () => {
 The `break-all` on the realm URL is not decoration: it is a long same-line string in a dense
 panel, and without it the grid column blows out and pushes the sentence off screen.
 
-- [ ] **Step 8: Put it on the HEALTH screen**
+- [x] **Step 8: Put it on the HEALTH screen**
 
 `SystemHealthView.tsx` is currently a header and a full-bleed iframe. The panel goes in a column
 beside or above the embed — read the surfaces plan's HEALTH task and put it where that task says,
@@ -6130,7 +6130,7 @@ Then in the browser:
    a redirect-uri mismatch means Task 1's `uns-grafana` `redirectUris` does not match
    `GF_SERVER_ROOT_URL` + `/login/generic_oauth`.
 
-- [ ] **Step 10: Update ADR-0001**
+- [x] **Step 10: Update ADR-0001**
 
 ADR-0001 says anonymous Grafana is "a known security gap, deliberately accepted" with OIDC as
 "the documented target". That is now false. Do not rewrite the decision — add a status note

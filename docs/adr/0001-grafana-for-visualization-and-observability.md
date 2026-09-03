@@ -49,3 +49,8 @@ unauthenticated surface, and the dashboards expose plant process data. It does
 make iframe embedding in the console trivial, which is how the System Health
 panel stops lying. OIDC is the documented target; nothing here depends on
 anonymous access remaining on.
+
+> **Superseded in part (2026-09):** the anonymous-access gap described below is closed.
+> Grafana now signs in against the platform's Keycloak realm with `generic_oauth`, and realm
+> roles map to Grafana org roles. See ADR-0009. The rest of this record — why Grafana is
+> proxied under `/grafana` and why port 3000 is unpublished — still stands.

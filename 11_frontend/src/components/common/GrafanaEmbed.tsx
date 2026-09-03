@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 export const GRAFANA_DASHBOARDS = {
   platform: {
@@ -72,12 +72,52 @@ export const GrafanaEmbed: React.FC<GrafanaEmbedProps> = ({
   className = 'w-full h-full min-h-0 border-0 bg-[#111114]',
 }) => {
   const src = grafanaKioskPath(uid, theme, { vars, from, to });
+  const [signedOut, setSignedOut] = useState(false);
+
+  /**
+   * Grafana is not anonymous any more, and an iframe cannot report an HTTP status — `load`
+   * fires for a sign-in page as readily as for a dashboard. What it can report is *where it
+   * ended up*, because nginx serves /grafana from the console's own origin.
+   *
+   * A path under /login means Grafana's OIDC round trip did not complete inside the frame,
+   * usually because the browser is blocking something about a redirect chain in third-party
+   * context. The answer is a full-page link, where the same redirect can succeed.
+   */
+  const checkWhereItLanded = (event: React.SyntheticEvent<HTMLIFrameElement>) => {
+    try {
+      const path = event.currentTarget.contentWindow?.location?.pathname ?? '';
+      setSignedOut(path.includes('/login'));
+    } catch {
+      setSignedOut(false);
+    }
+  };
+
   return (
-    <iframe
-      title={title}
-      src={src}
-      className={className}
-      referrerPolicy="same-origin"
-    />
+    <div className="relative w-full h-full min-h-0">
+      <iframe
+        title={title}
+        src={src}
+        className={className}
+        referrerPolicy="same-origin"
+        onLoad={checkWhereItLanded}
+      />
+      {signedOut && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#111114]/95 text-center px-6">
+          <p className="text-xs font-bold text-[#F8FAFC]">Grafana needs its own sign-in</p>
+          <p className="text-[11px] text-[#94A3B8] max-w-md">
+            The dashboards are served by Grafana, which signs in against the same Keycloak realm
+            as this console. It could not complete that inside this panel.
+          </p>
+          <a
+            href="/grafana/"
+            target="_blank"
+            rel="noreferrer"
+            className="px-3 py-1.5 rounded bg-[#FFC107] text-[#0F172A] text-[11px] font-bold uppercase tracking-wider"
+          >
+            Sign in to Grafana
+          </a>
+        </div>
+      )}
+    </div>
   );
 };

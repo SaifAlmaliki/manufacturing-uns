@@ -6,6 +6,7 @@ import {
   GrafanaEmbed,
 } from '../common/GrafanaEmbed';
 import { PageShell, PageContent, ConsoleCard, SegmentTabs } from '../ui/console-ui';
+import { AuthenticationPanel } from './AuthenticationPanel';
 
 export const SystemHealthView: React.FC = () => {
   const { isDark } = useTheme();
@@ -25,6 +26,9 @@ export const SystemHealthView: React.FC = () => {
           active={dashboard}
           onChange={(id) => setDashboard(id as GrafanaDashboardId)}
         />
+        <div className="shrink-0">
+          <AuthenticationPanel />
+        </div>
         <ConsoleCard padding="none" className="min-h-0 flex-1 overflow-hidden">
           <GrafanaEmbed uid={active.uid} theme={isDark ? 'dark' : 'light'} title={active.label} />
         </ConsoleCard>
