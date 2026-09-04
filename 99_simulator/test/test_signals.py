@@ -15,14 +15,14 @@ from uns_simulator.signals import (
 
 
 class FakeLine:
-    def __init__(self, *, state="EXECUTE", production_rate=1.0, throughput_tph=10.0):
+    def __init__(self, *, state="Running", production_rate=1.0, throughput_tph=10.0):
         self.state = state
         self.production_rate = production_rate
         self.throughput_tph = throughput_tph
 
 
 class FakeView:
-    """Minimal stand-in for plant.DeviceView until Task 8 exists."""
+    """Minimal stand-in for DeviceView: a nested object `resolve_ctx_path` can walk."""
 
     def __init__(self, *, running=True, production_rate=1.0, ambient_temp_c=20.0, line=None):
         self.running = running
@@ -56,7 +56,7 @@ def test_seed_differs_by_topic_and_by_global_seed():
 
 def test_seed_is_stable_across_processes():
     """A literal, not a recomputation: `hash()` would make this value vary per process."""
-    assert signal_seed(0, "CovestroAG/Dormagen/Production/Line1/Cell1/G1/ProcessValue/Temperature") == 5432699124154044131
+    assert signal_seed(0, "AcmeWater/Site1/RawWater/Train1/P101/WTP_MotorDOL/ProcessValue/Speed") == 6819111209282605787
 
 
 def test_noise_stays_within_variation_band():
@@ -448,44 +448,43 @@ def test_stepped_respects_weights():
 
 
 def test_stepped_reads_a_ctx_source_path():
-    """Spec 8.5: PackMlState is `stepped` from the line state — it mirrors, not invents.
+    """A `stepped` signal with `source` mirrors the plant rather than inventing a state.
 
     The nested `line.state` here is a deliberately arbitrary path, proving `resolve_ctx_path`
-    walks whatever depth it is given. The real `DeviceView` (Task 8) is flat, so the path a
-    configuration file writes is `ctx.state`; Task 18 restates that where it matters.
+    walks whatever depth it is given. DeviceView is flat (`ctx.wtp.*`); this fixture is not.
     """
     signal = build_signal(
-        SignalSpec(name="PackMlState", shape="stepped", params={"source": "line.state"}),
+        SignalSpec(name="Mode", shape="stepped", params={"source": "line.state"}),
         "t/State",
         7,
     )
-    view = FakeView(line=FakeLine(state="EXECUTE"))
-    assert signal.next(1.0, view, {}) == "EXECUTE"
-    view.line.state = "HELD"
-    assert signal.next(1.0, view, {}) == "HELD", "a sourced stepped signal follows immediately"
+    view = FakeView(line=FakeLine(state="Running"))
+    assert signal.next(1.0, view, {}) == "Running"
+    view.line.state = "Backwash"
+    assert signal.next(1.0, view, {}) == "Backwash", "a sourced stepped signal follows immediately"
 
 
 def test_stepped_translates_through_map():
     signal = build_signal(
         SignalSpec(
-            name="PackMlStateCode",
+            name="ModeCode",
             shape="stepped",
-            params={"source": "ctx.line.state", "map": {"IDLE": 1, "EXECUTE": 6}},
+            params={"source": "ctx.line.state", "map": {"Idle": 1, "Running": 6}},
         ),
         "t/Code",
         7,
     )
-    assert signal.next(1.0, FakeView(line=FakeLine(state="EXECUTE")), {}) == 6
-    assert signal.next(1.0, FakeView(line=FakeLine(state="IDLE")), {}) == 1
+    assert signal.next(1.0, FakeView(line=FakeLine(state="Running")), {}) == 6
+    assert signal.next(1.0, FakeView(line=FakeLine(state="Idle")), {}) == 1
 
 
 def test_stepped_passes_an_unmapped_value_through_unchanged():
     signal = build_signal(
-        SignalSpec(name="Code", shape="stepped", params={"source": "line.state", "map": {"IDLE": 1}}),
+        SignalSpec(name="Code", shape="stepped", params={"source": "line.state", "map": {"Idle": 1}}),
         "t/Code",
         7,
     )
-    assert signal.next(1.0, FakeView(line=FakeLine(state="ABORTED")), {}) == "ABORTED"
+    assert signal.next(1.0, FakeView(line=FakeLine(state="Faulted")), {}) == "Faulted"
 
 
 def test_stepped_without_source_or_choices_names_the_signal():
@@ -494,7 +493,7 @@ def test_stepped_without_source_or_choices_names_the_signal():
 
 
 def test_resolve_ctx_path_tolerates_a_missing_hop():
-    assert resolve_ctx_path(FakeView(line=FakeLine(state="IDLE")), "line.state") == "IDLE"
+    assert resolve_ctx_path(FakeView(line=FakeLine(state="Idle")), "line.state") == "Idle"
     assert resolve_ctx_path(FakeView(line=None), "line.state") is None
     assert resolve_ctx_path(None, "line.state") is None
     assert resolve_ctx_path(FakeView(), "no_such_field") is None

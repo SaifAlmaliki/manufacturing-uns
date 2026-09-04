@@ -279,7 +279,7 @@ def _resolve_tiers(raw: Mapping[str, Any], tier_scale: float) -> dict[str, float
     return {name: interval * tier_scale for name, interval in tiers.items()}
 
 
-def load_profile(raw: Mapping[str, Any], profile_name: str = "full", *, seed: int | None = None) -> LoadedProfile:
+def load_profile(raw: Mapping[str, Any], profile_name: str = "wtp", *, seed: int | None = None) -> LoadedProfile:
     """Resolve a profile into devices, a plant context and a load report.
 
     `raw` is the merged conf/simulator mapping. Every validation error names the offending

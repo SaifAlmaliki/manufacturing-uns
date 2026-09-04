@@ -16,7 +16,7 @@ from uns_simulator.self_telemetry import SelfTelemetry, telemetry_prefix
 
 STATUS = {
     "run_state": "running",
-    "profile": "small",
+    "profile": "wtp",
     "seed": 1,
     "device_count": 2,
     "signal_count": 5,
@@ -27,25 +27,21 @@ STATUS = {
     "failed_total": 0,
     "overrides_active": False,
     "tiers": {"process": 30.0},
-    "families": {"energy": True},
+    "families": {"wtp": True},
     "per_tier": {"process": 5},
     "tick_count": 3,
 }
 
 PLANT = {
-    "sites": {
-        "Site1": {
-            "shift": "A",
-            "lines": {
-                "Train1": {
-                    "state": "Execute",
-                    "previous": "Starting",
-                    "production_rate": 0.92,
-                    "time_in_state_s": 184.0,
-                }
-            },
-        }
-    }
+    "enterprise": "AcmeWater",
+    "site": "Site1",
+    "mode": "Running",
+    "filter_mode": "InService",
+    "duty_raw_pump": "P101",
+    "lead_dist_pump": "P201",
+    "tanks": {"T101": {"level_pct": 51.2, "volume_m3": 128.0, "capacity_m3": 250.0}},
+    "flows_m3h": {"inlet": 80.0, "FT101": 78.4, "FT201": 69.8},
+    "pressures_barg": {"PT101": 2.1, "PT201": 3.8},
 }
 
 
@@ -116,13 +112,16 @@ def test_a_transition_is_enqueued_and_never_published_inline():
     """PlantClock calls its listeners synchronously on the tick and swallows what they
     raise. An awaited publish here would put broker latency inside the plant's clock."""
     telemetry = _telemetry()
-    telemetry.on_transition("Site1", "Train1", "Execute")
+    telemetry.on_transition("Site1", "Train1", "DutyP102")
 
     topic, payload = telemetry.queue.get_nowait()
     assert topic == "uns/platform/simulator/Instance01/plant/Site1/Train1/state"
-    assert payload["state"] == "Execute"
-    assert payload["previous"] == "Starting"
-    assert payload["time_in_state_s"] == 184.0
+    assert payload["state"] == "DutyP102"
+    assert payload["mode"] == "Running"
+    assert payload["filter_mode"] == "InService"
+    assert payload["duty_raw_pump"] == "P101"
+    assert payload["lead_dist_pump"] == "P201"
+    assert "production_rate" not in payload
     assert DummyClient.instances == []
 
 
@@ -130,8 +129,8 @@ def test_a_full_queue_drops_and_counts_rather_than_blocking_the_clock():
     telemetry = _telemetry()
     telemetry.queue = asyncio.Queue(maxsize=1)
 
-    telemetry.on_transition("Site1", "Train1", "Execute")
-    telemetry.on_transition("Site1", "Train1", "Holding")
+    telemetry.on_transition("Site1", "Train1", "DutyP102")
+    telemetry.on_transition("Site1", "Train1", "Backwash")
 
     assert telemetry.queue.qsize() == 1
     assert telemetry.dropped == 1
@@ -173,7 +172,7 @@ async def test_the_client_is_built_with_a_retained_last_will_on_the_status_topic
 @pytest.mark.asyncio
 async def test_run_publishes_status_retained_and_drains_queued_transitions():
     telemetry = _telemetry()
-    telemetry.on_transition("Site1", "Train1", "Execute")
+    telemetry.on_transition("Site1", "Train1", "DutyP102")
 
     task = asyncio.create_task(telemetry.run())
     await asyncio.sleep(0.08)
@@ -206,9 +205,9 @@ def _matches(pattern: str, topic: str) -> bool:
 def test_the_wildcard_matcher_itself_is_right():
     """A broken matcher would make the guard below pass for the wrong reason."""
     assert _matches("#", "anything/at/all")
-    assert _matches("CovestroAG/#", "CovestroAG/Dormagen/x")
-    assert _matches("CovestroAG/#", "CovestroAG")
-    assert not _matches("CovestroAG/#", "CovestroAGX/Dormagen")
+    assert _matches("AcmeWater/#", "AcmeWater/Site1/x")
+    assert _matches("AcmeWater/#", "AcmeWater")
+    assert not _matches("AcmeWater/#", "AcmeWaterX/Site1")
     assert _matches("spBv1.0/+/NBIRTH/x", "spBv1.0/group/NBIRTH/x")
     assert not _matches("a/b", "a/b/c")
 

@@ -76,7 +76,7 @@ class ISA95Hierarchy:
     def get_parameter_topic(self, equipment: str, param_type: ParameterType, param_name: str) -> str:
         """
         Generate ISA-95 compliant MQTT topic
-        Example: ManufacturingCo/PlantA/Production/Line1/Cell1/MixerTank/ProcessValue/Temperature
+        Example: AcmeWater/Site1/RawWater/Train1/P101/WTP_MotorDOL/ProcessValue/Speed
         """
         return f"{self.enterprise}/{self.site}/{self.area}/{self.line}/{self.cell}/{equipment}/{param_type.value}/{param_name}"
 

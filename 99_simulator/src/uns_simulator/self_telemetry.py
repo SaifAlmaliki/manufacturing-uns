@@ -40,7 +40,7 @@ class SelfTelemetry:
 
     Three cadences, each chosen for what it is reporting:
       status         - every `interval_s`, because "still alive" is a heartbeat
-      plant state    - on a PackML transition, because that is the event
+      plant state    - on a duty rotation, backwash, or fault latch, because that is the event
       device health  - on change, because a hundred healthy devices repeating themselves
                        every ten seconds is more traffic than the plant they simulate
     """
@@ -125,12 +125,15 @@ class SelfTelemetry:
         swallows anything it raises, so an awaited publish here would put broker latency
         inside the plant's clock and an exception would vanish without a trace.
         """
-        line_state = self.simulator.plant_snapshot()["sites"].get(site, {}).get("lines", {}).get(line, {})
+        # WTP snapshot is flat (enterprise, site, mode, tanks, …). Looking up
+        # sites[site].lines[line] is the old PackML body and KeyErrors on every event.
+        snap = self.simulator.plant_snapshot()
         payload = {
             "state": state,
-            "previous": line_state.get("previous"),
-            "production_rate": line_state.get("production_rate"),
-            "time_in_state_s": line_state.get("time_in_state_s"),
+            "mode": snap.get("mode"),
+            "filter_mode": snap.get("filter_mode"),
+            "duty_raw_pump": snap.get("duty_raw_pump"),
+            "lead_dist_pump": snap.get("lead_dist_pump"),
         }
         try:
             self.queue.put_nowait((f"{self.prefix}/plant/{site}/{line}/state", payload))
@@ -151,7 +154,7 @@ class SelfTelemetry:
     async def _drain(self, window_s: float) -> None:
         """Publish queued transitions for up to `window_s` seconds, then return.
 
-        A window rather than a plain sleep, so a burst of PackML transitions reaches the
+        A window rather than a plain sleep, so a burst of plant events reaches the
         broker when it happens instead of on the next status beat.
         """
         deadline = time.monotonic() + window_s

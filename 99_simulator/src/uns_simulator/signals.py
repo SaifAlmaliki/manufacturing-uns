@@ -347,14 +347,14 @@ def resolve_ctx_path(view: Any, path: str) -> Any:
 class SteppedSignal(Signal):
     """A discrete value: either mirrored from a `ctx` path, or picked from `choices`.
 
-    `source` is how PackML state, tariff period and shift reach a topic — the signal
+    `source` is how WTP mode, duty pump and filter flags reach a topic — the signal
     reports the plant's state rather than inventing one, which is the whole point of
     having a PlantContext. `choices` covers the genuinely arbitrary discretes (tap
     position, downtime reason, batch id), changing only every `dwell_s` seconds so a
     consumer sees a state that holds rather than per-sample flicker.
 
-    `map` translates whichever of the two produced the value, which is how
-    PackMlStateCode is the same signal as PackMlState with a lookup table attached.
+    `map` translates whichever of the two produced the value, which is how a numeric
+    mode code is the same signal as the string mode with a lookup table attached.
     """
 
     shape_name = "stepped"

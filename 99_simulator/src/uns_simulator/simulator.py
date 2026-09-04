@@ -105,7 +105,7 @@ class UnifiedNamespaceSimulator:
         self.devices: list = []
         self.tasks: list[asyncio.Task] = []
 
-        requested = profile_name or self.simulation_config.get("profile", "full")
+        requested = profile_name or self.simulation_config.get("profile", "wtp")
         configured_seed = seed if seed is not None else self.simulation_config.get("seed")
         self.profile: LoadedProfile = load_profile(self.raw_config, requested, seed=configured_seed)
         self.clock = PlantClock(self.profile.context, tick_s=float(self.simulation_config.get("tick_s", 1.0)))
@@ -240,7 +240,7 @@ class UnifiedNamespaceSimulator:
         LOGGER.info("Simulator stopped")
 
     def _notify_transition(self, site: str, line: str, state: str) -> None:
-        """The single PackML transition listener registered on the clock.
+        """The single plant-event listener registered on the clock.
 
         PlantClock calls its listeners synchronously and swallows whatever they raise, so
         one broken listener must not take the others with it — and must not disappear.
@@ -253,7 +253,7 @@ class UnifiedNamespaceSimulator:
                 LOGGER.exception("Plant transition listener failed for %s/%s", site, line)
 
     def on_plant_transition(self, callback: Callable[[str, str, str], None]) -> None:
-        """Register a PackML transition listener.
+        """Register a plant-event listener (duty rotation, backwash, fault latch).
 
         Used by self_telemetry.py, whose callback only enqueues: the clock is on the hot
         path and an awaited publish here would slow every tick.
@@ -271,7 +271,7 @@ class UnifiedNamespaceSimulator:
         """A new profile means a new PlantContext, so a new clock.
 
         Re-registering `_notify_transition` is the whole reason this is a method: the bug
-        it prevents is a console that stops seeing PackML transitions after the first
+        it prevents is a console that stops seeing plant events after the first
         profile switch, with nothing in the log to say why.
         """
         self.clock = PlantClock(self.profile.context, tick_s=self.clock.tick_s)

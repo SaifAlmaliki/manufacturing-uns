@@ -103,7 +103,7 @@ def compile_expression(source: str) -> CompiledExpression:
         if isinstance(node, ast.Attribute):
             # Spec 5.4: attribute access is permitted on the `ctx` root only. Allowing it
             # anywhere would reopen the `().__class__.__bases__` route to arbitrary objects.
-            # Nested hops (`ctx.line.production_rate`) are allowed so long as the chain
+            # Nested hops (`ctx.wtp.t101.level_pct`) are allowed so long as the chain
             # bottoms out at `ctx` and no private attribute is named.
             current = node
             while isinstance(current, ast.Attribute):

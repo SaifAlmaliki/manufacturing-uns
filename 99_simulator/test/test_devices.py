@@ -290,7 +290,7 @@ async def test_health_reports_the_publish_counters():
     assert isinstance(health["last_publish_ts"], float)
 
 
-PATH = ISA95Hierarchy("CovestroAG", "Dormagen", "Utilities", "Powerhouse", "Cell1", kind="utilities")
+PATH = ISA95Hierarchy("AcmeWater", "Site1", "RawWater", "Train1", "P101")
 
 
 def _view():
@@ -302,8 +302,8 @@ def _view():
 
 def _device(*signals, tier="energy"):
     spec = DeviceSpec(
-        id="MAIN@Dormagen.Utilities.Powerhouse.Cell1",
-        equipment="MainIncomer",
+        id="MAIN@Site1.RawWater.Train1.P101",
+        equipment="WTP_MotorDOL",
         family="energy",
         tier=tier,
         path=PATH,
@@ -346,7 +346,7 @@ def test_publish_tier_only_publishes_that_tier():
     published = asyncio.run(device.publish_tier("energy"))
     assert published == 1
     topics = [topic for topic, _ in device.client.published]
-    assert topics == ["CovestroAG/Dormagen/Utilities/Powerhouse/Cell1/MainIncomer/ProcessValue/ActivePower"]
+    assert topics == ["AcmeWater/Site1/RawWater/Train1/P101/WTP_MotorDOL/ProcessValue/ActivePower"]
 
 
 def test_the_payload_carries_value_unit_status_and_quality():
@@ -359,7 +359,7 @@ def test_the_payload_carries_value_unit_status_and_quality():
     assert payload["status"] == "Normal"
     assert payload["quality"] == "Good"
     assert payload["source"] == device.device_id
-    assert payload["equipment"] == "MainIncomer"
+    assert payload["equipment"] == "WTP_MotorDOL"
     assert "timestamp" in payload
 
 

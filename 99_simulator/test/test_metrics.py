@@ -18,7 +18,7 @@ from uns_simulator.plant import DeviceView, PlantContext
 from uns_simulator.profiles import DeviceSpec
 from uns_simulator.signals import SignalSpec
 
-PATH = ISA95Hierarchy("CovestroAG", "Dormagen", "Utilities", "Powerhouse", "Cell1", kind="utilities")
+PATH = ISA95Hierarchy("AcmeWater", "Site1", "RawWater", "Train1", "P101")
 
 
 class DummyClient:

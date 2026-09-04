@@ -18,10 +18,10 @@ class DummyClient:
 
 def test_expand_nested_sites_areas_lines_cells():
     raw = {
-        "enterprise": "CovestroAG",
+        "enterprise": "Enterprise",
         "sites": [
             {
-                "name": "Dormagen",
+                "name": "North",
                 "areas": [
                     {
                         "name": "Production",
@@ -33,7 +33,7 @@ def test_expand_nested_sites_areas_lines_cells():
                 ],
             },
             {
-                "name": "Krefeld",
+                "name": "South",
                 "areas": [
                     {
                         "name": "Production",
@@ -45,30 +45,30 @@ def test_expand_nested_sites_areas_lines_cells():
     }
 
     paths = expand_hierarchy_paths(raw)
-    topics = [p.get_parameter_topic("G1", ParameterType.PROCESS_VALUE, "Temperature") for p in paths]
+    topics = [p.get_parameter_topic("Pump", ParameterType.PROCESS_VALUE, "Temperature") for p in paths]
 
     assert [(p.enterprise, p.site, p.area, p.line, p.cell) for p in paths] == [
-        ("CovestroAG", "Dormagen", "Production", "Line1", "Cell1"),
-        ("CovestroAG", "Dormagen", "Production", "Line1", "Cell2"),
-        ("CovestroAG", "Dormagen", "Production", "Line2", "Cell1"),
-        ("CovestroAG", "Krefeld", "Production", "Line1", "Cell1"),
+        ("Enterprise", "North", "Production", "Line1", "Cell1"),
+        ("Enterprise", "North", "Production", "Line1", "Cell2"),
+        ("Enterprise", "North", "Production", "Line2", "Cell1"),
+        ("Enterprise", "South", "Production", "Line1", "Cell1"),
     ]
-    assert topics[0].startswith("CovestroAG/Dormagen/Production/Line1/Cell1/G1/")
-    assert topics[-1].startswith("CovestroAG/Krefeld/Production/Line1/Cell1/G1/")
+    assert topics[0].startswith("Enterprise/North/Production/Line1/Cell1/Pump/")
+    assert topics[-1].startswith("Enterprise/South/Production/Line1/Cell1/Pump/")
 
 
 def test_expand_flat_hierarchy_still_works():
     paths = expand_hierarchy_paths(
         {
-            "enterprise": "CovestroAG",
-            "site": "Dormagen",
+            "enterprise": "Enterprise",
+            "site": "North",
             "area": "Production",
             "line": "Line1",
             "cell": "Cell1",
         }
     )
     assert len(paths) == 1
-    assert paths[0].site == "Dormagen"
+    assert paths[0].site == "North"
     assert paths[0].cell == "Cell1"
 
 
@@ -96,10 +96,10 @@ def test_create_plc_spawns_one_device_per_cell_and_template(monkeypatch):
 def test_area_kind_and_nameplate_flow_through_expansion():
     paths = expand_hierarchy_paths(
         {
-            "enterprise": "CovestroAG",
+            "enterprise": "Enterprise",
             "sites": [
                 {
-                    "name": "Dormagen",
+                    "name": "North",
                     "areas": [
                         {
                             "name": "Production",
@@ -109,7 +109,7 @@ def test_area_kind_and_nameplate_flow_through_expansion():
                         {
                             "name": "Utilities",
                             "kind": "utilities",
-                            "lines": [{"name": "Powerhouse", "cells": ["Cell1"]}],
+                            "lines": [{"name": "LineU", "cells": ["Cell1"]}],
                         },
                     ],
                 }
