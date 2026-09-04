@@ -31,6 +31,7 @@ import {
   DELETE_ALERT_RULE_MUTATION,
   GET_ALERT_RULES_QUERY,
   GET_ASSET_CHILDREN_QUERY,
+  GET_HIERARCHY_QUERY,
   GET_HISTORIC_EVENTS_BY_PROPERTY_QUERY,
   GET_HISTORIC_EVENTS_BY_PUBLISHERS_QUERY,
   GET_HISTORIC_EVENTS_IN_TIME_RANGE_QUERY,
@@ -40,8 +41,10 @@ import {
   GET_UNS_NODES_QUERY,
   GET_UNS_TREE_CHILDREN_QUERY,
   RECORD_ALERT_RULE_EVALUATION_MUTATION,
+  RETRY_HIERARCHY_MIGRATE_MUTATION,
   SAVE_ALERT_RULES_MUTATION,
   SAVE_ALERT_RULE_MUTATION,
+  SAVE_HIERARCHY_MUTATION,
   SET_ALERT_RULE_ENABLED_MUTATION,
   SUBSCRIBE_KAFKA_MESSAGES,
   SUBSCRIBE_MQTT_MESSAGES,
@@ -55,8 +58,13 @@ import type {
   GraphqlAlertRule,
   GraphqlAssetNode,
   GraphqlHistoricalEvent,
+  GraphqlHierarchyMigrateJob,
+  GraphqlHierarchySaveResult,
+  GraphqlHierarchyTree,
+  GraphqlHierarchyTreeInput,
   GraphqlKafkaMessage,
   GraphqlMqttMessage,
+  GraphqlPrefixRenameInput,
   GraphqlSpbNode,
   GraphqlTopicContext,
   GraphqlUnsNode,
@@ -531,6 +539,48 @@ export class UnsGraphQLClient {
    */
   public async recordAlertRuleEvaluation(id: string, triggered: boolean): Promise<void> {
     await this.executeQuery(RECORD_ALERT_RULE_EVALUATION_MUTATION, { id, triggered })
+  }
+
+  /**
+   * The plant hierarchy stored in plant.yaml. Null when the server cannot be reached,
+   * because a console that silently renders an empty tree hides a deployment problem.
+   */
+  public async getHierarchy(): Promise<GraphqlHierarchyTree | null> {
+    const res = await this.executeQuery<{ getHierarchy: GraphqlHierarchyTree }>(GET_HIERARCHY_QUERY)
+    if (res.error || !res.data?.getHierarchy) {
+      return null
+    }
+    return res.data.getHierarchy
+  }
+
+  /**
+   * Persist the whole ISA-95 tree at once and start a prefix-migrate job for any
+   * renames. The console edits locally and saves once: there is no safe meaning to
+   * "rename one site without saying what the rest of the plant now is".
+   */
+  public async saveHierarchy(
+    tree: GraphqlHierarchyTreeInput,
+    renames: GraphqlPrefixRenameInput[],
+  ): Promise<GraphqlHierarchySaveResult> {
+    const res = await this.executeQuery<{ saveHierarchy: GraphqlHierarchySaveResult }>(
+      SAVE_HIERARCHY_MUTATION,
+      { tree, renames },
+    )
+    if (res.error || !res.data?.saveHierarchy) {
+      throw new Error(res.error || 'Hierarchy was not saved')
+    }
+    return res.data.saveHierarchy
+  }
+
+  /** Re-run a failed prefix-migrate job. Throws when the server is unreachable. */
+  public async retryHierarchyMigrate(): Promise<GraphqlHierarchyMigrateJob> {
+    const res = await this.executeQuery<{ retryHierarchyMigrate: GraphqlHierarchyMigrateJob }>(
+      RETRY_HIERARCHY_MIGRATE_MUTATION,
+    )
+    if (res.error || !res.data?.retryHierarchyMigrate) {
+      throw new Error(res.error || 'Hierarchy migrate retry failed')
+    }
+    return res.data.retryHierarchyMigrate
   }
 
   private sendMqttSubscription(

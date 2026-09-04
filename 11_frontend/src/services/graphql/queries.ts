@@ -339,3 +339,68 @@ export const SUBSCRIBE_KAFKA_MESSAGES = `
     }
   }
 `
+
+/**
+ * The plant hierarchy stored in plant.yaml (ADR-0003). One query, one mutation, and
+ * one retry: the console edits the whole tree locally and saves once, because there
+ * is no safe meaning to "rename one site without saying what the rest of the plant
+ * now is". Field set matches `07_uns_graphql/test/mutations/test_hierarchy.py`.
+ */
+export const GET_HIERARCHY_QUERY = `
+  query GetHierarchy {
+    getHierarchy {
+      enterprise
+      sites {
+        name
+        areas {
+          name
+          kind
+          lines {
+            name
+            cells
+          }
+        }
+      }
+    }
+  }
+`
+
+export const SAVE_HIERARCHY_MUTATION = `
+  mutation SaveHierarchy($tree: HierarchyTreeInput!, $renames: [PrefixRenameInput!]!) {
+    saveHierarchy(tree: $tree, renames: $renames) {
+      tree {
+        enterprise
+        sites {
+          name
+          areas {
+            name
+            kind
+            lines {
+              name
+              cells
+            }
+          }
+        }
+      }
+      job {
+        oldPrefix
+        newPrefix
+        status
+        rewritten
+        error
+      }
+    }
+  }
+`
+
+export const RETRY_HIERARCHY_MIGRATE_MUTATION = `
+  mutation RetryHierarchyMigrate {
+    retryHierarchyMigrate {
+      oldPrefix
+      newPrefix
+      status
+      rewritten
+      error
+    }
+  }
+`

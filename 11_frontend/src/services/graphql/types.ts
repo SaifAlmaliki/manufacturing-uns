@@ -123,3 +123,74 @@ export type GraphqlSpbNode = {
   uuid?: string | null
   body?: string | null
 }
+
+/** `HierarchyLineType` in the schema: a line and the cells (instance tags) under it. */
+export type GraphqlHierarchyLine = {
+  name: string
+  cells: string[]
+}
+
+/** `HierarchyAreaType` in the schema: an area in the ISA-95 tree. */
+export type GraphqlHierarchyArea = {
+  name: string
+  kind: string
+  lines: GraphqlHierarchyLine[]
+}
+
+/** `HierarchySiteType` in the schema: a site and the areas under it. */
+export type GraphqlHierarchySite = {
+  name: string
+  areas: GraphqlHierarchyArea[]
+}
+
+/** `HierarchyTreeType` in the schema: the ISA-95 tree stored in plant.yaml. */
+export type GraphqlHierarchyTree = {
+  enterprise: string
+  sites: GraphqlHierarchySite[]
+}
+
+/** `HierarchyMigrateJob`: one-at-a-time prefix migrate of historian topics and graph nodes. */
+export type GraphqlHierarchyMigrateJob = {
+  status: string
+  oldPrefix?: string | null
+  newPrefix?: string | null
+  rewritten?: number | null
+  error?: string | null
+}
+
+/** `HierarchySaveResult`: the tree as stored, plus the migrate job that save started or left idle. */
+export type GraphqlHierarchySaveResult = {
+  tree: GraphqlHierarchyTree
+  job: GraphqlHierarchyMigrateJob
+}
+
+/** `HierarchyLineInput` in the schema. */
+export type GraphqlHierarchyLineInput = {
+  name: string
+  cells: string[]
+}
+
+/** `HierarchyAreaInput` in the schema. `kind` defaults to production when omitted. */
+export type GraphqlHierarchyAreaInput = {
+  name: string
+  kind?: string | null
+  lines: GraphqlHierarchyLineInput[]
+}
+
+/** `HierarchySiteInput` in the schema. */
+export type GraphqlHierarchySiteInput = {
+  name: string
+  areas: GraphqlHierarchyAreaInput[]
+}
+
+/** `HierarchyTreeInput` in the schema: the ISA-95 tree to persist as plant.yaml. */
+export type GraphqlHierarchyTreeInput = {
+  enterprise: string
+  sites: GraphqlHierarchySiteInput[]
+}
+
+/** `PrefixRenameInput`: a topic-prefix rename the console recorded while editing. */
+export type GraphqlPrefixRenameInput = {
+  oldPrefix: string
+  newPrefix: string
+}
