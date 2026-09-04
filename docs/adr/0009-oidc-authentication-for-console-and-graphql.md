@@ -58,6 +58,8 @@ down with its reason.
    — per-topic authorization over an ISA-95 hierarchy — is a real feature with a
    real data model, and pretending to have it with a role check would be worse
    than not having it.
+   **Superseded for plant data by ADR-0010.** Console Role still gates mutations;
+   Access Groups now also scope which Assets a non-admin may read or write.
 6. **The console's `ROLE_CONFIGS` and the service's `MUTATION_ROLES` are two
    tables and stay two tables.** The first decides which controls the console
    offers; the second decides what the server accepts. They are allowed to

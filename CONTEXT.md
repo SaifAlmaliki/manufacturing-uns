@@ -133,3 +133,9 @@ _Avoid_: permission, group, scope
 Who a validated token says the caller is: subject, username, Console Roles.
 Constructed only by `identity_from_token`; nothing else gets to say who is calling.
 _Avoid_: user, account, principal
+
+**Access Group**:
+A name an admin typed, plus the Asset Model roots that name covers, plus the Keycloak
+subjects who belong to it. The UI word is group. Distinct from a Console Role and from
+a Keycloak group.
+_Avoid_: security group, zone, OS group
