@@ -76,12 +76,7 @@ class TiersRequest(_StrictModel):
 class FamiliesRequest(_StrictModel):
     """One field per sensor family in plan A's FAMILIES. Absent means unchanged."""
 
-    energy: bool | None = None
-    water: bool | None = None
-    utilities: bool | None = None
-    asset_health: bool | None = None
-    production: bool | None = None
-    safety: bool | None = None
+    wtp: bool | None = None
 
 
 class DeviceRequest(_StrictModel):

@@ -28,12 +28,7 @@ STATUS = {
     "overrides_active": False,
     "tiers": {"fast": 6.0, "process": 30.0, "energy": 90.0, "status": 180.0, "meter": 5400.0, "lab": 10800.0, "event": 0.0},
     "families": {
-        "energy": True,
-        "water": False,
-        "utilities": False,
-        "asset_health": False,
-        "production": False,
-        "safety": False,
+        "wtp": True,
     },
     "per_tier": {"process": 5},
     "tick_count": 0,
@@ -59,7 +54,7 @@ class FakeSimulator:
         return dict(STATUS)
 
     def config_snapshot(self):
-        return {"profile": "small", "available_profiles": ["full", "small"], "devices": []}
+        return {"profile": "wtp", "available_profiles": ["wtp"], "devices": []}
 
     def plant_snapshot(self):
         return {"sites": {"Dormagen": {"shift": "A", "lines": {}}}}
@@ -287,10 +282,10 @@ def test_a_negative_tier_interval_is_a_422():
 
 def test_families_forwards_only_the_flags_that_were_sent():
     sim = FakeSimulator()
-    response = _client(sim).put("/simulator/families", json={"energy": False})
+    response = _client(sim).put("/simulator/families", json={"wtp": False})
 
     assert response.status_code == 200
-    assert sim.calls == [("apply_families", {"energy": False})]
+    assert sim.calls == [("apply_families", {"wtp": False})]
 
 
 def test_an_unknown_family_is_a_422():

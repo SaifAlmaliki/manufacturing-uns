@@ -16,7 +16,6 @@ from pathlib import Path
 import pytest
 
 from uns_simulator.models import ParameterType
-from uns_simulator.plant import PACKML_STATES
 from uns_simulator.profiles import load_profile, read_simulator_conf
 
 CONF_DIR = Path(__file__).resolve().parents[2] / "conf"
@@ -305,12 +304,11 @@ def _mes_signals(raw) -> dict:
 
 
 def test_packml_state_code_maps_every_state(raw):
-    """A state missing from the map publishes its own name where an integer is expected.
+    """PackML was removed in Task 3; the PackMlStateCode map test is retired with it.
 
-    SteppedSignal._translate falls through to the raw value on a miss, so an incomplete map
-    fails as a type surprise on a consumer rather than at load time. Only this test catches it.
+    Kept as a placeholder so the suite still collects. Task 5–6 replaces the family tables.
     """
-    assert set(_mes_signals(raw)["PackMlStateCode"]["map"]) == set(PACKML_STATES)
+    pytest.skip("PackML retired in Task 3; awaiting WTP family tables in Task 5–6")
 
 
 def test_the_simulator_publishes_no_fabricated_oee(raw):

@@ -130,10 +130,7 @@ TIER_DEFAULTS: dict[str, float] = {
     "event": 0.0,
 }
 
-FAMILIES: tuple[str, ...] = ("energy", "water", "utilities", "asset_health", "production", "safety")
-
-
-PRODUCTION_KIND = "production"
+FAMILIES: tuple[str, ...] = ("wtp",)
 
 
 @dataclass

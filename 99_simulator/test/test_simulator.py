@@ -82,7 +82,7 @@ RAW = {
     "hierarchy": HIERARCHY,
     # `starting_s` of 1 s and no holds, so 30 ticks are enough to reach EXECUTE and stay there.
     "plant": {"lines": {"Dormagen/Production/Line1": {"starting_s": 1.0, "hold_probability_per_hour": 0.0}}},
-    "energy": {
+    "wtp": {
         "devices": [
             {
                 "id": "MAIN",
@@ -109,8 +109,8 @@ RAW = {
         ]
     },
     "profiles": {
-        "full": {"families": ["energy"]},
-        "small": {"tier_scale": 6.0, "families": ["energy"]},
+        "full": {"families": ["wtp"]},
+        "small": {"tier_scale": 6.0, "families": ["wtp"]},
     },
     "simulation": {"seed": 1234, "interval": 5.0, "duration": 0},
 }
@@ -210,12 +210,7 @@ def test_status_reports_the_loaded_profile():
     # `full` leaves `tier_scale` at its 1.0 default, so the pre-scaled tiers are the defaults.
     assert status["tiers"]["meter"] == TIER_DEFAULTS["meter"]
     assert status["families"] == {
-        "energy": True,
-        "water": False,
-        "utilities": False,
-        "asset_health": False,
-        "production": False,
-        "safety": False,
+        "wtp": True,
     }
     assert status["per_tier"] == {"energy": 1, "meter": 1}
     assert status["published_total"] == 0
