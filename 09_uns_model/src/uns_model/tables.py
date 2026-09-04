@@ -254,6 +254,48 @@ class TopicBinding(Base):
         return f"TopicBinding(topic={self.topic!r}, asset_id={self.asset_id!r})"
 
 
+class AccessGroup(Base):
+    __tablename__ = "access_group"
+    __table_args__ = (
+        UniqueConstraint("name", name="uq_access_group_name"),
+        CheckConstraint("name <> ''", name="ck_access_group_name_not_empty"),
+        {"schema": MODEL_SCHEMA},
+    )
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class AccessGroupRoot(Base):
+    __tablename__ = "access_group_root"
+    __table_args__ = (
+        UniqueConstraint("group_id", "asset_id", name="uq_access_group_root"),
+        {"schema": MODEL_SCHEMA},
+    )
+    group_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey(f"{MODEL_SCHEMA}.access_group.id", ondelete="CASCADE"), primary_key=True
+    )
+    asset_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey(f"{MODEL_SCHEMA}.asset.id", ondelete="CASCADE"), primary_key=True
+    )
+
+
+class AccessGroupMember(Base):
+    __tablename__ = "access_group_member"
+    __table_args__ = (
+        UniqueConstraint("group_id", "subject", name="uq_access_group_member"),
+        CheckConstraint("subject <> ''", name="ck_access_group_member_subject_not_empty"),
+        {"schema": MODEL_SCHEMA},
+    )
+    group_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey(f"{MODEL_SCHEMA}.access_group.id", ondelete="CASCADE"), primary_key=True
+    )
+    subject: Mapped[str] = mapped_column(Text, primary_key=True)
+
+
 # The vocabularies the console writes. Declared once here so the CHECK
 # constraints, the migration and the GraphQL enums cannot drift apart.
 ALERT_SEVERITIES: tuple[str, ...] = ("CRITICAL", "HIGH", "WARNING", "INFO")
