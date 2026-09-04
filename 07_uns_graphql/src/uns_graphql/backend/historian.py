@@ -15,7 +15,7 @@
 *    -
 *******************************************************************************
 
-Reads of the historian hypertable.
+Reads of the historian hypertable, and prefix rewrites when a hierarchy node is renamed.
 
 The historian and the Asset Model share one Postgres/Timescale database, so they now
 share one engine as well: `uns_model.engine.Database` (ADR-0004). This module used to
@@ -23,9 +23,9 @@ own an asyncpg pool of its own, which meant two pools, two sets of connection
 settings, and two things to close on shutdown.
 
 The SQL stays hand-written. The hypertable is not part of the authored model — the
-historian writes it, this service only reads it — and the queries here do things the
-ORM has no vocabulary for: MQTT wildcards turned into regex, and `jsonb_path_exists`
-over an arbitrary payload.
+historian writes it; this service reads it and rewrites topic prefixes on rename —
+and the queries here do things the ORM has no vocabulary for: MQTT wildcards turned
+into regex, `jsonb_path_exists` over an arbitrary payload, and prefix substitution.
 """
 
 from __future__ import annotations
@@ -52,11 +52,12 @@ BINARY_OPERATORS = frozenset({"AND", "OR", "NOT"})
 
 class HistorianRepository:
     """
-    Historic UNS events, read from the historian hypertable.
+    Historic UNS events from the historian hypertable.
 
-    Two questions, one per method: "what was published on these topics, by these
+    Two reads, one per method: "what was published on these topics, by these
     publishers, in this window", and "which events carry these keys anywhere in
-    their payload". Everything else — the wildcard translation, the parameter
+    their payload". Plus a write that rewrites a topic prefix when a hierarchy
+    node is renamed. Everything else — the wildcard translation, the parameter
     binding, the column-name-to-field mapping — is deliberately inside.
 
     Takes its `Database` rather than reaching for the shared one, so a test can hand
@@ -172,6 +173,36 @@ class HistorianRepository:
             conditions.append(" ( " + f" {binary_operator} ".join(key_conditions) + " ) ")
 
         return await self._fetch(conditions, params, types)
+
+    async def rewrite_topic_prefix(self, old_prefix: str, new_prefix: str) -> int:
+        """Rewrite stored topics under ``old_prefix`` to sit under ``new_prefix``.
+
+        Updates ``HistorianConfig.table`` and ``uns_metrics`` (when that table
+        exists). Returns rows changed on the raw table. Does not refresh CAGGs.
+
+        Raises:
+            ValueError: if ``old_prefix`` and ``new_prefix`` are the same.
+        """
+        if old_prefix == new_prefix:
+            raise ValueError("old_prefix and new_prefix must differ")
+
+        params = {"old_prefix": old_prefix, "new_prefix": new_prefix}
+        # starts_with, not LIKE: `_` in a topic segment is a character, not a wildcard.
+        assignment = ":new_prefix || substring(topic from (char_length(:old_prefix) + 1))"
+        match = "topic = :old_prefix OR starts_with(topic, :old_prefix || '/')"
+        raw_sql = text(
+            f"UPDATE {HistorianConfig.table} SET topic = {assignment} WHERE {match}"  # noqa: S608
+        )
+
+        async with self._database.begin() as connection:
+            result = await connection.execute(raw_sql, params)
+            present = (await connection.execute(text("SELECT to_regclass('public.uns_metrics')"))).scalar()
+            if present is not None:
+                await connection.execute(
+                    text(f"UPDATE uns_metrics SET topic = {assignment} WHERE {match}"),
+                    params,
+                )
+            return result.rowcount or 0
 
     async def _fetch(
         self,
