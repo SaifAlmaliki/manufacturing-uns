@@ -273,6 +273,9 @@ class WTPProcess:
         self.inlet_m3h = 0.0
         self.ft101_m3h = 0.0
         self.ft201_m3h = 0.0
+        self.ft101_total_m3 = 0.0
+        self.ft201_total_m3 = 0.0
+        self.flow_reset = False
         self.pt101 = RESIDUAL_BARG
         self.pt201 = RESIDUAL_BARG
         self.ait101 = 7.2
@@ -549,6 +552,9 @@ class WTPProcess:
         ]
         ft201_target = sum(contributions) if self.v301.open_fb else 0.0
         self.ft201_m3h = _approach(self.ft201_m3h, ft201_target, FLOW_TAU_S, dt)
+
+        self.ft101_total_m3 += self.ft101_m3h * dt / 3600.0
+        self.ft201_total_m3 += self.ft201_m3h * dt / 3600.0
 
         self.t201.add_m3((filtrate - self.ft201_m3h) * dt / 3600.0)
 

@@ -1,0 +1,190 @@
+# Nineteen WTP tags on the five-area train. Narrative: 99_simulator/PROCESS.md
+# Cell is the tag; equipment is the poster template name (WTP_Valve, …).
+
+devices:
+  - id: V101
+    equipment: WTP_Valve
+    target: {area: RawWater, cell: V101}
+    signals:
+      CmdOpen: {shape: stepped, source: ctx.wtp.v101.cmd_open, unit: "1", tier: status, param_type: Setpoint}
+      CmdClose: {shape: stepped, source: ctx.wtp.v101.cmd_close, unit: "1", tier: status, param_type: Setpoint}
+      OpenFB: {shape: stepped, source: ctx.wtp.v101.open_fb, unit: "1", tier: status, param_type: Status}
+      CloseFB: {shape: stepped, source: ctx.wtp.v101.close_fb, unit: "1", tier: status, param_type: Status}
+      Position: {shape: derived, expr: ctx.wtp.v101.position, unit: "%", precision: 1, tier: process, param_type: ProcessValue}
+      CycleCount: {shape: derived, expr: ctx.wtp.v101.cycle_count, unit: "1", precision: 0, tier: meter, param_type: ProcessValue}
+
+  - id: P101
+    equipment: WTP_MotorDOL
+    target: {area: RawWater, cell: P101}
+    signals:
+      CmdStart: {shape: stepped, source: ctx.wtp.p101.cmd_start, unit: "1", tier: status, param_type: Setpoint}
+      CmdStop: {shape: stepped, source: ctx.wtp.p101.cmd_stop, unit: "1", tier: status, param_type: Setpoint}
+      ResetFault: {shape: stepped, source: ctx.wtp.p101.reset_fault, unit: "1", tier: status, param_type: Setpoint}
+      Running: {shape: stepped, source: ctx.wtp.p101.running, unit: "1", tier: status, param_type: Status}
+      Fault: {shape: stepped, source: ctx.wtp.p101.fault, unit: "1", tier: event, param_type: Status}
+      RuntimeH: {shape: derived, expr: ctx.wtp.p101.runtime_h, unit: "h", precision: 2, tier: meter, param_type: ProcessValue}
+      StartCount: {shape: derived, expr: ctx.wtp.p101.start_count, unit: "1", precision: 0, tier: meter, param_type: ProcessValue}
+      Auto: {shape: stepped, source: ctx.wtp.p101.auto, unit: "1", tier: status, param_type: Setpoint}
+
+  - id: P102
+    equipment: WTP_MotorDOL
+    target: {area: RawWater, cell: P102}
+    signals:
+      CmdStart: {shape: stepped, source: ctx.wtp.p102.cmd_start, unit: "1", tier: status, param_type: Setpoint}
+      CmdStop: {shape: stepped, source: ctx.wtp.p102.cmd_stop, unit: "1", tier: status, param_type: Setpoint}
+      ResetFault: {shape: stepped, source: ctx.wtp.p102.reset_fault, unit: "1", tier: status, param_type: Setpoint}
+      Running: {shape: stepped, source: ctx.wtp.p102.running, unit: "1", tier: status, param_type: Status}
+      Fault: {shape: stepped, source: ctx.wtp.p102.fault, unit: "1", tier: event, param_type: Status}
+      RuntimeH: {shape: derived, expr: ctx.wtp.p102.runtime_h, unit: "h", precision: 2, tier: meter, param_type: ProcessValue}
+      StartCount: {shape: derived, expr: ctx.wtp.p102.start_count, unit: "1", precision: 0, tier: meter, param_type: ProcessValue}
+      Auto: {shape: stepped, source: ctx.wtp.p102.auto, unit: "1", tier: status, param_type: Setpoint}
+
+  - id: P103
+    equipment: WTP_MotorDOL
+    target: {area: RawWater, cell: P103}
+    signals:
+      CmdStart: {shape: stepped, source: ctx.wtp.p103.cmd_start, unit: "1", tier: status, param_type: Setpoint}
+      CmdStop: {shape: stepped, source: ctx.wtp.p103.cmd_stop, unit: "1", tier: status, param_type: Setpoint}
+      ResetFault: {shape: stepped, source: ctx.wtp.p103.reset_fault, unit: "1", tier: status, param_type: Setpoint}
+      Running: {shape: stepped, source: ctx.wtp.p103.running, unit: "1", tier: status, param_type: Status}
+      Fault: {shape: stepped, source: ctx.wtp.p103.fault, unit: "1", tier: event, param_type: Status}
+      RuntimeH: {shape: derived, expr: ctx.wtp.p103.runtime_h, unit: "h", precision: 2, tier: meter, param_type: ProcessValue}
+      StartCount: {shape: derived, expr: ctx.wtp.p103.start_count, unit: "1", precision: 0, tier: meter, param_type: ProcessValue}
+      Auto: {shape: stepped, source: ctx.wtp.p103.auto, unit: "1", tier: status, param_type: Setpoint}
+
+  - id: T101
+    equipment: WTP_Level
+    target: {area: RawWater, cell: T101}
+    signals:
+      PV: {shape: derived, expr: ctx.wtp.t101.level_pct, unit: "%", precision: 1, range: [0, 100], limits: {lolo: 10, lo: 20, hi: 85, hihi: 95}, export_metric: true, tier: process, param_type: ProcessValue}
+      Capacity_m3: {shape: derived, expr: ctx.wtp.t101.capacity_m3, unit: "m³", precision: 1, tier: meter, param_type: ProcessValue}
+      Volume_m3: {shape: derived, expr: ctx.wtp.t101.volume_m3, unit: "m³", precision: 2, tier: process, param_type: ProcessValue}
+
+  - id: FT101
+    equipment: WTP_Flowmeter
+    target: {area: RawWater, cell: FT101}
+    signals:
+      PV: {shape: derived, expr: ctx.wtp.ft101_m3h, unit: "m³/h", precision: 2, tier: process, param_type: ProcessValue}
+      Totalizer: {shape: derived, expr: ctx.wtp.ft101_total_m3, unit: "m³", precision: 2, tier: meter, param_type: ProcessValue}
+      Reset: {shape: stepped, source: ctx.wtp.flow_reset, unit: "1", tier: status, param_type: Setpoint}
+
+  - id: PT101
+    equipment: WTP_Pressure
+    target: {area: RawWater, cell: PT101}
+    signals:
+      PV: {shape: derived, expr: ctx.wtp.pt101, unit: "barg", precision: 2, tier: process, param_type: ProcessValue}
+
+  - id: B101
+    equipment: WTP_Basin
+    target: {area: Treatment, cell: B101}
+    signals:
+      PV: {shape: derived, expr: ctx.wtp.b101.pv_m, unit: "m", precision: 2, tier: process, param_type: ProcessValue}
+      LevelPct: {shape: derived, expr: ctx.wtp.b101.level_pct, unit: "%", precision: 1, tier: process, param_type: ProcessValue}
+
+  - id: DP101
+    equipment: WTP_MotorDOL
+    target: {area: Treatment, cell: DP101}
+    signals:
+      CmdStart: {shape: stepped, source: ctx.wtp.dp101.cmd_start, unit: "1", tier: status, param_type: Setpoint}
+      CmdStop: {shape: stepped, source: ctx.wtp.dp101.cmd_stop, unit: "1", tier: status, param_type: Setpoint}
+      ResetFault: {shape: stepped, source: ctx.wtp.dp101.reset_fault, unit: "1", tier: status, param_type: Setpoint}
+      Running: {shape: stepped, source: ctx.wtp.dp101.running, unit: "1", tier: status, param_type: Status}
+      Fault: {shape: stepped, source: ctx.wtp.dp101.fault, unit: "1", tier: event, param_type: Status}
+      RuntimeH: {shape: derived, expr: ctx.wtp.dp101.runtime_h, unit: "h", precision: 2, tier: meter, param_type: ProcessValue}
+      StartCount: {shape: derived, expr: ctx.wtp.dp101.start_count, unit: "1", precision: 0, tier: meter, param_type: ProcessValue}
+      Auto: {shape: stepped, source: ctx.wtp.dp101.auto, unit: "1", tier: status, param_type: Setpoint}
+
+  - id: AIT101
+    equipment: WTP_Analyzer
+    target: {area: Treatment, cell: AIT101}
+    signals:
+      PV: {shape: derived, expr: ctx.wtp.ait101, unit: "pH", precision: 2, limits: {lo: 6.5, hi: 8.5}, tier: process, param_type: ProcessValue}
+
+  - id: F101
+    equipment: WTP_Filter
+    target: {area: Filtration, cell: F101}
+    signals:
+      FilterRun: {shape: stepped, source: ctx.wtp.f101.filter_run, unit: "1", tier: status, param_type: Status}
+      Backwash: {shape: stepped, source: ctx.wtp.f101.backwash, unit: "1", tier: event, param_type: Status}
+      InService: {shape: stepped, source: ctx.wtp.f101.in_service, unit: "1", tier: status, param_type: Status}
+
+  - id: V201
+    equipment: WTP_Valve
+    target: {area: Filtration, cell: V201}
+    signals:
+      CmdOpen: {shape: stepped, source: ctx.wtp.v201.cmd_open, unit: "1", tier: status, param_type: Setpoint}
+      CmdClose: {shape: stepped, source: ctx.wtp.v201.cmd_close, unit: "1", tier: status, param_type: Setpoint}
+      OpenFB: {shape: stepped, source: ctx.wtp.v201.open_fb, unit: "1", tier: status, param_type: Status}
+      CloseFB: {shape: stepped, source: ctx.wtp.v201.close_fb, unit: "1", tier: status, param_type: Status}
+      Position: {shape: derived, expr: ctx.wtp.v201.position, unit: "%", precision: 1, tier: process, param_type: ProcessValue}
+      CycleCount: {shape: derived, expr: ctx.wtp.v201.cycle_count, unit: "1", precision: 0, tier: meter, param_type: ProcessValue}
+
+  - id: V202
+    equipment: WTP_Valve
+    target: {area: Filtration, cell: V202}
+    signals:
+      CmdOpen: {shape: stepped, source: ctx.wtp.v202.cmd_open, unit: "1", tier: status, param_type: Setpoint}
+      CmdClose: {shape: stepped, source: ctx.wtp.v202.cmd_close, unit: "1", tier: status, param_type: Setpoint}
+      OpenFB: {shape: stepped, source: ctx.wtp.v202.open_fb, unit: "1", tier: status, param_type: Status}
+      CloseFB: {shape: stepped, source: ctx.wtp.v202.close_fb, unit: "1", tier: status, param_type: Status}
+      Position: {shape: derived, expr: ctx.wtp.v202.position, unit: "%", precision: 1, tier: process, param_type: ProcessValue}
+      CycleCount: {shape: derived, expr: ctx.wtp.v202.cycle_count, unit: "1", precision: 0, tier: meter, param_type: ProcessValue}
+
+  - id: T201
+    equipment: WTP_Level
+    target: {area: Storage, cell: T201}
+    signals:
+      PV: {shape: derived, expr: ctx.wtp.t201.level_pct, unit: "%", precision: 1, range: [0, 100], limits: {lolo: 10, lo: 20, hi: 85, hihi: 95}, export_metric: true, tier: process, param_type: ProcessValue}
+      Capacity_m3: {shape: derived, expr: ctx.wtp.t201.capacity_m3, unit: "m³", precision: 1, tier: meter, param_type: ProcessValue}
+      Volume_m3: {shape: derived, expr: ctx.wtp.t201.volume_m3, unit: "m³", precision: 2, tier: process, param_type: ProcessValue}
+
+  - id: P201
+    equipment: WTP_VFD
+    target: {area: Distribution, cell: P201}
+    signals:
+      RunCmd: {shape: stepped, source: ctx.wtp.p201.run_cmd, unit: "1", tier: status, param_type: Setpoint}
+      "Speed.SP": {shape: derived, expr: ctx.wtp.p201.speed_sp, unit: "%", precision: 1, tier: status, param_type: Setpoint}
+      "Speed.PV": {shape: derived, expr: ctx.wtp.p201.speed_pv, unit: "%", precision: 1, tier: process, param_type: ProcessValue}
+      ResetFault: {shape: stepped, source: ctx.wtp.p201.reset_fault, unit: "1", tier: status, param_type: Setpoint}
+      Running: {shape: stepped, source: ctx.wtp.p201.running, unit: "1", tier: status, param_type: Status}
+      Fault: {shape: stepped, source: ctx.wtp.p201.fault, unit: "1", tier: event, param_type: Status}
+      RuntimeH: {shape: derived, expr: ctx.wtp.p201.runtime_h, unit: "h", precision: 2, tier: meter, param_type: ProcessValue}
+      StartCount: {shape: derived, expr: ctx.wtp.p201.start_count, unit: "1", precision: 0, tier: meter, param_type: ProcessValue}
+
+  - id: P202
+    equipment: WTP_VFD
+    target: {area: Distribution, cell: P202}
+    signals:
+      RunCmd: {shape: stepped, source: ctx.wtp.p202.run_cmd, unit: "1", tier: status, param_type: Setpoint}
+      "Speed.SP": {shape: derived, expr: ctx.wtp.p202.speed_sp, unit: "%", precision: 1, tier: status, param_type: Setpoint}
+      "Speed.PV": {shape: derived, expr: ctx.wtp.p202.speed_pv, unit: "%", precision: 1, tier: process, param_type: ProcessValue}
+      ResetFault: {shape: stepped, source: ctx.wtp.p202.reset_fault, unit: "1", tier: status, param_type: Setpoint}
+      Running: {shape: stepped, source: ctx.wtp.p202.running, unit: "1", tier: status, param_type: Status}
+      Fault: {shape: stepped, source: ctx.wtp.p202.fault, unit: "1", tier: event, param_type: Status}
+      RuntimeH: {shape: derived, expr: ctx.wtp.p202.runtime_h, unit: "h", precision: 2, tier: meter, param_type: ProcessValue}
+      StartCount: {shape: derived, expr: ctx.wtp.p202.start_count, unit: "1", precision: 0, tier: meter, param_type: ProcessValue}
+
+  - id: FT201
+    equipment: WTP_Flowmeter
+    target: {area: Distribution, cell: FT201}
+    signals:
+      PV: {shape: derived, expr: ctx.wtp.ft201_m3h, unit: "m³/h", precision: 2, tier: process, param_type: ProcessValue}
+      Totalizer: {shape: derived, expr: ctx.wtp.ft201_total_m3, unit: "m³", precision: 2, tier: meter, param_type: ProcessValue}
+      Reset: {shape: stepped, source: ctx.wtp.flow_reset, unit: "1", tier: status, param_type: Setpoint}
+
+  - id: PT201
+    equipment: WTP_Pressure
+    target: {area: Distribution, cell: PT201}
+    signals:
+      PV: {shape: derived, expr: ctx.wtp.pt201, unit: "barg", precision: 2, tier: process, param_type: ProcessValue}
+
+  - id: V301
+    equipment: WTP_Valve
+    target: {area: Distribution, cell: V301}
+    signals:
+      CmdOpen: {shape: stepped, source: ctx.wtp.v301.cmd_open, unit: "1", tier: status, param_type: Setpoint}
+      CmdClose: {shape: stepped, source: ctx.wtp.v301.cmd_close, unit: "1", tier: status, param_type: Setpoint}
+      OpenFB: {shape: stepped, source: ctx.wtp.v301.open_fb, unit: "1", tier: status, param_type: Status}
+      CloseFB: {shape: stepped, source: ctx.wtp.v301.close_fb, unit: "1", tier: status, param_type: Status}
+      Position: {shape: derived, expr: ctx.wtp.v301.position, unit: "%", precision: 1, tier: process, param_type: ProcessValue}
+      CycleCount: {shape: derived, expr: ctx.wtp.v301.cycle_count, unit: "1", precision: 0, tier: meter, param_type: ProcessValue}

@@ -202,3 +202,24 @@ def test_ait101_stays_in_band():
         values.append(wtp.ait101)
     assert min(values) >= 6.5
     assert max(values) <= 8.5
+
+
+def test_flow_totalizers_start_at_zero():
+    wtp = WTPProcess(random.Random(0), fault_p=0.0)
+    assert wtp.ft101_total_m3 == pytest.approx(0.0)
+    assert wtp.ft201_total_m3 == pytest.approx(0.0)
+    assert wtp.flow_reset is False
+
+
+def test_flow_totalizers_integrate_rate_times_dt():
+    wtp = _wtp()
+    expected_101 = 0.0
+    expected_201 = 0.0
+    for _ in range(30):
+        wtp.advance_hydraulics(1.0)
+        expected_101 += wtp.ft101_m3h / 3600.0
+        expected_201 += wtp.ft201_m3h / 3600.0
+    assert wtp.ft101_total_m3 == pytest.approx(expected_101)
+    assert wtp.ft201_total_m3 == pytest.approx(expected_201)
+    assert wtp.ft101_total_m3 > 0.0
+    assert wtp.ft201_total_m3 > 0.0
