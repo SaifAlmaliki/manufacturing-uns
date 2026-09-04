@@ -248,6 +248,7 @@ export const UserManagementView: React.FC = () => {
     try {
       setSaveError(null);
       const saved = await unsGraphQLClient.saveAccessGroup(editor.name, rootAssetIds, editor.id);
+      setEditor({ ...editor, id: saved.id });
       await unsGraphQLClient.setAccessGroupMembers(saved.id, editor.memberIds);
       await reloadGroups();
       setEditor(null);
@@ -304,6 +305,7 @@ export const UserManagementView: React.FC = () => {
       setAssignPanel(null);
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : String(error));
+      await reloadGroups();
     }
   };
 
@@ -318,6 +320,10 @@ export const UserManagementView: React.FC = () => {
   const assigningMember = assignPanel
     ? members.find((member) => member.id === assignPanel.memberId)
     : undefined;
+
+  const unknownMemberIds = editor
+    ? editor.memberIds.filter((id) => !members.some((member) => member.id === id))
+    : [];
 
   return (
     <PageShell id="user-management-view" scroll={false} className="flex flex-col font-mono">
@@ -535,8 +541,38 @@ That needs the realm-management view-users role. Users are managed in Keycloak."
 
                   <div className="space-y-1.5">
                     <div className="text-[10px] uppercase tracking-wider text-zinc-500">Members</div>
+                    {unknownMemberIds.length > 0 && (
+                      <div className="space-y-1 rounded-xl border border-zinc-800 bg-zinc-950/50 p-2">
+                        {unknownMemberIds.map((subject) => (
+                          <div
+                            key={subject}
+                            className="flex items-center justify-between gap-2 text-xs text-zinc-400"
+                          >
+                            <span>
+                              unknown
+                              <span className="ml-2 font-mono text-[10px] text-zinc-500">{subject}</span>
+                            </span>
+                            <BtnGhost
+                              onClick={() =>
+                                setEditor({
+                                  ...editor,
+                                  memberIds: editor.memberIds.filter((id) => id !== subject),
+                                })
+                              }
+                              aria-label={`Remove unknown ${subject}`}
+                            >
+                              Remove
+                            </BtnGhost>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {members.length === 0 ? (
-                      <p className="text-xs text-zinc-500">Realm members appear here when the directory can be read.</p>
+                      unknownMemberIds.length === 0 && (
+                        <p className="text-xs text-zinc-500">
+                          Realm members appear here when the directory can be read.
+                        </p>
+                      )
                     ) : (
                       <div className="max-h-48 space-y-1 overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-950/50 p-2">
                         {members.map((member) => (

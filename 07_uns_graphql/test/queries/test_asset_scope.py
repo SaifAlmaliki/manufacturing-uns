@@ -78,6 +78,36 @@ async def test_get_assets_hides_other_areas():
 
 
 @pytest.mark.asyncio
+async def test_get_asset_children_none_returns_enterprise_for_filtration_operator():
+    """A Filtration operator must still see AcmeWater so the UNS tree can walk down to the Area."""
+    enterprise = _asset(path="AcmeWater", segment="AcmeWater", level="ENTERPRISE")
+    query = Query()
+    filt_scope = AccessScope(False, frozenset({FILT}))
+    with (
+        patch("uns_graphql.queries.asset._repository") as repo,
+        patch("uns_graphql.auth.scope.scope_for", AsyncMock(return_value=filt_scope)),
+    ):
+        repo.return_value.children_of = AsyncMock(return_value=[enterprise])
+        result = await query.get_asset_children(info=_info(filt_scope), path=None)
+    assert [node.path for node in result] == ["AcmeWater"]
+
+
+@pytest.mark.asyncio
+async def test_get_asset_returns_an_ancestor_of_a_granted_root():
+    enterprise = _asset(path="AcmeWater", segment="AcmeWater", level="ENTERPRISE")
+    query = Query()
+    filt_scope = AccessScope(False, frozenset({FILT}))
+    with (
+        patch("uns_graphql.queries.asset._repository") as repo,
+        patch("uns_graphql.auth.scope.scope_for", AsyncMock(return_value=filt_scope)),
+    ):
+        repo.return_value.get_asset = AsyncMock(return_value=enterprise)
+        result = await query.get_asset(info=_info(filt_scope), path="AcmeWater")
+    assert result is not None
+    assert result.path == "AcmeWater"
+
+
+@pytest.mark.asyncio
 async def test_get_unmodelled_topics_hidden_from_operator():
     query = Query()
     filt_scope = AccessScope(False, frozenset({FILT}))

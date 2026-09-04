@@ -6,12 +6,13 @@ vi.mock('../../lib/auth/directory', () => ({ fetchRealmMembers }));
 
 const getAccessGroups = vi.hoisted(() => vi.fn());
 const getAssets = vi.hoisted(() => vi.fn());
+const saveAccessGroup = vi.hoisted(() => vi.fn());
 const setAccessGroupMembers = vi.hoisted(() => vi.fn());
 vi.mock('../../services/graphql/client', () => ({
   unsGraphQLClient: {
     getAccessGroups,
     getAssets,
-    saveAccessGroup: vi.fn(),
+    saveAccessGroup,
     deleteAccessGroup: vi.fn(),
     setAccessGroupMembers,
   },
@@ -40,6 +41,7 @@ beforeEach(() => {
   auth.roles = ['admin'];
   getAccessGroups.mockResolvedValue([FILTRATION_GROUP]);
   getAssets.mockResolvedValue([]);
+  saveAccessGroup.mockResolvedValue(FILTRATION_GROUP);
   setAccessGroupMembers.mockResolvedValue(FILTRATION_GROUP);
 });
 
@@ -200,5 +202,69 @@ describe('Access Groups on Users and Access', () => {
     expect(child).toBeDisabled();
     expect(grandchild).toBeChecked();
     expect(grandchild).toBeDisabled();
+  });
+
+  it('sets editor id from the saved group before members so a retry does not create a duplicate', async () => {
+    const created = {
+      id: 99,
+      name: 'New zone',
+      roots: [{ path: 'AcmeWater/Site1/Filtration', segment: 'Filtration', level: 'AREA', assetId: 9 }],
+      subjects: [] as string[],
+    };
+    getAssets.mockResolvedValue([
+      { id: 9, path: 'AcmeWater/Site1/Filtration', segment: 'Filtration', level: 'AREA' },
+    ]);
+    saveAccessGroup.mockResolvedValue(created);
+    setAccessGroupMembers.mockRejectedValueOnce(new Error('members failed'));
+    fetchRealmMembers.mockResolvedValue(MEMBERS);
+    render(<UserManagementView />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Access Groups/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Create group/i }));
+    fireEvent.change(screen.getByPlaceholderText(/Access Group name/i), {
+      target: { value: 'New zone' },
+    });
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'AcmeWater/Site1/Filtration' }));
+    fireEvent.click(screen.getByRole('button', { name: /Save group/i }));
+
+    await waitFor(() => expect(saveAccessGroup).toHaveBeenCalledWith('New zone', [9], null));
+    await waitFor(() => expect(setAccessGroupMembers).toHaveBeenCalledWith(99, []));
+    await waitFor(() => expect(screen.getByText('members failed')).toBeTruthy());
+
+    setAccessGroupMembers.mockResolvedValueOnce(created);
+    fireEvent.click(screen.getByRole('button', { name: /Save group/i }));
+
+    await waitFor(() => expect(saveAccessGroup).toHaveBeenCalledWith('New zone', [9], 99));
+  });
+
+  it('reloads groups when Assign save fails so retry is not from a stale snapshot', async () => {
+    fetchRealmMembers.mockResolvedValue(MEMBERS);
+    setAccessGroupMembers.mockRejectedValueOnce(new Error('assign failed'));
+    render(<UserManagementView />);
+
+    await waitFor(() => expect(screen.getByText('Erin Engineer')).toBeTruthy());
+    fireEvent.click(screen.getAllByRole('button', { name: /Assign groups/i })[0]);
+    fireEvent.click(await screen.findByRole('button', { name: /^Save$/i }));
+
+    await waitFor(() => expect(screen.getByText('assign failed')).toBeTruthy());
+    await waitFor(() => expect(getAccessGroups).toHaveBeenCalledTimes(2));
+  });
+
+  it('lists member ids not in the realm as unknown and removable', async () => {
+    getAccessGroups.mockResolvedValue([
+      { ...FILTRATION_GROUP, subjects: ['kc-1', 'stale-sub'] },
+    ]);
+    fetchRealmMembers.mockResolvedValue(MEMBERS);
+    render(<UserManagementView />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Access Groups/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /^Edit$/i }));
+
+    await waitFor(() => expect(screen.getByText('unknown')).toBeTruthy());
+    expect(screen.getByText('stale-sub')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /Remove unknown stale-sub/i }));
+    expect(screen.queryByText('unknown')).toBeNull();
+    expect(screen.queryByText('stale-sub')).toBeNull();
   });
 });

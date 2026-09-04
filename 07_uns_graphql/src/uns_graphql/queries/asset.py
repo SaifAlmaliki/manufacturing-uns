@@ -89,12 +89,16 @@ class Query:
     ) -> list[AssetNode]:
         scope = await scope_from_info(info)
         children = await _repository().children_of(path or None)
-        return [AssetNode.from_asset(asset) for asset in filter_by_path(scope, children, lambda item: item.path)]
+        return [
+            AssetNode.from_asset(asset)
+            for asset in children
+            if scope.keeps_tree_node(asset.path)
+        ]
 
     @strawberry.field(description="One Asset by its path, or null when nothing is modelled at that path.")
     async def get_asset(self, info: strawberry.Info, path: str) -> AssetNode | None:
         scope = await scope_from_info(info)
-        if not scope.covers_path(path):
+        if not scope.keeps_tree_node(path):
             return None
         asset = await _repository().get_asset(path)
         return AssetNode.from_asset(asset) if asset else None

@@ -321,8 +321,8 @@ async def test_record_alert_rule_evaluation_is_null_for_an_unknown_rule():
 def test_only_alert_rules_are_writable():
     """
     Process data is written by publishing to the broker. Hierarchy writes YAML then
-    reseeds; downtime assignment is the one plant-data correction. A ninth mutation
-    must be a decision, not an accident.
+    reseeds; downtime assignment is the one plant-data correction. Access Groups are
+    admin-only plant-scope writes. An extra mutation must be a decision, not an accident.
     """
     mutation = UNSGraphql.schema.get_type_by_name("Mutation")
     names = {field.name for field in mutation.fields}
@@ -336,6 +336,9 @@ def test_only_alert_rules_are_writable():
         "assign_downtime_reason",
         "save_hierarchy",
         "retry_hierarchy_migrate",
+        "save_access_group",
+        "delete_access_group",
+        "set_access_group_members",
     }
 
 

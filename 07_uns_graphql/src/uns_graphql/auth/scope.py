@@ -32,6 +32,17 @@ class AccessScope:
             return True
         return any(covers(path, root) for root in self.root_paths)
 
+    def keeps_tree_node(self, path: str) -> bool:
+        """True when path is in scope, or is an ancestor of a granted root.
+
+        Tree walks start at the enterprise. An Area-scoped caller must still
+        see that enterprise and every site above the Area (same rule as
+        `_filter_hierarchy`).
+        """
+        if self.covers_path(path):
+            return True
+        return any(covers(root, path) for root in self.root_paths)
+
 
 async def scope_for(identity: Identity | None, *, roots_for: _RootsFor | None = None) -> AccessScope:
     if identity is None:
