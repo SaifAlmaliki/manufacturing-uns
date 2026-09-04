@@ -259,6 +259,7 @@ async def test_save_hierarchy_rejects_renames_while_a_job_is_running(conf_dir: P
     assert result.errors
     message = result.errors[0].message
     assert "renames" in message
+    assert result.errors[0].extensions["field"] == "renames"
     assert _read_plant(conf_dir) == original
     historian.assert_not_awaited()
     graph.assert_not_awaited()

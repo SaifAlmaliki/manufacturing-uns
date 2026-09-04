@@ -14,7 +14,7 @@ from pathlib import Path
 import strawberry
 import yaml
 from graphql import GraphQLError
-from uns_config import resolve_conf_dir
+from uns_config import get_settings, resolve_conf_dir
 from uns_model.engine import Database
 from uns_model.hierarchy import HierarchyTree, PrefixRename, validate_renames, validate_tree
 from uns_model.hierarchy_io import load_plant_tree, save_plant_tree, write_enterprise_settings
@@ -92,8 +92,13 @@ async def _rewrite_graph(old_prefix: str, new_prefix: str) -> int:
 
 
 async def _reseed(tree: HierarchyTree) -> None:
+    settings = get_settings("simulator")
+    extra = {
+        "plc": settings.get("plc"),
+        "equipment": settings.get("equipment"),
+    }
     repository = AssetModelRepository(Database.shared("graphql"))
-    await apply_plan(repository, plan_from_hierarchy_tree(tree))
+    await apply_plan(repository, plan_from_hierarchy_tree(tree, extra=extra))
 
 
 async def _run_migrate(
@@ -165,7 +170,8 @@ class Mutation:
 
         if prefix_renames and _load_job(conf_dir).status == _JOB_RUNNING:
             raise GraphQLError(
-                "Cannot apply renames while a hierarchy migrate job is already running"
+                "Cannot apply renames while a hierarchy migrate job is already running",
+                extensions={"field": "renames"},
             )
 
         new_tree = tree.to_tree()
