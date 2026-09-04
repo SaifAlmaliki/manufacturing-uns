@@ -246,6 +246,15 @@ class OeeResultRepository:
             rows = (await session.execute(statement)).all()
         return pareto_from_rows([tuple(row) for row in rows])
 
+    async def get_downtime_event(self, event_id: int) -> DowntimeEventRow | None:
+        """One stop by id, or None. Read-only, so a caller can refuse before assigning."""
+        async with self._database.session() as session:
+            rows = (
+                await session.execute(_event_projection().where(DowntimeEvent.id == event_id))
+            ).all()
+        found = _event_rows(rows)
+        return found[0] if found else None
+
     # ------------------------------------------------------------------- write
 
     async def assign_reason(

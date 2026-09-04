@@ -30,18 +30,20 @@ from uns_model.alert_rules import AlertRuleSpec
 from uns_model.tables import AlertRule, AlertRuleRole
 
 from uns_graphql.auth.context import CONTEXT_KEY
+from uns_graphql.auth.scope import AccessScope
 from uns_graphql.auth.token import Identity
 from uns_graphql.uns_graphql_app import UNSGraphql
 
 REPOSITORY = "uns_graphql.mutations.alert_rule._repository"
 
 # These tests are about what the mutations do, not about who may call them - that is
-# test/auth/test_require.py, one case per cell. So they run as a role that may.
-ENGINEER = {
+# test/auth/test_require.py, one case per cell. Admin, so Access Group checks are
+# unrestricted and the repository is the only seam.
+ADMIN = {
     CONTEXT_KEY: Identity(
         subject="00000000-0000-0000-0000-000000000001",
         username="erin.engineer",
-        roles=frozenset({"engineer"}),
+        roles=frozenset({"admin"}),
     )
 }
 
@@ -109,7 +111,7 @@ async def test_save_alert_rule_returns_the_rule_as_stored():
 
     with patch(REPOSITORY, return_value=repository):
         result = await UNSGraphql.schema.execute(
-            SAVE_MUTATION, variable_values={"rule": MINIMAL_INPUT}, context_value=ENGINEER
+            SAVE_MUTATION, variable_values={"rule": MINIMAL_INPUT}, context_value=ADMIN
         )
 
     assert result.errors is None
@@ -146,7 +148,7 @@ async def test_save_alert_rule_forwards_the_optional_settings():
                     "mqttAlarmTopic": "enterprise/site/alarms/oven",
                 }
             },
-            context_value=ENGINEER,
+            context_value=ADMIN,
         )
 
     assert result.errors is None
@@ -172,7 +174,7 @@ async def test_save_alert_rule_rejects_a_value_outside_the_vocabulary_before_the
         result = await UNSGraphql.schema.execute(
             SAVE_MUTATION,
             variable_values={"rule": MINIMAL_INPUT | {"severity": "CATASTROPHIC"}},
-            context_value=ENGINEER,
+            context_value=ADMIN,
         )
 
     assert result.errors
@@ -189,7 +191,7 @@ async def test_save_alert_rule_surfaces_a_repository_rejection():
         result = await UNSGraphql.schema.execute(
             SAVE_MUTATION,
             variable_values={"rule": MINIMAL_INPUT | {"condition": "RANGE_OUTSIDE"}},
-            context_value=ENGINEER,
+            context_value=ADMIN,
         )
 
     assert result.errors
@@ -210,7 +212,7 @@ async def test_save_alert_rules_imports_a_whole_browser_full_of_rules():
             }
             """,
             variable_values={"rules": [MINIMAL_INPUT, MINIMAL_INPUT | {"id": "rule-2"}]},
-            context_value=ENGINEER,
+            context_value=ADMIN,
         )
 
     assert result.errors is None
@@ -223,27 +225,32 @@ async def test_save_alert_rules_imports_a_whole_browser_full_of_rules():
 @pytest.mark.parametrize("deleted", [True, False])
 async def test_delete_alert_rule_reports_whether_there_was_anything_to_delete(deleted: bool):
     repository = AsyncMock()
+    repository.get_rule.return_value = _rule() if deleted else None
     repository.delete_rule.return_value = deleted
 
     with patch(REPOSITORY, return_value=repository):
         result = await UNSGraphql.schema.execute(
-            """mutation { deleteAlertRule(id: "rule-1") }""", context_value=ENGINEER
+            """mutation { deleteAlertRule(id: "rule-1") }""", context_value=ADMIN
         )
 
     assert result.errors is None
     assert result.data["deleteAlertRule"] is deleted
-    repository.delete_rule.assert_awaited_once_with("rule-1")
+    if deleted:
+        repository.delete_rule.assert_awaited_once_with("rule-1")
+    else:
+        repository.delete_rule.assert_not_awaited()
 
 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_set_alert_rule_enabled_mutes_without_resending_the_rule():
     repository = AsyncMock()
+    repository.get_rule.return_value = _rule()
     repository.set_enabled.return_value = _rule(enabled=False)
 
     with patch(REPOSITORY, return_value=repository):
         result = await UNSGraphql.schema.execute(
             """mutation { setAlertRuleEnabled(id: "rule-1", enabled: false) { id enabled thresholdValue } }""",
-            context_value=ENGINEER,
+            context_value=ADMIN,
         )
 
     assert result.errors is None
@@ -254,21 +261,23 @@ async def test_set_alert_rule_enabled_mutes_without_resending_the_rule():
 @pytest.mark.asyncio(loop_scope="function")
 async def test_set_alert_rule_enabled_is_null_for_an_unknown_rule():
     repository = AsyncMock()
-    repository.set_enabled.return_value = None
+    repository.get_rule.return_value = None
 
     with patch(REPOSITORY, return_value=repository):
         result = await UNSGraphql.schema.execute(
             """mutation { setAlertRuleEnabled(id: "nope", enabled: true) { id } }""",
-            context_value=ENGINEER,
+            context_value=ADMIN,
         )
 
     assert result.errors is None
     assert result.data["setAlertRuleEnabled"] is None
+    repository.set_enabled.assert_not_awaited()
 
 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_record_alert_rule_evaluation_returns_the_counters():
     repository = AsyncMock()
+    repository.get_rule.return_value = _rule()
     repository.record_evaluation.return_value = _rule(
         trigger_count=8,
         last_triggered_at=datetime(2026, 8, 31, 6, 30, tzinfo=UTC),
@@ -282,7 +291,7 @@ async def test_record_alert_rule_evaluation_returns_the_counters():
                 id triggerCount lastTriggeredAt lastEvaluatedAt
             } }
             """,
-            context_value=ENGINEER,
+            context_value=ADMIN,
         )
 
     assert result.errors is None
@@ -296,16 +305,17 @@ async def test_record_alert_rule_evaluation_returns_the_counters():
 async def test_record_alert_rule_evaluation_is_null_for_an_unknown_rule():
     """A rule deleted while an evaluator was mid-cycle is not an error worth waking anybody for."""
     repository = AsyncMock()
-    repository.record_evaluation.return_value = None
+    repository.get_rule.return_value = None
 
     with patch(REPOSITORY, return_value=repository):
         result = await UNSGraphql.schema.execute(
             """mutation { recordAlertRuleEvaluation(id: "nope", triggered: false) { id } }""",
-            context_value=ENGINEER,
+            context_value=ADMIN,
         )
 
     assert result.errors is None
     assert result.data["recordAlertRuleEvaluation"] is None
+    repository.record_evaluation.assert_not_awaited()
 
 
 def test_only_alert_rules_are_writable():
@@ -359,9 +369,14 @@ async def test_an_operator_may_mute_a_rule_but_not_rewrite_it():
         CONTEXT_KEY: Identity(subject="s", username="olga.operator", roles=frozenset({"operator"}))
     }
     repository = AsyncMock()
+    repository.get_rule.return_value = _rule()
     repository.set_enabled.return_value = _rule(enabled=False)
+    any_plant = AccessScope(unrestricted=True, root_paths=frozenset())
 
-    with patch(REPOSITORY, return_value=repository):
+    with (
+        patch(REPOSITORY, return_value=repository),
+        patch("uns_graphql.auth.scope.scope_for", AsyncMock(return_value=any_plant)),
+    ):
         muted = await UNSGraphql.schema.execute(
             """mutation { setAlertRuleEnabled(id: "rule-1", enabled: false) { id } }""",
             context_value=operator,

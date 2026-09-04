@@ -34,8 +34,10 @@ import strawberry
 from uns_model.alert_rules import AlertRuleRepository
 from uns_model.engine import Database
 
-from uns_graphql.auth.require import require
+from uns_graphql.auth.require import NotPermittedError, require
+from uns_graphql.auth.scope import allowed_topic, scope_from_info
 from uns_graphql.input.alert_rule import AlertRuleInput
+from uns_graphql.queries import asset as asset_query
 from uns_graphql.type.alert_rule import AlertRuleType
 
 LOGGER = logging.getLogger(__name__)
@@ -43,6 +45,13 @@ LOGGER = logging.getLogger(__name__)
 
 def _repository() -> AlertRuleRepository:
     return AlertRuleRepository(Database.shared("graphql"))
+
+
+async def _require_visible_topic(info: strawberry.Info, topic: str) -> None:
+    """Refuse a write aimed at a topic the caller may not see."""
+    scope = await scope_from_info(info)
+    if not await allowed_topic(scope, topic, asset_query._context_resolver()):
+        raise NotPermittedError(f"This Asset or topic is outside your Access Groups: {topic}.")
 
 
 @strawberry.type(description="Author the console's Alert Rules")
@@ -58,6 +67,7 @@ class Mutation:
     )
     async def save_alert_rule(self, info: strawberry.Info, rule: AlertRuleInput) -> AlertRuleType:
         require(info, "saveAlertRule")
+        await _require_visible_topic(info, rule.topic)
         saved = await _repository().save_rule(rule.to_spec())
         LOGGER.info("Alert Rule %s saved for topic %s", saved.id, saved.topic)
         return AlertRuleType.from_rule(saved)
@@ -70,6 +80,8 @@ class Mutation:
         self, info: strawberry.Info, rules: list[AlertRuleInput]
     ) -> list[AlertRuleType]:
         require(info, "saveAlertRules")
+        for rule in rules:
+            await _require_visible_topic(info, rule.topic)
         saved = await _repository().save_rules([rule.to_spec() for rule in rules])
         LOGGER.info("Imported %s Alert Rule(s)", len(saved))
         return [AlertRuleType.from_rule(rule) for rule in saved]
@@ -77,6 +89,10 @@ class Mutation:
     @strawberry.mutation(description="Delete an Alert Rule. False when there was no such rule.")
     async def delete_alert_rule(self, info: strawberry.Info, id: str) -> bool:  # noqa: A002
         require(info, "deleteAlertRule")
+        existing = await _repository().get_rule(id)
+        if existing is None:
+            return False
+        await _require_visible_topic(info, existing.topic)
         deleted = await _repository().delete_rule(id)
         if deleted:
             LOGGER.info("Alert Rule %s deleted", id)
@@ -89,6 +105,10 @@ class Mutation:
         self, info: strawberry.Info, id: str, enabled: bool  # noqa: A002
     ) -> AlertRuleType | None:
         require(info, "setAlertRuleEnabled")
+        existing = await _repository().get_rule(id)
+        if existing is None:
+            return None
+        await _require_visible_topic(info, existing.topic)
         rule = await _repository().set_enabled(id, enabled=enabled)
         return AlertRuleType.from_rule(rule) if rule else None
 
@@ -100,6 +120,10 @@ class Mutation:
         self, info: strawberry.Info, id: str, triggered: bool  # noqa: A002
     ) -> AlertRuleType | None:
         require(info, "recordAlertRuleEvaluation")
+        existing = await _repository().get_rule(id)
+        if existing is None:
+            return None
+        await _require_visible_topic(info, existing.topic)
         rule = await _repository().record_evaluation(id, triggered=triggered)
         return AlertRuleType.from_rule(rule) if rule else None
 

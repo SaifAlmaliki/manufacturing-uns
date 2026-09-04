@@ -30,10 +30,22 @@ from uns_model.oee_results import DowntimeEventRow
 from uns_model.oee_tables import DowntimeEvent
 
 from uns_graphql.auth.context import CONTEXT_KEY
+from uns_graphql.auth.scope import AccessScope
 from uns_graphql.auth.token import Identity
 from uns_graphql.uns_graphql_app import UNSGraphql
 
 REPOSITORY = "uns_graphql.mutations.oee._repository"
+
+
+@pytest.fixture(autouse=True)
+def _any_plant_path():
+    """These tests are about the mutation, not Access Groups; Task 6 covers refusal."""
+    with patch(
+        "uns_graphql.auth.require.scope_for",
+        AsyncMock(return_value=AccessScope(unrestricted=True, root_paths=frozenset())),
+    ):
+        yield
+
 
 # These tests are about what the mutation does, not about who may call it - that is
 # test/auth/test_require.py, one case per cell. Operator, because that is the role that
@@ -91,6 +103,7 @@ async def test_assign_downtime_reason_records_the_signed_in_user():
     the token.
     """
     repository = AsyncMock()
+    repository.get_downtime_event.return_value = _assigned(assigned_by="olga.operator")
     repository.assign_reason.return_value = _assigned(assigned_by="olga.operator")
 
     with patch(REPOSITORY, return_value=repository):
@@ -122,6 +135,7 @@ async def test_assign_downtime_reason_records_the_signed_in_user():
 async def test_the_event_id_reaches_the_repository_as_a_number():
     """The schema publishes ID, which is a string. The primary key is a BIGINT."""
     repository = AsyncMock()
+    repository.get_downtime_event.return_value = _assigned()
     repository.assign_reason.return_value = _assigned()
 
     with patch(REPOSITORY, return_value=repository):
@@ -141,6 +155,7 @@ async def test_omitting_the_note_leaves_the_stored_note_alone():
     None, so an operator correcting only the code cannot erase somebody else's note.
     """
     repository = AsyncMock()
+    repository.get_downtime_event.return_value = _assigned(note="Called maintenance at 09:05")
     repository.assign_reason.return_value = _assigned(note="Called maintenance at 09:05")
 
     with patch(REPOSITORY, return_value=repository):
@@ -162,7 +177,7 @@ async def test_omitting_the_note_leaves_the_stored_note_alone():
 async def test_an_unknown_event_is_an_error_and_not_a_null():
     """The return type is non-null, and an operator whose click did nothing must be told."""
     repository = AsyncMock()
-    repository.assign_reason.return_value = None
+    repository.get_downtime_event.return_value = None
 
     with patch(REPOSITORY, return_value=repository):
         result = await UNSGraphql.schema.execute(
@@ -173,12 +188,14 @@ async def test_an_unknown_event_is_an_error_and_not_a_null():
 
     assert result.errors
     assert "999" in result.errors[0].message
+    repository.assign_reason.assert_not_awaited()
 
 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_an_unauthored_reason_code_reaches_the_caller_as_a_message():
     """The repository's ValueError, not a driver-level foreign key violation."""
     repository = AsyncMock()
+    repository.get_downtime_event.return_value = _assigned()
     repository.assign_reason.side_effect = ValueError("'NOT_A_REASON' is not an authored downtime reason code")
 
     with patch(REPOSITORY, return_value=repository):
@@ -205,6 +222,7 @@ async def test_an_event_id_that_is_not_a_number_is_rejected_before_the_database(
 
     assert result.errors
     assert "eleven" in result.errors[0].message
+    repository.get_downtime_event.assert_not_awaited()
     repository.assign_reason.assert_not_awaited()
 
 

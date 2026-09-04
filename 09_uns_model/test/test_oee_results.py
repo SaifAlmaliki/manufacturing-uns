@@ -332,6 +332,40 @@ async def test_downtime_events_carry_the_joined_reason():
 
 
 @pytest.mark.asyncio
+async def test_get_downtime_event_returns_the_joined_row():
+    """A write-side load: the Asset path without attributing a reason."""
+    database = FakeDatabase(
+        [
+            FakeResult(
+                [
+                    row(
+                        DowntimeEvent=_event(11),
+                        path=LINE,
+                        display_name="Mechanical fault",
+                        category="FAILURE",
+                        is_planned=False,
+                    )
+                ]
+            )
+        ]
+    )
+
+    found = await OeeResultRepository(database).get_downtime_event(11)
+
+    assert found is not None
+    assert found.asset_path == LINE
+    assert found.event.id == 11
+    assert "downtime_event.id =" in sql(database.session_obj.statements[0])
+
+
+@pytest.mark.asyncio
+async def test_get_downtime_event_is_null_for_an_unknown_id():
+    database = FakeDatabase([FakeResult([])])
+
+    assert await OeeResultRepository(database).get_downtime_event(999) is None
+
+
+@pytest.mark.asyncio
 async def test_downtime_pareto_aggregates_in_the_database():
     """Grouped in SQL: a year of stops is thousands of rows and the console wants nine."""
     database = FakeDatabase(

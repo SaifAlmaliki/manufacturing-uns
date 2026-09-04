@@ -38,7 +38,7 @@ import strawberry
 from uns_model.engine import Database
 from uns_model.oee_results import OeeResultRepository
 
-from uns_graphql.auth.require import require
+from uns_graphql.auth.require import require, require_path
 from uns_graphql.type.oee import DowntimeEventType
 
 LOGGER = logging.getLogger(__name__)
@@ -73,12 +73,19 @@ class Mutation:
             # Rejected before the database, so a typo does not arrive as a driver error.
             raise ValueError(f"{event_id!r} is not a downtime event id") from ex
 
+        existing = await _repository().get_downtime_event(numeric_id)
+        if existing is None:
+            # Non-null return type, and the right answer: an operator whose click did
+            # nothing has to be told, not handed an empty object.
+            raise ValueError(f"There is no downtime event {event_id}")
+
+        # Load first: an out-of-scope stop must not be attributed, then hidden.
+        await require_path(info, existing.asset_path)
+
         assigned = await _repository().assign_reason(
             numeric_id, reason_code, note=note, assigned_by=identity.username
         )
         if assigned is None:
-            # Non-null return type, and the right answer: an operator whose click did
-            # nothing has to be told, not handed an empty object.
             raise ValueError(f"There is no downtime event {event_id}")
 
         LOGGER.info(
