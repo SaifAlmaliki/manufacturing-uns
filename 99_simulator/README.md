@@ -23,46 +23,43 @@ Repository layout
   - main.py — CLI / entrypoint ([src/uns_simulator/main.py](src/uns_simulator/main.py))
   - signals.py — the ten signal shapes and their status derivation ([src/uns_simulator/signals.py](src/uns_simulator/signals.py))
   - expressions.py — the whitelisted expression evaluator used by `derived` and `counter` ([src/uns_simulator/expressions.py](src/uns_simulator/expressions.py))
-  - plant.py — PackML line state, site ambient conditions, the plant clock ([src/uns_simulator/plant.py](src/uns_simulator/plant.py))
+  - plant.py — `WTPProcess`, plant clock, DeviceView ([src/uns_simulator/plant.py](src/uns_simulator/plant.py))
   - profiles.py — device targeting, profile resolution, the conf/simulator reader ([src/uns_simulator/profiles.py](src/uns_simulator/profiles.py))
 - Dockerfile — container image, same pattern as the other Python UNS services
 - test/ — unit tests ([test/](test/))
+- [PROCESS.md](PROCESS.md) — the simulated WTP (areas, tags, coupling, sequencer)
 
 ## The plant model
 
-The simulator is not a set of independent random generators. One `PlantClock` ticks every
-second and drives a `PlantContext`: per site, ambient temperature, humidity, wet bulb, wind
-and barometric pressure, plus the shift and the electricity tariff period; per production
-line, a PackML state machine that only ever takes legal transitions, and the production
-rate, throughput, heat load and air demand that follow from it.
+The simulator publishes one water treatment plant, not independent random walks. One
+`PlantClock` ticks every second and drives a `WTPProcess`: tanks, lagged flows, pressures,
+a pH walk, and an autonomous sequencer. Devices read that context (`ctx.wtp.*`) and never
+write it.
 
-Devices read that context. A compressor's load follows the air demand of the lines it
-`serves`; a boiler's steam flow follows their heat load, but through a first-order lag, so
-it trails a line stop by minutes while the compressors react in seconds. The cooling tower
-sizes its approach temperature against the wet bulb the weather station publishes — the same
-number, not a second model of it — so a warm humid stretch shows up as a hotter tower supply
-**and** a higher chiller kW.
+Close V101 and T101 stops filling. A raw-pump fault starts the next pump in the rotation.
+Backwash isolates the filter. Values move together for a reason, so a consumer built against
+this data behaves like one built against a plant.
 
-That is the point of the whole design: values that move together for a reason, so a consumer
-built against this data behaves like one built against a plant.
+What the plant is — five areas, tags, coupling, sequencer, example topics — is in
+[PROCESS.md](PROCESS.md). This README is how to run the simulator.
 
 ### Profiles
 
-`conf/simulator/plant.yaml` declares the whole plant; a profile narrows it. Select one with
-`simulator.simulation.profile` in `conf/settings.yaml`.
+`conf/simulator/plant.yaml` declares the five-area hierarchy (`AcmeWater` / `Site1` /
+RawWater → Treatment → Filtration → Storage → Distribution / `Train1`).
+`conf/simulator/wtp.yaml` declares the nineteen devices. The only profile is `wtp`
+(`tier_scale: 1.0`, site `Site1`, family `wtp`). Select it with
+`simulator.simulation.profile` in `conf/settings.yaml` — it is already the default.
 
-| Profile | Sites | Families | Devices | Rate |
-|---|---|---|---|---|
-| `small` (default) | Dormagen, first cell per line | energy, water, production | 11 | ~2 msg/s |
-| `full` | Dormagen, Krefeld | all six | 55 | ~120 msg/s |
+`GET /simulator/config` reports `available_profiles: ["wtp"]` and `families: {wtp: true}`.
+Any other profile name is 422 (`field: profile`).
 
-`small` is the default because the graphdb mapper performs `MERGE` work once per topic level
-on **every** message, and eight-level topics at `full` rate are a heavy sustained write load
-on Neo4j. The historian only appends, so it is not the constraint. `test/test_volume.py`
-enforces the default: a family added to the wrong profile fails a test rather than a mapper.
+`test/test_volume.py` keeps the default honest: the graphdb mapper performs `MERGE` work
+once per topic level on **every** message, so a firehose fails a test rather than a mapper.
+The historian only appends, so it is not the constraint.
 
-A profile also carries `tier_scale`, which multiplies every cadence interval — `small` uses
-6.0, so its 5 s process tier publishes every 30 s.
+A profile also carries `tier_scale`, which multiplies every cadence interval. `wtp` uses
+1.0, so the 5 s process tier publishes every 5 s.
 
 ### Cadence tiers
 
@@ -71,13 +68,14 @@ configurable under `simulator.simulation.tiers`.
 
 | Tier | Interval | What is on it |
 |---|---|---|
-| `fast` | 1 s | vibration, motor current |
-| `process` | 5 s | temperatures, pressures, flows, levels, analysers |
-| `energy` | 15 s | power, power factor, per-phase voltage and current |
-| `status` | 30 s | PackML state, equipment status, SIS status |
-| `meter` | 900 s | cumulative kWh, m³, Nm³ and tonne registers |
-| `lab` | 1800 s | LIMS sample results |
-| `event` | on change | alarms, trips, detector faults |
+| `process` | 5 s | PV, Position, Speed.PV, LevelPct, Volume_m3 |
+| `status` | 30 s | Running, OpenFB, FilterRun, InService, command mirrors, Auto |
+| `meter` | 900 s | Totalizer, RuntimeH, CycleCount, StartCount, Capacity_m3 |
+| `event` | on change | Fault, Backwash |
+
+`settings.yaml` still declares unused `fast` (1 s), `energy` (15 s) and `lab` (1800 s)
+intervals; WTP devices do not publish on them. `event` is 0.0 meaning "publish on change",
+and scaling zero keeps it zero.
 
 Evaluation and publishing are separate. Every signal is evaluated on every one-second tick
 regardless of tier, so a 15-minute meter register has integrated all 900 seconds rather than
@@ -107,19 +105,12 @@ and a reference cycle between `derived` signals is rejected the same way.
 `unit` is required on every signal. A dimensionless ratio declares `unit: "1"` rather than
 omitting the key, so an omission is always a mistake and never a choice.
 
-### Adding a device
+### Changing the inventory
 
-1. Pick the family file in `conf/simulator/` — or add a family name to `FAMILIES` in
-   `profiles.py` and create the file.
-2. Add an entry under `devices:` with `id`, `equipment`, a `target`, a `tier`, and `signals`.
-   An absent `target` means every cell in a `kind: production` area.
-3. If it should follow production, give it `serves: [Site/Area/Line, ...]` and read
-   `ctx.served_*` in its expressions. `served_throughput_tph`, `served_heat_load` and
-   `served_air_demand` are **sums** over the served lines, so divide by a `served_lines`
-   parameter if the device should behave the same at a one-line site as at a two-line one.
-4. Update `EXPECTED_SIGNAL_COUNT` and `EXPECTED_DEVICE_COUNT` in `test/test_conf_files.py`.
-   Those tables are per template, so the suite's totals are derived from them rather than
-   asserted, and a device that fails to resolve names itself in the failure.
+The shipped plant is the nineteen tags in [`conf/simulator/wtp.yaml`](../conf/simulator/wtp.yaml),
+each targeted at `area` + `cell`. `FAMILIES` in `profiles.py` is `("wtp",)`. If you add a
+tag, update `EXPECTED_SIGNAL_COUNT` in `test/test_conf_files.py` (per template, so a missing
+device names itself) and the narrative in [PROCESS.md](PROCESS.md).
 
 Quick start (Docker Compose)
 
@@ -216,21 +207,21 @@ need it, because nginx proxies `/simulator` inside the compose network.
 | GET | `/simulator/health` | Liveness, uptime, git hash, version |
 | GET | `/simulator/status` | Run state, counters, publish rates, `overrides_active` |
 | GET | `/simulator/config` | Profile, available profiles, hierarchy, tiers, families, devices |
-| GET | `/simulator/plant` | PackML state and production rate per line, per site |
+| GET | `/simulator/plant` | WTP snapshot: mode, filter_mode, duty/lead pumps, tanks, flows, pressures |
 | GET | `/simulator/devices` | Device inventory with per-device publish counters |
 | GET | `/simulator/devices/{id}/signals` | Current value, Unit of Measure, tier and topic per signal |
 | GET | `/simulator/diagnostics` | What the profile expanded to, unmatched templates, failing devices, sample topics |
 | POST | `/simulator/run` | `{"action": "start" \| "pause" \| "resume" \| "stop"}` |
-| PUT | `/simulator/profile` | `{"profile": "...", "seed": 42}` — rebuilds the plant, resets counters |
+| PUT | `/simulator/profile` | `{"profile": "wtp", "seed": 42}` — rebuilds the plant, resets counters; any other name is 422 |
 | PUT | `/simulator/tiers` | Seconds between publishes, per tier |
-| PUT | `/simulator/families` | Enable or disable a sensor family |
+| PUT | `/simulator/families` | Enable or disable family `wtp` |
 | PUT | `/simulator/devices/{id}` | `{"enabled": false}` |
 
 Every write returns the `/status` body, so a caller never has to poll to find out what
 changed.
 
 **Pause keeps the plant moving.** It cancels the publish tasks and leaves the clock running,
-so PackML states keep advancing and resuming does not restart the plant from Idle.
+so `WTPProcess` keeps advancing and resuming does not restart the train from empty.
 
 **Nothing is written back to `conf/simulator/`.** `overrides_active` in the status body is
 true once the running plant has diverged from the files on disk; a restart returns to them.
@@ -253,9 +244,10 @@ stop the simulator.
     sets `export_metric: true`. Exporting every signal would put the plant's whole state
     into Prometheus, which is the historian's job and not a metric.
 - **MQTT self-telemetry** under `uns/platform/simulator/<instance>/`:
-  `status` every ten seconds, `plant/<site>/<line>/state` on each PackML transition, and
-  `device/<id>/health` on change. All retained, with a Last Will on `status` so the topic
-  reads `offline` if the process is killed.
+  `status` every ten seconds, `plant/<site>/<line>/state` on duty rotation, backwash
+  enter/leave, and fault latch (`plant/Site1/Train1/state`), and `device/<id>/health` on
+  change. All retained, with a Last Will on `status` so the topic reads `offline` if the
+  process is killed.
 
 This prefix is Platform Observability, not plant data. No mapper subscribes to it, so none
 of it is persisted as though a machine had measured it. `test/test_self_telemetry.py`

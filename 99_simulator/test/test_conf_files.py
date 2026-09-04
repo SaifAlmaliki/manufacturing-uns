@@ -192,3 +192,8 @@ def test_kpi_is_a_parameter_type_no_simulated_device_claims(raw):
             for name, signal in template["signals"].items():
                 claimed = (signal or {}).get("param_type")
                 assert claimed != "KPI", f"{family}.yaml {template['id']}/{name} claims KPI"
+
+
+def test_process_md_exists():
+    """Spec 10/11: operators can read the plant without opening Python."""
+    assert (Path(__file__).resolve().parents[1] / "PROCESS.md").is_file()
