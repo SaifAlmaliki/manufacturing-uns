@@ -608,3 +608,167 @@ class PlantClock:
 
     def stop(self) -> None:
         self.running = False
+
+
+# --- Water treatment plant hydraulics (WTP) ---
+
+FLOW_TAU_S = 5.0
+SPEED_TAU_S = 8.0
+RAW_PUMP_M3H = 80.0
+DIST_NAMEPLATE_M3H = 80.0
+LL_PCT = 10.0
+RESIDUAL_BARG = 0.2
+
+
+def _approach(value: float, target: float, tau_s: float, dt: float) -> float:
+    ratio = min(1.0, dt / max(tau_s, 1e-6))
+    return value + (target - value) * ratio
+
+
+class ValveState:
+    def __init__(self) -> None:
+        self.cmd_open = False
+        self.cmd_close = True
+        self.open_fb = False
+        self.close_fb = True
+        self.position = 0.0
+        self.cycle_count = 0
+
+    def set_open(self, open_: bool) -> None:
+        changed = self.open_fb != open_
+        self.cmd_open = open_
+        self.cmd_close = not open_
+        self.open_fb = open_
+        self.close_fb = not open_
+        self.position = 100.0 if open_ else 0.0
+        if changed:
+            self.cycle_count += 1
+
+
+class MotorDOLState:
+    def __init__(self) -> None:
+        self.cmd_start = False
+        self.cmd_stop = True
+        self.reset_fault = False
+        self.running = False
+        self.fault = False
+        self.runtime_h = 0.0
+        self.start_count = 0
+        self.auto = True
+
+
+class VFDState:
+    def __init__(self) -> None:
+        self.run_cmd = False
+        self.speed_sp = 0.0
+        self.speed_pv = 0.0
+        self.reset_fault = False
+        self.running = False
+        self.fault = False
+        self.runtime_h = 0.0
+        self.start_count = 0
+
+
+class TankState:
+    def __init__(self, capacity_m3: float, initial_pct: float = 50.0) -> None:
+        self.capacity_m3 = capacity_m3
+        self.volume_m3 = capacity_m3 * initial_pct / 100.0
+
+    @property
+    def level_pct(self) -> float:
+        return 100.0 * self.volume_m3 / self.capacity_m3 if self.capacity_m3 else 0.0
+
+    def add_m3(self, delta: float) -> None:
+        self.volume_m3 = min(self.capacity_m3, max(0.0, self.volume_m3 + delta))
+
+
+class BasinState(TankState):
+    def __init__(self, capacity_m3: float, depth_m: float = 3.0, initial_pct: float = 50.0) -> None:
+        super().__init__(capacity_m3, initial_pct)
+        self.depth_m = depth_m
+
+    @property
+    def pv_m(self) -> float:
+        return self.level_pct / 100.0 * self.depth_m
+
+
+class FilterState:
+    def __init__(self) -> None:
+        self.filter_run = True
+        self.backwash = False
+        self.in_service = True
+
+
+class WTPProcess:
+    """Water-treatment hydraulics: tanks, lagged flows, and pressures."""
+
+    def __init__(self, rng: random.Random, *, fault_p: float = 1.0 / 3600.0) -> None:
+        self.rng = rng
+        self.fault_p = fault_p
+        self.v101 = ValveState()
+        self.v201 = ValveState()
+        self.v202 = ValveState()
+        self.v301 = ValveState()
+        self.p101 = MotorDOLState()
+        self.p102 = MotorDOLState()
+        self.p103 = MotorDOLState()
+        self.dp101 = MotorDOLState()
+        self.p201 = VFDState()
+        self.p202 = VFDState()
+        self.t101 = TankState(250.0)
+        self.b101 = BasinState(40.0)
+        self.t201 = TankState(400.0)
+        self.f101 = FilterState()
+        self.inlet_m3h = 0.0
+        self.ft101_m3h = 0.0
+        self.ft201_m3h = 0.0
+        self.pt101 = RESIDUAL_BARG
+        self.pt201 = RESIDUAL_BARG
+        self.ait101 = 7.2
+
+    def advance_hydraulics(self, dt: float) -> None:
+        raw_on = any(p.running and not p.fault for p in (self.p101, self.p102, self.p103))
+
+        inlet_target = RAW_PUMP_M3H if self.v101.open_fb and raw_on and self.t101.level_pct < 100.0 else 0.0
+        self.inlet_m3h = _approach(self.inlet_m3h, inlet_target, FLOW_TAU_S, dt)
+
+        filter_forward = (
+            self.v201.open_fb and self.v202.open_fb and self.f101.in_service and not self.f101.backwash
+        )
+
+        ft101_target = RAW_PUMP_M3H if self.t101.level_pct > LL_PCT and filter_forward else 0.0
+        self.ft101_m3h = _approach(self.ft101_m3h, ft101_target, FLOW_TAU_S, dt)
+
+        b101_out = self.ft101_m3h if filter_forward else 0.0
+        self.t101.add_m3((self.inlet_m3h - self.ft101_m3h) * dt / 3600.0)
+        self.b101.add_m3((self.ft101_m3h - b101_out) * dt / 3600.0)
+
+        filtrate = self.ft101_m3h if filter_forward else 0.0
+
+        for pump in (self.p201, self.p202):
+            speed_target = pump.speed_sp if pump.running else 0.0
+            pump.speed_pv = _approach(pump.speed_pv, speed_target, SPEED_TAU_S, dt)
+
+        contributions = [
+            DIST_NAMEPLATE_M3H * pump.speed_pv / 100.0 if pump.running and not pump.fault else 0.0
+            for pump in (self.p201, self.p202)
+        ]
+        ft201_target = sum(contributions) if self.v301.open_fb else 0.0
+        self.ft201_m3h = _approach(self.ft201_m3h, ft201_target, FLOW_TAU_S, dt)
+
+        self.t201.add_m3((filtrate - self.ft201_m3h) * dt / 3600.0)
+
+        self.pt101 = RESIDUAL_BARG + 0.015 * self.t101.level_pct + (1.8 if raw_on else 0.0)
+        self.pt201 = RESIDUAL_BARG + 0.015 * self.t201.level_pct + (
+            2.2 * (self.ft201_m3h / DIST_NAMEPLATE_M3H)
+        )
+
+        for motor in (self.p101, self.p102, self.p103, self.dp101):
+            if motor.running:
+                motor.runtime_h += dt / 3600.0
+        for pump in (self.p201, self.p202):
+            if pump.running:
+                pump.runtime_h += dt / 3600.0
+
+    def advance_quality(self, dt: float) -> None:
+        pass
