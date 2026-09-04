@@ -36,7 +36,7 @@
             </config>
             <northboundMappings>
                 <northboundMapping>
-                    <topic>CovestroAG/Dormagen/Production/Line1/Cell1/SIM/ProcessValue/Random</topic>
+                    <topic>test/uns/edge/sim</topic>
                     <tagName>t1</tagName>
                     <maxQos>1</maxQos>
                     <includeTimestamp>true</includeTimestamp>

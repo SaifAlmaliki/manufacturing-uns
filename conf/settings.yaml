@@ -6,8 +6,8 @@
 default:
   platform:
     instance_name: "Instance01"
-    organization_name: "CovestroAG"
-    display_name: "Covestro UNS"
+    organization_name: "AcmeWater"
+    display_name: "Acme Water UNS"
 
   applications:
     graphql:
@@ -138,11 +138,11 @@ graphql:
 
 graphdb:
   mqtt:
-    topics: ["test/uns/#", "CovestroAG/#", "spBv1.0/uns_group/#"]
+    topics: ["test/uns/#", "AcmeWater/#", "spBv1.0/uns_group/#"]
 
 historian:
   mqtt:
-    topics: ["test/uns/#", "CovestroAG/#", "spBv1.0/#"]
+    topics: ["test/uns/#", "AcmeWater/#", "spBv1.0/#"]
 
 opcua:
   opcua:
@@ -152,7 +152,7 @@ opcua:
 
 kafka_mapper:
   mqtt:
-    topics: ["test/uns/#", "CovestroAG/#"]
+    topics: ["test/uns/#", "AcmeWater/#"]
   kafka:
     config:
       client.id: "uns_kafka_client"
@@ -172,24 +172,13 @@ simulator:
   # does in this repository - so edits here have no effect unless that file is removed. Kept
   # because a deployment with no conf/simulator/ directory still has to have a plant.
   hierarchy:
-    enterprise: "CovestroAG"
+    enterprise: "AcmeWater"
     sites:
-      - name: "Dormagen"
+      - name: "Site1"
         areas:
           - name: "Production"
             lines:
-              - name: "Line1"
-                cells:
-                  - "Cell1"
-                  - "Cell2"
-              - name: "Line2"
-                cells:
-                  - "Cell1"
-      - name: "Krefeld"
-        areas:
-          - name: "Production"
-            lines:
-              - name: "Line1"
+              - name: "Train1"
                 cells:
                   - "Cell1"
 

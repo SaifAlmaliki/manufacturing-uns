@@ -34,10 +34,10 @@ STATUS = {
 
 PLANT = {
     "sites": {
-        "Dormagen": {
+        "Site1": {
             "shift": "A",
             "lines": {
-                "Production/Line1": {
+                "Train1": {
                     "state": "Execute",
                     "previous": "Starting",
                     "production_rate": 0.92,
@@ -116,10 +116,10 @@ def test_a_transition_is_enqueued_and_never_published_inline():
     """PlantClock calls its listeners synchronously on the tick and swallows what they
     raise. An awaited publish here would put broker latency inside the plant's clock."""
     telemetry = _telemetry()
-    telemetry.on_transition("Dormagen", "Production/Line1", "Execute")
+    telemetry.on_transition("Site1", "Train1", "Execute")
 
     topic, payload = telemetry.queue.get_nowait()
-    assert topic == "uns/platform/simulator/Instance01/plant/Dormagen/Production/Line1/state"
+    assert topic == "uns/platform/simulator/Instance01/plant/Site1/Train1/state"
     assert payload["state"] == "Execute"
     assert payload["previous"] == "Starting"
     assert payload["time_in_state_s"] == 184.0
@@ -130,8 +130,8 @@ def test_a_full_queue_drops_and_counts_rather_than_blocking_the_clock():
     telemetry = _telemetry()
     telemetry.queue = asyncio.Queue(maxsize=1)
 
-    telemetry.on_transition("Dormagen", "Production/Line1", "Execute")
-    telemetry.on_transition("Dormagen", "Production/Line1", "Holding")
+    telemetry.on_transition("Site1", "Train1", "Execute")
+    telemetry.on_transition("Site1", "Train1", "Holding")
 
     assert telemetry.queue.qsize() == 1
     assert telemetry.dropped == 1
@@ -173,7 +173,7 @@ async def test_the_client_is_built_with_a_retained_last_will_on_the_status_topic
 @pytest.mark.asyncio
 async def test_run_publishes_status_retained_and_drains_queued_transitions():
     telemetry = _telemetry()
-    telemetry.on_transition("Dormagen", "Production/Line1", "Execute")
+    telemetry.on_transition("Site1", "Train1", "Execute")
 
     task = asyncio.create_task(telemetry.run())
     await asyncio.sleep(0.08)
@@ -184,7 +184,7 @@ async def test_run_publishes_status_retained_and_drains_queued_transitions():
     published = DummyClient.instances[0].published
     topics = [topic for topic, _, _ in published]
     assert "uns/platform/simulator/Instance01/status" in topics
-    assert "uns/platform/simulator/Instance01/plant/Dormagen/Production/Line1/state" in topics
+    assert "uns/platform/simulator/Instance01/plant/Site1/Train1/state" in topics
     assert "uns/platform/simulator/Instance01/device/main-meter/health" in topics
     assert all(retain for _, _, retain in published)
 
@@ -224,7 +224,7 @@ def test_no_mapper_subscribes_to_the_simulator_s_own_telemetry():
     prefix = telemetry_prefix("Instance01")
     telemetry_topics = [
         f"{prefix}/status",
-        f"{prefix}/plant/Dormagen/Production/Line1/state",
+        f"{prefix}/plant/Site1/Train1/state",
         f"{prefix}/device/main-meter/health",
     ]
 

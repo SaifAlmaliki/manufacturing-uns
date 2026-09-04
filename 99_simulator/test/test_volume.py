@@ -71,7 +71,7 @@ def test_the_legacy_create_plc_config_is_no_longer_declared_in_settings(settings
 
 def test_the_settings_hierarchy_is_kept_as_the_no_conf_simulator_fallback(settings_doc):
     """Removing it would make raw_config["hierarchy"] a KeyError when conf/simulator/ is absent."""
-    assert settings_doc["simulator"]["hierarchy"]["enterprise"] == "CovestroAG"
+    assert settings_doc["simulator"]["hierarchy"]["enterprise"] == "AcmeWater"
 
 
 def test_wtp_stays_under_the_volume_ceiling(raw):

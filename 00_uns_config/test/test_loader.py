@@ -47,7 +47,7 @@ def test_graphdb_environment_merges_module_overrides(monkeypatch):
     monkeypatch.chdir(_REPO_ROOT / "03_uns_graphdb")
     get_settings.cache_clear()
     settings = get_settings("graphdb")
-    assert settings.get("mqtt.topics") == ["test/uns/#", "CovestroAG/#", "spBv1.0/uns_group/#"]
+    assert settings.get("mqtt.topics") == ["test/uns/#", "AcmeWater/#", "spBv1.0/uns_group/#"]
     get_settings.cache_clear()
 
 
