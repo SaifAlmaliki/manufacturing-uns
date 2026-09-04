@@ -34,6 +34,7 @@ export const AppLayout: React.FC = () => {
     if (path.startsWith('/system')) return 'system';
     if (path.startsWith('/simulator')) return 'simulator';
     if (path.startsWith('/users')) return 'users';
+    if (path.startsWith('/hierarchy')) return 'hierarchy';
     return 'home';
   };
 

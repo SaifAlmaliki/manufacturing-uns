@@ -30,6 +30,7 @@ import { AlarmAuditLog } from './components/alarms/AlarmAuditLog';
 import { SystemHealthView } from './components/system/SystemHealthView';
 import { SimulatorView } from './components/simulator/SimulatorView';
 import { UserManagementView } from './components/users/UserManagementView';
+import { HierarchyView } from './components/hierarchy/HierarchyView';
 
 /**
  * Zero-Trust Protected Console Layout Guard
@@ -86,6 +87,7 @@ export default function App() {
                       not collide with the /simulator proxy that reaches the control API. */}
                   <Route path="/simulator" element={<SimulatorView />} />
                   <Route path="/users" element={<UserManagementView />} />
+                  <Route path="/hierarchy" element={<HierarchyView />} />
                 </Route>
 
                 {/* Catch-all Wildcard: return to landing page */}

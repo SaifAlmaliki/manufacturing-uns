@@ -51,6 +51,9 @@ function getPageHeading(
   if (path.startsWith('/users')) {
     return { title: 'Users' };
   }
+  if (path.startsWith('/hierarchy')) {
+    return { title: 'Plant hierarchy' };
+  }
   if (path === '/dashboard') {
     return {
       title: `${getGreeting()}, ${firstName} 👋`,

@@ -10,6 +10,7 @@ import {
   Activity,
   Shield,
   FlaskConical,
+  Network,
   Lock,
   X,
   ChevronLeft,
@@ -52,6 +53,7 @@ const MAIN_MENU: NavItem[] = [
 const PLATFORM_MENU: NavItem[] = [
   { to: '/system', tabId: 'system', label: 'System Health', icon: Activity, featureKey: 'system_ops' },
   { to: '/simulator', tabId: 'simulator', label: 'Simulator', icon: FlaskConical, featureKey: 'simulator_ops' },
+  { to: '/hierarchy', tabId: 'hierarchy', label: 'Plant hierarchy', icon: Network, featureKey: 'settings_edit', adminOnly: true },
   { to: '/users', tabId: 'users', label: 'Users & Access', icon: Shield, featureKey: 'user_management', adminOnly: true },
 ];
 

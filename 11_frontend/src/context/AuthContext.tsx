@@ -44,6 +44,7 @@ const TAB_FEATURES: Record<string, { feature: FeatureKey; name: string }> = {
   system: { feature: 'system_ops', name: 'Health' },
   simulator: { feature: 'simulator_ops', name: 'Simulator' },
   users: { feature: 'user_management', name: 'Users' },
+  hierarchy: { feature: 'settings_edit', name: 'Plant hierarchy' },
 };
 
 /**
