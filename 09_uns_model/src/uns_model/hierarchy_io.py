@@ -7,26 +7,24 @@ name. This module owns the YAML I/O so the rest of `uns_model` stays free of
 file concerns.
 
 Sites are stored as a list of objects (`{name, areas: [...]}`) because that is
-the shape the WTP simulator and `tree_from_mapping` already consume. The
-companion `tree_to_sites_mapping` returns a dict-of-names for in-memory rename
-operations; that dict is never written to disk by this module.
+the shape the WTP simulator and `tree_from_mapping` already consume.
+`tree_to_mapping` is the shared projection used here and by seed.
 """
 
 from __future__ import annotations
 
 import os
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
 import yaml
+from ruamel.yaml import YAML
 
 from uns_model.hierarchy import (
-    DEFAULT_AREA_KIND,
-    HierarchyArea,
-    HierarchyLine,
-    HierarchySite,
     HierarchyTree,
     tree_from_mapping,
+    tree_to_mapping,
 )
 
 PLANT_SUBDIR = "simulator"
@@ -66,8 +64,9 @@ def save_plant_tree(conf_dir: Path, tree: HierarchyTree) -> None:
     else:
         doc = {}
 
-    doc["enterprise"] = tree.enterprise
-    doc["sites"] = [_site_to_mapping(site) for site in tree.sites]
+    mapped = tree_to_mapping(tree)
+    doc["enterprise"] = mapped["enterprise"]
+    doc["sites"] = mapped["sites"]
 
     profiles = doc.get("profiles")
     if not isinstance(profiles, dict):
@@ -82,28 +81,18 @@ def save_plant_tree(conf_dir: Path, tree: HierarchyTree) -> None:
     _atomic_write_yaml(path, doc)
 
 
-def _site_to_mapping(site: HierarchySite) -> dict[str, Any]:
-    return {
-        "name": site.name,
-        "areas": [_area_to_mapping(area) for area in site.areas],
-    }
-
-
-def _area_to_mapping(area: HierarchyArea) -> dict[str, Any]:
-    return {
-        "name": area.name,
-        "kind": area.kind or DEFAULT_AREA_KIND,
-        "lines": [_line_to_mapping(line) for line in area.lines],
-    }
-
-
-def _line_to_mapping(line: HierarchyLine) -> dict[str, Any]:
-    return {"name": line.name, "cells": list(line.cells)}
-
-
 # ---------------------------------------------------------------------------
 # settings.yaml
 # ---------------------------------------------------------------------------
+
+
+def _rt_yaml() -> YAML:
+    """Round-trip loader/dumper so settings.yaml comments and key order survive a save."""
+    yaml_rt = YAML(typ="rt")
+    yaml_rt.preserve_quotes = True
+    yaml_rt.width = 4096
+    yaml_rt.default_flow_style = False
+    return yaml_rt
 
 
 def apply_enterprise_to_settings(settings_text: str, enterprise: str) -> str:
@@ -116,7 +105,8 @@ def apply_enterprise_to_settings(settings_text: str, enterprise: str) -> str:
     (`spBv1.0...`) is replaced with `f"{enterprise}/#"`. `test/uns/#` and
     Sparkplug entries are kept; duplicate replaced filters collapse to one.
     """
-    doc = yaml.safe_load(settings_text) or {}
+    yaml_rt = _rt_yaml()
+    doc = yaml_rt.load(settings_text) or {}
     if not isinstance(doc, dict):
         raise ValueError("settings.yaml must parse to a mapping at the top level")
 
@@ -140,9 +130,14 @@ def apply_enterprise_to_settings(settings_text: str, enterprise: str) -> str:
         topics = mqtt.get("topics")
         if not isinstance(topics, list):
             continue
-        mqtt["topics"] = _rewrite_topic_filters(topics, new_filter)
+        rewritten = _rewrite_topic_filters(list(topics), new_filter)
+        if list(topics) != rewritten:
+            topics.clear()
+            topics.extend(rewritten)
 
-    return yaml.safe_dump(doc, sort_keys=False, default_flow_style=False)
+    stream = StringIO()
+    yaml_rt.dump(doc, stream)
+    return stream.getvalue()
 
 
 def write_enterprise_settings(conf_dir: Path, enterprise: str) -> None:

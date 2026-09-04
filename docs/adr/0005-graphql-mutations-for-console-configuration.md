@@ -86,3 +86,9 @@ readable by anything with a database connection — but it is not done here.
 The plant hierarchy is still YAML (`conf/simulator/plant.yaml`) and remains
 reviewable in version control, but `saveHierarchy` may now write it through
 GraphQL, so the mutation surface is no longer alert-rules-only.
+
+A graph prefix rename is not durable while anything still publishes the old
+prefix. The mapper `MERGE`s a node per topic segment, so live traffic on the
+old path recreates the old branch beside the renamed one. The rename sticks
+only after the publisher is retargeted. This slice does not retarget the
+simulator; the console banner on the hierarchy page says so.

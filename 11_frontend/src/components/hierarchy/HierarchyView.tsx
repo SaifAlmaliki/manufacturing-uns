@@ -55,7 +55,7 @@ const LEVEL_LABEL: Record<NodeLevel, string> = {
 };
 
 const SIMULATOR_BANNER =
-  'The simulator still publishes the shipped WTP paths. Renamed nodes will not match live simulator topics until simulator config is changed separately.';
+  'The simulator still publishes the shipped WTP paths. Renamed nodes will not match live simulator topics until the publisher is retargeted. The old graph branch reappears while anything still publishes the old prefix; the graph rename is durable only after that retarget.';
 
 function cloneTree(tree: GraphqlHierarchyTree): GraphqlHierarchyTree {
   return {
@@ -240,13 +240,21 @@ function isPrefixOf(parent: string, child: string): boolean {
   return child === parent || child.startsWith(`${parent}/`);
 }
 
+function rebasePrefix(prefix: string, oldAncestor: string, newAncestor: string): string {
+  if (prefix === oldAncestor) return newAncestor;
+  if (isPrefixOf(oldAncestor, prefix)) {
+    return `${newAncestor}${prefix.slice(oldAncestor.length)}`;
+  }
+  return prefix;
+}
+
 function recordRename(
   renames: GraphqlPrefixRenameInput[],
   oldPrefix: string,
   newPrefix: string,
 ): GraphqlPrefixRenameInput[] {
   if (oldPrefix === newPrefix) return renames;
-  const next = [...renames];
+  let next = [...renames];
   const chained = next.findIndex((r) => r.newPrefix === oldPrefix);
   if (chained >= 0) {
     if (next[chained].oldPrefix === newPrefix) {
@@ -254,13 +262,30 @@ function recordRename(
     } else {
       next[chained] = { ...next[chained], newPrefix };
     }
-    return next;
+    return next.filter((r) => r.oldPrefix !== r.newPrefix);
   }
   const sameOld = next.findIndex((r) => r.oldPrefix === oldPrefix);
   if (sameOld >= 0) {
     next[sameOld] = { oldPrefix, newPrefix };
-    return next;
+    return next.filter((r) => r.oldPrefix !== r.newPrefix);
   }
+  next = next
+    .map((r) => {
+      if (isPrefixOf(oldPrefix, r.oldPrefix) || isPrefixOf(oldPrefix, r.newPrefix)) {
+        return {
+          oldPrefix: rebasePrefix(r.oldPrefix, oldPrefix, newPrefix),
+          newPrefix: rebasePrefix(r.newPrefix, oldPrefix, newPrefix),
+        };
+      }
+      return r;
+    })
+    .filter((r) => r.oldPrefix !== r.newPrefix)
+    .filter(
+      (r) =>
+        !isPrefixOf(oldPrefix, r.oldPrefix) &&
+        !isPrefixOf(newPrefix, r.oldPrefix) &&
+        !isPrefixOf(r.oldPrefix, oldPrefix),
+    );
   next.push({ oldPrefix, newPrefix });
   return next;
 }

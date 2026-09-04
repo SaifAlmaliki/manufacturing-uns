@@ -118,15 +118,24 @@ def tree_from_mapping(raw: Mapping[str, object]) -> HierarchyTree:
     return HierarchyTree(enterprise=str(enterprise), sites=sites)
 
 
-def tree_to_sites_mapping(tree: HierarchyTree) -> dict[str, object]:
-    """Project a tree down to its enterprise and site names only.
-
-    Areas and lines are dropped: this is the shape used by rename operations
-    that only reorganize sites.
-    """
+def tree_to_mapping(tree: HierarchyTree) -> dict[str, object]:
+    """Project a tree to the list-of-objects shape plant.yaml and seed consume."""
     return {
         "enterprise": tree.enterprise,
-        "sites": {site.name: {} for site in tree.sites},
+        "sites": [
+            {
+                "name": site.name,
+                "areas": [
+                    {
+                        "name": area.name,
+                        "kind": area.kind or DEFAULT_AREA_KIND,
+                        "lines": [{"name": line.name, "cells": list(line.cells)} for line in area.lines],
+                    }
+                    for area in site.areas
+                ],
+            }
+            for site in tree.sites
+        ],
     }
 
 

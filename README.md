@@ -31,35 +31,42 @@ This is a critical concept to allow scalability by preventing point to point con
 
 ## **Architecture**
 
-The overall architecture and the deployment setup is as follows
+The running broker is **HiveMQ Edge**, not EMQX. Each facility is a **Site
+Instance**; the centre is an **Enterprise Instance**. See
+[ADR 0010](./docs/adr/0010-site-instance-and-enterprise-cloud-hop.md).
 
-1. Factory1
-   - K8s Cluster on the edge
-   - MQTT edge installed on K8s
-   - Bridge between Factory1 and the Enterprise MQTT clusters
-   - Graph DB installed and running on docker
-   - UNS graphdb client to persist messages to the Graph DB instance
-   - UNS SparkplugB client to translate message from SparkPlug to UNS
+**Site Instance** (each facility, on-prem):
 
-1. Factory2
-   - K8s Cluster on the edge
-   - MQTT edge installed on K8s
-   - Bridge between Factory2 and the Enterprise MQTT clusters
-   - Graph DB installed and running on docker
-   - UNS graphdb client to persist messages to the Graph DB instance
-   - UNS SparkplugB client to translate message from SparkPlug to UNS
+- HiveMQ Edge — local Unified Namespace and northbound S7, EtherNet/IP, and OPC UA ingest
+- Sparkplug B mapper (when devices publish Sparkplug)
+- Local Neo4j — current tree
+- Local Timescale — Historic Events stay on site so operators can work when the WAN is down
+- Optional local GraphQL and console for the plant
 
-1. Enterprise on Cloud
-   - K8s Cluster of the enterprise
-   - MQTT Broker installed on K8s
-   - TimescaleDB installed and running on docker / cluster / K8s / hosted service
-   - Graph DB installed and running on docker / cluster / K8s / hosted service
-   - Kafka cluster/ K8s / hosted service
-   - GraphQL service running and connected to the cloud data stores
-   - UNS graphdb client to persist messages to the Graph DB instance
-   - UNS historian client to persist messages to the Graph DB instance
-   - UNS Kafka listener to stream/convert MQTT messages to the Kafka instance
-   - Prometheus scraping mapper metrics, and Grafana for dashboards
+Manufacturing, process, and laboratory publishers all land on the same ISA-95
+topic tree. Anything Edge can poll, or that can publish MQTT, is in scope.
+
+**Enterprise Instance** (on-prem data centre, AWS, or Azure):
+
+- Enterprise MQTT — Site Instances MQTT-bridge here; this is the collection hop, not Kafka
+- Enterprise graph and historian
+- Kafka — seam for further analysis (warehouses, notebooks, MES). The platform
+  does not ship an AWS or Azure landing zone; you attach those consumers here
+- GraphQL and console that see every site
+
+```
+Site A  HiveMQ Edge + local Timescale  ──MQTT bridge──┐
+Site B  HiveMQ Edge + local Timescale  ──MQTT bridge──┼──► Enterprise MQTT
+Site C  HiveMQ Edge + local Timescale  ──MQTT bridge──┘         │
+                                                                ├─► graph + historian
+                                                                ├─► Kafka → AWS / Azure analysis
+                                                                └─► GraphQL / console
+```
+
+Local Compose is **one** Instance with every service in the same file. Use it to
+develop the Site Instance stack (HiveMQ Edge, local Timescale, graph, console).
+It is not a multi-site mesh; the MQTT bridge and cloud consumers are the intended
+hop, not a compose profile yet.
 
 ![Logical Architecture for implementing UNS](./images/UNS-Architecture.png)
 
@@ -238,33 +245,32 @@ The overall structure of the UNS is based on the hierarchical structure as defin
 The level at which the message is published has a direct implication on it's time sensitivity as well as guidance on being processed at the edge or on the cloud.  
 ![ISA-95 Part 2](./images/ISA-95-part2.png)
 
-I evaluated and read the user guides of the following brokers (open source versions only). All three also provide commercial / enterprise versions which is recommended for more robust setup and professional support
+The running Site Instance broker is **[HiveMQ Edge](https://www.hivemq.com/products/hivemq-edge/)**
+(`hivemq/hivemq-edge` in Compose). It is the local MQTT 3/5 backbone **and** the
+OSS northbound path for S7, EtherNet/IP, and OPC UA. Tag maps live in
+[`conf/hivemq/`](./conf/hivemq/README.md). See
+[ADR 0010](./docs/adr/0010-site-instance-and-enterprise-cloud-hop.md).
 
-1. [EMQX](https://www.emqx.io/)
-2. [VERNEMQ](https://vernemq.com/)
-3. [HIVEMQ](https://www.hivemq.com)
+EMQX and VerneMQ were evaluated earlier. EMQX is **not** the deployment broker.
+[`02_mqtt-cluster`](./02_mqtt-cluster/README.md) still has historical EMQX Helm
+notes; do not treat them as the site topology. GitHub Actions may still start
+`emqx/emqx` as a generic MQTT 5 test double.
 
-While HIVEMQ has the best documentation and community support I decided try out EMQX for the following reasons
+An Enterprise Instance may MQTT-bridge Site Instances onto a clustered MQTT
+broker (on-prem or a managed cloud broker) and then project into Kafka. HiveMQ
+and others offer managed MQTT; this repo does not pick AWS vs Azure for you.
 
-- EMQX is written in erlang which has a lower footprint than java (HIVEMQ).
-- They also provide 2 versions of the broker, one specifically lightweight for edge deployment and the standard for enterprise or cloud deployment.
-
-The details of setting up the MQTT cluster are provided in **[02_mqtt-cluster](./02_mqtt-cluster/README.md)**. The link provides the guidance to install EMQX on a K8s cluster using helm.
-
-**_Having said that, any of the above three would be perfectly good selections because_**
-
-- All the three have extension capabilities via standard as well as custom plugins. However I liked the rules plugin from EMQX which comes by default allowing for lot of flexibility for pre and post processing messages. Also EMQX seems to be supporting the ability to create plugins in multiple languages
-
-- All three deploy very easily on K8s and all three have community (free) as well as commercial offering
-- All three support **MQTT 5** which is critical for manufacturers. e.g. The concept of [Shared Subscriptions](https://www.hivemq.com/blog/mqtt5-essentials-part7-shared-subscriptions/) enables clustering of the subscribers in order to better scale message processing if needed)
-- All three support **Sparkplug B**
-- All three support MQTT bridging allowing copying data between edge to cloud instances
-- Both [HiveMQ](hivemq.com/mqtt-cloud-broker/) and [EMQX](https://www.emqx.com/en/cloud) provide fully managed cloud services which might be interesting offer to explore for your cloud / enterprise MQTT Cluster
+**_MQTT 5 and Sparkplug B remain the selection bar_** because they give shared
+subscriptions, a hierarchical topic tree, and an OT-friendly publish path. Site
+to enterprise is still an MQTT bridge, not a Kafka client on the plant floor.
 
 #### Broker Plugins
 
-> **Important Note:** The community edition of these brokers do not provide all functionalities. e.g. EMQX community doesn't allow plugins to be triggered on message delivery (this is an enterprise feature). As I wanted this solution to be completely open source and free, I decided to write an MQTT client subscribing to `"#"`. This works but is less efficient than creating a plugin within the broker and natively persisting the messages to a database. You can further optimize this by subscribing to a subset e.g. `"<enterprise>/#"`
-> However if you go for the enterprise version, I would recommend creating a plugin instead of the [MQTT Listeners](#plugin--mqtt-client-to-subscribe-and-write-to-the-above-databases) provided here for better performance. But for most scenarios, an MQTT client should suffice and be broker independent.
+> **Important Note:** HiveMQ Edge's Kafka extension is commercial. This stack
+> stays OSS: Mappers are MQTT clients that subscribe to `"#"` (or
+> `"<enterprise>/#"`) and write Neo4j, Timescale, and Kafka. That is less
+> efficient than an in-broker plugin and is broker-independent. Do not enable
+> southbound (MQTT → PLC write) mappings.
 
 Hence I decided to write [my own plugin](#plugin--mqtt-client-to-subscribe-and-write-to-the-above-databases) as an MQTT client which listens to the broker and on message persists the message ( either the GraphDB or the Historian)
 
@@ -533,10 +539,10 @@ uv run pytest -m "not integrationtest" ./12_uns_oee
    - Only `03_uns_graphdb` and `04_uns_historian` are instrumented. `05_sparkplugb`,
      `06_uns_kafka` and `07_uns_graphql` expose no metrics, so Kafka mapper failures and Sparkplug
      alias-cache resets are still invisible.
-   - No EMQX, `postgres_exporter` or Kafka JMX scrape targets are configured, so broker, database
+   - No HiveMQ Edge, `postgres_exporter` or Kafka JMX scrape targets are configured, so broker, database
      and Kafka metrics are absent and the community dashboards for them cannot be used.
-   - Prometheus `remote_write` from edge to enterprise is not configured; the current setup is
-     enterprise-only.
+   - Prometheus `remote_write` from Site Instance to Enterprise Instance is not configured; Compose
+     is a single Instance.
 
 1. **Grafana and the GraphQL service require sign-in; the data services still do not.** Grafana
    and the console authenticate against the Keycloak `uns` realm, served under `/auth` on the

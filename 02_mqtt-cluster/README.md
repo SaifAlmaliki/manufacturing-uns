@@ -1,5 +1,11 @@
 # Base Module for all UNS MQTT Clients / Listeners
 
+> **Superseded broker.** The running platform uses **HiveMQ Edge** as
+> `uns_mqtt_broker` ([`conf/hivemq/`](../conf/hivemq/README.md),
+> [ADR 0010](../docs/adr/0010-site-instance-and-enterprise-cloud-hop.md)).
+> Helm notes below still install EMQX; they are historical. Do not deploy EMQX
+> as the Site Instance broker.
+
 [![UNS MQTT Module](https://github.com/mkashwin/unifiednamespace/actions/workflows/uns_mqtt-app.yml/badge.svg)](https://github.com/mkashwin/unifiednamespace/actions/workflows/uns_mqtt-app.yml)
 
 This module contain the common code code for all MQTT listeners as well as SparkplugB™ related prop files, generated python files and helper classes.

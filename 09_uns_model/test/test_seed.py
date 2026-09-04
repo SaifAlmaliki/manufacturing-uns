@@ -375,6 +375,7 @@ def test_seed_dry_run_loads_plant_yaml_when_present(tmp_path, monkeypatch, capsy
     out = capsys.readouterr().out
     assert "E/S/A/L/V101" in out
     assert "E/S/A/L/V102" in out
+    assert "Prune under E" in out
 
 
 def test_seed_falls_back_to_settings_hierarchy_when_plant_yaml_is_absent(tmp_path, monkeypatch, capsys):

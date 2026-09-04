@@ -3,7 +3,9 @@
 Date: 2026-09-03
 Modules: `docker-compose.yml`, `docker-compose.dev.yml`, `conf/hivemq/`,
 `08_uns_observability/prometheus/prometheus.yml`, `README.md`
-Status: Approved
+Status: Approved. Deployment topology (Site Instance, local Timescale, optional
+AWS / Azure Enterprise Instance) is in
+[ADR 0010](../../adr/0010-site-instance-and-enterprise-cloud-hop.md).
 
 Supersedes the **Compose deployment** of `10_uns_opcua` from
 [2026-09-01-opcua-edge-connector-design.md](./2026-09-01-opcua-edge-connector-design.md).

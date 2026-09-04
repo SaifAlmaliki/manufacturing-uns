@@ -29,7 +29,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from uns_model.hierarchy import HierarchyTree
+from uns_model.hierarchy import HierarchyTree, tree_to_mapping
 from uns_model.repositories import AssetModelRepository, AssetSpec
 from uns_model.topic_path import SEPARATOR
 
@@ -72,6 +72,9 @@ class SeedPlan:
     branches: list[list[AssetSpec]] = field(default_factory=list)
     metrics: list[MetricSpec] = field(default_factory=list)
 
+    prune_paths: list[str] = field(default_factory=list)
+    enterprise: str | None = None
+
     @property
     def asset_paths(self) -> list[str]:
         """Every distinct Asset path the plan would create, in tree order."""
@@ -93,6 +96,14 @@ class SeedPlan:
             + (f"  on {spec.asset_path}" if spec.asset_path else "  (all Assets)")
             for spec in self.metrics
         ]
+        if self.enterprise or self.prune_paths:
+            lines.append("")
+            scope = f" under {self.enterprise}" if self.enterprise else ""
+            lines.append(f"Prune{scope}:")
+            if self.prune_paths:
+                lines.extend(self.prune_paths)
+            else:
+                lines.append("assets not listed above (this enterprise and descendants)")
         return "\n".join(lines)
 
 
@@ -172,26 +183,6 @@ def _machines(simulator: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
     return machines
 
 
-def _hierarchy_mapping(tree: HierarchyTree) -> dict[str, Any]:
-    """The list-of-objects shape `_cells` / `plan_from_simulator_config` already consume."""
-    return {
-        "enterprise": tree.enterprise,
-        "sites": [
-            {
-                "name": site.name,
-                "areas": [
-                    {
-                        "name": area.name,
-                        "lines": [{"name": line.name, "cells": list(line.cells)} for line in area.lines],
-                    }
-                    for area in site.areas
-                ],
-            }
-            for site in tree.sites
-        ],
-    }
-
-
 def plan_from_hierarchy_tree(tree: HierarchyTree, extra: Mapping[str, Any] | None = None) -> SeedPlan:
     """
     Build the same cell branches `plan_from_simulator_config` would from `tree`.
@@ -200,7 +191,7 @@ def plan_from_hierarchy_tree(tree: HierarchyTree, extra: Mapping[str, Any] | Non
     machines are planned; SCADA/HMI still follow the existing first-cell seed rules.
     """
     payload: dict[str, Any] = dict(extra or {})
-    payload["hierarchy"] = _hierarchy_mapping(tree)
+    payload["hierarchy"] = tree_to_mapping(tree)
     return plan_from_simulator_config(payload)
 
 
@@ -215,7 +206,8 @@ def plan_from_simulator_config(simulator: Mapping[str, Any]) -> SeedPlan:
         raise ValueError("simulator.hierarchy is required to seed the Asset Model")
 
     machines = _machines(simulator)
-    plan = SeedPlan()
+    enterprise = str(_as_mapping(hierarchy).get("enterprise") or "") or None
+    plan = SeedPlan(enterprise=enterprise)
     sites_seen: set[str] = set()
     lines_seen: set[tuple[str, ...]] = set()
 
@@ -272,16 +264,34 @@ def _highest_paths(paths: set[str]) -> list[str]:
     return roots
 
 
+def _under_enterprise(path: str, enterprise: str) -> bool:
+    return path == enterprise or path.startswith(enterprise + SEPARATOR)
+
+
 async def _prune_removed_assets(repository: AssetModelRepository, plan: SeedPlan) -> None:
     """Delete Assets whose path is not in the plan.
 
-    Skips when the model is empty: there is no root to delete if none exists.
+    Scoped to `plan.enterprise` and its descendants when that is set, so a
+    second root is never collateral damage. Skips when the model is empty:
+    there is no root to delete if none exists.
     """
     existing = await repository.list_assets()
     if not existing:
         return
     keep = set(plan.asset_paths)
-    extra = {asset.path for asset in existing if asset.path not in keep}
+    extra = {
+        asset.path
+        for asset in existing
+        if asset.path not in keep
+        and (plan.enterprise is None or _under_enterprise(asset.path, plan.enterprise))
+    }
+    if extra:
+        LOGGER.info(
+            "Pruning %s Asset path(s) not in the seed plan: %s",
+            len(extra),
+            ", ".join(sorted(extra)),
+        )
+    plan.prune_paths = sorted(extra)
     for path in _highest_paths(extra):
         await repository.delete_asset(path, rebind=False)
 
