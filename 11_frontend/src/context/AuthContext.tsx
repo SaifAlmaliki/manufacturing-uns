@@ -89,11 +89,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const start = async () => {
       // Order matters: a redirect back from the realm carries a one-time code, and racing a
       // silent renew against it can discard the session just granted.
-      const fromRedirect = await authClient.completeRedirect();
-      const resolved = fromRedirect ?? (await authClient.restore());
-      if (!cancelled) {
-        setSession(resolved);
-        setIsReady(true);
+      try {
+        const fromRedirect = await authClient.completeRedirect();
+        const resolved = fromRedirect ?? (await authClient.restore());
+        if (!cancelled) {
+          setSession(resolved);
+        }
+      } catch {
+        // A failed callback must not leave isReady false: the public landing page would
+        // otherwise sit behind a blank screen, and the unhandled rejection restarts nothing.
+      } finally {
+        if (!cancelled) {
+          setIsReady(true);
+        }
       }
     };
 

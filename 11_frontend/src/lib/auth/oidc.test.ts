@@ -26,6 +26,12 @@ const TOKEN_USER = {
   },
 };
 
+function jwtWith(payload: object): string {
+  const encode = (obj: object) =>
+    Buffer.from(JSON.stringify(obj)).toString('base64url');
+  return `${encode({ alg: 'RS256' })}.${encode(payload)}.sig`;
+}
+
 beforeEach(() => {
   window.localStorage.clear();
   window.sessionStorage.clear();
@@ -54,6 +60,32 @@ describe('completeRedirect', () => {
     expect(client.accessToken()).toBe('header.payload.signature');
   });
 
+  it('reads realm roles from the access token when the ID token profile has none', async () => {
+    // Keycloak's default roles mapper puts realm_access on the access token, not the ID
+    // token. oidc-client-ts's user.profile is the ID token, so reading only that makes
+    // admin.user look like a viewer with no uns_tree permission.
+    const user = {
+      access_token: jwtWith({
+        sub: '11111111-2222-3333-4444-555555555555',
+        preferred_username: 'admin.user',
+        realm_access: { roles: ['admin', 'offline_access', 'default-roles-uns'] },
+      }),
+      profile: {
+        sub: '11111111-2222-3333-4444-555555555555',
+        preferred_username: 'admin.user',
+        email: 'admin.user@example.test',
+        name: 'Ada Admin',
+      },
+    };
+    const manager = fakeManager({ signinCallback: vi.fn().mockResolvedValue(user) });
+    window.history.replaceState({}, '', '/?code=abc&state=xyz');
+    const client = createAuthClient({ manager } as never);
+
+    const session = await client.completeRedirect();
+
+    expect(session).toMatchObject({ username: 'admin.user', roles: ['admin'] });
+  });
+
   it('scrubs the code and state out of the address bar', async () => {
     const manager = fakeManager({ signinCallback: vi.fn().mockResolvedValue(TOKEN_USER) });
     window.history.replaceState({}, '', '/?code=abc&state=xyz');
@@ -73,6 +105,17 @@ describe('completeRedirect', () => {
     await client.completeRedirect();
 
     expect(window.location.hash).toBe('#/alarms');
+  });
+
+  it('scrubs the address bar and returns null when the callback fails', async () => {
+    const manager = fakeManager({
+      signinCallback: vi.fn().mockRejectedValue(new Error('No matching state')),
+    });
+    window.history.replaceState({}, '', '/?code=abc&state=xyz');
+    const client = createAuthClient({ manager } as never);
+
+    await expect(client.completeRedirect()).resolves.toBeNull();
+    expect(window.location.search).toBe('');
   });
 });
 

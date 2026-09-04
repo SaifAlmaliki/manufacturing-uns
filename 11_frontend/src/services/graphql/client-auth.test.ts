@@ -118,7 +118,17 @@ describe('a 401', () => {
     await client().getUnsNodes(['a/b']);
 
     expect(auth.refresh).not.toHaveBeenCalled();
-    expect(auth.onExpired).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not send an anonymous visitor back to the realm', async () => {
+    // The landing page loads UNSProvider, which queries GraphQL with no token. Treating that
+    // 401 as an expired session calls signIn() and races the OIDC callback into a redirect loop.
+    auth.token.mockReturnValue(null);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(unauthorized()));
+
+    await client().getUnsNodes(['a/b']);
+
+    expect(auth.onExpired).not.toHaveBeenCalled();
   });
 
   it('never reports an expired session as no data', async () => {
@@ -151,5 +161,22 @@ describe('the subscription socket', () => {
     socket.onopen?.();
 
     expect(JSON.parse(socket.sent[0])).toEqual({ type: 'connection_init', payload: {} });
+  });
+
+  it('does not send an anonymous visitor back to the realm when the socket is refused', () => {
+    auth.token.mockReturnValue(null);
+    client();
+
+    RecordingSocket.instances[0].onclose?.({ code: 4403 });
+
+    expect(auth.onExpired).not.toHaveBeenCalled();
+  });
+
+  it('sends the user back to the realm when a socket that had a token is refused', () => {
+    client();
+
+    RecordingSocket.instances[0].onclose?.({ code: 4403 });
+
+    expect(auth.onExpired).toHaveBeenCalledTimes(1);
   });
 });

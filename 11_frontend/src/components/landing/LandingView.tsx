@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Layers,
@@ -38,10 +38,16 @@ import heroImage from '../../assets/images/smart_factory_uns_1788007138686.jpg';
 
 export const LandingView: React.FC = () => {
   const navigate = useNavigate();
-  const { isAuthenticated, currentUser, login } = useAuth();
+  const { isAuthenticated, login, isReady } = useAuth();
   const { isDark, toggleTheme } = useTheme();
 
   const [activeProtobufTab, setActiveProtobufTab] = useState<'decoded' | 'raw' | 'schema'>('decoded');
+
+  useEffect(() => {
+    if (isReady && isAuthenticated) {
+      navigate('/dashboard');
+    }
+  }, [isReady, isAuthenticated, navigate]);
 
   const scrollToSection = (sectionId: string) => {
     const el = document.getElementById(sectionId);

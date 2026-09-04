@@ -150,8 +150,10 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   useEffect(() => {
-    void refreshRules();
-  }, [refreshRules]);
+    if (session) {
+      void refreshRules();
+    }
+  }, [session, refreshRules]);
 
   const isPlatformLive = health.graphqlHttp && rulesOrigin === 'SERVER';
   const canPersistRules = isPlatformLive && !rulesLoading;

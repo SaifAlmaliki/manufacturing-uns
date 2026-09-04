@@ -109,6 +109,14 @@ describe('the redirect back from the realm', () => {
     await waitFor(() => expect(screen.getByTestId('ready').textContent).toBe('true'));
     expect(client.restore).not.toHaveBeenCalled();
   });
+
+  it('still becomes ready when the callback throws, so the landing page is not stuck', async () => {
+    client.completeRedirect.mockRejectedValue(new Error('No matching state'));
+    renderProbe();
+
+    await waitFor(() => expect(screen.getByTestId('ready').textContent).toBe('true'));
+    expect(screen.getByTestId('authenticated').textContent).toBe('false');
+  });
 });
 
 describe('login', () => {

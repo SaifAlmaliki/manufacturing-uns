@@ -136,6 +136,9 @@ export class UnsGraphQLClient {
 
     try {
       this.ws = new WebSocket(this.wsUrl, 'graphql-transport-ws')
+      // Capture at open, not at close: a token that arrives while this anonymous socket is
+      // being refused must not look like an expired session and restart the OIDC redirect.
+      const openedWithToken = this.auth.token() !== null
 
       this.ws.onopen = () => {
         this.wsConnected = true
@@ -177,9 +180,10 @@ export class UnsGraphQLClient {
       this.ws.onclose = (event) => {
         this.wsConnected = false
         this.wsProtocolReady = false
-        if (event.code === 4403) {
-          // The realm refused this socket. Not a network fault, and not something a retry
-          // fixes without a new token.
+        if (event.code === 4403 && openedWithToken) {
+          // The realm refused a socket that presented a token. An anonymous visitor on the
+          // landing page is not an expired session; signing them in here races the OIDC
+          // callback into a redirect loop.
           this.auth.onExpired()
         }
         this.notifyHealth()
@@ -221,6 +225,11 @@ export class UnsGraphQLClient {
         // permission or configuration problem, and retrying it forever hides that.
         if (retryOnUnauthorized && hadToken && (await this.auth.refresh()) !== null) {
           return this.executeQuery<T>(query, variables, false)
+        }
+        if (!hadToken) {
+          // The landing page and the OIDC callback both mount providers that query GraphQL
+          // before a token exists. Sending that visitor to the realm races completeRedirect.
+          return { data: null, error: 'This endpoint requires a bearer token from the UNS realm.' }
         }
         this.auth.onExpired()
         // An expired session is not an empty result. Every caller of this method turns

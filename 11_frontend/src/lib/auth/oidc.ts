@@ -73,19 +73,38 @@ function buildManager(): UserManager {
   });
 }
 
+function payloadFromJwt(token: string): Record<string, unknown> | null {
+  const parts = token.split('.');
+  if (parts.length < 2) {
+    return null;
+  }
+  try {
+    const padded = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const pad = padded.length % 4 === 0 ? '' : '='.repeat(4 - (padded.length % 4));
+    const parsed: unknown = JSON.parse(atob(padded + pad));
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
 function toSession(user: User | null | undefined): Session | null {
   if (!user?.access_token) {
     return null;
   }
   const profile = user.profile as Record<string, unknown>;
+  const accessClaims = payloadFromJwt(user.access_token);
   const username = String(profile.preferred_username ?? profile.sub ?? '');
+  const fromAccess = rolesFromClaims(accessClaims);
   return {
     subject: String(profile.sub ?? ''),
     username,
     email: typeof profile.email === 'string' ? profile.email : undefined,
     // What the header shows. Falls back to the username rather than to an empty chip.
     displayName: typeof profile.name === 'string' && profile.name ? profile.name : username,
-    roles: rolesFromClaims(profile),
+    // Keycloak's default roles mapper puts realm_access on the access token, not the ID
+    // token that oidc-client-ts exposes as user.profile.
+    roles: fromAccess.length > 0 ? fromAccess : rolesFromClaims(profile),
   };
 }
 
@@ -124,15 +143,22 @@ export function createAuthClient(overrides?: Partial<AuthSettings>): AuthClient 
       if (!isRedirectCallback()) {
         return null;
       }
-      const user = await manager.signinCallback();
-      const session = adopt(user as User | null);
-      // An authorization code left in the address bar gets pasted into chat messages and
-      // saved into bookmarks. The hash is the app's route and stays.
-      window.history.replaceState({}, '', `${window.location.pathname}${window.location.hash}`);
-      if (session) {
-        publish(session);
+      try {
+        const user = await manager.signinCallback();
+        const session = adopt(user as User | null);
+        if (session) {
+          publish(session);
+        }
+        return session;
+      } catch {
+        // A missing PKCE verifier, a reused code, or a raced second callback. Swallowing
+        // lets restore() try a silent renew, and the landing page stays reachable.
+        return null;
+      } finally {
+        // An authorization code left in the address bar gets pasted into chat messages and
+        // saved into bookmarks. The hash is the app's route and stays.
+        window.history.replaceState({}, '', `${window.location.pathname}${window.location.hash}`);
       }
-      return session;
     },
 
     async restore() {

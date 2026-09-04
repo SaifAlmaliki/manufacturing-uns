@@ -14,6 +14,7 @@ import { unsGraphQLClient } from '../services/graphql/client';
 import { DEFAULT_APP_SETTINGS, STORAGE_KEYS } from '../config/branding';
 import { getNodeRole, hasNoTelemetryClock, isStaleCandidate, isNodeStale, isSyntheticUnsNode } from '../lib/uns/node-meta';
 import { isSparkplugTopic } from '../lib/uns/sparkplug';
+import { useAuth } from './AuthContext';
 
 function httpToWs(httpUrl: string): string {
   if (httpUrl.startsWith('https://')) return `wss://${httpUrl.slice('https://'.length)}`;
@@ -116,6 +117,7 @@ function patchNodeInMap(
 }
 
 export const UNSProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isReady, isAuthenticated } = useAuth();
   const [activeTab, setActiveTab] = useState<NavigationTab>('home');
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
 
@@ -249,8 +251,10 @@ export const UNSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   useEffect(() => {
-    void fetchRoots();
-  }, [fetchRoots]);
+    if (isReady && isAuthenticated) {
+      void fetchRoots();
+    }
+  }, [isReady, isAuthenticated, fetchRoots]);
 
   const toggleNodeExpanded = async (topic: string) => {
     if (expandedNodes.has(topic)) {
