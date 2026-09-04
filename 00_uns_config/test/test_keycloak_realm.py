@@ -14,6 +14,16 @@ _COMPOSE_FILE = _REPO_ROOT / "docker-compose.yml"
 # UserRole (11_frontend/src/types/rbac.ts:5). A drift here silently drops roles in the console.
 EXPECTED_ROLES = {"admin", "engineer", "operator", "auditor", "viewer"}
 
+# Duplicate of uns_model.access.DEMO_SUBJECTS — keep in lockstep. Do not import
+# uns_model from this package.
+PINNED_DEMO_SUBJECTS = {
+    "admin.user": "00000000-0000-4000-a000-000000000001",
+    "engineer.user": "00000000-0000-4000-a000-000000000002",
+    "operator.user": "00000000-0000-4000-a000-000000000003",
+    "auditor.user": "00000000-0000-4000-a000-000000000004",
+    "viewer.user": "00000000-0000-4000-a000-000000000005",
+}
+
 
 @pytest.fixture(scope="module")
 def realm() -> dict:
@@ -55,6 +65,11 @@ def test_grafana_client_is_confidential_and_takes_its_secret_from_the_environmen
     grafana = _client(realm, "uns-grafana")
     assert grafana["publicClient"] is False
     assert grafana["secret"] == "${UNS_KEYCLOAK_GRAFANA_CLIENT_SECRET}"
+
+
+def test_development_users_have_pinned_subjects(realm: dict):
+    ids = {user["username"]: user["id"] for user in realm["users"]}
+    assert ids == PINNED_DEMO_SUBJECTS
 
 
 def test_every_development_user_holds_exactly_one_of_the_five_roles(realm: dict):

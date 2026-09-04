@@ -220,6 +220,45 @@ def _one_cell_tree() -> HierarchyTree:
     )
 
 
+def _two_area_tree() -> HierarchyTree:
+    return HierarchyTree(
+        enterprise="Co",
+        sites=(
+            HierarchySite(
+                "Site",
+                (
+                    HierarchyArea("PressShop", "production", (HierarchyLine("L1", ("C1",)),)),
+                    HierarchyArea("RawWater", "production", (HierarchyLine("L1", ("C1",)),)),
+                ),
+            ),
+        ),
+    )
+
+
+class RecordingAccessGroups:
+    """Captures AccessGroupRepository calls from apply_plan without a database."""
+
+    def __init__(self, database) -> None:
+        self.areas: list = []
+        self.membership: list = []
+        database.seeded_access = self
+
+    async def upsert_area_groups(self, areas):
+        self.areas = list(areas)
+        return [
+            SimpleNamespace(id=index, name=area.segment, root_segments=(area.segment,))
+            for index, area in enumerate(areas, start=1)
+        ]
+
+    async def apply_demo_membership(self, groups):
+        self.membership = list(groups)
+
+
+@pytest.fixture(autouse=True)
+def _record_access_groups(monkeypatch):
+    monkeypatch.setattr("uns_model.access_repository.AccessGroupRepository", RecordingAccessGroups)
+
+
 class RecordingRepository:
     """Records what a seed would write, at the repository seam."""
 
@@ -228,6 +267,8 @@ class RecordingRepository:
         self.metrics: list[str] = []
         self.rebinds = 0
         self._paths: set[str] = set()
+        self._assets: dict[str, SimpleNamespace] = {}
+        self._database = SimpleNamespace()
 
     def _path_set(self) -> set[str]:
         return set(self._paths)
@@ -237,20 +278,34 @@ class RecordingRepository:
         segments: list[str] = []
         for spec in specs:
             segments.append(spec.segment)
-            self._paths.add(SEPARATOR.join(segments))
+            path = SEPARATOR.join(segments)
+            self._paths.add(path)
+            if path not in self._assets:
+                self._assets[path] = SimpleNamespace(
+                    id=len(self._assets) + 1,
+                    segment=spec.segment,
+                    path=path,
+                    level=spec.level,
+                )
         return None
 
     async def define_metric(self, metric_key, **kwargs):  # noqa: ARG002
         self.metrics.append(metric_key)
         return None
 
-    async def list_assets(self, **kwargs):  # noqa: ARG002
-        return [SimpleNamespace(path=path) for path in sorted(self._paths)]
+    async def list_assets(self, **kwargs):
+        levels = kwargs.get("levels")
+        assets = [self._assets[path] for path in sorted(self._paths) if path in self._assets]
+        if levels:
+            return [asset for asset in assets if asset.level in levels]
+        return assets
 
     async def delete_asset(self, path: str, *, rebind: bool = True) -> int:
         prefix = path + SEPARATOR
         removed = {candidate for candidate in self._paths if candidate == path or candidate.startswith(prefix)}
         self._paths -= removed
+        for gone in removed:
+            self._assets.pop(gone, None)
         if rebind:
             self.rebinds += 1
         return len(removed)
@@ -258,6 +313,41 @@ class RecordingRepository:
     async def rebind_all(self) -> int:
         self.rebinds += 1
         return 0
+
+
+def test_a_plan_with_two_area_branches_produces_two_area_paths():
+    plan = plan_from_hierarchy_tree(_two_area_tree())
+    area_paths = sorted(
+        {
+            SEPARATOR.join(spec.segment for spec in branch[:3])
+            for branch in plan.branches
+            if branch[2].level == "AREA"
+        }
+    )
+    assert area_paths == ["Co/Site/PressShop", "Co/Site/RawWater"]
+    assert "Co/Site/PressShop" in plan.asset_paths
+    assert "Co/Site/RawWater" in plan.asset_paths
+
+
+def test_area_group_name_is_the_segment_not_a_wtp_label():
+    from uns_model.access_repository import area_group_name
+
+    assert area_group_name("PressShop") == "PressShop"
+    assert area_group_name("RawWater") == "RawWater"
+
+
+@pytest.mark.asyncio
+async def test_apply_plan_seeds_one_access_group_per_area():
+    repository = RecordingRepository()
+
+    await apply_plan(repository, plan_from_hierarchy_tree(_two_area_tree()))
+
+    seeded = repository._database.seeded_access
+    assert [(area.segment, area.path) for area in seeded.areas] == [
+        ("PressShop", "Co/Site/PressShop"),
+        ("RawWater", "Co/Site/RawWater"),
+    ]
+    assert [group.name for group in seeded.membership] == ["PressShop", "RawWater"]
 
 
 @pytest.mark.asyncio

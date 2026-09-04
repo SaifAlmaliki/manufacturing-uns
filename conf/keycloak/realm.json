@@ -99,6 +99,7 @@
   ],
   "users": [
     {
+      "id": "00000000-0000-4000-a000-000000000001",
       "username": "admin.user",
       "enabled": true,
       "emailVerified": true,
@@ -109,6 +110,7 @@
       "realmRoles": ["admin"]
     },
     {
+      "id": "00000000-0000-4000-a000-000000000002",
       "username": "engineer.user",
       "enabled": true,
       "emailVerified": true,
@@ -119,6 +121,7 @@
       "realmRoles": ["engineer"]
     },
     {
+      "id": "00000000-0000-4000-a000-000000000003",
       "username": "operator.user",
       "enabled": true,
       "emailVerified": true,
@@ -129,6 +132,7 @@
       "realmRoles": ["operator"]
     },
     {
+      "id": "00000000-0000-4000-a000-000000000004",
       "username": "auditor.user",
       "enabled": true,
       "emailVerified": true,
@@ -139,6 +143,7 @@
       "realmRoles": ["auditor"]
     },
     {
+      "id": "00000000-0000-4000-a000-000000000005",
       "username": "viewer.user",
       "enabled": true,
       "emailVerified": true,

@@ -319,6 +319,12 @@ async def apply_plan(repository: AssetModelRepository, plan: SeedPlan) -> dict[s
         )
     await _prune_removed_assets(repository, plan)
     rebound = await repository.rebind_all()
+    from uns_model.access_repository import AccessGroupRepository
+
+    areas = [asset for asset in await repository.list_assets(levels=["AREA"])]
+    access = AccessGroupRepository(repository._database)
+    groups = await access.upsert_area_groups(areas)
+    await access.apply_demo_membership(groups)
     return {
         "branches": len(plan.branches),
         "assets": len(plan.asset_paths),

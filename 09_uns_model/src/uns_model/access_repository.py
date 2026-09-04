@@ -29,6 +29,11 @@ class AccessGroupRecord:
     subjects: tuple[str, ...]
 
 
+def area_group_name(segment: str) -> str:
+    """Access Group name for a seeded Area: the segment, not a WTP label."""
+    return segment
+
+
 def validate_group_save(name: str, root_asset_ids: Sequence[int]) -> str:
     """Trim `name` and reject a blank name or an empty root list."""
     trimmed = name.strip()
@@ -130,7 +135,7 @@ class AccessGroupRepository:
         records: list[AccessGroupRecord] = []
         async with self._database.session() as session:
             for area in areas:
-                trimmed = validate_group_save(area.segment, [area.id])
+                trimmed = validate_group_save(area_group_name(area.segment), [area.id])
                 await self._require_assets(session, [area.id])
                 group_id = (
                     await session.execute(
@@ -263,4 +268,4 @@ def _unique_subjects(subjects: Sequence[str]) -> list[str]:
     return unique
 
 
-__all__ = ["AccessGroupRecord", "AccessGroupRepository", "validate_group_save"]
+__all__ = ["AccessGroupRecord", "AccessGroupRepository", "area_group_name", "validate_group_save"]
