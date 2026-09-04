@@ -25,6 +25,7 @@ def _info(scope: AccessScope, roles=frozenset({"operator"})):
 def _asset(*, path: str, segment: str, level: str) -> SimpleNamespace:
     # AssetNode.from_asset reads every field below; keep this in lockstep with type/asset.py.
     return SimpleNamespace(
+        id=1,
         path=path,
         segment=segment,
         level=level,

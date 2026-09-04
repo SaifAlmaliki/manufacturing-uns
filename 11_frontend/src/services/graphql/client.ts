@@ -48,6 +48,11 @@ import {
   SET_ALERT_RULE_ENABLED_MUTATION,
   SUBSCRIBE_KAFKA_MESSAGES,
   SUBSCRIBE_MQTT_MESSAGES,
+  DELETE_ACCESS_GROUP_MUTATION,
+  GET_ACCESS_GROUPS_QUERY,
+  GET_ASSETS_QUERY,
+  SAVE_ACCESS_GROUP_MUTATION,
+  SET_ACCESS_GROUP_MEMBERS_MUTATION,
 } from './queries'
 import {
   alertRuleToGraphqlInput,
@@ -55,6 +60,8 @@ import {
 } from '../../lib/alarms/map-alert-rules'
 import type { AlertRule } from '../../types/alarm'
 import type {
+  AccessAssetDto,
+  AccessGroupDto,
   GraphqlAlertRule,
   GraphqlAssetNode,
   GraphqlHistoricalEvent,
@@ -86,6 +93,24 @@ const defaultAuthHooks: AuthHooks = {
   token: () => authClient.accessToken(),
   refresh: () => authClient.refresh(),
   onExpired: () => { void authClient.signIn() },
+}
+
+function asInt(value: number | string): number {
+  return typeof value === 'number' ? value : Number(value)
+}
+
+function mapAccessGroup(group: AccessGroupDto): AccessGroupDto {
+  return {
+    id: asInt(group.id),
+    name: group.name,
+    subjects: [...group.subjects],
+    roots: group.roots.map((root) => ({
+      assetId: asInt(root.assetId),
+      path: root.path,
+      segment: root.segment,
+      level: root.level,
+    })),
+  }
 }
 
 type BinaryOperator = 'OR' | 'AND' | 'NOT'
@@ -581,6 +606,60 @@ export class UnsGraphQLClient {
       throw new Error(res.error || 'Hierarchy migrate retry failed')
     }
     return res.data.retryHierarchyMigrate
+  }
+
+  public async getAccessGroups(): Promise<AccessGroupDto[]> {
+    const res = await this.executeQuery<{ getAccessGroups: AccessGroupDto[] }>(GET_ACCESS_GROUPS_QUERY)
+    return (res.data?.getAccessGroups ?? []).map(mapAccessGroup)
+  }
+
+  public async saveAccessGroup(
+    name: string,
+    rootAssetIds: number[],
+    id?: number | null,
+  ): Promise<AccessGroupDto> {
+    const res = await this.executeQuery<{ saveAccessGroup: AccessGroupDto }>(SAVE_ACCESS_GROUP_MUTATION, {
+      name,
+      rootAssetIds,
+      id: id ?? null,
+    })
+    if (res.error || !res.data?.saveAccessGroup) {
+      throw new Error(res.error || 'Access Group was not saved')
+    }
+    return mapAccessGroup(res.data.saveAccessGroup)
+  }
+
+  public async deleteAccessGroup(id: number): Promise<boolean> {
+    const res = await this.executeQuery<{ deleteAccessGroup: boolean }>(DELETE_ACCESS_GROUP_MUTATION, { id })
+    if (res.error) {
+      throw new Error(res.error)
+    }
+    return res.data?.deleteAccessGroup === true
+  }
+
+  public async setAccessGroupMembers(id: number, subjects: string[]): Promise<AccessGroupDto> {
+    const res = await this.executeQuery<{ setAccessGroupMembers: AccessGroupDto }>(
+      SET_ACCESS_GROUP_MEMBERS_MUTATION,
+      { id, subjects },
+    )
+    if (res.error || !res.data?.setAccessGroupMembers) {
+      throw new Error(res.error || 'Access Group members were not updated')
+    }
+    return mapAccessGroup(res.data.setAccessGroupMembers)
+  }
+
+  /**
+   * Flat Asset Model list for the Access Group picker, ordered by the server (path).
+   * Empty when the endpoint cannot be reached.
+   */
+  public async getAssets(): Promise<AccessAssetDto[]> {
+    const res = await this.executeQuery<{ getAssets: AccessAssetDto[] }>(GET_ASSETS_QUERY)
+    return (res.data?.getAssets ?? []).map((asset) => ({
+      id: asInt(asset.id),
+      path: asset.path,
+      segment: asset.segment,
+      level: asset.level,
+    }))
   }
 
   private sendMqttSubscription(

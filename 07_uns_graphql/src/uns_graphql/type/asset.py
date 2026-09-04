@@ -37,6 +37,7 @@ LOGGER = logging.getLogger(__name__)
 class AssetNode:
     """One Asset from the authored Asset Model."""
 
+    id: int = strawberry.field(description="Asset primary key, used as an Access Group root.")
     path: str = strawberry.field(description="Topic prefix this Asset publishes under, e.g. 'Ent/Site/Area/Line1/Cell1/G1'")
     segment: str = strawberry.field(description="The single topic segment naming this Asset, e.g. 'G1'")
     level: str = strawberry.field(description="Asset Level, e.g. SITE, LINE, WORK_CELL, MACHINE. Levels may be skipped.")
@@ -54,6 +55,7 @@ class AssetNode:
     @classmethod
     def from_asset(cls, asset: Asset) -> "AssetNode":
         return cls(
+            id=asset.id,
             path=asset.path,
             segment=asset.segment,
             level=asset.level,

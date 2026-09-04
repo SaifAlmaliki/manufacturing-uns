@@ -147,6 +147,9 @@ type AssetModelSummary {
 
 """A declared thing in the plant: a Site, a Line, a Machine."""
 type AssetNode {
+  """Asset primary key, used as an Access Group root."""
+  id: Int64!
+
   """
   Topic prefix this Asset publishes under, e.g. 'Ent/Site/Area/Line1/Cell1/G1'
   """

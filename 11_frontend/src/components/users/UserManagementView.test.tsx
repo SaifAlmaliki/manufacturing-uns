@@ -1,8 +1,20 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fetchRealmMembers = vi.hoisted(() => vi.fn());
 vi.mock('../../lib/auth/directory', () => ({ fetchRealmMembers }));
+
+const getAccessGroups = vi.hoisted(() => vi.fn());
+const getAssets = vi.hoisted(() => vi.fn());
+vi.mock('../../services/graphql/client', () => ({
+  unsGraphQLClient: {
+    getAccessGroups,
+    getAssets,
+    saveAccessGroup: vi.fn(),
+    deleteAccessGroup: vi.fn(),
+    setAccessGroupMembers: vi.fn(),
+  },
+}));
 
 const auth = vi.hoisted(() => ({
   isAdmin: true,
@@ -14,10 +26,19 @@ vi.mock('../../context/AuthContext', () => ({ useAuth: () => auth }));
 
 import { UserManagementView } from './UserManagementView';
 
+const FILTRATION_GROUP = {
+  id: 1,
+  name: 'Filtration',
+  roots: [{ path: 'AcmeWater/Site1/Filtration', segment: 'Filtration', level: 'AREA', assetId: 9 }],
+  subjects: ['kc-1'],
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   auth.isAdmin = true;
   auth.roles = ['admin'];
+  getAccessGroups.mockResolvedValue([FILTRATION_GROUP]);
+  getAssets.mockResolvedValue([]);
 });
 
 const MEMBERS = {
@@ -67,11 +88,10 @@ describe('the user directory', () => {
     expect(screen.queryByText(/no users/i)).toBeNull();
   });
 
-  it('names where users are actually managed', async () => {
+  it('offers Open Keycloak as a button', async () => {
     fetchRealmMembers.mockResolvedValue({ kind: 'forbidden' });
     render(<UserManagementView />);
-
-    await waitFor(() => expect(screen.getByText(/Keycloak/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('button', { name: /Open Keycloak/i })).toBeTruthy());
   });
 
   it('reports an unreachable realm with its reason', async () => {
@@ -89,6 +109,13 @@ describe('the user directory', () => {
     await waitFor(() => expect(screen.getByText(/administrator/i)).toBeTruthy());
     expect(fetchRealmMembers).not.toHaveBeenCalled();
   });
+
+  it('shows Access Group chips on a directory row', async () => {
+    fetchRealmMembers.mockResolvedValue(MEMBERS);
+    render(<UserManagementView />);
+    await waitFor(() => expect(screen.getByText('Erin Engineer')).toBeTruthy());
+    expect(screen.getByText('Filtration')).toBeTruthy();
+  });
 });
 
 describe('what this screen can no longer do', () => {
@@ -102,9 +129,27 @@ describe('what this screen can no longer do', () => {
 
   it('offers no per-user permission tick boxes', async () => {
     fetchRealmMembers.mockResolvedValue(MEMBERS);
-    const { container } = render(<UserManagementView />);
+    render(<UserManagementView />);
 
     await waitFor(() => expect(screen.getByText('Erin Engineer')).toBeTruthy());
-    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
+    const directoryTable = screen.getByRole('table');
+    expect(directoryTable.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
+  });
+});
+
+describe('Access Groups on Users and Access', () => {
+  it('offers Assign groups, Create group and Save group after groups load', async () => {
+    fetchRealmMembers.mockResolvedValue(MEMBERS);
+    render(<UserManagementView />);
+
+    await waitFor(() => expect(screen.getByText('Erin Engineer')).toBeTruthy());
+    expect(screen.getAllByRole('button', { name: /Assign groups/i }).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole('button', { name: /Access Groups/i }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /Create group/i })).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: /Create group/i }));
+    expect(screen.getByRole('button', { name: /Save group/i })).toBeTruthy();
+    await waitFor(() => expect(getAssets).toHaveBeenCalled());
   });
 });

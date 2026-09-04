@@ -404,3 +404,64 @@ export const RETRY_HIERARCHY_MIGRATE_MUTATION = `
     }
   }
 `
+
+/**
+ * Access Groups: named Asset-tree roots and the Keycloak subjects who belong to them.
+ * Field set matches `07_uns_graphql/test/queries/test_access_group.py`.
+ */
+const ACCESS_GROUP_FIELDS = `
+  id
+  name
+  roots {
+    assetId
+    path
+    segment
+    level
+  }
+  subjects
+`
+
+export const GET_ACCESS_GROUPS_QUERY = `
+  query GetAccessGroups {
+    getAccessGroups {
+      ${ACCESS_GROUP_FIELDS}
+    }
+  }
+`
+
+export const SAVE_ACCESS_GROUP_MUTATION = `
+  mutation SaveAccessGroup($name: String!, $rootAssetIds: [Int64!]!, $id: Int64) {
+    saveAccessGroup(name: $name, rootAssetIds: $rootAssetIds, id: $id) {
+      ${ACCESS_GROUP_FIELDS}
+    }
+  }
+`
+
+export const DELETE_ACCESS_GROUP_MUTATION = `
+  mutation DeleteAccessGroup($id: Int64!) {
+    deleteAccessGroup(id: $id)
+  }
+`
+
+export const SET_ACCESS_GROUP_MEMBERS_MUTATION = `
+  mutation SetAccessGroupMembers($id: Int64!, $subjects: [String!]!) {
+    setAccessGroupMembers(id: $id, subjects: $subjects) {
+      ${ACCESS_GROUP_FIELDS}
+    }
+  }
+`
+
+/**
+ * Flat Asset Model list for the Access Group picker. `id` is the Asset primary key
+ * `saveAccessGroup` needs as `rootAssetIds`; path/segment/level drive indent and labels.
+ */
+export const GET_ASSETS_QUERY = `
+  query GetAssets {
+    getAssets {
+      id
+      path
+      segment
+      level
+    }
+  }
+`

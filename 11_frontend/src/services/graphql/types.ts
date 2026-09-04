@@ -12,6 +12,7 @@ export type GraphqlUnsNode = {
  * `GraphqlUnsNode`, which is a topic somebody published on.
  */
 export type GraphqlAssetNode = {
+  id?: number
   path: string
   segment: string
   level: string
@@ -23,6 +24,30 @@ export type GraphqlAssetNode = {
   criticality?: string | null
   isActive: boolean
   attributes?: { data: unknown } | null
+}
+
+/** One Asset root of an Access Group (`AccessGroupRootType`). */
+export type AccessGroupRootDto = {
+  assetId: number
+  path: string
+  segment: string
+  level: string
+}
+
+/** A named Access Group: who may see which Asset subtree (`AccessGroupType`). */
+export type AccessGroupDto = {
+  id: number
+  name: string
+  roots: AccessGroupRootDto[]
+  subjects: string[]
+}
+
+/** Minimal Asset row for the Access Group picker (`getAssets`). */
+export type AccessAssetDto = {
+  id: number
+  path: string
+  segment: string
+  level: string
 }
 
 /** What the Asset Model says about one Metric Key: its name, and the unit it is in. */
