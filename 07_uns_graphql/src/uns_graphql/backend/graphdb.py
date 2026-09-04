@@ -22,7 +22,7 @@ import asyncio
 import logging
 import typing
 
-from neo4j import READ_ACCESS, AsyncDriver, AsyncGraphDatabase, Record
+from neo4j import READ_ACCESS, WRITE_ACCESS, AsyncDriver, AsyncGraphDatabase, Record
 from neo4j.exceptions import Neo4jError
 
 from uns_graphql.graphql_config import GraphDBConfig
@@ -135,3 +135,73 @@ class GraphDB:
                 LOGGER.error("Error executing query: %s", ex,
                              stack_info=True, exc_info=True)
                 raise
+
+
+# ISA-95 nodes are one segment each (`node_name`), chained by PARENT_OF.
+# Nested attribute nodes are skipped so a payload dict cannot collide with a site.
+_NESTED_ATTRIBUTE_LABEL = GraphDBConfig.nested_attribute_node_type
+_REWRITE_GRAPH_PREFIX_CYPHER = f"""
+MATCH (root {{node_name: $segments[0]}})
+WHERE NOT ()-[:PARENT_OF]->(root)
+  AND NOT root:{_NESTED_ATTRIBUTE_LABEL}
+MATCH path = (root)-[:PARENT_OF*0..10]->(target)
+WHERE length(path) = size($segments) - 1
+  AND [n IN nodes(path) | n.node_name] = $segments
+  AND NONE(n IN nodes(path) WHERE n:{_NESTED_ATTRIBUTE_LABEL})
+WITH DISTINCT target
+OPTIONAL MATCH (parent)-[:PARENT_OF]->(target)
+OPTIONAL MATCH (parent)-[:PARENT_OF]->(child_sibling {{node_name: $new_segment}})
+WHERE parent IS NOT NULL
+  AND child_sibling <> target
+  AND NOT child_sibling:{_NESTED_ATTRIBUTE_LABEL}
+OPTIONAL MATCH (root_sibling {{node_name: $new_segment}})
+WHERE parent IS NULL
+  AND root_sibling <> target
+  AND NOT ()-[:PARENT_OF]->(root_sibling)
+  AND NOT root_sibling:{_NESTED_ATTRIBUTE_LABEL}
+WITH target, coalesce(child_sibling, root_sibling) AS sibling
+FOREACH (_ IN CASE WHEN sibling IS NULL THEN [1] ELSE [] END |
+  SET target.node_name = $new_segment
+)
+RETURN CASE WHEN sibling IS NOT NULL THEN 'collision' ELSE 'renamed' END AS status
+"""
+
+
+async def rewrite_graph_prefix(old_prefix: str, new_prefix: str) -> int:
+    """Rename the ISA-95 node at the last segment of old_prefix to the last
+    segment of new_prefix, under the same parent path. Returns 1 if renamed, 0 if
+    the old node was absent. Raises ValueError if a sibling already has the new name."""
+    if old_prefix == new_prefix:
+        raise ValueError("old_prefix and new_prefix must differ")
+
+    old_segments = old_prefix.split("/")
+    new_segments = new_prefix.split("/")
+    if old_segments[:-1] != new_segments[:-1]:
+        raise ValueError("old_prefix and new_prefix must share the same parent path")
+
+    new_segment = new_segments[-1]
+    LOGGER.debug("Rewriting graph prefix %s -> %s", old_prefix, new_prefix)
+
+    driver = await GraphDB.get_graphdb_driver()
+
+    async def _rename(tx) -> Record | None:
+        result = await tx.run(
+            _REWRITE_GRAPH_PREFIX_CYPHER,
+            segments=old_segments,
+            new_segment=new_segment,
+        )
+        record = await result.single()
+        if record is not None and record["status"] == "collision":
+            # Raise inside the tx so a SET (if any) is rolled back.
+            raise ValueError(f"a sibling already has the name {new_segment!r}")
+        return record
+
+    async with driver.session(default_access_mode=WRITE_ACCESS) as session:
+        record = await session.execute_write(_rename)
+
+    if record is None:
+        return 0
+    if record["status"] == "renamed":
+        return 1
+    raise RuntimeError(f"unexpected graph rewrite status: {record['status']}")
+
