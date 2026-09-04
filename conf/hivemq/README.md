@@ -1,11 +1,5 @@
 # HiveMQ Edge config
 
-HiveMQ Edge is the Site Instance broker: the local Unified Namespace and the
-northbound ingest for S7, EtherNet/IP, and OPC UA. Timescale stays on the same
-Instance. Connecting that Instance to an Enterprise Instance on AWS or Azure is
-an MQTT bridge plus Kafka consumers — not a setting in this file. See
-[ADR 0010](../../docs/adr/0010-site-instance-and-enterprise-cloud-hop.md).
-
 `config.xml` is mounted into `uns_mqtt_broker` at `/opt/hivemq/conf/config.xml`.
 
 Default file: MQTT TCP on `1883`, no protocol adapters. The stack starts with no PLC.

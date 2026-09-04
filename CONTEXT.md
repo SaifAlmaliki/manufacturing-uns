@@ -1,11 +1,8 @@
 # Unified Namespace
 
-An ISA-95 Unified Namespace platform: manufacturing, process, and laboratory
-data published to an MQTT broker is projected into a graph of current state, a
-time-series history, and an event log, then read back through a single query
-surface. A Site Instance keeps that stack at the facility. An Enterprise
-Instance — on-prem, AWS, or Azure — receives the same traffic from many sites
-so further analysis can run where the plant historian cannot.
+An ISA-95 Unified Namespace platform: plant data published to an MQTT broker is
+projected into a graph of current state, a time-series history, and an event log,
+then read back through a single query surface.
 
 ## Language
 
@@ -107,24 +104,9 @@ green health indicator ends up meaning nothing.
 _Avoid_: monitoring, health, telemetry
 
 **Instance**:
-One deployment of the platform. Either a Site Instance or an Enterprise
-Instance. Determines which stores a dashboard can reach.
-_Avoid_: environment, tenant, cluster
-
-**Site Instance**:
-The Instance at a facility. HiveMQ Edge is the local Unified Namespace and the
-plant ingest (S7, EtherNet/IP, OPC UA). Timescale stays here so Historic Events
-survive a WAN outage. May also run a local graph, Sparkplug Mapper, console,
-and GraphQL. Not the place for multi-site analysis.
-_Avoid_: edge stack, plant stack, factory node
-
-**Enterprise Instance**:
-The Instance that receives bridged Unified Namespace traffic from many Site
-Instances. Holds the enterprise MQTT broker (when used), the enterprise graph
-and historian, Kafka, GraphQL, and the console that sees every site. May run
-on-prem or in AWS / Azure. Kafka is the seam for further analysis — warehouses,
-notebooks, MES — not a second plant broker.
-_Avoid_: cloud hub, central Kafka, landing zone
+One deployment of the platform, either at a single facility or centrally for the
+whole enterprise. Determines which stores a dashboard can reach.
+_Avoid_: environment, site, tenant, cluster
 
 **Alert Rule**:
 A condition somebody wants to be told about, and who to tell: a topic, a field of

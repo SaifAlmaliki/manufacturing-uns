@@ -912,14 +912,10 @@ version = "0.9.38"
 source = { editable = "../00_uns_config" }
 dependencies = [
     { name = "dynaconf" },
-    { name = "pyyaml" },
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "dynaconf", specifier = "~=3.2" },
-    { name = "pyyaml", specifier = ">=6.0.2,<7" },
-]
+requires-dist = [{ name = "dynaconf", specifier = "~=3.2" }]
 
 [package.metadata.requires-dev]
 test = [
