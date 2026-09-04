@@ -2,7 +2,7 @@
 
 Date: 2026-09-04
 Modules: `11_frontend`, `07_uns_graphql`, `09_uns_model`, `conf/simulator/plant.yaml`, `conf/settings.yaml`
-Status: Draft (awaiting user review)
+Status: Approved
 
 Supersedes the “hierarchy is YAML-only, not a form” sentence in
 [ADR-0005](../../adr/0005-graphql-mutations-for-console-configuration.md). YAML remains the
