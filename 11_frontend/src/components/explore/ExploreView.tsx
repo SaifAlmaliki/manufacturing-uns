@@ -42,7 +42,8 @@ const TIME_OPTIONS: { value: TimePreset; label: string }[] = [
 ];
 
 export const ExploreView: React.FC = () => {
-  const { historianInitialTopic, selectedNode } = useUNS();
+  const { historianInitialTopic, selectedNode, settings } = useUNS();
+  const enterprise = settings.organization;
   const { isDark } = useTheme();
 
   const [mode, setMode] = useState<QueryMode>('topic_time');
@@ -91,7 +92,7 @@ export const ExploreView: React.FC = () => {
 
       if (mode === 'topic_time') {
         if (!topicInput.trim()) {
-          setErrorMsg('Enter a UNS topic (e.g. CovestroAG/Krefeld/.../G1). A /# suffix is added automatically.');
+          setErrorMsg(`Enter a UNS topic (e.g. ${enterprise}/.../G1). A /# suffix is added automatically.`);
           setEvents([]);
           return;
         }
@@ -144,7 +145,7 @@ export const ExploreView: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [mode, topicInput, publishersInput, propKeysInput, propOperator, excludeTopicsInput, getTimeBounds]);
+  }, [mode, topicInput, publishersInput, propKeysInput, propOperator, excludeTopicsInput, getTimeBounds, enterprise]);
 
   useEffect(() => {
     if (historianInitialTopic) {
@@ -163,7 +164,7 @@ export const ExploreView: React.FC = () => {
           to: String(new Date(customEndTime).getTime()),
         }
       : grafanaRangeFromPreset(timePreset);
-  const grafanaTopic = grafanaTopicFilter(topicInput) || 'CovestroAG';
+  const grafanaTopic = grafanaTopicFilter(topicInput) || enterprise;
 
   const primarySearch =
     mode === 'topic_time'

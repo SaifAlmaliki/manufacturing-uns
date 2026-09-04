@@ -104,7 +104,7 @@ export const LiveMqttFeed: React.FC = () => {
             type="text"
             value={feedTopicFilter}
             onChange={(e) => setFeedTopicFilter(e.target.value)}
-            placeholder="# or CovestroAG/#"
+            placeholder={`# or ${settings.organization}/#`}
             className={`${consoleTokens.inputOrange} flex-1 py-1.5 text-xs`}
           />
         </div>

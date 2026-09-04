@@ -47,7 +47,7 @@ export const SparkplugView: React.FC = () => {
 
   // Check if string looks like an ISA-95 namespace path
   const isIsa95Path = (name: string) => {
-    return name.includes('/') && (name.startsWith('CovestroAG') || name.split('/').length >= 3);
+    return name.includes('/') && name.split('/').length >= 3;
   };
 
   // Render Metric Value with Binary Handling

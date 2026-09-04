@@ -80,3 +80,9 @@ Evaluation is still the console's job: it reads the rules and reports back throu
 `recordAlertRuleEvaluation`. So alarms are only evaluated while somebody has the
 console open. Moving evaluation into a service is now possible — the rules are
 readable by anything with a database connection — but it is not done here.
+
+## Addendum (2026-09-04)
+
+The plant hierarchy is still YAML (`conf/simulator/plant.yaml`) and remains
+reviewable in version control, but `saveHierarchy` may now write it through
+GraphQL, so the mutation surface is no longer alert-rules-only.
