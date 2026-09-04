@@ -10,7 +10,8 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from uns_model.hierarchy import HierarchyArea, HierarchyLine, HierarchySite, HierarchyTree
+from uns_model.hierarchy import HierarchyArea, HierarchyLine, HierarchySite, HierarchyTree, tree_to_mapping
+from uns_model.repositories import AssetSpec
 from uns_model.seed import (
     SIMULATOR_LEVELS,
     apply_plan,
@@ -219,26 +220,6 @@ def _one_cell_tree() -> HierarchyTree:
     )
 
 
-def _hierarchy_mapping(tree: HierarchyTree) -> dict:
-    """List-of-objects mapping `plan_from_simulator_config` already understands."""
-    return {
-        "enterprise": tree.enterprise,
-        "sites": [
-            {
-                "name": site.name,
-                "areas": [
-                    {
-                        "name": area.name,
-                        "lines": [{"name": line.name, "cells": list(line.cells)} for line in area.lines],
-                    }
-                    for area in site.areas
-                ],
-            }
-            for site in tree.sites
-        ],
-    }
-
-
 class RecordingRepository:
     """Records what a seed would write, at the repository seam."""
 
@@ -303,7 +284,7 @@ def test_plan_from_hierarchy_tree_matches_simulator_config_from_the_same_tree():
     extra = {"plc": [{"equipment": "G1", "sensors": {"Temperature": {"unit": "°C"}}}]}
 
     from_tree = plan_from_hierarchy_tree(tree, extra)
-    from_mapping = plan_from_simulator_config({"hierarchy": _hierarchy_mapping(tree), **extra})
+    from_mapping = plan_from_simulator_config({"hierarchy": tree_to_mapping(tree), **extra})
 
     assert from_tree.asset_paths == from_mapping.asset_paths
     assert [spec.metric_key for spec in from_tree.metrics] == [spec.metric_key for spec in from_mapping.metrics]
@@ -332,6 +313,38 @@ async def test_applying_a_smaller_tree_prunes_the_removed_cell():
     assert all(not path.startswith("E/S/A/L/V102/") for path in remaining)
 
 
+def test_seed_plan_describe_includes_the_prune_scope():
+    plan = plan_from_hierarchy_tree(_two_cell_tree())
+    plan.prune_paths = ["E/S/A/L/V102"]
+
+    described = plan.describe()
+
+    assert "Prune under E" in described
+    assert "E/S/A/L/V102" in described
+
+
+@pytest.mark.asyncio
+async def test_applying_a_smaller_tree_logs_pruned_paths(caplog: pytest.LogCaptureFixture):
+    repository = RecordingRepository()
+    await apply_plan(repository, plan_from_hierarchy_tree(_two_cell_tree()))
+
+    with caplog.at_level("INFO", logger="uns_model.seed"):
+        await apply_plan(repository, plan_from_hierarchy_tree(_one_cell_tree()))
+
+    assert "E/S/A/L/V102" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_prune_leaves_assets_outside_the_enterprise():
+    repository = RecordingRepository()
+    await repository.ensure_branch([AssetSpec(segment="OtherRoot", level="ENTERPRISE")])
+    await apply_plan(repository, plan_from_hierarchy_tree(_one_cell_tree()))
+
+    remaining = repository._path_set()
+    assert "OtherRoot" in remaining
+    assert "E" in remaining
+
+
 @pytest.mark.asyncio
 async def test_delete_asset_also_removes_descendants():
     repository = RecordingRepository()
@@ -350,7 +363,7 @@ def test_seed_dry_run_loads_plant_yaml_when_present(tmp_path, monkeypatch, capsy
     plant_dir = tmp_path / "simulator"
     plant_dir.mkdir()
     (plant_dir / "plant.yaml").write_text(
-        yaml.safe_dump(_hierarchy_mapping(_two_cell_tree())),
+        yaml.safe_dump(tree_to_mapping(_two_cell_tree())),
         encoding="utf-8",
     )
     monkeypatch.setattr("uns_model.cli.resolve_conf_dir", lambda: tmp_path)

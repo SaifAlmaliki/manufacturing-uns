@@ -302,3 +302,20 @@ def test_write_enterprise_settings_uses_an_atomic_write(tmp_path: Path):
 
     assert not (tmp_path / "settings.yaml.tmp").exists()
     assert (tmp_path / "settings.yaml").exists()
+
+
+def test_apply_enterprise_to_settings_round_trips_the_shipped_file():
+    """C1/I8: a hierarchy save must not strip comments or mapper-adjacent blocks."""
+    shipped = Path(__file__).resolve().parents[2] / "conf" / "settings.yaml"
+    original = shipped.read_text(encoding="utf-8")
+
+    text = apply_enterprise_to_settings(original, "Contoso")
+
+    doc = yaml.safe_load(text)
+    assert doc["graphql"]["mqtt"]["topics"] == ["#"]
+    assert doc["sparkplugb"]["mqtt"]["topics"] == ["spBv1.0/uns_group/#"]
+    assert doc["dynaconf_merge"] is True
+    assert doc["graphdb"]["mqtt"]["topics"] == ["test/uns/#", "Contoso/#", "spBv1.0/uns_group/#"]
+    assert doc["historian"]["mqtt"]["topics"] == ["test/uns/#", "Contoso/#", "spBv1.0/#"]
+    assert doc["kafka_mapper"]["mqtt"]["topics"] == ["test/uns/#", "Contoso/#"]
+    assert "docs/adr/0007-simulator-control-api-outside-graphql.md" in text

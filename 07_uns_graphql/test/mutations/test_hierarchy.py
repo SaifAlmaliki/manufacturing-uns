@@ -7,6 +7,8 @@ are about order, files, and the migrate job.
 
 from __future__ import annotations
 
+import asyncio
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -117,16 +119,79 @@ TREE_NORD = {
 }
 
 SITE_RENAME = [{"oldPrefix": "OldCo/Site1", "newPrefix": "OldCo/Nord"}]
+TWO_SITE_RENAMES = [
+    {"oldPrefix": "OldCo/Site1", "newPrefix": "OldCo/Nord"},
+    {"oldPrefix": "OldCo/Site2", "newPrefix": "OldCo/Sud"},
+]
 
 REWRITE_HISTORIAN = "uns_graphql.mutations.hierarchy._rewrite_historian"
 REWRITE_GRAPH = "uns_graphql.mutations.hierarchy._rewrite_graph"
 RESEED = "uns_graphql.mutations.hierarchy._reseed"
 CONF_DIR = "uns_graphql.mutations.hierarchy._conf_dir"
 
+TWO_SITE_PLANT_YAML = """\
+enterprise: OldCo
+sites:
+  - name: Site1
+    areas:
+      - name: RawWater
+        kind: production
+        lines:
+          - name: Train1
+            cells: [V101, V102]
+  - name: Site2
+    areas:
+      - name: RawWater
+        kind: production
+        lines:
+          - name: Train1
+            cells: [V201]
+plant: {}
+profiles:
+  wtp:
+    tier_scale: 1.0
+    sites: [Site1, Site2]
+    families: [wtp]
+"""
 
-def _write_conf(conf_dir: Path) -> None:
+TREE_TWO_RENAMED = {
+    "enterprise": "OldCo",
+    "sites": [
+        {
+            "name": "Nord",
+            "areas": [
+                {
+                    "name": "RawWater",
+                    "kind": "production",
+                    "lines": [{"name": "Train1", "cells": ["V101", "V102"]}],
+                }
+            ],
+        },
+        {
+            "name": "Sud",
+            "areas": [
+                {
+                    "name": "RawWater",
+                    "kind": "production",
+                    "lines": [{"name": "Train1", "cells": ["V201"]}],
+                }
+            ],
+        },
+    ],
+}
+
+
+def _fresh_started_at() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _stale_started_at() -> str:
+    return (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+
+
+def _write_conf(conf_dir: Path, plant: str = PLANT_YAML) -> None:
     (conf_dir / "simulator").mkdir(parents=True, exist_ok=True)
-    (conf_dir / "simulator" / "plant.yaml").write_text(PLANT_YAML, encoding="utf-8")
+    (conf_dir / "simulator" / "plant.yaml").write_text(plant, encoding="utf-8")
     (conf_dir / "settings.yaml").write_text(SETTINGS_YAML, encoding="utf-8")
 
 
@@ -242,7 +307,14 @@ async def test_save_hierarchy_migrates_historian_then_graph(conf_dir: Path):
 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_save_hierarchy_rejects_renames_while_a_job_is_running(conf_dir: Path):
-    _write_job(conf_dir, status="running", old_prefix="OldCo/Site1", new_prefix="OldCo/Nord")
+    _write_job(
+        conf_dir,
+        status="running",
+        old_prefix="OldCo/Site1",
+        new_prefix="OldCo/Nord",
+        started_at=_fresh_started_at(),
+        pending=[{"old": "OldCo/Site1", "new": "OldCo/Nord"}],
+    )
     original = _read_plant(conf_dir)
 
     with (
@@ -268,7 +340,14 @@ async def test_save_hierarchy_rejects_renames_while_a_job_is_running(conf_dir: P
 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_save_hierarchy_allows_empty_renames_while_a_job_is_running(conf_dir: Path):
-    _write_job(conf_dir, status="running", old_prefix="OldCo/Site1", new_prefix="OldCo/Nord")
+    _write_job(
+        conf_dir,
+        status="running",
+        old_prefix="OldCo/Site1",
+        new_prefix="OldCo/Nord",
+        started_at=_fresh_started_at(),
+        pending=[{"old": "OldCo/Site1", "new": "OldCo/Nord"}],
+    )
 
     with (
         patch(REWRITE_HISTORIAN, new_callable=AsyncMock),
@@ -333,6 +412,138 @@ async def test_retry_hierarchy_migrate_reruns_a_failed_job(conf_dir: Path):
     assert job["rewritten"] == 5
     historian.assert_awaited_once_with("OldCo/Site1", "OldCo/Nord")
     graph.assert_awaited_once_with("OldCo/Site1", "OldCo/Nord")
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_retry_adopts_a_stale_running_job_without_deleting_the_file(conf_dir: Path):
+    _write_job(
+        conf_dir,
+        status="running",
+        old_prefix="OldCo/Site1",
+        new_prefix="OldCo/Nord",
+        started_at=_stale_started_at(),
+        pending=[{"old": "OldCo/Site1", "new": "OldCo/Nord"}],
+        rewritten=0,
+    )
+
+    with (
+        patch(REWRITE_HISTORIAN, new_callable=AsyncMock, return_value=4) as historian,
+        patch(REWRITE_GRAPH, new_callable=AsyncMock, return_value=1) as graph,
+        patch(RESEED, new_callable=AsyncMock),
+    ):
+        result = await UNSGraphql.schema.execute(RETRY_MIGRATE, context_value=ADMIN)
+
+    assert result.errors is None
+    job = result.data["retryHierarchyMigrate"]
+    assert job["status"] == "done"
+    assert job["rewritten"] == 5
+    historian.assert_awaited_once_with("OldCo/Site1", "OldCo/Nord")
+    graph.assert_awaited_once_with("OldCo/Site1", "OldCo/Nord")
+    assert _job_path(conf_dir).is_file()
+    assert _read_job(conf_dir)["status"] == "done"
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_stale_running_job_is_reported_as_failed_so_the_console_can_retry(
+    conf_dir: Path,
+):
+    _write_job(
+        conf_dir,
+        status="running",
+        old_prefix="OldCo/Site1",
+        new_prefix="OldCo/Nord",
+        started_at=_stale_started_at(),
+        pending=[{"old": "OldCo/Site1", "new": "OldCo/Nord"}],
+    )
+
+    with (
+        patch(REWRITE_HISTORIAN, new_callable=AsyncMock) as historian,
+        patch(REWRITE_GRAPH, new_callable=AsyncMock),
+        patch(RESEED, new_callable=AsyncMock),
+    ):
+        result = await UNSGraphql.schema.execute(
+            SAVE_HIERARCHY,
+            variable_values={"tree": TREE_SITE1, "renames": []},
+            context_value=ADMIN,
+        )
+
+    assert result.errors is None
+    assert result.data["saveHierarchy"]["job"]["status"] == "failed"
+    historian.assert_not_awaited()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_failed_mid_batch_keeps_remaining_renames_and_retry_resumes(conf_dir: Path):
+    _write_conf(conf_dir, TWO_SITE_PLANT_YAML)
+
+    async def boom_on_second(old_prefix: str, new_prefix: str) -> int:
+        if old_prefix.endswith("Site2"):
+            raise RuntimeError("historian unavailable")
+        return 2
+
+    with (
+        patch(REWRITE_HISTORIAN, side_effect=boom_on_second),
+        patch(REWRITE_GRAPH, new_callable=AsyncMock, return_value=1),
+        patch(RESEED, new_callable=AsyncMock),
+    ):
+        failed = await UNSGraphql.schema.execute(
+            SAVE_HIERARCHY,
+            variable_values={"tree": TREE_TWO_RENAMED, "renames": TWO_SITE_RENAMES},
+            context_value=ADMIN,
+        )
+
+    assert failed.errors is None
+    assert failed.data["saveHierarchy"]["job"]["status"] == "failed"
+    stored = _read_job(conf_dir)
+    assert stored["pending"] == [
+        {"old": "OldCo/Site2", "new": "OldCo/Sud"},
+    ]
+
+    with (
+        patch(REWRITE_HISTORIAN, new_callable=AsyncMock, return_value=2) as historian,
+        patch(REWRITE_GRAPH, new_callable=AsyncMock, return_value=1) as graph,
+        patch(RESEED, new_callable=AsyncMock),
+    ):
+        retried = await UNSGraphql.schema.execute(RETRY_MIGRATE, context_value=ADMIN)
+
+    assert retried.errors is None
+    assert retried.data["retryHierarchyMigrate"]["status"] == "done"
+    historian.assert_awaited_once_with("OldCo/Site2", "OldCo/Sud")
+    graph.assert_awaited_once_with("OldCo/Site2", "OldCo/Sud")
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_save_writes_running_before_reseed(conf_dir: Path):
+    saw_running = asyncio.Event()
+    release = asyncio.Event()
+
+    async def slow_reseed(_tree) -> None:
+        job = _read_job(conf_dir)
+        if job.get("status") == "running":
+            saw_running.set()
+        await release.wait()
+
+    with (
+        patch(REWRITE_HISTORIAN, new_callable=AsyncMock, return_value=1),
+        patch(REWRITE_GRAPH, new_callable=AsyncMock, return_value=1),
+        patch(RESEED, side_effect=slow_reseed),
+    ):
+        task = asyncio.create_task(
+            UNSGraphql.schema.execute(
+                SAVE_HIERARCHY,
+                variable_values={"tree": TREE_NORD, "renames": SITE_RENAME},
+                context_value=ADMIN,
+            )
+        )
+        await asyncio.wait_for(saw_running.wait(), timeout=2)
+        stored = _read_job(conf_dir)
+        assert stored["status"] == "running"
+        assert stored["pending"] == [{"old": "OldCo/Site1", "new": "OldCo/Nord"}]
+        release.set()
+        result = await task
+
+    assert result.errors is None
+    assert result.data["saveHierarchy"]["job"]["status"] == "done"
 
 
 @pytest.mark.asyncio(loop_scope="function")

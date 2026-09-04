@@ -74,6 +74,8 @@ describe('the plant hierarchy editor', () => {
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Enterprise AcmeWater' })).toBeTruthy());
     expect(screen.getByText(/simulator still publishes the shipped WTP paths/i)).toBeTruthy();
+    expect(screen.getByText(/old graph branch reappears/i)).toBeTruthy();
+    expect(screen.getByText(/durable only after the publisher is retargeted/i)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Site Site1' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Cell V101' })).toBeTruthy();
   });
@@ -85,18 +87,24 @@ describe('the plant hierarchy editor', () => {
     expect(getHierarchy).not.toHaveBeenCalled();
   });
 
-  it('sends the committed rename prefixes on Save', async () => {
+  it('sends a single site-level rename after renaming a cell then its site', async () => {
     render(<HierarchyView />);
     await waitFor(() => expect(screen.getByRole('button', { name: 'Enterprise AcmeWater' })).toBeTruthy());
 
-    const nameInput = screen.getByLabelText('Name');
-    fireEvent.change(nameInput, { target: { value: 'Contoso' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Cell V101' }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'V9' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Site Site1' }));
+
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Nord' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(saveHierarchy).toHaveBeenCalledTimes(1));
     expect(saveHierarchy).toHaveBeenCalledWith(
-      expect.objectContaining({ enterprise: 'Contoso' }),
-      [{ oldPrefix: 'AcmeWater', newPrefix: 'Contoso' }],
+      expect.objectContaining({
+        enterprise: 'AcmeWater',
+        sites: [expect.objectContaining({ name: 'Nord' })],
+      }),
+      [{ oldPrefix: 'AcmeWater/Site1', newPrefix: 'AcmeWater/Nord' }],
     );
   });
 
