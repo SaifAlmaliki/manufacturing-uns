@@ -11,7 +11,7 @@ from uns_simulator.config import settings
 from uns_simulator.devices import HMI, PLC, SCADA, SignalDevice
 from uns_simulator.models import ParameterType, expand_hierarchy_paths
 from uns_simulator.plant import DeviceView, PlantClock
-from uns_simulator.profiles import FAMILIES, PRODUCTION_KIND, LoadedProfile, filter_paths, load_profile, read_simulator_conf
+from uns_simulator.profiles import FAMILIES, LoadedProfile, filter_paths, load_profile, read_simulator_conf
 
 LOGGER = logging.getLogger(__name__)
 
@@ -126,12 +126,7 @@ class UnifiedNamespaceSimulator:
         """One SignalDevice per resolved DeviceSpec, each with its own read-only view."""
         built: list[SignalDevice] = []
         for spec in self.profile.devices:
-            # Only production areas have a LineState (spec 6.1: a compressor house has no
-            # batch to be IDLE between), so a utility device's view carries `line=None` and
-            # reads production through `serves` instead. The line key is `<Area>/<Line>`,
-            # matching how `build_plant_context` registered it.
-            line = f"{spec.path.area}/{spec.path.line}" if spec.path.kind == PRODUCTION_KIND else None
-            view = DeviceView(self.profile.context, spec.path.site, line, spec.serves)
+            view = DeviceView(self.profile.context, spec.path.site)
             built.append(SignalDevice(spec, self.mqtt_config, view, self.profile.seed))
         return built
 
@@ -384,8 +379,8 @@ class UnifiedNamespaceSimulator:
         return self.profile.messages_per_second()
 
     def plant_snapshot(self) -> dict[str, Any]:
-        """The correlated world: ambient and shift per site, PackML state per line."""
-        return {"sites": self.profile.context.snapshot()}
+        """The correlated world: enterprise, site, and WTP process snapshot."""
+        return self.profile.context.snapshot()
 
     def device_snapshots(self) -> list[dict[str, Any]]:
         """One row per device, as the console's device table renders it."""

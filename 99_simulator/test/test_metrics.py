@@ -14,7 +14,7 @@ from uns_simulator import devices as devices_module
 from uns_simulator.devices import SignalDevice
 from uns_simulator.metrics import SimulatorCollector
 from uns_simulator.models import ISA95Hierarchy
-from uns_simulator.plant import DeviceView, LineTiming, PlantContext
+from uns_simulator.plant import DeviceView, PlantContext
 from uns_simulator.profiles import DeviceSpec
 from uns_simulator.signals import SignalSpec
 
@@ -44,9 +44,8 @@ def _dummy_broker(monkeypatch):
 
 def _device() -> SignalDevice:
     context = PlantContext(global_seed=7)
-    context.add_site("Dormagen")
-    timing = LineTiming(starting_s=1.0, execute_s=100_000.0, hold_probability_per_hour=0.0)
-    context.add_line("Dormagen", "Production", "Line1", timing, 12.0)
+    context.add_site("Site1")
+    context.tick(1.0)
     spec = DeviceSpec(
         id="main-meter",
         equipment="MainMeter",
@@ -57,9 +56,8 @@ def _device() -> SignalDevice:
             SignalSpec(name="ActivePower", unit="kW", base_value=100.0, tier="energy", export_metric=True),
             SignalSpec(name="PowerFactor", unit="", base_value=0.95, tier="status"),
         ),
-        serves=("Dormagen/Production/Line1",),
     )
-    view = DeviceView(context, "Dormagen", None, spec.serves)
+    view = DeviceView(context, "Site1")
     return SignalDevice(spec, {}, view, 7)
 
 

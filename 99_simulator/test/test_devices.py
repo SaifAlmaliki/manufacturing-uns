@@ -8,7 +8,7 @@ import pytest
 from uns_simulator import devices
 from uns_simulator.devices import AsyncMQTTDevice, SignalDevice
 from uns_simulator.models import ISA95Hierarchy, ParameterType
-from uns_simulator.plant import DeviceView, LineTiming, PlantContext
+from uns_simulator.plant import DeviceView, PlantContext
 from uns_simulator.profiles import DeviceSpec
 from uns_simulator.signals import SignalSpec
 
@@ -294,18 +294,10 @@ PATH = ISA95Hierarchy("CovestroAG", "Dormagen", "Utilities", "Powerhouse", "Cell
 
 
 def _view():
-    """A utility device's view: no PackML line of its own, one served production line.
-
-    `line=None` is deliberate and is what a real utility device gets — spec 6.1 gives
-    `LineState` to production lines only, so a powerhouse reads production through `serves`.
-    """
     context = PlantContext(global_seed=7)
-    context.add_site("Dormagen")
-    timing = LineTiming(starting_s=1.0, execute_s=100_000.0, hold_probability_per_hour=0.0)
-    context.add_line("Dormagen", "Production", "Line1", timing, 12.0)
-    for _ in range(10):
-        context.tick(1.0)
-    return DeviceView(context, "Dormagen", None, serves=["Dormagen/Production/Line1"])
+    context.add_site("Site1")
+    context.tick(1.0)
+    return DeviceView(context, "Site1")
 
 
 def _device(*signals, tier="energy"):
@@ -339,11 +331,10 @@ def test_a_derived_signal_sees_this_tick_not_the_last_one():
 
 
 def test_a_derived_signal_reads_the_plant_through_ctx():
-    """Spec 6.3's name is `served_production`; the served line sits in EXECUTE at 0.85-1.0."""
     device = _device(
-        SignalSpec(name="ChillerLoad", shape="derived", precision=2, params={"expr": "ctx.served_production * 200"})
+        SignalSpec(name="T101Capacity", shape="derived", precision=1, params={"expr": "ctx.wtp.t101.capacity_m3"})
     )
-    assert device.evaluate(1.0)["ChillerLoad"] == pytest.approx(185.0, abs=20.0)
+    assert device.evaluate(1.0)["T101Capacity"] == pytest.approx(250.0)
 
 
 def test_publish_tier_only_publishes_that_tier():

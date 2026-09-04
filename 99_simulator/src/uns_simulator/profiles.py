@@ -20,7 +20,7 @@ import yaml
 from uns_config import resolve_conf_dir
 
 from uns_simulator.models import ISA95Hierarchy, expand_hierarchy_paths
-from uns_simulator.plant import LineTiming, PlantContext
+from uns_simulator.plant import PlantContext
 from uns_simulator.signals import SignalSpec, order_signals, spec_from_config
 
 LOGGER = logging.getLogger(__name__)
@@ -236,50 +236,13 @@ def filter_paths(
 
 
 def build_plant_context(paths: Sequence[ISA95Hierarchy], raw_plant: Mapping[str, Any], seed: int) -> PlantContext:
-    """Build the PlantContext from the same paths the devices are targeted at.
-
-    Only areas of kind `production` get a `LineState`: spec 6.1 gives PackML to production
-    lines, and a compressor house has no batch to be IDLE between. Utility devices read
-    their served lines through `serves` instead.
-    """
-    site_overrides: Mapping[str, Any] = raw_plant.get("sites") or {}
-    line_overrides: Mapping[str, Any] = raw_plant.get("lines") or {}
-
+    """Build the PlantContext from the same paths the devices are targeted at."""
     context = PlantContext(global_seed=seed)
+    context.enterprise = str((raw_plant.get("enterprise") or "AcmeWater"))
     for path in paths:
         if path.site not in context.sites:
-            override = dict(site_overrides.get(path.site) or {})
-            peak = override.pop("tariff_peak_hours", None)
-            if peak is not None:
-                override["tariff_peak_hours"] = (int(peak[0]), int(peak[1]))
-            context.add_site(path.site, **override)
-        if path.kind != PRODUCTION_KIND:
-            continue
-        line_path = f"{path.area}/{path.line}"
-        if line_path in context.sites[path.site].lines:
-            continue
-        timing_kwargs = dict(line_overrides.get(f"{path.site}/{line_path}") or {})
-        context.add_line(path.site, path.area, path.line, LineTiming(**timing_kwargs), path.nameplate_tph)
+            context.add_site(path.site)
     return context
-
-
-def validate_line_overrides(paths: Sequence[ISA95Hierarchy], raw_plant: Mapping[str, Any]) -> None:
-    """Every `plant.lines` key must name a production line somewhere in the hierarchy.
-
-    Checked against the **unfiltered** hierarchy, which is why this is a separate function
-    rather than a block inside `build_plant_context`. `small` keeps only Dormagen, and its
-    `plant.lines` block still legitimately describes Krefeld's timing; folding the check into
-    the context builder would make every override illegal in every profile that filters it
-    out, so `plant.yaml` could only ever describe the intersection of all profiles.
-
-    An override that matches nothing anywhere is still fatal: it leaves a line running the
-    defaults, which looks exactly like the override having been written badly.
-    """
-    known = {f"{path.site}/{path.area}/{path.line}" for path in paths if path.kind == PRODUCTION_KIND}
-    if stale := sorted(set(raw_plant.get("lines") or {}) - known):
-        raise ValueError(
-            f"plant.lines override(s) {', '.join(stale)} name no production line in the hierarchy; expected Site/Area/Line"
-        )
 
 
 def _resolve_families(profile_name: str, selection: Mapping[str, Any]) -> dict[str, bool]:
@@ -345,14 +308,16 @@ def load_profile(raw: Mapping[str, Any], profile_name: str = "full", *, seed: in
     max_cells = selection.get("max_cells_per_line")
     max_cells_per_line = int(max_cells) if max_cells is not None else None
     raw_plant: Mapping[str, Any] = raw.get("plant") or {}
-    all_paths = expand_hierarchy_paths(raw.get("hierarchy") or {})
-    validate_line_overrides(all_paths, raw_plant)
+    hierarchy: Mapping[str, Any] = raw.get("hierarchy") or {}
+    all_paths = expand_hierarchy_paths(hierarchy)
     paths = filter_paths(
         all_paths,
         sites=[str(name) for name in raw_sites] if raw_sites is not None else None,
         max_cells_per_line=max_cells_per_line,
     )
     context = build_plant_context(paths, raw_plant, resolved_seed)
+    if hierarchy.get("enterprise"):
+        context.enterprise = str(hierarchy["enterprise"])
 
     report = LoadReport()
     devices: list[DeviceSpec] = []
@@ -381,12 +346,6 @@ def load_profile(raw: Mapping[str, Any], profile_name: str = "full", *, seed: in
                 )
             report.per_tier[spec.tier] = report.per_tier.get(spec.tier, 0) + 1
         report.signals += len(device.signals)
-        # Spec 6.3: an unresolvable `serves` path fails the load. Done here rather than in
-        # `expand_template` because only this function has the PlantContext to check against.
-        try:
-            context.resolve_serves(device.serves)
-        except KeyError as exc:
-            raise ValueError(f"device {device.id!r}: {exc.args[0]}") from exc
         report.serves_links += len(device.serves)
     report.devices = len(devices)
 
