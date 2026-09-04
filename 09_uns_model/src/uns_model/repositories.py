@@ -251,7 +251,7 @@ class AssetModelRepository:
         """Delete an Asset and everything under it. Returns the number of Assets removed."""
         async with self._database.session() as session:
             result = await session.execute(
-                delete(Asset).where((Asset.path == path) | Asset.path.like(path + SEPARATOR + "%"))
+                delete(Asset).where((Asset.path == path) | func.starts_with(Asset.path, path + SEPARATOR))
             )
             removed = result.rowcount or 0
 
