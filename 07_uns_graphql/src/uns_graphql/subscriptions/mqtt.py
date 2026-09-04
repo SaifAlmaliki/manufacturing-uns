@@ -28,8 +28,10 @@ import typing
 import strawberry
 from aiomqtt import Client, MqttError
 
+from uns_graphql.auth.scope import allowed_topic, scope_from_info
 from uns_graphql.graphql_config import MQTTConfig
 from uns_graphql.input.mqtt import MQTTTopicInput
+from uns_graphql.queries.asset import _context_resolver
 from uns_graphql.type.mqtt_event import MQTTMessage
 
 LOGGER = logging.getLogger(__name__)
@@ -44,7 +46,9 @@ class MQTTSubscription:
     @strawberry.subscription(
         description=" Subscribe to MQTT messages based on provided list of topics. MQTT wildcards are supported "
     )
-    async def get_mqtt_messages(self, topics: list[MQTTTopicInput]) -> typing.AsyncGenerator[MQTTMessage]:
+    async def get_mqtt_messages(
+        self, info: strawberry.Info, topics: list[MQTTTopicInput]
+    ) -> typing.AsyncGenerator[MQTTMessage]:
         """
         Subscribe to MQTT messages based on provided topics.
 
@@ -72,8 +76,13 @@ class MQTTSubscription:
                 await client.subscribe(
                     topic=[(mqtt_topic.topic, MQTTConfig.qos) for mqtt_topic in topics], properties=MQTTConfig.properties
                 )
+                scope = await scope_from_info(info)
+                resolver = _context_resolver()
                 async for msg in client.messages:
-                    yield MQTTMessage(topic=str(msg.topic), payload=msg.payload)
+                    topic = str(msg.topic)
+                    if not await allowed_topic(scope, topic, resolver):
+                        continue
+                    yield MQTTMessage(topic=topic, payload=msg.payload)
         except MqttError as ex:
             LOGGER.error("Error while connecting to MQTT Broker %s",
                          ex, stack_info=True, exc_info=True)

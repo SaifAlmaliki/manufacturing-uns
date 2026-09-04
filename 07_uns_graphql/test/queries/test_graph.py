@@ -20,6 +20,7 @@ Test cases for uns_graphql.queries.graph.Query
 import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -28,6 +29,8 @@ import strawberry
 from neo4j import Record
 from neo4j.graph import Node, Relationship
 
+from uns_graphql.auth.context import CONTEXT_KEY
+from uns_graphql.auth.token import Identity
 from uns_graphql.backend.graphdb import GraphDB
 from uns_graphql.graphql_config import GraphDBConfig
 from uns_graphql.input.mqtt import MQTTTopic, MQTTTopicInput
@@ -36,6 +39,14 @@ from uns_graphql.queries.graph import Query as GraphQuery
 from uns_graphql.type.basetype import JSONPayload
 from uns_graphql.type.isa95_node import UNSNode
 from uns_graphql.type.sparkplugb_node import SPBNode
+
+
+def _admin_info() -> SimpleNamespace:
+    return SimpleNamespace(
+        context={
+            CONTEXT_KEY: Identity(subject="s", username="ada.admin", roles=frozenset({"admin"})),
+        }
+    )
 
 main_node = MagicMock(spec=Node, autospec=True)
 main_node.element_id = "main_node_id"
@@ -353,7 +364,7 @@ async def test_get_uns_nodes(
     with patch("uns_graphql.queries.graph.GraphDB", return_value=mocked_uns_graphdb):
         graph_query = GraphQuery()
         try:
-            result = await graph_query.get_uns_nodes(topics=mqtt_topic_list)
+            result = await graph_query.get_uns_nodes(info=_admin_info(), topics=mqtt_topic_list)
         except Exception as ex:
             assert has_result_errors, f"Should not throw any exceptions. Got {ex}"
         assert result is not None  # test was successful
@@ -386,7 +397,10 @@ async def test_get_uns_nodes_by_property(
         graph_query = GraphQuery()
         try:
             result = await graph_query.get_uns_nodes_by_property(
-                property_keys=property_keys, topics=mqtt_topic_list, exclude_topics=exclude_topics
+                info=_admin_info(),
+                property_keys=property_keys,
+                topics=mqtt_topic_list,
+                exclude_topics=exclude_topics,
             )
         except Exception as ex:
             assert has_result_errors, f"Should not throw any exceptions. Got {ex}"
@@ -403,7 +417,9 @@ async def test_get_spb_nodes_by_metric(metric_names: list[str]):
     with patch("uns_graphql.queries.graph.GraphDB", return_value=mocked_spb_graphdb):
         graph_query = GraphQuery()
         try:
-            result = await graph_query.get_spb_nodes_by_metric(metric_names=metric_names)
+            result = await graph_query.get_spb_nodes_by_metric(
+                info=_admin_info(), metric_names=metric_names
+            )
         except Exception as ex:
             pytest.fail(f"Should not throw any exceptions. Got {ex}")
         assert result is not None  # test was successful
@@ -496,7 +512,11 @@ async def test_strawberry_get_uns_nodes(topics: list[str], has_result_errors: bo
     mqtt_topics: list[dict[str, str]] = [{"topic": x} for x in topics]
     schema = strawberry.Schema(query=GraphQuery)
     with patch("uns_graphql.queries.graph.GraphDB", return_value=mocked_uns_graphdb):
-        result = await schema.execute(query=query, variable_values={"mqtt_topics": mqtt_topics})
+        result = await schema.execute(
+            query=query,
+            variable_values={"mqtt_topics": mqtt_topics},
+            context_value=_admin_info().context,
+        )
         if not has_result_errors:
             assert not result.errors
         else:
@@ -548,6 +568,7 @@ async def test_strawberry_get_uns_nodes_by_property(
             query=query,
             variable_values={"property_keys": property_keys,
                              "mqtt_topics": mqtt_topics, "exclude_topics": exclude_topics},
+            context_value=_admin_info().context,
         )
         if not has_result_errors:
             assert not result.errors
@@ -607,6 +628,7 @@ async def test_strawberry_get_spb_nodes_by_metric(metric_names: list[str], has_r
             variable_values={
                 "metric_names": metric_names,
             },
+            context_value=_admin_info().context,
         )
         if not has_result_errors:
             assert not result.errors
@@ -735,7 +757,7 @@ async def test_get_uns_nodes_integration(
         MQTTTopic(topic=topic)) for topic in topics]
     graph_query = GraphQuery()
     try:
-        result = await graph_query.get_uns_nodes(topics=mqtt_topic_list)
+        result = await graph_query.get_uns_nodes(info=_admin_info(), topics=mqtt_topic_list)
     except Exception as ex:
         pytest.fail(f"Should not throw any exceptions. Got {ex}")
     # Ensure the result matches the expected result, ignoring order
@@ -844,7 +866,10 @@ async def test_get_uns_nodes_by_property_integration(
     graph_query = GraphQuery()
     try:
         result = await graph_query.get_uns_nodes_by_property(
-            property_keys=property_keys, topics=mqtt_topic_list, exclude_topics=exclude_topics
+            info=_admin_info(),
+            property_keys=property_keys,
+            topics=mqtt_topic_list,
+            exclude_topics=exclude_topics,
         )
     except Exception as ex:
         pytest.fail(f"Should not throw any exceptions. Got {ex}")
@@ -927,7 +952,9 @@ async def test_get_spb_nodes_integration(
 ):
     graph_query = GraphQuery()
     try:
-        result = await graph_query.get_spb_nodes_by_metric(metric_names=metric_names)
+        result = await graph_query.get_spb_nodes_by_metric(
+            info=_admin_info(), metric_names=metric_names
+        )
     except Exception as ex:
         pytest.fail(f"Should not throw any exceptions. Got {ex}")
     assert result == expected_result

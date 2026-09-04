@@ -24,8 +24,10 @@ from datetime import datetime
 import strawberry
 from uns_model.engine import Database
 
+from uns_graphql.auth.scope import allowed_topic, scope_from_info
 from uns_graphql.backend.historian import HistorianRepository
 from uns_graphql.input.mqtt import MQTTTopicInput
+from uns_graphql.queries.asset import _context_resolver
 from uns_graphql.type.basetype import BinaryOperator
 from uns_graphql.type.historical_event import HistoricalUNSEvent
 
@@ -34,6 +36,18 @@ LOGGER = logging.getLogger(__name__)
 
 def _repository() -> HistorianRepository:
     return HistorianRepository(Database.shared("graphql"))
+
+
+async def _visible_events(info: strawberry.Info, events: list[HistoricalUNSEvent]) -> list[HistoricalUNSEvent]:
+    scope = await scope_from_info(info)
+    if scope.unrestricted:
+        return events
+    resolver = _context_resolver()
+    kept: list[HistoricalUNSEvent] = []
+    for event in events:
+        if await allowed_topic(scope, event.topic, resolver):
+            kept.append(event)
+    return kept
 
 
 @strawberry.type(description="Query Historic Events")
@@ -45,6 +59,7 @@ class Query:
     @strawberry.field(description="Get all historical published on the given array of topics and between the time slots.")
     async def get_historic_events_in_time_range(
         self,
+        info: strawberry.Info,
         topics: list[MQTTTopicInput],
         from_datetime: datetime | None = strawberry.UNSET,
         to_datetime: datetime | None = strawberry.UNSET,
@@ -60,16 +75,20 @@ class Query:
         if not topics:
             raise ValueError("topics list cannot be empty")
 
-        return await _repository().get_historic_events(
-            topics=[x.topic for x in topics],  # extract string from input object
-            publishers=None,
-            from_datetime=from_datetime,
-            to_datetime=to_datetime,
+        return await _visible_events(
+            info,
+            await _repository().get_historic_events(
+                topics=[x.topic for x in topics],  # extract string from input object
+                publishers=None,
+                from_datetime=from_datetime,
+                to_datetime=to_datetime,
+            ),
         )
 
     @strawberry.field(description="Get all historical events published by specified clients.")
     async def get_historic_events_by_publishers(
         self,
+        info: strawberry.Info,
         publishers: list[str],
         topics: list[MQTTTopicInput] | None = strawberry.UNSET,
         from_datetime: datetime | None = strawberry.UNSET,
@@ -82,11 +101,14 @@ class Query:
         if not publishers:
             raise ValueError("publishers list cannot be empty")
 
-        return await _repository().get_historic_events(
-            topics=[x.topic for x in topics] if topics else None,  # extract string from input object
-            publishers=publishers,
-            from_datetime=from_datetime,
-            to_datetime=to_datetime,
+        return await _visible_events(
+            info,
+            await _repository().get_historic_events(
+                topics=[x.topic for x in topics] if topics else None,  # extract string from input object
+                publishers=publishers,
+                from_datetime=from_datetime,
+                to_datetime=to_datetime,
+            ),
         )
 
     @strawberry.field(
@@ -99,6 +121,7 @@ class Query:
     )
     async def get_historic_events_by_property(
         self,
+        info: strawberry.Info,
         property_keys: list[str],
         binary_operator: BinaryOperator | None = strawberry.UNSET,
         topics: list[MQTTTopicInput] | None = strawberry.UNSET,
@@ -113,12 +136,15 @@ class Query:
         if not property_keys:
             raise ValueError("property_keys list cannot be empty")
 
-        return await _repository().get_historic_events_for_property_keys(
-            property_keys=property_keys,
-            binary_operator=binary_operator.value if binary_operator else BinaryOperator.OR.value,
-            topics=[x.topic for x in topics] if topics else None,
-            from_datetime=from_datetime,
-            to_datetime=to_datetime,
+        return await _visible_events(
+            info,
+            await _repository().get_historic_events_for_property_keys(
+                property_keys=property_keys,
+                binary_operator=binary_operator.value if binary_operator else BinaryOperator.OR.value,
+                topics=[x.topic for x in topics] if topics else None,
+                from_datetime=from_datetime,
+                to_datetime=to_datetime,
+            ),
         )
 
     @classmethod

@@ -30,6 +30,7 @@ from uns_model.engine import Database
 from uns_model.notifications import AssetModelChangeListener
 from uns_model.repositories import AssetModelRepository
 
+from uns_graphql.auth.scope import filter_by_path, scope_from_info
 from uns_graphql.type.asset import AssetModelSummary, AssetNode, TopicContextType
 
 LOGGER = logging.getLogger(__name__)
@@ -69,24 +70,32 @@ class Query:
     )
     async def get_assets(
         self,
+        info: strawberry.Info,
         under: str | None = strawberry.UNSET,
         levels: list[str] | None = strawberry.UNSET,
         include_inactive: bool = False,
     ) -> list[AssetNode]:
+        scope = await scope_from_info(info)
         assets = await _repository().list_assets(
             under=under or None,
             levels=levels or None,
             include_inactive=include_inactive,
         )
-        return [AssetNode.from_asset(asset) for asset in assets]
+        return [AssetNode.from_asset(asset) for asset in filter_by_path(scope, assets, lambda item: item.path)]
 
     @strawberry.field(description="Direct children of an Asset, or the roots of the Asset Model when path is omitted.")
-    async def get_asset_children(self, path: str | None = strawberry.UNSET) -> list[AssetNode]:
+    async def get_asset_children(
+        self, info: strawberry.Info, path: str | None = strawberry.UNSET
+    ) -> list[AssetNode]:
+        scope = await scope_from_info(info)
         children = await _repository().children_of(path or None)
-        return [AssetNode.from_asset(asset) for asset in children]
+        return [AssetNode.from_asset(asset) for asset in filter_by_path(scope, children, lambda item: item.path)]
 
     @strawberry.field(description="One Asset by its path, or null when nothing is modelled at that path.")
-    async def get_asset(self, path: str) -> AssetNode | None:
+    async def get_asset(self, info: strawberry.Info, path: str) -> AssetNode | None:
+        scope = await scope_from_info(info)
+        if not scope.covers_path(path):
+            return None
         asset = await _repository().get_asset(path)
         return AssetNode.from_asset(asset) if asset else None
 
@@ -94,11 +103,14 @@ class Query:
         description="Enrichment for one topic: the Asset that publishes it, its name at every Asset Level, "
         "and the Metric Definitions for its payload. Null for an Unmodelled Topic."
     )
-    async def get_topic_context(self, topic: str) -> TopicContextType | None:
+    async def get_topic_context(self, info: strawberry.Info, topic: str) -> TopicContextType | None:
         resolver = _context_resolver()
         context = await resolver.resolve(topic)
         if context is None:
             LOGGER.debug("No Asset in the Asset Model matches topic %s", topic)
+            return None
+        scope = await scope_from_info(info)
+        if not scope.covers_path(context.asset_path):
             return None
         asset = await _repository().get_asset(context.asset_path)
         if asset is None:
@@ -108,17 +120,32 @@ class Query:
         return TopicContextType.from_context(context, asset)
 
     @strawberry.field(description="Topics that have published data but match no Asset. Empty means the model is complete.")
-    async def get_unmodelled_topics(self, limit: int = DEFAULT_UNMODELLED_LIMIT) -> list[str]:
+    async def get_unmodelled_topics(
+        self, info: strawberry.Info, limit: int = DEFAULT_UNMODELLED_LIMIT
+    ) -> list[str]:
+        scope = await scope_from_info(info)
+        if not scope.unrestricted:
+            return []
         return await _repository().unmodelled_topics(limit=limit)
 
     @strawberry.field(description="Counts of what the Asset Model holds, for a completeness check.")
-    async def get_asset_model_summary(self) -> AssetModelSummary:
+    async def get_asset_model_summary(self, info: strawberry.Info) -> AssetModelSummary:
+        scope = await scope_from_info(info)
         counts = await _repository().counts()
+        if scope.unrestricted:
+            return AssetModelSummary(
+                assets=counts["assets"],
+                metric_definitions=counts["metric_definitions"],
+                bound_topics=counts["bound_topics"],
+                unmodelled_topics=counts["unmodelled_topics"],
+            )
+        assets = await _repository().list_assets(include_inactive=True)
+        visible = filter_by_path(scope, assets, lambda item: item.path)
         return AssetModelSummary(
-            assets=counts["assets"],
+            assets=len(visible),
             metric_definitions=counts["metric_definitions"],
             bound_topics=counts["bound_topics"],
-            unmodelled_topics=counts["unmodelled_topics"],
+            unmodelled_topics=0,
         )
 
     @classmethod

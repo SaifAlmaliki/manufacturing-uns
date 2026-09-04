@@ -9,14 +9,17 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import Any, TypeVar
 
 from uns_model.access import covers
 from uns_model.access_repository import AccessGroupRepository
 from uns_model.engine import Database
 
+from uns_graphql.auth.context import identity_in
 from uns_graphql.auth.token import Identity
 
 _RootsFor = Callable[[str], Awaitable[frozenset[str]]]
+T = TypeVar("T")
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,3 +49,24 @@ def visible_topic(scope: AccessScope, bound_asset_path: str | None) -> bool:
     if bound_asset_path is None:
         return False
     return scope.covers_path(bound_asset_path)
+
+
+async def scope_from_info(info: Any) -> AccessScope:
+    return await scope_for(identity_in(getattr(info, "context", None)))
+
+
+def filter_by_path(scope: AccessScope, items: list[T], path_of: Callable[[T], str]) -> list[T]:
+    return [item for item in items if scope.covers_path(path_of(item))]
+
+
+async def allowed_topic(scope: AccessScope, topic: str, resolver: Any) -> bool:
+    """True when the caller may see this topic.
+
+    Unrestricted callers skip binding. Everyone else resolves the topic to an Asset
+    path; unmodelled topics are hidden.
+    """
+    if scope.unrestricted:
+        return True
+    context = await resolver.resolve(topic)
+    bound = None if context is None else context.asset_path
+    return visible_topic(scope, bound)

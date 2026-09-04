@@ -26,8 +26,10 @@ import typing
 import strawberry
 from confluent_kafka import OFFSET_BEGINNING, Consumer
 
+from uns_graphql.auth.scope import allowed_topic, scope_from_info
 from uns_graphql.graphql_config import KAFKAConfig
 from uns_graphql.input.kafka import KAFKATopicInput
+from uns_graphql.queries.asset import _context_resolver
 from uns_graphql.type.streaming_event import StreamingMessage
 
 LOGGER = logging.getLogger(__name__)
@@ -40,7 +42,9 @@ class KAFKASubscription:
     """
 
     @strawberry.subscription(description="Subscribe to Kafka messages based on provided topics. Wildcards/Regex not supported")
-    async def get_kafka_messages(self, topics: list[KAFKATopicInput]) -> typing.AsyncGenerator[StreamingMessage]:
+    async def get_kafka_messages(
+        self, info: strawberry.Info, topics: list[KAFKATopicInput]
+    ) -> typing.AsyncGenerator[StreamingMessage]:
         """
         Subscribe to Kafka messages based on provided topics.
 
@@ -95,8 +99,12 @@ class KAFKASubscription:
                 LOGGER.info("Closing Kafka consumer.")
                 consumer.close()
 
-        # Yield messages from the Kafka listener
+        # Yield messages from the Kafka listener that this caller may see
+        scope = await scope_from_info(info)
+        resolver = _context_resolver()
         async for message in kafka_listener():
+            if not await allowed_topic(scope, message.topic, resolver):
+                continue
             yield message
 
     @classmethod

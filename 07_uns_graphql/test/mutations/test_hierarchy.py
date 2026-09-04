@@ -220,7 +220,7 @@ def conf_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 @pytest.mark.asyncio(loop_scope="function")
 async def test_get_hierarchy_reads_plant_yaml(conf_dir: Path):  # noqa: ARG001
-    result = await UNSGraphql.schema.execute(GET_HIERARCHY)
+    result = await UNSGraphql.schema.execute(GET_HIERARCHY, context_value=ADMIN)
 
     assert result.errors is None
     tree = result.data["getHierarchy"]

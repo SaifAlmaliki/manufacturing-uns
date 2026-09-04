@@ -28,6 +28,8 @@ import strawberry
 from uns_model.alert_rules import AlertRuleRepository
 from uns_model.engine import Database
 
+from uns_graphql.auth.scope import allowed_topic, scope_from_info
+from uns_graphql.queries.asset import _context_resolver
 from uns_graphql.type.alert_rule import AlertRuleSummary, AlertRuleType
 
 LOGGER = logging.getLogger(__name__)
@@ -44,16 +46,30 @@ class Query:
     @strawberry.field(description="Every Alert Rule, oldest first. Optionally only the armed ones, or one topic's.")
     async def get_alert_rules(
         self,
+        info: strawberry.Info,
         enabled_only: bool = False,
         topic: str | None = strawberry.UNSET,
     ) -> list[AlertRuleType]:
+        scope = await scope_from_info(info)
         rules = await _repository().list_rules(enabled_only=enabled_only, topic=topic or None)
-        return [AlertRuleType.from_rule(rule) for rule in rules]
+        if scope.unrestricted:
+            return [AlertRuleType.from_rule(rule) for rule in rules]
+        resolver = _context_resolver()
+        visible: list[AlertRuleType] = []
+        for rule in rules:
+            if await allowed_topic(scope, rule.topic, resolver):
+                visible.append(AlertRuleType.from_rule(rule))
+        return visible
 
     @strawberry.field(description="One Alert Rule by id, or null when no such rule is stored.")
-    async def get_alert_rule(self, id: str) -> AlertRuleType | None:  # noqa: A002
+    async def get_alert_rule(self, info: strawberry.Info, id: str) -> AlertRuleType | None:  # noqa: A002
         rule = await _repository().get_rule(id)
-        return AlertRuleType.from_rule(rule) if rule else None
+        if rule is None:
+            return None
+        scope = await scope_from_info(info)
+        if not await allowed_topic(scope, rule.topic, _context_resolver()):
+            return None
+        return AlertRuleType.from_rule(rule)
 
     @strawberry.field(
         description="Counts and the last edit time, so a console can decide whether to refetch the rules."

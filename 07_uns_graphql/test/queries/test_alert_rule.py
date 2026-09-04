@@ -29,9 +29,19 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from uns_model.tables import AlertRule, AlertRuleRole
 
+from uns_graphql.auth.context import CONTEXT_KEY
+from uns_graphql.auth.token import Identity
 from uns_graphql.uns_graphql_app import UNSGraphql
 
 REPOSITORY = "uns_graphql.queries.alert_rule._repository"
+
+ADMIN = {
+    CONTEXT_KEY: Identity(
+        subject="s",
+        username="ada.admin",
+        roles=frozenset({"admin"}),
+    )
+}
 
 
 def _rule(rule_id: str = "rule-1", **overrides) -> AlertRule:
@@ -76,7 +86,8 @@ async def test_get_alert_rules_returns_what_the_repository_holds():
 
     with patch(REPOSITORY, return_value=repository):
         result = await UNSGraphql.schema.execute(
-            """{ getAlertRules { id severity category condition thresholdValue notifyRoles enabled } }"""
+            """{ getAlertRules { id severity category condition thresholdValue notifyRoles enabled } }""",
+            context_value=ADMIN,
         )
 
     assert result.errors is None
@@ -110,7 +121,8 @@ async def test_get_alert_rules_passes_the_filters_on():
 
     with patch(REPOSITORY, return_value=repository):
         result = await UNSGraphql.schema.execute(
-            """{ getAlertRules(enabledOnly: true, topic: "a/b/c") { id } }"""
+            """{ getAlertRules(enabledOnly: true, topic: "a/b/c") { id } }""",
+            context_value=ADMIN,
         )
 
     assert result.errors is None
@@ -125,7 +137,9 @@ async def test_get_alert_rules_treats_an_empty_topic_as_no_filter():
     repository.list_rules.return_value = []
 
     with patch(REPOSITORY, return_value=repository):
-        result = await UNSGraphql.schema.execute("""{ getAlertRules(topic: "") { id } }""")
+        result = await UNSGraphql.schema.execute(
+            """{ getAlertRules(topic: "") { id } }""", context_value=ADMIN
+        )
 
     assert result.errors is None
     repository.list_rules.assert_awaited_once_with(enabled_only=False, topic=None)
@@ -137,7 +151,9 @@ async def test_get_alert_rule_by_id():
     repository.get_rule.return_value = _rule("rule-1", unit="degC")
 
     with patch(REPOSITORY, return_value=repository):
-        result = await UNSGraphql.schema.execute("""{ getAlertRule(id: "rule-1") { id unit topic } }""")
+        result = await UNSGraphql.schema.execute(
+            """{ getAlertRule(id: "rule-1") { id unit topic } }""", context_value=ADMIN
+        )
 
     assert result.errors is None
     assert result.data["getAlertRule"] == {
@@ -155,7 +171,9 @@ async def test_get_alert_rule_is_null_for_an_unknown_id():
     repository.get_rule.return_value = None
 
     with patch(REPOSITORY, return_value=repository):
-        result = await UNSGraphql.schema.execute("""{ getAlertRule(id: "nope") { id } }""")
+        result = await UNSGraphql.schema.execute(
+            """{ getAlertRule(id: "nope") { id } }""", context_value=ADMIN
+        )
 
     assert result.errors is None
     assert result.data["getAlertRule"] is None

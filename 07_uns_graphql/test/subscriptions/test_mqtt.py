@@ -22,6 +22,7 @@ import contextlib
 import random
 import time
 import uuid
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -30,10 +31,20 @@ from aiomqtt import Client, Message, MqttError, ProtocolVersion
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
+from uns_graphql.auth.context import CONTEXT_KEY
+from uns_graphql.auth.token import Identity
 from uns_graphql.graphql_config import MQTTConfig
 from uns_graphql.input.mqtt import MQTTTopicInput
 from uns_graphql.subscriptions.mqtt import MQTTSubscription
 from uns_graphql.type.mqtt_event import MQTTMessage
+
+
+def _admin_info() -> SimpleNamespace:
+    return SimpleNamespace(
+        context={
+            CONTEXT_KEY: Identity(subject="s", username="ada.admin", roles=frozenset({"admin"})),
+        }
+    )
 
 sample_spb_payload: bytes = (
     b"\x08\xc4\x89\x89\x83\xd30\x12\x17\n\x08Inputs/A\x10\x00\x18\xea\xf2\xf5\xa8\xa0+ "
@@ -175,7 +186,7 @@ async def test_get_mqtt_messages(topics: list[MQTTTopicInput], expected_messages
             mock_messages = async_message_generator(expected_messages)
             mock_client.messages = mock_messages
             subscription = MQTTSubscription()
-            async_message_list = subscription.get_mqtt_messages(topics)
+            async_message_list = subscription.get_mqtt_messages(_admin_info(), topics)
             received_messages: list[MQTTMessage] = [message async for message in async_message_list]
 
         assert len(received_messages) == len(expected_messages)
@@ -386,7 +397,7 @@ async def test_get_mqtt_messages_integration(publish_to_mqtt):
     topics, expected_messages = publish_to_mqtt
     subscription = MQTTSubscription()
     received_messages: list[MQTTMessage] = []
-    async_message_list = subscription.get_mqtt_messages(topics)
+    async_message_list = subscription.get_mqtt_messages(_admin_info(), topics)
     try:
         async with asyncio.timeout(30):
             async for message in async_message_list:

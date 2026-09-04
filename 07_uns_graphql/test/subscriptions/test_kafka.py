@@ -19,16 +19,27 @@
 import asyncio
 import contextlib
 import uuid
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 from confluent_kafka import Producer
 from confluent_kafka.admin import AdminClient, NewTopic
 
+from uns_graphql.auth.context import CONTEXT_KEY
+from uns_graphql.auth.token import Identity
 from uns_graphql.graphql_config import KAFKAConfig
 from uns_graphql.input.kafka import KAFKATopicInput
 from uns_graphql.subscriptions.kafka import KAFKASubscription
 from uns_graphql.type.streaming_event import StreamingMessage
+
+
+def _admin_info() -> SimpleNamespace:
+    return SimpleNamespace(
+        context={
+            CONTEXT_KEY: Identity(subject="s", username="ada.admin", roles=frozenset({"admin"})),
+        }
+    )
 
 TWO_TOPICS_MULTIPLE_MSGS = (
     [KAFKATopicInput(topic="graphql_test_a.b.c"),
@@ -89,7 +100,7 @@ async def test_get_kafka_messages_mock(topics: list[KAFKATopicInput], message_va
         received_messages = []
         try:
             index: int = 0
-            async_message_list = subscription.get_kafka_messages(topics)
+            async_message_list = subscription.get_kafka_messages(_admin_info(), topics)
             async for message in async_message_list:
                 assert isinstance(message, StreamingMessage)
                 assert message == StreamingMessage(
@@ -202,7 +213,7 @@ async def test_get_kafka_messages_integration(kafka_setup_unique):
     subscription = KAFKASubscription()
     try:
         index: int = 0
-        async_message_list = subscription.get_kafka_messages(kafka_topics)
+        async_message_list = subscription.get_kafka_messages(_admin_info(), kafka_topics)
         # Use asyncio.timeout (Python 3.11+) or wait_for
         async with asyncio.timeout(30):
             async for message in async_message_list:

@@ -19,16 +19,27 @@
 
 import json
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Literal
 from unittest.mock import MagicMock, patch
 
 import pytest
 import strawberry
+from uns_graphql.auth.context import CONTEXT_KEY
+from uns_graphql.auth.token import Identity
 from uns_graphql.backend.historian import HistorianRepository
 from uns_graphql.input.mqtt import MQTTTopic, MQTTTopicInput
 from uns_graphql.queries.historian import Query as HistorianQuery
 from uns_graphql.type.basetype import JSONPayload
 from uns_graphql.type.historical_event import HistoricalUNSEvent
+
+
+def _admin_info() -> SimpleNamespace:
+    return SimpleNamespace(
+        context={
+            CONTEXT_KEY: Identity(subject="s", username="ada.admin", roles=frozenset({"admin"})),
+        }
+    )
 
 # model for db entry - time, topic, publisher, payload
 DatabaseRow = tuple[datetime, str, str, dict]
@@ -82,7 +93,9 @@ async def test_get_historic_events_in_time_range(
     with patch("uns_graphql.queries.historian._repository", return_value=mocked_repository):
         historian_query = HistorianQuery()
         try:
-            result = await historian_query.get_historic_events_in_time_range(mqtt_topic_list, from_date, to_date)
+            result = await historian_query.get_historic_events_in_time_range(
+                _admin_info(), mqtt_topic_list, from_date, to_date
+            )
         except Exception:
             assert has_result_errors, "Should not throw any exceptions"
         assert result is not None  # test was successful
@@ -129,7 +142,9 @@ async def test_strawberry_get_historic_events_in_time_range(
 
     with patch("uns_graphql.queries.historian._repository", return_value=mocked_repository):
         result = await schema.execute(
-            query=query, variable_values={"mqtt_topics": mqtt_topics, "from_date": from_date, "to_date": to_date}
+            query=query,
+            variable_values={"mqtt_topics": mqtt_topics, "from_date": from_date, "to_date": to_date},
+            context_value=_admin_info().context,
         )
         if not has_result_errors:
             assert not result.errors
@@ -191,6 +206,7 @@ async def test_strawberry_get_historic_events_by_property(
                 "from_date": from_date,
                 "to_date": to_date,
             },
+            context_value=_admin_info().context,
         )
         if not has_result_errors:
             assert not result.errors
@@ -243,6 +259,7 @@ async def test_strawberry_get_historic_events_by_publishers(publishers, topics, 
         result = await schema.execute(
             query=query,
             variable_values={"publishers": publishers, "mqtt_topics": mqtt_topics, "from_date": from_date, "to_date": to_date},
+            context_value=_admin_info().context,
         )
         if not has_result_errors:
             assert not result.errors

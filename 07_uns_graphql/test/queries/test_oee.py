@@ -30,9 +30,19 @@ import pytest
 from uns_model.oee_results import DowntimeEventRow, ParetoBucket, ShiftResultRow
 from uns_model.oee_tables import DowntimeEvent, ShiftResult
 
+from uns_graphql.auth.context import CONTEXT_KEY
+from uns_graphql.auth.token import Identity
 from uns_graphql.uns_graphql_app import UNSGraphql
 
 REPOSITORY = "uns_graphql.queries.oee._repository"
+
+ADMIN = {
+    CONTEXT_KEY: Identity(
+        subject="s",
+        username="ada.admin",
+        roles=frozenset({"admin"}),
+    )
+}
 
 LINE = "CovestroAG/Dormagen/Production/Line1"
 SHIFT_START = datetime(2026, 8, 31, 6, 0, tzinfo=UTC)
@@ -123,7 +133,8 @@ async def test_oee_shift_results_returns_what_the_repository_holds():
               }
             }
             """
-            % LINE
+            % LINE,
+            context_value=ADMIN,
         )
 
     assert result.errors is None
@@ -156,7 +167,8 @@ async def test_oee_shift_results_passes_the_parsed_range_through():
               }
             }
             """
-            % LINE
+            % LINE,
+            context_value=ADMIN,
         )
 
     assert result.errors is None
@@ -182,7 +194,8 @@ async def test_a_null_factor_is_null_in_the_response():
               }
             }
             """
-            % LINE
+            % LINE,
+            context_value=ADMIN,
         )
 
     assert result.errors is None
@@ -207,7 +220,8 @@ async def test_an_asset_with_no_results_is_an_empty_list():
                 oee
               }
             }
-            """
+            """,
+            context_value=ADMIN,
         )
 
     assert result.errors is None
@@ -228,7 +242,8 @@ async def test_downtime_events_expose_the_resolved_reason():
               }
             }
             """
-            % LINE
+            % LINE,
+            context_value=ADMIN,
         )
 
     assert result.errors is None
@@ -265,7 +280,8 @@ async def test_downtime_pareto_returns_the_buckets_in_order():
               }
             }
             """
-            % LINE
+            % LINE,
+            context_value=ADMIN,
         )
 
     assert result.errors is None

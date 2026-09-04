@@ -26,9 +26,11 @@ import strawberry
 from neo4j.graph import Node, Relationship
 from uns_mqtt.mqtt_listener import UnsMQTTClient
 
+from uns_graphql.auth.scope import allowed_topic, scope_from_info
 from uns_graphql.backend.graphdb import GraphDB
 from uns_graphql.graphql_config import GraphDBConfig
 from uns_graphql.input.mqtt import MQTTTopicInput
+from uns_graphql.queries.asset import _context_resolver
 from uns_graphql.type.basetype import JSONPayload
 from uns_graphql.type.isa95_node import UNSNode
 from uns_graphql.type.sparkplugb_node import SPBNode
@@ -47,6 +49,30 @@ NODE_RELATION_NAME = "PARENT_OF"
 REL_ATTR_KEY = "attribute_name"
 REL_ATTR_TYPE = "type"
 REL_INDEX = "index"
+
+
+async def _visible_uns_nodes(info: strawberry.Info, nodes: list[UNSNode]) -> list[UNSNode]:
+    scope = await scope_from_info(info)
+    if scope.unrestricted:
+        return nodes
+    resolver = _context_resolver()
+    kept: list[UNSNode] = []
+    for node in nodes:
+        if await allowed_topic(scope, node.namespace, resolver):
+            kept.append(node)
+    return kept
+
+
+async def _visible_spb_nodes(info: strawberry.Info, nodes: list[SPBNode]) -> list[SPBNode]:
+    scope = await scope_from_info(info)
+    if scope.unrestricted:
+        return nodes
+    resolver = _context_resolver()
+    kept: list[SPBNode] = []
+    for node in nodes:
+        if await allowed_topic(scope, node.topic, resolver):
+            kept.append(node)
+    return kept
 
 
 def epoch_to_datetime(ts: float | int | None) -> datetime:
@@ -269,6 +295,7 @@ class Query:
     @strawberry.field(description="Get consolidation of nodes for given array of topics. MQTT wildcards are supported")
     async def get_uns_nodes(
         self,
+        info: strawberry.Info,
         topics: list[MQTTTopicInput],
     ) -> list[UNSNode]:
         LOGGER.debug(
@@ -307,7 +334,7 @@ class Query:
                 last_updated=modified_timestamp,
             )
             uns_node_list.append(uns_node)
-        return uns_node_list
+        return await _visible_uns_nodes(info, uns_node_list)
 
     @strawberry.field(
         description="Get all UNSNodes published which have specific attribute name as 'propertyKeys'. \n "
@@ -317,6 +344,7 @@ class Query:
     )
     async def get_uns_nodes_by_property(
         self,
+        info: strawberry.Info,
         property_keys: list[str],
         topics: list[MQTTTopicInput] | None = strawberry.UNSET,
         exclude_topics: bool | None = False,
@@ -377,10 +405,12 @@ class Query:
                 last_updated=modified_timestamp,
             )
             uns_node_list.append(uns_node)
-        return uns_node_list
+        return await _visible_uns_nodes(info, uns_node_list)
 
     @strawberry.field(description="Get all the SPBNode by the provided metric name")
-    async def get_spb_nodes_by_metric(self, metric_names: list[str]) -> list[SPBNode]:
+    async def get_spb_nodes_by_metric(
+        self, info: strawberry.Info, metric_names: list[str]
+    ) -> list[SPBNode]:
         """ """
         LOGGER.debug(
             "Query for Nodes in SpB with Params :\n" f"topics={metric_names}")
@@ -406,7 +436,7 @@ class Query:
             )
             spb_metric_nodes.append(spb_node)
 
-        return spb_metric_nodes
+        return await _visible_spb_nodes(info, spb_metric_nodes)
 
     @classmethod
     async def on_shutdown(cls):

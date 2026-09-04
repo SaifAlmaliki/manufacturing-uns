@@ -35,6 +35,7 @@ import strawberry
 from uns_model.engine import Database
 from uns_model.oee_results import OeeResultRepository
 
+from uns_graphql.auth.scope import scope_from_info
 from uns_graphql.type.oee import DowntimeEventType, DowntimeParetoBucket, OeeShiftResult
 
 LOGGER = logging.getLogger(__name__)
@@ -59,8 +60,11 @@ class Query:
         "Ratios are null when undefined - a shift with no Loading Time has no Availability."
     )
     async def oee_shift_results(
-        self, asset_path: str, range_start: FromArgument, range_end: ToArgument
+        self, info: strawberry.Info, asset_path: str, range_start: FromArgument, range_end: ToArgument
     ) -> list[OeeShiftResult]:
+        scope = await scope_from_info(info)
+        if not scope.covers_path(asset_path):
+            return []
         rows = await _repository().shift_results(asset_path, range_start, range_end)
         return [OeeShiftResult.from_row(row) for row in rows]
 
@@ -69,8 +73,11 @@ class Query:
         "reason code resolved. Bounded the same way downtimePareto is, so the two agree."
     )
     async def downtime_events(
-        self, asset_path: str, range_start: FromArgument, range_end: ToArgument
+        self, info: strawberry.Info, asset_path: str, range_start: FromArgument, range_end: ToArgument
     ) -> list[DowntimeEventType]:
+        scope = await scope_from_info(info)
+        if not scope.covers_path(asset_path):
+            return []
         rows = await _repository().downtime_events(asset_path, range_start, range_end)
         return [DowntimeEventType.from_row(row) for row in rows]
 
@@ -79,8 +86,11 @@ class Query:
         "window's total downtime: an unmapped state is UNCLASSIFIED, never null."
     )
     async def downtime_pareto(
-        self, asset_path: str, range_start: FromArgument, range_end: ToArgument
+        self, info: strawberry.Info, asset_path: str, range_start: FromArgument, range_end: ToArgument
     ) -> list[DowntimeParetoBucket]:
+        scope = await scope_from_info(info)
+        if not scope.covers_path(asset_path):
+            return []
         buckets = await _repository().downtime_pareto(asset_path, range_start, range_end)
         return [DowntimeParetoBucket.from_bucket(bucket) for bucket in buckets]
 

@@ -20,12 +20,22 @@ import yaml
 from graphql import GraphQLError
 from uns_config import get_settings, resolve_conf_dir
 from uns_model.engine import Database
-from uns_model.hierarchy import HierarchyTree, PrefixRename, validate_renames, validate_tree
+from uns_model.hierarchy import (
+    HierarchyArea,
+    HierarchyLine,
+    HierarchySite,
+    HierarchyTree,
+    PrefixRename,
+    validate_renames,
+    validate_tree,
+)
+from uns_model.topic_path import join_segments
 from uns_model.hierarchy_io import load_plant_tree, save_plant_tree, write_enterprise_settings
 from uns_model.repositories import AssetModelRepository
 from uns_model.seed import apply_plan, plan_from_hierarchy_tree
 
 from uns_graphql.auth.require import require
+from uns_graphql.auth.scope import AccessScope, scope_from_info
 from uns_graphql.backend.graphdb import rewrite_graph_prefix
 from uns_graphql.backend.historian import HistorianRepository
 from uns_graphql.input.hierarchy import HierarchyTreeInput, PrefixRenameInput
@@ -283,11 +293,44 @@ async def _run_migrate(
         return record.to_graphql()
 
 
+def _filter_hierarchy(scope: AccessScope, tree: HierarchyTree) -> HierarchyTree:
+    """Drop sites/areas/lines/cells whose joined path is outside the caller's scope.
+
+    A parent stays if any child remains, so an operator rooted at an Area still
+    sees the Site above it.
+    """
+    if scope.unrestricted:
+        return tree
+    sites: list[HierarchySite] = []
+    for site in tree.sites:
+        site_path = join_segments(tree.enterprise, site.name)
+        areas: list[HierarchyArea] = []
+        for area in site.areas:
+            area_path = join_segments(site_path, area.name)
+            lines: list[HierarchyLine] = []
+            for line in area.lines:
+                line_path = join_segments(area_path, line.name)
+                cells = [
+                    cell
+                    for cell in line.cells
+                    if scope.covers_path(join_segments(line_path, cell))
+                ]
+                if cells or scope.covers_path(line_path):
+                    lines.append(HierarchyLine(name=line.name, cells=tuple(cells)))
+            if lines or scope.covers_path(area_path):
+                areas.append(HierarchyArea(name=area.name, kind=area.kind, lines=tuple(lines)))
+        if areas or scope.covers_path(site_path):
+            sites.append(HierarchySite(name=site.name, areas=tuple(areas)))
+    return HierarchyTree(enterprise=tree.enterprise, sites=tuple(sites))
+
+
 @strawberry.type(description="Read the plant hierarchy stored in plant.yaml")
 class Query:
     @strawberry.field(description="The ISA-95 tree from conf/simulator/plant.yaml.")
-    async def get_hierarchy(self) -> HierarchyTreeType:
-        return HierarchyTreeType.from_tree(load_plant_tree(_conf_dir()))
+    async def get_hierarchy(self, info: strawberry.Info) -> HierarchyTreeType:
+        tree = load_plant_tree(_conf_dir())
+        scope = await scope_from_info(info)
+        return HierarchyTreeType.from_tree(_filter_hierarchy(scope, tree))
 
 
 @strawberry.type(description="Persist the plant hierarchy and migrate renamed prefixes")
