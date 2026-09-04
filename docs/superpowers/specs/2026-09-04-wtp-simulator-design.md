@@ -2,7 +2,7 @@
 
 Date: 2026-09-04
 Module: `99_simulator` (config in `conf/simulator/`, mapper topic filters in `conf/settings.yaml`)
-Status: Draft, awaiting review
+Status: Approved
 
 Companion docs to write during implementation: `99_simulator/PROCESS.md` (what the plant is).
 
