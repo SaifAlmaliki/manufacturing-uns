@@ -88,33 +88,22 @@ export interface SimulatorConfig {
   devices: SimulatorDeviceConfig[]
 }
 
-export interface PlantLineState {
-  state: string
-  previous: string | null
-  /** 0.0-1.0. */
-  production_rate: number
-  throughput_tph: number
-  heat_load: number
-  air_demand: number
-  time_in_state_s: number
-  transition_count: number
-}
-
-export interface PlantSiteState {
-  ambient_temp_c: number
-  ambient_rh_pct: number
-  wet_bulb_temp_c: number
-  wind_speed_ms: number
-  barometric_mbar: number
-  shift: string
-  tariff: string
-  grid_co2_g_per_kwh: number
-  /** Keyed by the site-relative line path, e.g. `Production/Line1`. */
-  lines: Record<string, PlantLineState>
+export interface PlantTankState {
+  level_pct: number
+  volume_m3: number
+  capacity_m3: number
 }
 
 export interface PlantSnapshot {
-  sites: Record<string, PlantSiteState>
+  enterprise: string
+  site: string
+  mode: string
+  filter_mode: string
+  duty_raw_pump: string
+  lead_dist_pump: string
+  tanks: Record<string, PlantTankState>
+  flows_m3h: Record<string, number>
+  pressures_barg: Record<string, number>
 }
 
 export interface SimulatorDevice {
