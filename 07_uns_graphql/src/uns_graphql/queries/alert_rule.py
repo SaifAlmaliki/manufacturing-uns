@@ -28,7 +28,7 @@ import strawberry
 from uns_model.alert_rules import AlertRuleRepository
 from uns_model.engine import Database
 
-from uns_graphql.auth.scope import allowed_topic, scope_from_info
+from uns_graphql.auth.scope import AccessScope, allowed_topic, scope_from_info
 from uns_graphql.queries.asset import _context_resolver
 from uns_graphql.type.alert_rule import AlertRuleSummary, AlertRuleType
 
@@ -37,6 +37,18 @@ LOGGER = logging.getLogger(__name__)
 
 def _repository() -> AlertRuleRepository:
     return AlertRuleRepository(Database.shared("graphql"))
+
+
+async def _visible_rules(scope: AccessScope, rules: list) -> list:
+    """Keep rules whose topic the caller may see. Unrestricted callers skip binding."""
+    if scope.unrestricted:
+        return list(rules)
+    resolver = _context_resolver()
+    visible = []
+    for rule in rules:
+        if await allowed_topic(scope, rule.topic, resolver):
+            visible.append(rule)
+    return visible
 
 
 @strawberry.type(description="Query the Alert Rules the console has authored")
@@ -52,14 +64,7 @@ class Query:
     ) -> list[AlertRuleType]:
         scope = await scope_from_info(info)
         rules = await _repository().list_rules(enabled_only=enabled_only, topic=topic or None)
-        if scope.unrestricted:
-            return [AlertRuleType.from_rule(rule) for rule in rules]
-        resolver = _context_resolver()
-        visible: list[AlertRuleType] = []
-        for rule in rules:
-            if await allowed_topic(scope, rule.topic, resolver):
-                visible.append(AlertRuleType.from_rule(rule))
-        return visible
+        return [AlertRuleType.from_rule(rule) for rule in await _visible_rules(scope, rules)]
 
     @strawberry.field(description="One Alert Rule by id, or null when no such rule is stored.")
     async def get_alert_rule(self, info: strawberry.Info, id: str) -> AlertRuleType | None:  # noqa: A002
@@ -74,13 +79,21 @@ class Query:
     @strawberry.field(
         description="Counts and the last edit time, so a console can decide whether to refetch the rules."
     )
-    async def get_alert_rule_summary(self) -> AlertRuleSummary:
+    async def get_alert_rule_summary(self, info: strawberry.Info) -> AlertRuleSummary:
         repository = _repository()
-        counts = await repository.counts()
+        scope = await scope_from_info(info)
+        if scope.unrestricted:
+            counts = await repository.counts()
+            return AlertRuleSummary(
+                rules=counts["rules"],
+                enabled_rules=counts["enabled_rules"],
+                last_changed_at=await repository.last_changed_at(),
+            )
+        visible = await _visible_rules(scope, await repository.list_rules())
         return AlertRuleSummary(
-            rules=counts["rules"],
-            enabled_rules=counts["enabled_rules"],
-            last_changed_at=await repository.last_changed_at(),
+            rules=len(visible),
+            enabled_rules=sum(1 for rule in visible if rule.enabled),
+            last_changed_at=max((rule.updated_at for rule in visible), default=None),
         )
 
     @classmethod

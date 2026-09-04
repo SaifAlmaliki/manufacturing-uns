@@ -32,6 +32,7 @@ from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
 from uns_graphql.auth.context import CONTEXT_KEY
+from uns_graphql.auth.scope import AccessScope
 from uns_graphql.auth.token import Identity
 from uns_graphql.graphql_config import MQTTConfig
 from uns_graphql.input.mqtt import MQTTTopicInput
@@ -192,6 +193,54 @@ async def test_get_mqtt_messages(topics: list[MQTTTopicInput], expected_messages
         assert len(received_messages) == len(expected_messages)
     finally:
         await async_message_list.aclose()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_get_mqtt_messages_drops_out_of_scope_topics():
+    """An operator scoped to Filtration must not be yielded RawWater events."""
+    filt = "AcmeWater/Site1/Filtration"
+    raw = "AcmeWater/Site1/RawWater"
+    filt_topic = f"{filt}/Train1/temperature"
+    raw_topic = f"{raw}/Train1/temperature"
+    filt_scope = AccessScope(False, frozenset({filt}))
+    messages = [
+        Message(topic=filt_topic, payload=b'{"v": 1}', qos=1, retain=False, mid=1, properties=None),
+        Message(topic=raw_topic, payload=b'{"v": 2}', qos=1, retain=False, mid=2, properties=None),
+    ]
+
+    async def resolve(topic: str):
+        if topic.startswith(filt):
+            return SimpleNamespace(asset_path=filt)
+        if topic.startswith(raw):
+            return SimpleNamespace(asset_path=raw)
+        return None
+
+    mock_client = MagicMock()
+    mock_client.subscribe = AsyncMock()
+    mock_client.messages = async_message_generator(messages)
+    info = SimpleNamespace(
+        context={
+            CONTEXT_KEY: Identity(subject="op", username="omar", roles=frozenset({"operator"})),
+        }
+    )
+    resolver = SimpleNamespace(resolve=AsyncMock(side_effect=resolve))
+    subscription = MQTTSubscription()
+    async_message_list = None
+    try:
+        with (
+            patch("uns_graphql.subscriptions.mqtt.Client", return_value=AsyncContextManagerMock(mock_client)),
+            patch("uns_graphql.auth.scope.scope_for", AsyncMock(return_value=filt_scope)),
+            patch("uns_graphql.subscriptions.mqtt._context_resolver", return_value=resolver),
+        ):
+            async_message_list = subscription.get_mqtt_messages(info, [MQTTTopicInput(topic="#")])
+            received = [message async for message in async_message_list]
+    finally:
+        if async_message_list is not None:
+            await async_message_list.aclose()
+
+    topics = [message.topic for message in received]
+    assert topics == [filt_topic]
+    assert raw_topic not in topics
 
 
 class AsyncContextManagerMock:

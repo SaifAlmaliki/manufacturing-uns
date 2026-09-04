@@ -24,12 +24,14 @@ live Postgres is `09_uns_model/test/test_alert_rules.py`'s job.
 """
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from uns_model.tables import AlertRule, AlertRuleRole
 
 from uns_graphql.auth.context import CONTEXT_KEY
+from uns_graphql.auth.scope import AccessScope
 from uns_graphql.auth.token import Identity
 from uns_graphql.uns_graphql_app import UNSGraphql
 
@@ -186,7 +188,10 @@ async def test_get_alert_rule_summary():
     repository.last_changed_at.return_value = datetime(2026, 8, 31, 6, 30, tzinfo=UTC)
 
     with patch(REPOSITORY, return_value=repository):
-        result = await UNSGraphql.schema.execute("""{ getAlertRuleSummary { rules enabledRules lastChangedAt } }""")
+        result = await UNSGraphql.schema.execute(
+            """{ getAlertRuleSummary { rules enabledRules lastChangedAt } }""",
+            context_value=ADMIN,
+        )
 
     assert result.errors is None
     assert result.data["getAlertRuleSummary"]["rules"] == 4
@@ -201,7 +206,52 @@ async def test_get_alert_rule_summary_on_an_empty_console():
     repository.last_changed_at.return_value = None
 
     with patch(REPOSITORY, return_value=repository):
-        result = await UNSGraphql.schema.execute("""{ getAlertRuleSummary { rules enabledRules lastChangedAt } }""")
+        result = await UNSGraphql.schema.execute(
+            """{ getAlertRuleSummary { rules enabledRules lastChangedAt } }""",
+            context_value=ADMIN,
+        )
 
     assert result.errors is None
     assert result.data["getAlertRuleSummary"] == {"rules": 0, "enabledRules": 0, "lastChangedAt": None}
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_get_alert_rule_summary_counts_only_visible_rules():
+    """Plant-wide counts must not leak to an operator; hide, do not 403."""
+    filt = "AcmeWater/Site1/Filtration"
+    raw = "AcmeWater/Site1/RawWater"
+    filt_scope = AccessScope(False, frozenset({filt}))
+    operator = {
+        CONTEXT_KEY: Identity(subject="op", username="omar", roles=frozenset({"operator"})),
+    }
+    repository = AsyncMock()
+    repository.counts.return_value = {"rules": 4, "enabled_rules": 3}
+    repository.last_changed_at.return_value = datetime(2026, 8, 31, 6, 30, tzinfo=UTC)
+    repository.list_rules.return_value = [
+        _rule("filt-rule", topic=f"{filt}/Train1/temp", enabled=True),
+        _rule("raw-rule", topic=f"{raw}/Train1/temp", enabled=True),
+        _rule("raw-disabled", topic=f"{raw}/Train1/flow", enabled=False),
+    ]
+
+    async def resolve(topic: str):
+        if topic.startswith(filt):
+            return SimpleNamespace(asset_path=filt)
+        if topic.startswith(raw):
+            return SimpleNamespace(asset_path=raw)
+        return None
+
+    resolver = SimpleNamespace(resolve=AsyncMock(side_effect=resolve))
+    with (
+        patch(REPOSITORY, return_value=repository),
+        patch("uns_graphql.auth.scope.scope_for", AsyncMock(return_value=filt_scope)),
+        patch("uns_graphql.queries.alert_rule._context_resolver", return_value=resolver),
+    ):
+        result = await UNSGraphql.schema.execute(
+            """{ getAlertRuleSummary { rules enabledRules lastChangedAt } }""",
+            context_value=operator,
+        )
+
+    assert result.errors is None
+    assert result.data["getAlertRuleSummary"]["rules"] == 1
+    assert result.data["getAlertRuleSummary"]["enabledRules"] == 1
+    repository.counts.assert_not_awaited()

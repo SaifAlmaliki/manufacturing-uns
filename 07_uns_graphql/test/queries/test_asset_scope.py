@@ -5,9 +5,12 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from uns_model.hierarchy import HierarchyArea, HierarchyLine, HierarchySite, HierarchyTree
+
 from uns_graphql.auth.context import CONTEXT_KEY
 from uns_graphql.auth.scope import AccessScope, filter_by_path
 from uns_graphql.auth.token import Identity
+from uns_graphql.mutations.hierarchy import Query as HierarchyQuery
 from uns_graphql.queries.asset import Query
 
 FILT = "AcmeWater/Site1/Filtration"
@@ -100,3 +103,36 @@ async def test_get_unmodelled_topics_admin_sees_orphans():
             info=_info(admin_scope, roles=frozenset({"admin"}))
         )
     assert result == orphans
+
+
+@pytest.mark.asyncio
+async def test_get_hierarchy_hides_rawwater_from_filtration_operator():
+    tree = HierarchyTree(
+        enterprise="AcmeWater",
+        sites=(
+            HierarchySite(
+                name="Site1",
+                areas=(
+                    HierarchyArea(
+                        name="RawWater",
+                        kind="production",
+                        lines=(HierarchyLine(name="Train1", cells=("V101",)),),
+                    ),
+                    HierarchyArea(
+                        name="Filtration",
+                        kind="production",
+                        lines=(HierarchyLine(name="Train1", cells=("F101",)),),
+                    ),
+                ),
+            ),
+        ),
+    )
+    filt_scope = AccessScope(False, frozenset({FILT}))
+    with (
+        patch("uns_graphql.mutations.hierarchy.load_plant_tree", return_value=tree),
+        patch("uns_graphql.auth.scope.scope_for", AsyncMock(return_value=filt_scope)),
+    ):
+        result = await HierarchyQuery().get_hierarchy(info=_info(filt_scope))
+    area_names = [area.name for site in result.sites for area in site.areas]
+    assert area_names == ["Filtration"]
+    assert RAW.split("/")[-1] not in area_names
