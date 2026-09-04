@@ -29,10 +29,11 @@ from strawberry.subscriptions import GRAPHQL_TRANSPORT_WS_PROTOCOL, GRAPHQL_WS_P
 
 from uns_graphql.auth.context import AuthenticatedGraphQLRouter, graphql_context
 from uns_graphql.graphql_config import PlatformConfig
+from uns_graphql.mutations.access_group import Mutation as AccessGroupMutation
 from uns_graphql.mutations.alert_rule import Mutation as AlertRuleMutation
 from uns_graphql.mutations.hierarchy import Mutation as HierarchyMutation, Query as HierarchyQuery
 from uns_graphql.mutations.oee import Mutation as OeeMutation
-from uns_graphql.queries import alert_rule, asset, graph, historian, oee
+from uns_graphql.queries import access_group, alert_rule, asset, graph, historian, oee
 from uns_graphql.subscriptions.kafka import KAFKASubscription
 from uns_graphql.subscriptions.mqtt import MQTTSubscription
 from uns_graphql.type.basetype import Int64
@@ -41,7 +42,9 @@ LOGGER = logging.getLogger(__name__)
 
 
 @strawberry.type(description="Query the UNS for current or historic Nodes/Events ")
-class Query(historian.Query, graph.Query, asset.Query, alert_rule.Query, oee.Query, HierarchyQuery):
+class Query(
+    historian.Query, graph.Query, asset.Query, alert_rule.Query, oee.Query, HierarchyQuery, access_group.Query
+):
     @classmethod
     async def on_startup(cls):
         """Start background tasks for query modules."""
@@ -66,7 +69,7 @@ class Query(historian.Query, graph.Query, asset.Query, alert_rule.Query, oee.Que
 
 
 @strawberry.type(description="Write configuration to the UNS platform")
-class Mutation(AlertRuleMutation, OeeMutation, HierarchyMutation):
+class Mutation(AlertRuleMutation, OeeMutation, HierarchyMutation, AccessGroupMutation):
     """
     The mutations this service exposes.
 

@@ -26,6 +26,7 @@ class AccessGroupRecord:
     root_asset_ids: tuple[int, ...]
     root_paths: tuple[str, ...]
     root_segments: tuple[str, ...]
+    root_levels: tuple[str, ...]
     subjects: tuple[str, ...]
 
 
@@ -224,7 +225,13 @@ class AccessGroupRepository:
         ids = [group.id for group in groups]
         root_rows = (
             await session.execute(
-                select(AccessGroupRoot.group_id, AccessGroupRoot.asset_id, Asset.path, Asset.segment)
+                select(
+                    AccessGroupRoot.group_id,
+                    AccessGroupRoot.asset_id,
+                    Asset.path,
+                    Asset.segment,
+                    Asset.level,
+                )
                 .join(Asset, Asset.id == AccessGroupRoot.asset_id)
                 .where(AccessGroupRoot.group_id.in_(ids))
                 .order_by(AccessGroupRoot.group_id, Asset.path)
@@ -237,9 +244,9 @@ class AccessGroupRepository:
                 .order_by(AccessGroupMember.group_id, AccessGroupMember.subject)
             )
         ).all()
-        roots_by_group: dict[int, list[tuple[int, str, str]]] = {group_id: [] for group_id in ids}
-        for group_id, asset_id, path, segment in root_rows:
-            roots_by_group[group_id].append((asset_id, path, segment))
+        roots_by_group: dict[int, list[tuple[int, str, str, str]]] = {group_id: [] for group_id in ids}
+        for group_id, asset_id, path, segment, level in root_rows:
+            roots_by_group[group_id].append((asset_id, path, segment, level))
         subjects_by_group: dict[int, list[str]] = {group_id: [] for group_id in ids}
         for group_id, subject in member_rows:
             subjects_by_group[group_id].append(subject)
@@ -250,6 +257,7 @@ class AccessGroupRepository:
                 root_asset_ids=tuple(row[0] for row in roots_by_group[group.id]),
                 root_paths=tuple(row[1] for row in roots_by_group[group.id]),
                 root_segments=tuple(row[2] for row in roots_by_group[group.id]),
+                root_levels=tuple(row[3] for row in roots_by_group[group.id]),
                 subjects=tuple(subjects_by_group[group.id]),
             )
             for group in groups

@@ -1,3 +1,19 @@
+"""One Asset root of an Access Group."""
+type AccessGroupRootType {
+  assetId: Int64!
+  path: String!
+  segment: String!
+  level: String!
+}
+
+"""A named Access Group: who may see which Asset subtree."""
+type AccessGroupType {
+  id: Int64!
+  name: String!
+  roots: [AccessGroupRootType!]!
+  subjects: [String!]!
+}
+
 """What kind of condition the rule watches, used for grouping and icons."""
 enum AlertCategory {
   TEMPERATURE
@@ -184,6 +200,111 @@ enum ConsoleRole {
 """Date with time (isoformat)"""
 scalar DateTime
 
+"""One stop, with the reason it is attributed to."""
+type DowntimeEvent {
+  id: ID!
+  assetPath: String!
+
+  """The shift this stop is counted against."""
+  shiftStart: DateTime!
+  startedAt: DateTime!
+  endedAt: DateTime!
+  durationS: Float!
+
+  """The published state that held for the whole stop, e.g. 'ABORTED'."""
+  stateValue: String!
+  reasonCode: String!
+  reasonDisplayName: String!
+  reasonCategory: String!
+  isPlanned: Boolean!
+  reasonSource: ReasonSource!
+  assignedBy: String
+  assignedAt: DateTime
+  note: String!
+}
+
+"""One reason code's share of the downtime in a window, largest first."""
+type DowntimeParetoBucket {
+  reasonCode: String!
+  displayName: String!
+  category: String!
+  isPlanned: Boolean!
+  eventCount: Int64!
+  totalSeconds: Float!
+
+  """
+  Fraction of the window's total downtime, 0..1. Zero when nothing was lost.
+  """
+  share: Float!
+}
+
+"""An area. kind defaults to production when omitted."""
+input HierarchyAreaInput {
+  name: String!
+  kind: String = null
+  lines: [HierarchyLineInput!]!
+}
+
+"""An area in the ISA-95 tree."""
+type HierarchyAreaType {
+  name: String!
+  kind: String!
+  lines: [HierarchyLineType!]!
+}
+
+"""A line and the cells (instance tags) under it."""
+input HierarchyLineInput {
+  name: String!
+  cells: [String!]!
+}
+
+"""A line and the cells (instance tags) under it."""
+type HierarchyLineType {
+  name: String!
+  cells: [String!]!
+}
+
+"""One-at-a-time prefix migrate of historian topics and graph nodes."""
+type HierarchyMigrateJob {
+  status: String!
+  oldPrefix: String
+  newPrefix: String
+  rewritten: Int64
+  error: String
+}
+
+"""
+The tree as stored, plus the migrate job that save started or left idle.
+"""
+type HierarchySaveResult {
+  tree: HierarchyTreeType!
+  job: HierarchyMigrateJob!
+}
+
+"""A site and the areas under it."""
+input HierarchySiteInput {
+  name: String!
+  areas: [HierarchyAreaInput!]!
+}
+
+"""A site and the areas under it."""
+type HierarchySiteType {
+  name: String!
+  areas: [HierarchyAreaType!]!
+}
+
+"""The ISA-95 tree to persist as plant.yaml."""
+input HierarchyTreeInput {
+  enterprise: String!
+  sites: [HierarchySiteInput!]!
+}
+
+"""The ISA-95 tree stored in plant.yaml."""
+type HierarchyTreeType {
+  enterprise: String!
+  sites: [HierarchySiteType!]!
+}
+
 type HistoricalUNSEvent {
   publisher: String!
   timestamp: DateTime!
@@ -268,6 +389,111 @@ type Mutation {
   Record that a rule was evaluated, and whether it fired. The timestamps are the database's, so a browser with a wrong clock cannot reorder the alarm history.
   """
   recordAlertRuleEvaluation(id: String!, triggered: Boolean!): AlertRuleType
+
+  """
+  Attribute a stop to a reason code by hand and queue that shift for recomputation. The stored reason becomes MANUAL, which the engine never overwrites. The correction is signed by the signed-in user, who cannot choose the name recorded. Errors when there is no such event or the reason code is not authored.
+  """
+  assignDowntimeReason(eventId: ID!, reasonCode: String!, note: String = null): DowntimeEvent!
+
+  """
+  Replace plant.yaml with the submitted tree, derive branding, reseed the Asset Model, and migrate renamed prefixes. Prefix migrate runs inline in this GraphQL request until historian and graph rewrites finish; the caller observes done or failed, not running. A running job file is for crash recovery and Retry, not for polling. Rejects a second rename while a migrate job is already running.
+  """
+  saveHierarchy(tree: HierarchyTreeInput!, renames: [PrefixRenameInput!]!): HierarchySaveResult!
+
+  """
+  Retry a failed or stalled prefix migrate. YAML is not rewritten: the tree is already stored. Adopts a failed job or a running job (including a stale running file left by a crash) and resumes from the first unfinished rename. No-op when there is no such job.
+  """
+  retryHierarchyMigrate: HierarchyMigrateJob!
+
+  """
+  Create or replace one Access Group and return it as stored. Create when id is omitted. Fails with a readable message when the name is blank, already used, the root list is empty, or an Asset id does not exist.
+  """
+  saveAccessGroup(name: String!, rootAssetIds: [Int64!]!, id: Int64 = null): AccessGroupType!
+
+  """Delete an Access Group. False when there was no such group."""
+  deleteAccessGroup(id: Int64!): Boolean!
+
+  """
+  Replace the members of an Access Group. An empty list is allowed: those people then see no plant data. Unknown id fails with a readable message.
+  """
+  setAccessGroupMembers(id: Int64!, subjects: [String!]!): AccessGroupType!
+}
+
+"""One product's counts and rated cycle time within a shift."""
+type OeeShiftProduct {
+  """The value the line published, e.g. a recipe id."""
+  productCode: String!
+  goodCount: Float!
+  rejectCount: Float!
+  totalCount: Float!
+
+  """
+  Seconds per unit at the designed rate. Null when none was authored, which sets MISSING_IDEAL_CYCLE_TIME on the shift.
+  """
+  idealCycleTimeS: Float
+}
+
+"""
+Availability x Performance x Quality for one closed shift on one Asset.
+"""
+type OeeShiftResult {
+  """The Line the number is reported for."""
+  assetPath: String!
+  shiftStart: DateTime!
+  shiftEnd: DateTime!
+  shiftLabel: String!
+
+  """Scheduled time less planned stops and exceptions."""
+  loadingTimeS: Float!
+
+  """Time in a producing state, measured over the interval union."""
+  runTimeS: Float!
+  plannedDownS: Float!
+  unplannedDownS: Float!
+  goodCount: Float!
+  rejectCount: Float!
+  totalCount: Float!
+
+  """Run Time / Loading Time. Null when undefined."""
+  availability: Float
+
+  """Clamped at 1.0. Null when undefined."""
+  performance: Float
+
+  """
+  Performance before the clamp. Above 1 means the ideal cycle time is wrong or a stop was missed, and this is the only evidence of that.
+  """
+  performanceRaw: Float
+
+  """Good Count / Total Count. Null when undefined."""
+  quality: Float
+  oee: Float
+  status: OeeStatus!
+
+  """Increments when late data restated the shift."""
+  revision: Int64!
+  computedAt: DateTime
+
+  """When the result reached MQTT. Null means it has not yet."""
+  publishedAt: DateTime
+
+  """Empty on a line that publishes no recipe."""
+  products: [OeeShiftProduct!]!
+}
+
+"""Whether the shift's numbers are usable, and why not when they are not."""
+enum OeeStatus {
+  OK
+  NO_LOADING_TIME
+  NO_PRODUCTION
+  MISSING_IDEAL_CYCLE_TIME
+  NO_INPUT_DATA
+}
+
+"""A topic-prefix rename the console recorded while editing."""
+input PrefixRenameInput {
+  oldPrefix: String!
+  newPrefix: String!
 }
 
 """Query the UNS for current or historic Nodes/Events """
@@ -334,6 +560,40 @@ type Query {
   Counts and the last edit time, so a console can decide whether to refetch the rules.
   """
   getAlertRuleSummary: AlertRuleSummary!
+
+  """
+  Shift results for one Asset whose shift began in [from, to), oldest first. Ratios are null when undefined - a shift with no Loading Time has no Availability.
+  """
+  oeeShiftResults(assetPath: String!, from: DateTime!, to: DateTime!): [OeeShiftResult!]!
+
+  """
+  Stops for one Asset that began in [from, to), oldest first, each with its reason code resolved. Bounded the same way downtimePareto is, so the two agree.
+  """
+  downtimeEvents(assetPath: String!, from: DateTime!, to: DateTime!): [DowntimeEvent!]!
+
+  """
+  Lost time per reason code over [from, to), largest first. Always sums to the window's total downtime: an unmapped state is UNCLASSIFIED, never null.
+  """
+  downtimePareto(assetPath: String!, from: DateTime!, to: DateTime!): [DowntimeParetoBucket!]!
+
+  """The ISA-95 tree from conf/simulator/plant.yaml."""
+  getHierarchy: HierarchyTreeType!
+
+  """
+  Every Access Group, name then id. Empty when the caller is not an admin.
+  """
+  getAccessGroups: [AccessGroupType!]!
+
+  """
+  One Access Group by id, or null when it is missing or the caller is not an admin.
+  """
+  getAccessGroup(id: Int64!): AccessGroupType
+}
+
+"""Whether a stop was classified by the engine or corrected by a person."""
+enum ReasonSource {
+  AUTO
+  MANUAL
 }
 
 type SPBDataSet {
