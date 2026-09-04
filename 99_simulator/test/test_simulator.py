@@ -58,20 +58,15 @@ async def test_run_until_positive_sleeps_minutes(monkeypatch):
 
 
 HIERARCHY = {
-    "enterprise": "CovestroAG",
+    "enterprise": "AcmeWater",
     "sites": [
         {
-            "name": "Dormagen",
+            "name": "Site1",
             "areas": [
                 {
-                    "name": "Production",
+                    "name": "RawWater",
                     "kind": "production",
-                    "lines": [{"name": "Line1", "nameplate_tph": 12.0, "cells": ["Cell1"]}],
-                },
-                {
-                    "name": "Utilities",
-                    "kind": "utilities",
-                    "lines": [{"name": "Powerhouse", "cells": ["Cell1"]}],
+                    "lines": [{"name": "Train1", "nameplate_tph": 12.0, "cells": ["T101", "FT101"]}],
                 },
             ],
         }
@@ -80,37 +75,34 @@ HIERARCHY = {
 
 RAW = {
     "hierarchy": HIERARCHY,
-    # `starting_s` of 1 s and no holds, so 30 ticks are enough to reach EXECUTE and stay there.
-    "plant": {"lines": {"Dormagen/Production/Line1": {"starting_s": 1.0, "hold_probability_per_hour": 0.0}}},
+    "plant": {},
     "wtp": {
         "devices": [
             {
-                "id": "MAIN",
-                "equipment": "MainIncomer",
-                "target": {"kind": "utilities"},
-                "tier": "energy",
-                "serves": ["Dormagen/Production/Line1"],
+                "id": "FT101",
+                "equipment": "WTP_Flowmeter",
+                "target": {"area": "RawWater", "cell": "FT101"},
                 "signals": {
-                    "ActivePower": {
+                    "PV": {
                         "shape": "derived",
-                        "unit": "kW",
-                        "precision": 1,
-                        "expr": "80 + ctx.served_production * 320",
+                        "expr": "ctx.wtp.ft101_m3h",
+                        "unit": "m³/h",
+                        "precision": 2,
+                        "tier": "process",
                     },
-                    "EnergyTotal": {
-                        "shape": "counter",
-                        "unit": "kWh",
+                    "Totalizer": {
+                        "shape": "derived",
+                        "expr": "ctx.wtp.ft101_total_m3",
+                        "unit": "m³",
+                        "precision": 2,
                         "tier": "meter",
-                        "precision": 4,
-                        "rate": "ActivePower / 3600.0",
                     },
                 },
             }
         ]
     },
     "profiles": {
-        "full": {"families": ["wtp"]},
-        "small": {"tier_scale": 6.0, "families": ["wtp"]},
+        "wtp": {"tier_scale": 1.0, "sites": ["Site1"], "families": ["wtp"]},
     },
     "simulation": {"seed": 1234, "interval": 5.0, "duration": 0},
 }
@@ -139,7 +131,7 @@ def _sim():
     sim.equipment_fallback = None
     sim.devices = []
     sim.tasks = []
-    sim.profile = load_profile(RAW, "full")
+    sim.profile = load_profile(RAW, "wtp")
     sim.clock = PlantClock(sim.profile.context, tick_s=1.0)
     sim.signal_devices = sim.create_signal_devices()
     sim.raw_config = RAW
@@ -151,49 +143,45 @@ def test_create_signal_devices_builds_one_device_per_spec():
     sim = _sim()
     assert len(sim.signal_devices) == 1
     device = sim.signal_devices[0]
-    assert device.spec.equipment == "MainIncomer"
-    assert device.tiers == {"energy", "meter"}
+    assert device.spec.equipment == "WTP_Flowmeter"
+    assert device.tiers == {"process", "meter"}
 
 
-def test_a_utility_device_has_no_line_of_its_own_but_serves_one():
-    """MAIN sits in the Utilities area, which spec 6.1 gives no `LineState`."""
+def test_a_device_sees_the_wtp_through_its_view():
     sim = _sim()
     view = sim.signal_devices[0].view
-    assert view.site == "Dormagen"
-    assert view.line is None
-    assert view.served_line_count == 1
+    assert view.site == "Site1"
+    assert view.wtp is sim.profile.context.sites["Site1"].wtp
 
 
 def test_tick_evaluates_every_device():
     sim = _sim()
+    sim.clock.advance()
     sim.tick(1.0)
     values = sim.signal_devices[0].values
-    assert values["ActivePower"] >= 80.0
-    assert values["EnergyTotal"] > 0.0
+    assert values["PV"] >= 0.0
+    assert values["Totalizer"] >= 0.0
 
 
-def test_utility_power_follows_the_production_it_serves():
-    """The whole point of the plant context: an idle line means an idle chiller."""
+def test_flow_totalizer_follows_the_plant_clock():
+    """Signals read the WTP; advancing the clock is what makes the totalizer move."""
     sim = _sim()
     sim.tick(1.0)
-    idle_power = sim.signal_devices[0].values["ActivePower"]
+    before = sim.signal_devices[0].values["Totalizer"]
     for _ in range(30):
         sim.clock.advance()
         sim.tick(1.0)
-    running_power = sim.signal_devices[0].values["ActivePower"]
-    # Keyed `<Area>/<Line>` within the site, so `Line1` in two areas cannot collide.
-    assert sim.profile.context.sites["Dormagen"].lines["Production/Line1"].state == "EXECUTE"
-    # 80 kW idle against 80 + ~0.9 * 320 running: comfortably more than double.
-    assert running_power > idle_power * 2
+    after = sim.signal_devices[0].values["Totalizer"]
+    assert after > before
 
 
-def test_energy_accumulates_monotonically_across_ticks():
+def test_flow_totalizer_accumulates_monotonically_across_ticks():
     sim = _sim()
     readings = []
     for _ in range(20):
         sim.clock.advance()
         sim.tick(1.0)
-        readings.append(sim.signal_devices[0].values["EnergyTotal"])
+        readings.append(sim.signal_devices[0].values["Totalizer"])
     assert all(b >= a for a, b in zip(readings, readings[1:], strict=False))
     assert readings[-1] > readings[0]
 
@@ -201,18 +189,18 @@ def test_energy_accumulates_monotonically_across_ticks():
 def test_status_reports_the_loaded_profile():
     sim = _sim()
     status = sim.status()
-    assert status["profile"] == "full"
+    assert status["profile"] == "wtp"
     assert status["seed"] == 1234
     assert status["device_count"] == 1
     assert status["signal_count"] == 2
     assert status["run_state"] == "stopped"
     assert status["uptime_s"] == 0.0
-    # `full` leaves `tier_scale` at its 1.0 default, so the pre-scaled tiers are the defaults.
+    # `wtp` leaves `tier_scale` at its 1.0 default, so the pre-scaled tiers are the defaults.
     assert status["tiers"]["meter"] == TIER_DEFAULTS["meter"]
     assert status["families"] == {
         "wtp": True,
     }
-    assert status["per_tier"] == {"energy": 1, "meter": 1}
+    assert status["per_tier"] == {"process": 1, "meter": 1}
     assert status["published_total"] == 0
     assert status["failed_total"] == 0
     assert all(rate == 0.0 for rate in status["msg_per_sec"].values())
@@ -224,7 +212,7 @@ async def test_run_simulation_schedules_the_clock_and_one_task_per_device_tier(m
     monkeypatch.setattr(sim, "create_plc", lambda: [])
     monkeypatch.setattr(sim, "create_scada", lambda: [])
     monkeypatch.setattr(sim, "create_hmi", lambda: [])
-    sim.profile.tiers["energy"] = 0.01
+    sim.profile.tiers["process"] = 0.01
     sim.profile.tiers["meter"] = 0.01
 
     task = asyncio.create_task(sim.run_simulation(0))
@@ -239,8 +227,8 @@ async def test_run_simulation_schedules_the_clock_and_one_task_per_device_tier(m
     # ParameterType/ParameterName.
     published = sim.signal_devices[0].client.published
     topics = {"/".join(topic.split("/")[-2:]) for topic, _ in published}
-    assert "ProcessValue/ActivePower" in topics
-    assert "ProcessValue/EnergyTotal" in topics
+    assert "ProcessValue/PV" in topics
+    assert "ProcessValue/Totalizer" in topics
 
 
 @pytest.mark.asyncio
@@ -250,7 +238,7 @@ async def test_a_zero_interval_tier_is_not_scheduled_as_a_busy_loop(monkeypatch)
     monkeypatch.setattr(sim, "create_plc", lambda: [])
     monkeypatch.setattr(sim, "create_scada", lambda: [])
     monkeypatch.setattr(sim, "create_hmi", lambda: [])
-    sim.profile.tiers["energy"] = 0.0
+    sim.profile.tiers["process"] = 0.0
     sim.profile.tiers["meter"] = 0.0
     task = asyncio.create_task(sim.run_simulation(0))
     await asyncio.sleep(0.05)
@@ -398,8 +386,8 @@ async def test_a_failing_transition_listener_does_not_silence_the_others():
     sim.on_plant_transition(lambda site, line, state: (_ for _ in ()).throw(RuntimeError("boom")))
     sim.on_plant_transition(lambda site, line, state: seen.append(state))
 
-    sim._notify_transition("Dormagen", "Production/Line1", "Execute")
-    assert seen == ["Execute"]
+    sim._notify_transition("Site1", "Train1", "DutyP102")
+    assert seen == ["DutyP102"]
 
 
 @pytest.fixture
@@ -414,9 +402,9 @@ async def test_switching_profile_rebuilds_the_devices_and_the_clock(_use_raw_con
     original_devices = sim.signal_devices
     original_clock = sim.clock
 
-    await sim.apply_profile("small")
+    await sim.apply_profile("wtp")
 
-    assert sim.profile.name == "small"
+    assert sim.profile.name == "wtp"
     assert sim.signal_devices is not original_devices
     assert sim.clock is not original_clock
     assert sim.overrides_active is False
@@ -428,7 +416,7 @@ async def test_switching_profile_keeps_a_running_plant_running(_use_raw_config):
     sim.clock.tick_s = 0.01
     await sim.start()
     try:
-        await sim.apply_profile("small")
+        await sim.apply_profile("wtp")
         assert sim.run_state == "running"
         assert sim._publish_tasks != []
     finally:
@@ -446,7 +434,7 @@ async def test_an_unknown_profile_is_refused_and_changes_nothing(_use_raw_config
         assert excinfo.value.field == "profile"
         assert "huge" in excinfo.value.message
         assert sim.run_state == "running"
-        assert sim.profile.name == "full"
+        assert sim.profile.name == "wtp"
     finally:
         await sim.stop()
 
@@ -455,7 +443,7 @@ async def test_an_unknown_profile_is_refused_and_changes_nothing(_use_raw_config
 async def test_a_new_seed_changes_the_plant_but_not_the_shape(_use_raw_config):
     sim = _sim()
     before = len(sim.signal_devices)
-    await sim.apply_profile("full", seed=1234)
+    await sim.apply_profile("wtp", seed=1234)
 
     assert sim.profile.seed == 1234
     assert len(sim.signal_devices) == before
@@ -469,10 +457,10 @@ async def test_a_rebuilt_clock_still_reports_transitions(_use_raw_config):
     seen: list[str] = []
     sim.on_plant_transition(lambda site, line, state: seen.append(state))
 
-    await sim.apply_profile("small")
-    sim._notify_transition("Dormagen", "Production/Line1", "Execute")
+    await sim.apply_profile("wtp")
+    sim._notify_transition("Site1", "Train1", "DutyP102")
 
-    assert seen == ["Execute"]
+    assert seen == ["DutyP102"]
 
 
 @pytest.mark.asyncio
@@ -623,16 +611,12 @@ async def test_a_running_plant_reports_throughput_and_uptime():
         await sim.stop()
 
 
-def test_the_plant_snapshot_is_keyed_by_site_then_line():
+def test_plant_snapshot_is_the_wtp_body():
     sim = _sim()
-    sites = sim.plant_snapshot()["sites"]
-
-    site = next(iter(sites.values()))
-    assert "ambient_temp_c" in site
-    assert "shift" in site
-    assert "tariff" in site
-    line = next(iter(site["lines"].values()))
-    assert {"state", "production_rate", "throughput_tph", "heat_load", "air_demand", "time_in_state_s"} <= set(line)
+    snap = sim.plant_snapshot()
+    assert snap["enterprise"] == "AcmeWater"
+    assert "T101" in snap["tanks"]
+    assert "sites" not in snap
 
 
 def test_every_device_reports_the_twelve_fields_the_table_shows():
@@ -689,8 +673,8 @@ def test_the_config_snapshot_lists_the_profiles_that_could_be_switched_to():
     sim = _sim()
     body = sim.config_snapshot()
 
-    assert body["profile"] == "full"
-    assert "small" in body["available_profiles"]
+    assert body["profile"] == "wtp"
+    assert body["available_profiles"] == ["wtp"]
     assert body["hierarchy"]
     assert {"enterprise", "site", "area", "line", "cell", "kind"} <= set(body["hierarchy"][0])
     device = body["devices"][0]

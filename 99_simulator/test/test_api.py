@@ -16,7 +16,7 @@ from uns_simulator.simulator import ReconfigurationError
 
 STATUS = {
     "run_state": "stopped",
-    "profile": "small",
+    "profile": "wtp",
     "seed": 20260831,
     "device_count": 2,
     "signal_count": 5,
@@ -57,7 +57,17 @@ class FakeSimulator:
         return {"profile": "wtp", "available_profiles": ["wtp"], "devices": []}
 
     def plant_snapshot(self):
-        return {"sites": {"Dormagen": {"shift": "A", "lines": {}}}}
+        return {
+            "enterprise": "AcmeWater",
+            "site": "Site1",
+            "mode": "Running",
+            "filter_mode": "InService",
+            "duty_raw_pump": "P101",
+            "lead_dist_pump": "P201",
+            "tanks": {"T101": {"level_pct": 51.2, "volume_m3": 128.0, "capacity_m3": 250.0}},
+            "flows_m3h": {"inlet": 80.0, "FT101": 78.4, "FT201": 69.8},
+            "pressures_barg": {"PT101": 2.1, "PT201": 3.8},
+        }
 
     def device_snapshots(self):
         return [{"id": "main-meter", "equipment": "MainMeter"}]
@@ -93,6 +103,8 @@ class FakeSimulator:
         await self._serialised("resume")
 
     async def apply_profile(self, name, seed=None):
+        if self.reject is None and name != "wtp":
+            raise ReconfigurationError("profile", f"unknown profile {name!r} (known: wtp)")
         await self._serialised("apply_profile", name, seed)
 
     async def apply_tiers(self, intervals):
@@ -130,6 +142,14 @@ def test_status_is_returned_verbatim():
 @pytest.mark.parametrize("path", ["/simulator/config", "/simulator/plant", "/simulator/diagnostics"])
 def test_the_remaining_reads_answer(path):
     assert _client().get(path).status_code == 200
+
+
+def test_plant_is_the_flat_wtp_body():
+    body = _client().get("/simulator/plant").json()
+
+    assert body["enterprise"] == "AcmeWater"
+    assert "T101" in body["tanks"]
+    assert "sites" not in body
 
 
 def test_devices_are_wrapped_in_an_envelope():
@@ -212,23 +232,31 @@ def test_an_unknown_run_action_is_rejected_before_anything_happens():
 
 def test_a_profile_switch_passes_the_optional_seed_through():
     sim = FakeSimulator()
-    response = _client(sim).put("/simulator/profile", json={"profile": "small", "seed": 42})
+    response = _client(sim).put("/simulator/profile", json={"profile": "wtp", "seed": 42})
 
     assert response.status_code == 200
-    assert sim.calls == [("apply_profile", "small", 42)]
+    assert sim.calls == [("apply_profile", "wtp", 42)]
 
 
 def test_a_profile_switch_says_that_the_counters_were_reset():
     """Spec 5.2. Without it a console keeps subtracting from a total that just went to
     zero and renders negative throughput."""
-    body = _client().put("/simulator/profile", json={"profile": "small"}).json()
+    body = _client().put("/simulator/profile", json={"profile": "wtp"}).json()
 
     assert body["counters_reset"] is True
 
 
+def test_unknown_profile_is_422_profile():
+    sim = FakeSimulator()
+    response = _client(sim).put("/simulator/profile", json={"profile": "small"})
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["field"] == "profile"
+
+
 def test_a_refused_profile_switch_is_a_422_naming_the_field():
     sim = FakeSimulator()
-    sim.reject = ReconfigurationError("profile", "unknown profile 'huge' (known: full, small)")
+    sim.reject = ReconfigurationError("profile", "unknown profile 'huge' (known: wtp)")
 
     response = _client(sim).put("/simulator/profile", json={"profile": "huge"})
 
@@ -240,7 +268,7 @@ def test_a_refused_profile_switch_is_a_422_naming_the_field():
 def test_an_unexpected_body_key_is_refused():
     """extra="forbid": a misspelled key that is silently dropped is a control that
     appears to work and does nothing."""
-    response = _client().put("/simulator/profile", json={"profile": "small", "sedd": 42})
+    response = _client().put("/simulator/profile", json={"profile": "wtp", "sedd": 42})
 
     assert response.status_code == 422
 
@@ -325,8 +353,8 @@ async def test_concurrent_writes_are_serialised():
 
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(sim)), base_url="http://sim") as client:
         responses = await asyncio.gather(
-            client.put("/simulator/profile", json={"profile": "small"}),
-            client.put("/simulator/profile", json={"profile": "full"}),
+            client.put("/simulator/profile", json={"profile": "wtp"}),
+            client.put("/simulator/profile", json={"profile": "wtp", "seed": 1}),
         )
 
     assert [r.status_code for r in responses] == [200, 200]
