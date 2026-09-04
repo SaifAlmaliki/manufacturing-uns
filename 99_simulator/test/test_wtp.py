@@ -21,6 +21,15 @@ def _wtp() -> WTPProcess:
     return wtp
 
 
+def _latch_fault(device) -> None:
+    """Pin a latched fault without a multi-hour soak at fault_p=1/3600."""
+    device.fault = True
+    device.running = False
+    device.fault_age_s = 0.0
+    device.reset_fault = False
+    device.reset_age_s = 0.0
+
+
 def test_tanks_start_half_full():
     wtp = WTPProcess(random.Random(0), fault_p=0.0)
     assert wtp.t101.level_pct == pytest.approx(50.0)
@@ -223,3 +232,94 @@ def test_flow_totalizers_integrate_rate_times_dt():
     assert wtp.ft201_total_m3 == pytest.approx(expected_201)
     assert wtp.ft101_total_m3 > 0.0
     assert wtp.ft201_total_m3 > 0.0
+
+
+def test_p201_fault_failsovers_to_p202_and_clears_lead_commands():
+    wtp = WTPProcess(random.Random(0), fault_p=0.0)
+    wtp.tick(1.0)
+    _latch_fault(wtp.p201)
+    wtp.tick(1.0)
+    assert wtp.p201.running is False
+    assert wtp.p201.run_cmd is False
+    assert wtp.p201.speed_sp == 0.0
+    assert wtp.p202.running is True
+    assert wtp.p202.run_cmd is True
+    assert wtp.p202.speed_sp == pytest.approx(87.5)
+    assert wtp.lead_dist_pump == "P202"
+    for _ in range(40):
+        wtp.tick(1.0)
+    assert wtp.ft201_m3h > 10.0
+    assert wtp.lead_dist_pump == "P202"
+
+
+def test_p202_fault_while_acting_lead_restores_healthy_p201():
+    wtp = WTPProcess(random.Random(0), fault_p=0.0)
+    wtp.tick(1.0)
+    _latch_fault(wtp.p201)
+    wtp.tick(1.0)
+    assert wtp.lead_dist_pump == "P202"
+    wtp.p201.fault = False
+    _latch_fault(wtp.p202)
+    wtp.tick(1.0)
+    assert wtp.p201.fault is False
+    assert wtp.p201.running is True
+    assert wtp.p201.run_cmd is True
+    assert wtp.p201.speed_sp == pytest.approx(87.5)
+    assert wtp.p202.running is False
+    assert wtp.p202.run_cmd is False
+    assert wtp.p202.speed_sp == 0.0
+    assert wtp.lead_dist_pump == "P201"
+
+
+def test_p201_recovers_as_lead_after_fault_hold_expires():
+    wtp = WTPProcess(random.Random(0), fault_p=0.0)
+    wtp.tick(1.0)
+    _latch_fault(wtp.p201)
+    wtp.tick(1.0)
+    assert wtp.p202.running is True
+    assert wtp.lead_dist_pump == "P202"
+    # Latch is already live when this tick starts, so age is 1 afterwards.
+    # FAULT_CLEAR_S is 120 and the timer uses `>`, so age 120 is still latched.
+    for _ in range(119):
+        wtp.tick(1.0)
+    assert wtp.p201.fault is True
+    wtp.tick(1.0)
+    assert wtp.p201.fault is False
+    assert wtp.p201.running is True
+    assert wtp.p201.run_cmd is True
+    assert wtp.p201.speed_sp == pytest.approx(87.5)
+    assert wtp.p202.running is False
+    assert wtp.p202.run_cmd is False
+    assert wtp.p202.speed_sp == 0.0
+    assert wtp.lead_dist_pump == "P201"
+
+
+def test_both_stopped_healthy_vfds_restart_preferring_p201():
+    wtp = WTPProcess(random.Random(0), fault_p=0.0)
+    wtp.tick(1.0)
+    wtp.p201.running = False
+    wtp.p201.run_cmd = False
+    wtp.p201.speed_sp = 0.0
+    wtp.p202.running = False
+    wtp.p202.run_cmd = False
+    wtp.p202.speed_sp = 0.0
+    wtp.tick(1.0)
+    assert wtp.p201.running is True
+    assert wtp.p201.run_cmd is True
+    assert wtp.p201.speed_sp == pytest.approx(87.5)
+    assert wtp.p202.running is False
+    assert wtp.lead_dist_pump == "P201"
+
+
+def test_cleared_raw_duty_drops_cmd_start_once_it_is_no_longer_wanted():
+    wtp = WTPProcess(random.Random(0), fault_p=1.0)
+    wtp.tick(1.0)
+    assert wtp.p101.fault is True
+    assert wtp.p101.cmd_start is True
+    wtp.fault_p = 0.0
+    for _ in range(121):
+        wtp.tick(1.0)
+    assert wtp.p101.fault is False
+    assert wtp.duty_raw_pump == "P102"
+    assert wtp.p101.running is False
+    assert wtp.p101.cmd_start is False

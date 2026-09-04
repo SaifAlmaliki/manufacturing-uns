@@ -636,8 +636,6 @@ class UnifiedNamespaceSimulator:
         self.devices = [
             *self.signal_devices,
             *self.create_plc(),
-            *self.create_scada(),
-            *self.create_hmi(),
         ]
         self.announce_device_count()
 

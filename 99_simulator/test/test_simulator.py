@@ -210,13 +210,13 @@ def test_status_reports_the_loaded_profile():
 async def test_run_simulation_schedules_the_clock_and_one_task_per_device_tier(monkeypatch):
     sim = _sim()
     monkeypatch.setattr(sim, "create_plc", lambda: [])
-    monkeypatch.setattr(sim, "create_scada", lambda: [])
-    monkeypatch.setattr(sim, "create_hmi", lambda: [])
     sim.profile.tiers["process"] = 0.01
     sim.profile.tiers["meter"] = 0.01
 
     task = asyncio.create_task(sim.run_simulation(0))
     await asyncio.sleep(0.1)
+    assert not any(isinstance(d, devices_module.SCADA) for d in sim.devices)
+    assert not any(isinstance(d, devices_module.HMI) for d in sim.devices)
     await sim._stop_simulation()
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -236,8 +236,6 @@ async def test_a_zero_interval_tier_is_not_scheduled_as_a_busy_loop(monkeypatch)
     """The 'event' tier has interval 0 and publishes on change from the tick, not a loop."""
     sim = _sim()
     monkeypatch.setattr(sim, "create_plc", lambda: [])
-    monkeypatch.setattr(sim, "create_scada", lambda: [])
-    monkeypatch.setattr(sim, "create_hmi", lambda: [])
     sim.profile.tiers["process"] = 0.0
     sim.profile.tiers["meter"] = 0.0
     task = asyncio.create_task(sim.run_simulation(0))
@@ -247,6 +245,16 @@ async def test_a_zero_interval_tier_is_not_scheduled_as_a_busy_loop(monkeypatch)
     with pytest.raises(asyncio.CancelledError):
         await task
     assert sim.signal_devices[0].client.published == []
+
+
+def test_create_scada_and_create_hmi_still_build_publishers():
+    sim = _sim()
+    scadas = sim.create_scada()
+    hmis = sim.create_hmi()
+    assert scadas
+    assert all(isinstance(d, devices_module.SCADA) for d in scadas)
+    assert hmis
+    assert all(isinstance(d, devices_module.HMI) for d in hmis)
 
 
 def test_scada_is_told_the_real_device_count():

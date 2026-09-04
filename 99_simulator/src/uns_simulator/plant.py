@@ -314,6 +314,45 @@ class WTPProcess:
                 return candidate
         return None
 
+    def _start_vfd(self, pump: VFDState) -> None:
+        pump.run_cmd = True
+        pump.speed_sp = self.DIST_SPEED_SP
+        was_running = pump.running
+        pump.running = not pump.fault
+        if pump.running and not was_running:
+            pump.start_count += 1
+
+    def _stop_vfd(self, pump: VFDState) -> None:
+        pump.run_cmd = False
+        pump.speed_sp = 0.0
+        pump.running = False
+
+    def _apply_distribution_lead(self) -> None:
+        """P201 is preferred lead; P202 runs only while the lead is faulted.
+
+        lead_dist_pump names the VFD the sequencer currently wants, not merely
+        whichever machine reports fault=false. Do not start a faulted pump.
+        """
+        if not self.p201.fault:
+            wanted = "P201"
+        elif not self.p202.fault:
+            wanted = "P202"
+        else:
+            wanted = None
+
+        if wanted == "P201":
+            self.lead_dist_pump = "P201"
+            self._start_vfd(self.p201)
+            self._stop_vfd(self.p202)
+        elif wanted == "P202":
+            self.lead_dist_pump = "P202"
+            self._start_vfd(self.p202)
+            self._stop_vfd(self.p201)
+        else:
+            self.lead_dist_pump = "P201"
+            self._stop_vfd(self.p201)
+            self._stop_vfd(self.p202)
+
     # --- sequencer -----------------------------------------------------
 
     def _initialize_running(self) -> None:
@@ -328,14 +367,7 @@ class WTPProcess:
         self._start_motor(self.p101)
         self._stop_motor(self.p102)
         self._stop_motor(self.p103)
-        self.p201.run_cmd = True
-        self.p201.speed_sp = self.DIST_SPEED_SP
-        self.p201.running = not self.p201.fault
-        if self.p201.running and self.p201.start_count == 0:
-            self.p201.start_count += 1
-        self.p202.run_cmd = False
-        self.p202.speed_sp = 0.0
-        self.p202.running = False
+        self._apply_distribution_lead()
         self.f101.in_service = True
         self.f101.backwash = False
         self.f101.filter_run = True
@@ -399,22 +431,16 @@ class WTPProcess:
                     if nxt is not None:
                         self.duty_raw_pump = nxt
                         self._start_motor(self._raw_pump_by_name(nxt))
-                elif tag == "P201":
-                    self.p202.run_cmd = True
-                    self.p202.speed_sp = self.DIST_SPEED_SP
-                    self.p202.running = not self.p202.fault
-                    if self.p202.running and self.p202.start_count == 0:
-                        self.p202.start_count += 1
-                    self.lead_dist_pump = "P202"
         return events
 
     def _advance_fault_timers(self, dt: float) -> None:
         """Age latched faults; after FAULT_CLEAR_S clear and pulse ResetFault for RESET_FAULT_S.
 
-        Restarting a cleared pump is left to the sequencer's _start_motor calls (which
-        honour `not fault`); a pump that faulted on duty has already been failed over,
-        so its cmd_start is stale intent and it should not auto-resume here.
+        A raw pump that faulted on duty has already been failed over, so drop its
+        cmd_start once the fault clears — the sequencer wants the new duty, not a
+        stale resume. Distribution VFDs are restored by `_apply_distribution_lead`.
         """
+        duty = self._raw_pump_by_name(self.duty_raw_pump)
         for device in (self.p101, self.p102, self.p103, self.dp101, self.p201, self.p202):
             if device.fault:
                 device.fault_age_s += dt
@@ -423,6 +449,9 @@ class WTPProcess:
                     device.fault_age_s = 0.0
                     device.reset_fault = True
                     device.reset_age_s = 0.0
+                    if device in (self.p101, self.p102, self.p103) and device is not duty:
+                        device.cmd_start = False
+                        device.cmd_stop = True
             elif device.reset_fault:
                 device.reset_age_s += dt
                 if device.reset_age_s >= self.RESET_FAULT_S:
@@ -441,6 +470,7 @@ class WTPProcess:
             self.backwash_s += dt
             if self.backwash_s >= self.BACKWASH_DURATION_S:
                 events.extend(self._exit_backwash())
+            self._apply_distribution_lead()
             return events
 
         # Running mode
@@ -449,15 +479,10 @@ class WTPProcess:
         if self.running_s >= self.BACKWASH_TRIGGER_S:
             # Backwash wins: duty_s is paused (not applied) until Running resumes.
             events.extend(self._enter_backwash())
+            self._apply_distribution_lead()
             return events
         if self.duty_s >= self.DUTY_CYCLE_S:
             events.extend(self._rotate_duty())
-
-        # Lead pump reflects current health
-        if self.p201.fault and not self.p202.fault:
-            self.lead_dist_pump = "P202"
-        else:
-            self.lead_dist_pump = "P201"
 
         # Inlet interlock: if V101 somehow closed, stop raw pumps but keep cmd intent
         if not self.v101.open_fb:
@@ -465,6 +490,7 @@ class WTPProcess:
                 pump.running = False
 
         events.extend(self._apply_faults())
+        self._apply_distribution_lead()
         return events
 
     # --- tick ----------------------------------------------------------
