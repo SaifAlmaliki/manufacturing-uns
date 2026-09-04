@@ -1,12 +1,12 @@
-"""Who may write what.
+"""Who may write what, and who may see which plant path.
 
-One table, because a policy spread across six resolvers cannot be reviewed and cannot be
+One table, because a policy spread across resolvers cannot be reviewed and cannot be
 tested cell by cell. Keys are the camelCase field names the schema publishes, so that a
 reader of this file and a reader of the GraphQL schema are looking at the same names.
 
-Queries are absent on purpose. Any authenticated role may read: the read surface is plant
-data, and an operator who cannot read the plant cannot work. Gating reads by Asset would need
-an Asset-to-role mapping that `model.asset` does not have.
+Queries are not open. Plant reads go through `scope_for`: an admin sees the whole tree,
+everyone else sees only Assets under their Access Group roots. `require_path` is the
+write-side check for a single Asset path.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import Any
 
 from uns_graphql.auth.context import identity_in
+from uns_graphql.auth.scope import scope_for
 from uns_graphql.auth.token import CONSOLE_ROLES, Identity
 
 ANY_AUTHENTICATED_ROLE: frozenset[str] = CONSOLE_ROLES
@@ -36,6 +37,10 @@ MUTATION_ROLES: dict[str, frozenset[str]] = {
     # Whole-tree replace of plant.yaml plus prefix migrate. Admin only.
     "saveHierarchy": frozenset({"admin"}),
     "retryHierarchyMigrate": frozenset({"admin"}),
+    # Access Groups: who may see which Asset subtree. Admin only.
+    "saveAccessGroup": frozenset({"admin"}),
+    "deleteAccessGroup": frozenset({"admin"}),
+    "setAccessGroupMembers": frozenset({"admin"}),
 }
 
 
@@ -63,5 +68,22 @@ def require(info: Any, mutation: str) -> Identity:
             f"{mutation} needs one of these roles: {needed}. "
             f"You hold: {', '.join(sorted(identity.roles)) or 'no recognised role'}."
         )
+
+    return identity
+
+
+async def require_path(info: Any, path: str) -> Identity:
+    """The caller's identity, if `path` sits inside their Access Groups.
+
+    Unsigned-in and out-of-scope share one sentence: the client should not learn
+    whether the path exists when they cannot see it.
+    """
+    identity = identity_in(getattr(info, "context", None))
+    if identity is None:
+        raise NotPermittedError(f"This Asset or topic is outside your Access Groups: {path}.")
+
+    scope = await scope_for(identity)
+    if not scope.covers_path(path):
+        raise NotPermittedError(f"This Asset or topic is outside your Access Groups: {path}.")
 
     return identity

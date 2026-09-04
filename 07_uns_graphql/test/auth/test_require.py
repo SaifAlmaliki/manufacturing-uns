@@ -4,6 +4,8 @@ Generated from the table rather than hand-written, so that adding a mutation wit
 row is a failure and not an omission.
 """
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
 
 from uns_graphql.auth.require import (
@@ -11,7 +13,9 @@ from uns_graphql.auth.require import (
     MUTATION_ROLES,
     NotPermittedError,
     require,
+    require_path,
 )
+from uns_graphql.auth.scope import AccessScope
 from uns_graphql.auth.token import CONSOLE_ROLES, Identity
 
 # Section 7 of docs/superpowers/specs/2026-09-02-console-authentication-design.md, copied.
@@ -26,6 +30,9 @@ EXPECTED = {
     "assignDowntimeReason": {"operator", "engineer", "admin"},
     "saveHierarchy": {"admin"},
     "retryHierarchyMigrate": {"admin"},
+    "saveAccessGroup": {"admin"},
+    "deleteAccessGroup": {"admin"},
+    "setAccessGroupMembers": {"admin"},
 }
 
 
@@ -103,3 +110,43 @@ def test_an_unknown_mutation_name_is_a_programming_error_not_an_open_door():
 
 def test_any_authenticated_role_is_the_five():
     assert ANY_AUTHENTICATED_ROLE == CONSOLE_ROLES
+
+
+@pytest.mark.asyncio
+async def test_require_path_refuses_unsigned_in():
+    with pytest.raises(NotPermittedError) as raised:
+        await require_path(FakeInfo(None), "AcmeWater/Site1/Filtration")
+
+    assert str(raised.value) == (
+        "This Asset or topic is outside your Access Groups: AcmeWater/Site1/Filtration."
+    )
+
+
+@pytest.mark.asyncio
+async def test_require_path_allows_admin_for_any_path():
+    identity = await require_path(_info("admin"), "AcmeWater/Site1/RawWater")
+
+    assert "admin" in identity.roles
+
+
+@pytest.mark.asyncio
+async def test_require_path_refuses_a_path_outside_the_scope():
+    filt = AccessScope(unrestricted=False, root_paths=frozenset({"AcmeWater/Site1/Filtration"}))
+    with (
+        patch("uns_graphql.auth.require.scope_for", AsyncMock(return_value=filt)),
+        pytest.raises(NotPermittedError) as raised,
+    ):
+        await require_path(_info("operator"), "AcmeWater/Site1/RawWater")
+
+    assert str(raised.value) == (
+        "This Asset or topic is outside your Access Groups: AcmeWater/Site1/RawWater."
+    )
+
+
+@pytest.mark.asyncio
+async def test_require_path_allows_a_path_inside_the_scope():
+    filt = AccessScope(unrestricted=False, root_paths=frozenset({"AcmeWater/Site1/Filtration"}))
+    with patch("uns_graphql.auth.require.scope_for", AsyncMock(return_value=filt)):
+        identity = await require_path(_info("operator"), "AcmeWater/Site1/Filtration/Train1")
+
+    assert "operator" in identity.roles
