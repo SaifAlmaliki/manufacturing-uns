@@ -15,4 +15,40 @@
             </http-listener>
         </listeners>
     </admin-api>
+    <!--
+        HiveMQ Edge simulators (not a real PLC).
+        protocolId "simulation" invents random values and publishes them to MQTT.
+        Replace this block with opcua / eip / s7 / modbus adapters for plant ingest.
+    -->
+    <protocol-adapters>
+        <protocol-adapter>
+            <adapterId>sim</adapterId>
+            <protocolId>simulation</protocolId>
+            <config>
+                <minValue>0</minValue>
+                <maxValue>1000</maxValue>
+                <minDelay>0</minDelay>
+                <maxDelay>0</maxDelay>
+                <simulationToMqtt>
+                    <pollingIntervalMillis>1000</pollingIntervalMillis>
+                    <maxPollingErrorsBeforeRemoval>-1</maxPollingErrorsBeforeRemoval>
+                </simulationToMqtt>
+            </config>
+            <northboundMappings>
+                <northboundMapping>
+                    <topic>Acme/Demo/Area/Line/Cell/SIM/ProcessValue/Random</topic>
+                    <tagName>t1</tagName>
+                    <maxQos>1</maxQos>
+                    <includeTimestamp>true</includeTimestamp>
+                </northboundMapping>
+            </northboundMappings>
+            <tags>
+                <tag>
+                    <name>t1</name>
+                    <description>Edge simulation tag</description>
+                    <definition/>
+                </tag>
+            </tags>
+        </protocol-adapter>
+    </protocol-adapters>
 </hivemq>
