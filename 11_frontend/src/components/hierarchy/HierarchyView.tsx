@@ -55,7 +55,7 @@ const LEVEL_LABEL: Record<NodeLevel, string> = {
 };
 
 const SIMULATOR_BANNER =
-  'The simulator still publishes the shipped WTP paths. Renamed nodes will not match live simulator topics until the publisher is retargeted. The old graph branch reappears while anything still publishes the old prefix; the graph rename is durable only after that retarget.';
+  'The simulator still publishes the shipped WTP paths. Renamed nodes will not match live simulator topics until the publisher is retargeted. The old graph branch reappears while anything still publishes the old prefix; the graph rename is durable only after the publisher is retargeted.';
 
 function cloneTree(tree: GraphqlHierarchyTree): GraphqlHierarchyTree {
   return {
