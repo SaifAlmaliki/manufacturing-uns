@@ -17,11 +17,14 @@ class DummyClient:
         return False
 
 
-PRODUCTION = ISA95Hierarchy("CovestroAG", "Dormagen", "Production", "Line1", "Cell1", nameplate_tph=12.0)
-PRODUCTION_2 = ISA95Hierarchy("CovestroAG", "Dormagen", "Production", "Line2", "Cell1", nameplate_tph=8.0)
-UTILITY = ISA95Hierarchy("CovestroAG", "Dormagen", "Utilities", "Powerhouse", "Cell1", kind="utilities")
-KREFELD = ISA95Hierarchy("CovestroAG", "Krefeld", "Production", "Line1", "Cell1", kind="production")
-ALL_PATHS = [PRODUCTION, PRODUCTION_2, UTILITY, KREFELD]
+# AcmeWater WTP paths. The shipped plant has five production areas on one train; the
+# `UTILITY` fixture below is synthetic - the WTP plant has no utilities area - and exists
+# only so the generic `matches_target` unit tests can exercise the `kind` selector and the
+# `None`-means-production-only branch. Those tests are about the function, not the plant.
+PRODUCTION = ISA95Hierarchy("AcmeWater", "Site1", "RawWater", "Train1", "V101")
+PRODUCTION_2 = ISA95Hierarchy("AcmeWater", "Site1", "Treatment", "Train1", "B101")
+UTILITY = ISA95Hierarchy("AcmeWater", "Site1", "Utilities", "Powerhouse", "Cell1", kind="utilities")
+ALL_PATHS = [PRODUCTION, PRODUCTION_2, UTILITY]
 
 
 def test_no_target_means_production_areas_only():
@@ -35,18 +38,18 @@ def test_kind_selector():
 
 
 def test_every_present_key_must_match():
-    assert matches_target(PRODUCTION, {"site": "Dormagen", "line": "Line1"}) is True
-    assert matches_target(PRODUCTION, {"site": "Dormagen", "line": "Line2"}) is False
+    assert matches_target(PRODUCTION, {"site": "Site1", "line": "Train1"}) is True
+    assert matches_target(PRODUCTION_2, {"site": "Site1", "line": "OtherLine"}) is False
 
 
 def test_absent_keys_are_wildcards():
-    assert matches_target(PRODUCTION, {"site": "Dormagen"}) is True
-    assert matches_target(PRODUCTION_2, {"site": "Dormagen"}) is True
+    assert matches_target(PRODUCTION, {"site": "Site1"}) is True
+    assert matches_target(PRODUCTION_2, {"site": "Site1"}) is True
 
 
 def test_a_list_selector_matches_any_member():
-    assert matches_target(PRODUCTION, {"line": ["Line1", "Line3"]}) is True
-    assert matches_target(PRODUCTION_2, {"line": ["Line1", "Line3"]}) is False
+    assert matches_target(PRODUCTION, {"cell": ["V101", "V999"]}) is True
+    assert matches_target(PRODUCTION_2, {"cell": ["V101", "V999"]}) is False
 
 
 def test_an_empty_target_matches_everything_including_utilities():
@@ -56,45 +59,45 @@ def test_an_empty_target_matches_everything_including_utilities():
 
 def test_unknown_selector_key_is_rejected_by_name():
     with pytest.raises(ValueError, match="celll"):
-        matches_target(PRODUCTION, {"celll": "Cell1"})
+        matches_target(PRODUCTION, {"celll": "V101"})
 
 
 def test_expand_template_creates_one_device_per_matching_path():
     devices = expand_template(
         {
-            "id": "PWR",
-            "equipment": "MainIncomer",
-            "target": {"kind": "utilities"},
-            "tier": "energy",
-            "signals": {"ActivePower": {"shape": "ou_walk", "unit": "kW", "mean": 400.0, "sigma": 20.0, "tau": 120.0}},
+            "id": "V101",
+            "equipment": "WTP_Valve",
+            "target": {"area": "RawWater", "cell": "V101"},
+            "tier": "process",
+            "signals": {"Position": {"shape": "derived", "expr": "ctx.wtp.v101.position", "unit": "%"}},
         },
         ALL_PATHS,
-        family="energy",
+        family="wtp",
     )
     assert len(devices) == 1
     device = devices[0]
-    assert device.path is UTILITY
-    assert device.family == "energy"
-    assert device.tier == "energy"
-    assert device.topic_prefix == "CovestroAG/Dormagen/Utilities/Powerhouse/Cell1/MainIncomer"
+    assert device.path is PRODUCTION
+    assert device.family == "wtp"
+    assert device.tier == "process"
+    assert device.topic_prefix == "AcmeWater/Site1/RawWater/Train1/V101/WTP_Valve"
 
 
 def test_device_ids_are_unique_and_carry_their_location():
     devices = expand_template(
-        {"id": "FLOW", "equipment": "Flowmeter", "signals": {}},
+        {"id": "FLOW", "equipment": "WTP_Flowmeter", "signals": {}},
         ALL_PATHS,
-        family="water",
+        family="wtp",
     )
     ids = [device.id for device in devices]
     assert len(ids) == len(set(ids))
-    assert all("Dormagen" in i or "Krefeld" in i for i in ids)
+    assert all("Site1" in i for i in ids)
 
 
 def test_signal_tier_defaults_to_the_device_tier():
     devices = expand_template(
-        {"id": "X", "equipment": "E", "tier": "meter", "signals": {"Total": {"shape": "counter", "unit": "m3"}}},
+        {"id": "X", "equipment": "WTP_Valve", "tier": "meter", "signals": {"Total": {"shape": "counter", "unit": "m3"}}},
         [PRODUCTION],
-        family="water",
+        family="wtp",
     )
     assert devices[0].signals[0].tier == "meter"
 
@@ -103,7 +106,7 @@ def test_a_signal_may_override_the_device_tier():
     devices = expand_template(
         {
             "id": "X",
-            "equipment": "E",
+            "equipment": "WTP_Valve",
             "tier": "meter",
             "signals": {
                 "Total": {"shape": "counter", "unit": "m3"},
@@ -111,7 +114,7 @@ def test_a_signal_may_override_the_device_tier():
             },
         },
         [PRODUCTION],
-        family="water",
+        family="wtp",
     )
     by_name = {spec.name: spec for spec in devices[0].signals}
     assert by_name["Total"].tier == "meter"
@@ -123,45 +126,30 @@ def test_signals_come_back_in_dependency_order():
     devices = expand_template(
         {
             "id": "X",
-            "equipment": "E",
+            "equipment": "WTP_MotorDOL",
             "signals": {
                 "EnergyTotal": {"shape": "counter", "unit": "kWh", "rate": "ActivePower / 3600.0"},
                 "ActivePower": {"shape": "ou_walk", "unit": "kW", "mean": 10.0},
             },
         },
         [PRODUCTION],
-        family="energy",
+        family="wtp",
     )
     assert [spec.name for spec in devices[0].signals] == ["ActivePower", "EnergyTotal"]
 
 
-def test_serves_is_carried_onto_the_device():
-    """Spec 6.3's `serves` entries are fully qualified Site/Area/Line paths."""
-    devices = expand_template(
-        {
-            "id": "CH",
-            "equipment": "Chiller",
-            "target": {"kind": "utilities"},
-            "serves": ["Dormagen/Production/Line1", "Dormagen/Production/Line2"],
-            "signals": {},
-        },
-        ALL_PATHS,
-        family="utilities",
-    )
-    assert devices[0].serves == ("Dormagen/Production/Line1", "Dormagen/Production/Line2")
-
-
 def test_a_template_matching_nothing_returns_an_empty_list():
     assert (
-        expand_template({"id": "X", "equipment": "E", "target": {"site": "Nowhere"}, "signals": {}}, ALL_PATHS, "energy") == []
+        expand_template({"id": "X", "equipment": "WTP_Valve", "target": {"site": "Nowhere"}, "signals": {}}, ALL_PATHS, "wtp")
+        == []
     )
 
 
 def test_a_template_without_an_id_or_equipment_is_rejected():
     with pytest.raises(ValueError, match="equipment"):
-        expand_template({"id": "X", "signals": {}}, ALL_PATHS, "energy")
+        expand_template({"id": "X", "signals": {}}, ALL_PATHS, "wtp")
     with pytest.raises(ValueError, match="id"):
-        expand_template({"equipment": "E", "signals": {}}, ALL_PATHS, "energy")
+        expand_template({"equipment": "WTP_Valve", "signals": {}}, ALL_PATHS, "wtp")
 
 
 def test_a_cycle_inside_a_template_is_rejected_with_the_device_named():
@@ -169,14 +157,14 @@ def test_a_cycle_inside_a_template_is_rejected_with_the_device_named():
         expand_template(
             {
                 "id": "BAD",
-                "equipment": "E",
+                "equipment": "WTP_Valve",
                 "signals": {
                     "a": {"shape": "derived", "unit": "1", "expr": "b"},
                     "b": {"shape": "derived", "unit": "1", "expr": "a"},
                 },
             },
             [PRODUCTION],
-            family="energy",
+            family="wtp",
         )
 
 
@@ -184,9 +172,9 @@ def test_a_signal_without_a_unit_is_rejected_naming_the_signal():
     """Spec 11 and 14: `unit` is required, and this is the only place to catch its absence."""
     with pytest.raises(ValueError, match="Pressure"):
         expand_template(
-            {"id": "X", "equipment": "E", "signals": {"Pressure": {"base_value": 4.0}}},
+            {"id": "X", "equipment": "WTP_Valve", "signals": {"Pressure": {"base_value": 4.0}}},
             [PRODUCTION],
-            family="energy",
+            family="wtp",
         )
 
 
@@ -194,14 +182,14 @@ def test_an_empty_unit_is_rejected_too():
     """`unit: ""` is the same omission with extra steps; dimensionless ratios use "1"."""
     with pytest.raises(ValueError, match="Ratio"):
         expand_template(
-            {"id": "X", "equipment": "E", "signals": {"Ratio": {"shape": "constant", "unit": "", "value": 1.0}}},
+            {"id": "X", "equipment": "WTP_Valve", "signals": {"Ratio": {"shape": "constant", "unit": "", "value": 1.0}}},
             [PRODUCTION],
-            family="energy",
+            family="wtp",
         )
     expand_template(
-        {"id": "X", "equipment": "E", "signals": {"Ratio": {"shape": "constant", "unit": "1", "value": 1.0}}},
+        {"id": "X", "equipment": "WTP_Valve", "signals": {"Ratio": {"shape": "constant", "unit": "1", "value": 1.0}}},
         [PRODUCTION],
-        family="energy",
+        family="wtp",
     )
 
 

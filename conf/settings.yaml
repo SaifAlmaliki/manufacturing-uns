@@ -198,9 +198,9 @@ simulator:
   # settings.yaml with `plc:` keeps working - but declaring it here as well as in
   # production.yaml would put two publishers on every G1 and FillingMachine topic.
   simulation:
-    # Spec 9: `small` is the shipped default because the graphdb mapper MERGEs once per topic
-    # level on every message. Switch to `full` for the complete ~55-device plant.
-    profile: "small"
+    # Spec 9: `wtp` is the shipped default because the graphdb mapper MERGEs once per topic
+    # level on every message. The five-area WTP train is the whole plant.
+    profile: "wtp"
     # A fixed seed makes two runs of one profile comparable. Change it to get a different
     # plant with the same shape.
     seed: 20260831

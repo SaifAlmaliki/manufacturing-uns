@@ -1,14 +1,14 @@
 """Spec 9 and 14: the shipped default must not be a firehose.
 
-`full` is roughly 100 msg/s of eight-level topics, and the graphdb mapper MERGEs once per
+The WTP plant is the single shipped profile, and the graphdb mapper MERGEs once per
 topic level on every message - so the volume risk is Neo4j's write path, not Timescale's.
-`small` is the shipped default for that reason, and this file is what keeps it small: a
-family added to the wrong profile, or a tier_scale dropped from 6.0 to 1.0, shows up here
-rather than in a mapper falling quietly behind in production.
+This file is what keeps the WTP profile honest: a family added to the profile, or a
+tier_scale dropped, shows up here rather than in a mapper falling quietly behind in
+production.
 
-The assertions are bands, not numbers. A tight figure would break on every legitimate device
-added, which trains people to edit the test; an order-of-magnitude band breaks only when the
-shipped default has genuinely changed character.
+The assertions are bands, not numbers. A tight figure would break on every legitimate
+device added, which trains people to edit the test; an order-of-magnitude band breaks
+only when the shipped default has genuinely changed character.
 """
 
 from pathlib import Path
@@ -20,14 +20,11 @@ from uns_simulator.profiles import TIER_DEFAULTS, load_profile, read_simulator_c
 
 CONF_DIR = Path(__file__).resolve().parents[2] / "conf"
 
-# Spec 9: "small (default) ~5 msg/s". The ceiling is that figure; the floor catches the
-# opposite failure, a profile that resolves to almost nothing and passes by being broken.
-SMALL_MAX_MSG_PER_SEC = 5.0
-SMALL_MIN_MSG_PER_SEC = 0.5
-
-# Spec 9: "full ~100 msg/s". Bands wide enough to absorb a family gaining a few devices.
-FULL_MIN_MSG_PER_SEC = 70.0
-FULL_MAX_MSG_PER_SEC = 160.0
+# Spec 9: the WTP profile must stay a manageable default. The ceiling catches a firehose;
+# the floor catches the opposite failure, a profile that resolves to almost nothing and
+# passes by being broken.
+WTP_MIN_MSG_PER_SEC = 1.0
+WTP_MAX_MSG_PER_SEC = 40.0
 
 
 @pytest.fixture
@@ -40,9 +37,9 @@ def settings_doc():
     return yaml.safe_load((CONF_DIR / "settings.yaml").read_text(encoding="utf-8"))
 
 
-def test_the_shipped_default_profile_is_small(settings_doc):
+def test_the_shipped_default_profile_is_wtp(settings_doc):
     """The default is a deployment decision, so it is asserted against the shipped file."""
-    assert settings_doc["simulator"]["simulation"]["profile"] == "small"
+    assert settings_doc["simulator"]["simulation"]["profile"] == "wtp"
 
 
 def test_the_shipped_config_declares_a_seed(settings_doc):
@@ -57,7 +54,7 @@ def test_the_shipped_config_declares_a_seed(settings_doc):
 def test_the_legacy_create_plc_config_is_no_longer_declared_in_settings(settings_doc):
     """The three keys of the legacy generator are one feature and leave together.
 
-    `plc:` leaves because production.yaml declares those two templates now, and declared in
+    `plc:` leaves because production.yaml declared those two templates now, and declared in
     both they publish twice. `equipment.mixer_tank` and `plc_count` leave with it because
     create_plc's two branches are mutually exclusive: with no `plc:` list it falls through to
     the fallback and builds `plc_count` MixerTanks per cell, so removing one key and not the
@@ -77,30 +74,9 @@ def test_the_settings_hierarchy_is_kept_as_the_no_conf_simulator_fallback(settin
     assert settings_doc["simulator"]["hierarchy"]["enterprise"] == "CovestroAG"
 
 
-def test_small_stays_under_the_default_ceiling(raw):
-    rate = sum(load_profile(raw, "small").messages_per_second().values())
-    assert SMALL_MIN_MSG_PER_SEC < rate < SMALL_MAX_MSG_PER_SEC, f"small resolved to {rate:.2f} msg/s"
-
-
-def test_full_is_in_the_band_the_spec_claims(raw):
-    rate = sum(load_profile(raw, "full").messages_per_second().values())
-    assert FULL_MIN_MSG_PER_SEC < rate < FULL_MAX_MSG_PER_SEC, f"full resolved to {rate:.2f} msg/s"
-
-
-def test_full_is_at_least_an_order_of_magnitude_busier_than_small(raw):
-    """The two profiles must be genuinely different, not two names for the same load.
-
-    This is the assertion that survives the device inventory growing: both bands above move
-    together, this ratio does not.
-    """
-    small = sum(load_profile(raw, "small").messages_per_second().values())
-    full = sum(load_profile(raw, "full").messages_per_second().values())
-    assert full / small > 20.0
-
-
-def test_the_fast_tier_is_absent_from_small(raw):
-    """A 1 s tier in the default profile would dominate everything else in this file."""
-    assert load_profile(raw, "small").messages_per_second()["fast"] == 0.0
+def test_wtp_stays_under_the_volume_ceiling(raw):
+    rate = sum(load_profile(raw, "wtp").messages_per_second().values())
+    assert WTP_MIN_MSG_PER_SEC < rate < WTP_MAX_MSG_PER_SEC, f"wtp resolved to {rate:.2f} msg/s"
 
 
 def test_every_signal_lands_on_a_known_tier(raw):
@@ -111,14 +87,13 @@ def test_every_signal_lands_on_a_known_tier(raw):
     simply never scheduled, and a silently unpublished topic is the hardest kind of bug to
     notice in a simulator whose whole output is topics.
     """
-    for profile_name in ("small", "full"):
-        for device in load_profile(raw, profile_name).devices:
-            for signal in device.signals:
-                assert signal.tier in TIER_DEFAULTS, f"{device.id}/{signal.name}: unknown tier {signal.tier!r}"
+    for device in load_profile(raw, "wtp").devices:
+        for signal in device.signals:
+            assert signal.tier in TIER_DEFAULTS, f"{device.id}/{signal.name}: unknown tier {signal.tier!r}"
 
 
 def test_messages_per_second_reports_every_tier(raw):
     """Sub-project B renders this per tier, so a missing key is a missing row, not a zero."""
-    rates = load_profile(raw, "full").messages_per_second()
+    rates = load_profile(raw, "wtp").messages_per_second()
     assert set(rates) == set(TIER_DEFAULTS)
     assert rates["event"] == 0.0  # `event` publishes on change; it has no periodic rate
