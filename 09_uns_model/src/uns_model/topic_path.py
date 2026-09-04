@@ -42,6 +42,25 @@ def split_topic(topic: str) -> tuple[str, ...]:
     return tuple(topic.split(SEPARATOR))
 
 
+def join_segments(*segments: str) -> str:
+    """Join non-empty segments with the topic separator."""
+    return SEPARATOR.join(segment for segment in segments if segment)
+
+
+def validate_segment(name: str) -> str:
+    """
+    Return `name` if it is a legal single topic segment.
+
+    Rejects empty names and names containing the separator, since either
+    would corrupt segment boundaries when joined into a topic.
+    """
+    if not name:
+        raise ValueError(f"segment must be non-empty: {name!r}")
+    if SEPARATOR in name:
+        raise ValueError(f"segment must not contain {SEPARATOR!r}: {name!r}")
+    return name
+
+
 def ancestor_paths(topic: str) -> list[str]:
     """Every prefix of the topic including the topic itself, deepest first."""
     segments = split_topic(topic)
