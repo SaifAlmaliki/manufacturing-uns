@@ -30,7 +30,7 @@ from uns_model.hierarchy_io import (
 # ---------------------------------------------------------------------------
 
 MINIMAL_PLANT_YAML = """\
-enterprise: AcmeWater
+enterprise: OldCo
 sites:
   - name: Site1
     areas:
@@ -51,17 +51,17 @@ MINIMAL_SETTINGS_YAML = """\
 default:
   platform:
     instance_name: "Instance01"
-    organization_name: "AcmeWater"
-    display_name: "Acme Water UNS"
+    organization_name: "OldCo"
+    display_name: "OldCo UNS"
 graphdb:
   mqtt:
-    topics: ["test/uns/#", "CovestroAG/#", "spBv1.0/uns_group/#"]
+    topics: ["test/uns/#", "OtherCorp/#", "spBv1.0/uns_group/#"]
 historian:
   mqtt:
-    topics: ["test/uns/#", "CovestroAG/#", "spBv1.0/#"]
+    topics: ["test/uns/#", "OtherCorp/#", "spBv1.0/#"]
 kafka_mapper:
   mqtt:
-    topics: ["test/uns/#", "CovestroAG/#"]
+    topics: ["test/uns/#", "OtherCorp/#"]
 dynaconf_merge: true
 """
 
@@ -107,7 +107,7 @@ def test_load_plant_tree_reads_the_shipped_list_shape(tmp_path: Path):
 
     tree = load_plant_tree(tmp_path)
 
-    assert tree.enterprise == "AcmeWater"
+    assert tree.enterprise == "OldCo"
     assert tree.sites == (
         HierarchySite(
             name="Site1",
@@ -258,7 +258,7 @@ def test_apply_enterprise_to_settings_dedupes_replaced_filters():
     snippet = """\
 graphdb:
   mqtt:
-    topics: ["test/uns/#", "CovestroAG/#", "OtherCorp/#", "spBv1.0/#"]
+    topics: ["test/uns/#", "OldCo/#", "OtherCorp/#", "spBv1.0/#"]
 """
     text = apply_enterprise_to_settings(snippet, "Contoso")
 
