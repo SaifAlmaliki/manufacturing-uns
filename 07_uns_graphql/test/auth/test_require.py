@@ -24,6 +24,8 @@ EXPECTED = {
     "setAlertRuleEnabled": {"operator", "engineer", "admin"},
     "recordAlertRuleEvaluation": set(CONSOLE_ROLES),
     "assignDowntimeReason": {"operator", "engineer", "admin"},
+    "saveHierarchy": {"admin"},
+    "retryHierarchyMigrate": {"admin"},
 }
 
 
@@ -37,9 +39,10 @@ def _info(*roles: str) -> FakeInfo:
 
 
 def test_the_table_covers_exactly_the_six_mutations():
-    # Six, per finding 3 and the assertion already in test/mutations/test_oee.py. A
-    # seventh mutation must not be able to ship ungated.
+    # Every published mutation must have a row. The name is historical (there were
+    # six); the assertion counts all keys so a new mutation cannot ship ungated.
     assert set(MUTATION_ROLES) == set(EXPECTED)
+    assert len(MUTATION_ROLES) == len(EXPECTED)
 
 
 @pytest.mark.parametrize(

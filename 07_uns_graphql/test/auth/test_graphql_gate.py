@@ -27,7 +27,8 @@ OPERATIONS = [
     ("oeeShiftResults",
      '{ oeeShiftResults(assetPath: "a", from: "2026-01-01T00:00:00Z", '
      'to: "2026-01-01T08:00:00Z") { shiftStart } }'),
-    # All six mutations, per finding 3.
+    ("getHierarchy", "{ getHierarchy { enterprise } }"),
+    # All mutations, per finding 3. A gate that covers all but the newest field is not a gate.
     ("saveAlertRule", 'mutation { saveAlertRule(rule: {id: "r", name: "n", severity: '
                       'CRITICAL, category: TEMPERATURE, topic: "a/b", metricField: "value", '
                       'condition: GREATER_THAN, thresholdValue: 1.0}) { id } }'),
@@ -38,6 +39,10 @@ OPERATIONS = [
      'mutation { recordAlertRuleEvaluation(id: "r", triggered: true) { id } }'),
     ("assignDowntimeReason",
      'mutation { assignDowntimeReason(eventId: "1", reasonCode: "MECH_FAULT") { id } }'),
+    ("saveHierarchy",
+     'mutation { saveHierarchy(tree: {enterprise: "E", sites: []}, renames: []) '
+     '{ tree { enterprise } job { status } } }'),
+    ("retryHierarchyMigrate", "mutation { retryHierarchyMigrate { status } }"),
 ]
 
 

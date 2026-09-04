@@ -310,10 +310,9 @@ async def test_record_alert_rule_evaluation_is_null_for_an_unknown_rule():
 
 def test_only_alert_rules_are_writable():
     """
-    Process data is written by publishing to the broker and the Asset Model is authored
-    in `conf/settings.yaml`. The one plant-data exception is assigning a downtime reason
-    by hand (spec section 10). If any other mutation for process data or the Asset Model
-    ever appears here, it was not a decision anybody made on purpose.
+    Process data is written by publishing to the broker. Hierarchy writes YAML then
+    reseeds; downtime assignment is the one plant-data correction. A ninth mutation
+    must be a decision, not an accident.
     """
     mutation = UNSGraphql.schema.get_type_by_name("Mutation")
     names = {field.name for field in mutation.fields}
@@ -325,6 +324,8 @@ def test_only_alert_rules_are_writable():
         "set_alert_rule_enabled",
         "record_alert_rule_evaluation",
         "assign_downtime_reason",
+        "save_hierarchy",
+        "retry_hierarchy_migrate",
     }
 
 
