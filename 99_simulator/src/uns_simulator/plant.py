@@ -702,6 +702,12 @@ class FilterState:
 class WTPProcess:
     """Water-treatment hydraulics: tanks, lagged flows, and pressures."""
 
+    DUTY_CYCLE_S = 900.0
+    BACKWASH_TRIGGER_S = 1800.0
+    BACKWASH_DURATION_S = 45.0
+    FAULT_CLEAR_S = 120.0
+    DIST_SPEED_SP = 87.5
+
     def __init__(self, rng: random.Random, *, fault_p: float = 1.0 / 3600.0) -> None:
         self.rng = rng
         self.fault_p = fault_p
@@ -725,6 +731,217 @@ class WTPProcess:
         self.pt101 = RESIDUAL_BARG
         self.pt201 = RESIDUAL_BARG
         self.ait101 = 7.2
+        self.mode = "Running"
+        self.duty_raw_pump = "P101"
+        self.lead_dist_pump = "P201"
+        self.running_s = 0.0
+        self.duty_s = 0.0
+        self.backwash_s = 0.0
+        self._initialized = False
+
+    # --- motor helpers -------------------------------------------------
+
+    def _start_motor(self, motor: MotorDOLState) -> None:
+        motor.cmd_start = True
+        motor.cmd_stop = False
+        was_running = motor.running
+        motor.running = not motor.fault
+        if motor.running and not was_running:
+            motor.start_count += 1
+
+    def _stop_motor(self, motor: MotorDOLState) -> None:
+        motor.cmd_start = False
+        motor.cmd_stop = True
+        motor.running = False
+
+    def _raw_pump_by_name(self, name: str) -> MotorDOLState:
+        return {"P101": self.p101, "P102": self.p102, "P103": self.p103}[name]
+
+    def _next_raw_pump(self, current: str) -> str | None:
+        order = ("P101", "P102", "P103")
+        start = order.index(current)
+        for offset in range(1, len(order)):
+            candidate = order[(start + offset) % len(order)]
+            if not self._raw_pump_by_name(candidate).fault:
+                return candidate
+        return None
+
+    # --- sequencer -----------------------------------------------------
+
+    def _initialize_running(self) -> None:
+        self.mode = "Running"
+        self.duty_raw_pump = "P101"
+        self.lead_dist_pump = "P201"
+        self.running_s = 0.0
+        self.duty_s = 0.0
+        self.backwash_s = 0.0
+        for valve in (self.v101, self.v201, self.v202, self.v301):
+            valve.set_open(True)
+        self._start_motor(self.p101)
+        self._stop_motor(self.p102)
+        self._stop_motor(self.p103)
+        self.p201.run_cmd = True
+        self.p201.speed_sp = self.DIST_SPEED_SP
+        self.p201.running = not self.p201.fault
+        if self.p201.running and self.p201.start_count == 0:
+            self.p201.start_count += 1
+        self.p202.run_cmd = False
+        self.p202.speed_sp = 0.0
+        self.p202.running = False
+        self.f101.in_service = True
+        self.f101.backwash = False
+        self.f101.filter_run = True
+
+    def _enter_backwash(self) -> list[str]:
+        self.mode = "Backwash"
+        self.backwash_s = 0.0
+        self.v201.set_open(False)
+        self.v202.set_open(False)
+        self.f101.backwash = True
+        self.f101.in_service = False
+        self.f101.filter_run = False
+        return ["Backwash"]
+
+    def _exit_backwash(self) -> list[str]:
+        self.mode = "Running"
+        self.running_s = 0.0
+        self.v201.set_open(True)
+        self.v202.set_open(True)
+        self.f101.backwash = False
+        self.f101.in_service = True
+        self.f101.filter_run = True
+        return ["Running"]
+
+    def _rotate_duty(self) -> list[str]:
+        nxt = self._next_raw_pump(self.duty_raw_pump)
+        if nxt is None:
+            return []
+        old = self.duty_raw_pump
+        self._stop_motor(self._raw_pump_by_name(old))
+        self.duty_raw_pump = nxt
+        self._start_motor(self._raw_pump_by_name(nxt))
+        self.duty_s = 0.0
+        return [f"Duty{nxt}"]
+
+    def _apply_faults(self) -> list[str]:
+        events: list[str] = []
+        if self.fault_p <= 0.0:
+            return events
+        checks = (
+            ("P101", self.p101),
+            ("P102", self.p102),
+            ("P103", self.p103),
+            ("P201", self.p201),
+            ("P202", self.p202),
+            ("DP101", self.dp101),
+        )
+        # Only motors that were already running at the start of the pass can fault
+        # this tick — a failover pump that just started must survive its first tick.
+        eligible = [(tag, dev) for tag, dev in checks if dev.running and not dev.fault]
+        for tag, device in eligible:
+            if self.rng.random() < self.fault_p:
+                device.fault = True
+                device.running = False
+                events.append(f"Fault{tag}")
+                if tag in ("P101", "P102", "P103") and tag == self.duty_raw_pump:
+                    nxt = self._next_raw_pump(tag)
+                    if nxt is not None:
+                        self.duty_raw_pump = nxt
+                        self._start_motor(self._raw_pump_by_name(nxt))
+                elif tag == "P201":
+                    self.p202.run_cmd = True
+                    self.p202.speed_sp = self.DIST_SPEED_SP
+                    self.p202.running = not self.p202.fault
+                    if self.p202.running and self.p202.start_count == 0:
+                        self.p202.start_count += 1
+                    self.lead_dist_pump = "P202"
+        return events
+
+    def advance_sequencer(self, dt: float) -> list[str]:
+        events: list[str] = []
+        if not self._initialized:
+            self._initialize_running()
+            self._initialized = True
+
+        if self.mode == "Backwash":
+            self.backwash_s += dt
+            if self.backwash_s >= self.BACKWASH_DURATION_S:
+                events.extend(self._exit_backwash())
+            return events
+
+        # Running mode
+        self.running_s += dt
+        self.duty_s += dt
+        if self.running_s >= self.BACKWASH_TRIGGER_S:
+            events.extend(self._enter_backwash())
+            return events
+        if self.duty_s >= self.DUTY_CYCLE_S:
+            events.extend(self._rotate_duty())
+
+        # Lead pump reflects current health
+        if self.p201.fault and not self.p202.fault:
+            self.lead_dist_pump = "P202"
+        else:
+            self.lead_dist_pump = "P201"
+
+        # Inlet interlock: if V101 somehow closed, stop raw pumps but keep cmd intent
+        if not self.v101.open_fb:
+            for pump in (self.p101, self.p102, self.p103):
+                pump.running = False
+
+        events.extend(self._apply_faults())
+        return events
+
+    # --- tick ----------------------------------------------------------
+
+    def tick(self, dt: float) -> list[str]:
+        events = self.advance_sequencer(dt)
+        self.advance_hydraulics(dt)
+        self.dp101.running = self.ft101_m3h > 1.0 and not self.dp101.fault
+        self.dp101.cmd_start = self.ft101_m3h > 1.0
+        self.dp101.cmd_stop = not self.dp101.cmd_start
+        self.advance_quality(dt)
+        return events
+
+    def advance_quality(self, dt: float) -> None:
+        mean = 7.2 if self.dp101.running else 7.6
+        self.ait101 = _mean_reverting(self.ait101, mean, 600.0, 0.08, dt, self.rng, 6.5, 8.5)
+
+    # --- snapshot ------------------------------------------------------
+
+    def snapshot(self) -> dict[str, Any]:
+        return {
+            "mode": self.mode,
+            "filter_mode": "Backwash" if self.f101.backwash else "InService",
+            "duty_raw_pump": self.duty_raw_pump,
+            "lead_dist_pump": self.lead_dist_pump,
+            "tanks": {
+                "T101": {
+                    "level_pct": round(self.t101.level_pct, 2),
+                    "volume_m3": round(self.t101.volume_m3, 2),
+                    "capacity_m3": round(self.t101.capacity_m3, 2),
+                },
+                "B101": {
+                    "level_pct": round(self.b101.level_pct, 2),
+                    "volume_m3": round(self.b101.volume_m3, 2),
+                    "capacity_m3": round(self.b101.capacity_m3, 2),
+                },
+                "T201": {
+                    "level_pct": round(self.t201.level_pct, 2),
+                    "volume_m3": round(self.t201.volume_m3, 2),
+                    "capacity_m3": round(self.t201.capacity_m3, 2),
+                },
+            },
+            "flows_m3h": {
+                "inlet": round(self.inlet_m3h, 2),
+                "FT101": round(self.ft101_m3h, 2),
+                "FT201": round(self.ft201_m3h, 2),
+            },
+            "pressures_barg": {
+                "PT101": round(self.pt101, 3),
+                "PT201": round(self.pt201, 3),
+            },
+        }
 
     def advance_hydraulics(self, dt: float) -> None:
         raw_on = any(p.running and not p.fault for p in (self.p101, self.p102, self.p103))
@@ -737,7 +954,12 @@ class WTPProcess:
         )
 
         ft101_target = RAW_PUMP_M3H if self.t101.level_pct > LL_PCT and filter_forward else 0.0
-        self.ft101_m3h = _approach(self.ft101_m3h, ft101_target, FLOW_TAU_S, dt)
+        if ft101_target == 0.0:
+            # Flow stops quickly when valves close or the filter isolates; only the
+            # ramp-up is lagged. This keeps the backwash snapshot near zero immediately.
+            self.ft101_m3h = 0.0
+        else:
+            self.ft101_m3h = _approach(self.ft101_m3h, ft101_target, FLOW_TAU_S, dt)
 
         b101_out = self.ft101_m3h if filter_forward else 0.0
         self.t101.add_m3((self.inlet_m3h - self.ft101_m3h) * dt / 3600.0)
@@ -769,6 +991,3 @@ class WTPProcess:
         for pump in (self.p201, self.p202):
             if pump.running:
                 pump.runtime_h += dt / 3600.0
-
-    def advance_quality(self, dt: float) -> None:
-        pass

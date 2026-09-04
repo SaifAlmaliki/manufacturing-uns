@@ -105,3 +105,85 @@ def test_valve_set_open_counts_a_cycle():
     assert wtp.v101.cycle_count == 2
     assert wtp.v101.position == 0.0
     assert wtp.v101.close_fb is True
+
+
+def test_tick_starts_in_running_with_one_duty_raw_pump():
+    wtp = WTPProcess(random.Random(0), fault_p=0.0)
+    wtp.tick(1.0)
+    assert wtp.mode == "Running"
+    running = [name for name in ("p101", "p102", "p103") if getattr(wtp, name).running]
+    assert running == ["p101"]
+    assert wtp.v101.open_fb is True
+    assert wtp.p201.running is True
+    assert wtp.p201.speed_sp == pytest.approx(87.5)
+    assert wtp.p202.running is False
+    assert wtp.p202.speed_sp == 0.0
+    for _ in range(20):
+        wtp.tick(1.0)
+    assert wtp.dp101.running is True
+
+
+def test_duty_rotates_p101_to_p102_after_900s():
+    wtp = WTPProcess(random.Random(0), fault_p=0.0)
+    events = []
+    for _ in range(901):
+        events.extend(wtp.tick(1.0))
+    assert wtp.p101.running is False
+    assert wtp.p102.running is True
+    assert "DutyP102" in events
+
+
+def test_backwash_closes_filter_valves_and_returns():
+    wtp = WTPProcess(random.Random(0), fault_p=0.0)
+    events = []
+    for _ in range(1801):
+        events.extend(wtp.tick(1.0))
+    assert "Backwash" in events
+    assert wtp.mode == "Backwash"
+    assert wtp.f101.backwash is True
+    assert wtp.v201.open_fb is False
+    assert wtp.ft101_m3h == pytest.approx(0.0, abs=2.0)
+    for _ in range(45):
+        events.extend(wtp.tick(1.0))
+    assert wtp.mode == "Running"
+    assert "Running" in events
+    assert wtp.v201.open_fb is True
+
+
+def test_fault_on_duty_pump_starts_the_next():
+    wtp = WTPProcess(random.Random(0), fault_p=1.0)
+    wtp.tick(1.0)
+    assert wtp.p101.fault is True
+    assert wtp.p101.running is False
+    assert wtp.p102.running is True
+
+
+def test_cmd_start_stays_true_while_sequencer_wants_the_pump_even_if_faulted():
+    wtp = WTPProcess(random.Random(0), fault_p=1.0)
+    wtp.tick(1.0)
+    assert wtp.p101.fault is True
+    assert wtp.p101.running is False
+    assert wtp.p101.cmd_start is True
+
+
+def test_snapshot_has_spec_keys():
+    wtp = WTPProcess(random.Random(0), fault_p=0.0)
+    wtp.tick(1.0)
+    snap = wtp.snapshot()
+    assert snap["mode"] == "Running"
+    assert snap["filter_mode"] == "InService"
+    assert snap["duty_raw_pump"] == "P101"
+    assert snap["lead_dist_pump"] == "P201"
+    assert set(snap["tanks"]) == {"T101", "B101", "T201"}
+    assert set(snap["flows_m3h"]) == {"inlet", "FT101", "FT201"}
+    assert set(snap["pressures_barg"]) == {"PT101", "PT201"}
+
+
+def test_ait101_stays_in_band():
+    wtp = WTPProcess(random.Random(1), fault_p=0.0)
+    values = []
+    for _ in range(500):
+        wtp.tick(1.0)
+        values.append(wtp.ait101)
+    assert min(values) >= 6.5
+    assert max(values) <= 8.5
