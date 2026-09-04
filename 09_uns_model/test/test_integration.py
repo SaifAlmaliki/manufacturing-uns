@@ -621,7 +621,8 @@ async def test_deleting_a_site_removes_its_branch_and_rebinds_its_topics(
 
     removed = await repository.delete_asset(f"{TEST_ROOT}/Plant1")
 
-    assert removed == 1
+    # Site plus every descendant (Area, Line, Cell, Machine).
+    assert removed == 5
     assert await repository.list_assets(under=f"{TEST_ROOT}/Plant1") == []
     # Bindings are derived (ADR-0003): with the Site gone, longest-prefix
     # re-resolves to the remaining Enterprise rather than leaving the topic

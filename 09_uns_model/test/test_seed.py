@@ -1,13 +1,23 @@
 """
 Unit tests for planning a seed. No database: planning is pure, which is the point
-of separating it from `apply_plan`.
+of separating it from `apply_plan`. Applying is tested at the repository seam.
 """
 
 from __future__ import annotations
 
-import pytest
+from types import SimpleNamespace
 
-from uns_model.seed import SIMULATOR_LEVELS, apply_plan, plan_from_simulator_config
+import pytest
+import yaml
+
+from uns_model.hierarchy import HierarchyArea, HierarchyLine, HierarchySite, HierarchyTree
+from uns_model.seed import (
+    SIMULATOR_LEVELS,
+    apply_plan,
+    plan_from_hierarchy_tree,
+    plan_from_simulator_config,
+)
+from uns_model.topic_path import SEPARATOR
 
 # The shape of conf/settings.yaml `simulator:`, trimmed to two cells.
 SIMULATOR_CONFIG = {
@@ -185,6 +195,50 @@ def test_a_missing_hierarchy_is_an_error_rather_than_an_empty_model():
         plan_from_simulator_config({"plc": []})
 
 
+def _two_cell_tree() -> HierarchyTree:
+    return HierarchyTree(
+        enterprise="E",
+        sites=(
+            HierarchySite(
+                "S",
+                (HierarchyArea("A", "production", (HierarchyLine("L", ("V101", "V102")),)),),
+            ),
+        ),
+    )
+
+
+def _one_cell_tree() -> HierarchyTree:
+    return HierarchyTree(
+        enterprise="E",
+        sites=(
+            HierarchySite(
+                "S",
+                (HierarchyArea("A", "production", (HierarchyLine("L", ("V101",)),)),),
+            ),
+        ),
+    )
+
+
+def _hierarchy_mapping(tree: HierarchyTree) -> dict:
+    """List-of-objects mapping `plan_from_simulator_config` already understands."""
+    return {
+        "enterprise": tree.enterprise,
+        "sites": [
+            {
+                "name": site.name,
+                "areas": [
+                    {
+                        "name": area.name,
+                        "lines": [{"name": line.name, "cells": list(line.cells)} for line in area.lines],
+                    }
+                    for area in site.areas
+                ],
+            }
+            for site in tree.sites
+        ],
+    }
+
+
 class RecordingRepository:
     """Records what a seed would write, at the repository seam."""
 
@@ -192,14 +246,33 @@ class RecordingRepository:
         self.branches: list[list[str]] = []
         self.metrics: list[str] = []
         self.rebinds = 0
+        self._paths: set[str] = set()
+
+    def _path_set(self) -> set[str]:
+        return set(self._paths)
 
     async def ensure_branch(self, specs, **kwargs):  # noqa: ARG002
         self.branches.append([spec.segment for spec in specs])
+        segments: list[str] = []
+        for spec in specs:
+            segments.append(spec.segment)
+            self._paths.add(SEPARATOR.join(segments))
         return None
 
     async def define_metric(self, metric_key, **kwargs):  # noqa: ARG002
         self.metrics.append(metric_key)
         return None
+
+    async def list_assets(self, **kwargs):  # noqa: ARG002
+        return [SimpleNamespace(path=path) for path in sorted(self._paths)]
+
+    async def delete_asset(self, path: str, *, rebind: bool = True) -> int:
+        prefix = path + SEPARATOR
+        removed = {candidate for candidate in self._paths if candidate == path or candidate.startswith(prefix)}
+        self._paths -= removed
+        if rebind:
+            self.rebinds += 1
+        return len(removed)
 
     async def rebind_all(self) -> int:
         self.rebinds += 1
@@ -215,3 +288,100 @@ async def test_applying_a_plan_rebinds_topics_because_bindings_are_derived():
     assert repository.rebinds == 1, "not rebinding leaves every enriched row pointing at the old tree"
     assert written["metric_definitions"] == 3
     assert len(repository.branches) == len(plan_from_simulator_config(SIMULATOR_CONFIG).branches)
+
+
+def test_plan_from_hierarchy_tree_builds_a_branch_for_each_cell():
+    plan = plan_from_hierarchy_tree(_two_cell_tree())
+
+    assert "E/S/A/L/V101" in plan.asset_paths
+    assert "E/S/A/L/V102" in plan.asset_paths
+    assert "E" in plan.asset_paths
+
+
+def test_plan_from_hierarchy_tree_matches_simulator_config_from_the_same_tree():
+    tree = _two_cell_tree()
+    extra = {"plc": [{"equipment": "G1", "sensors": {"Temperature": {"unit": "°C"}}}]}
+
+    from_tree = plan_from_hierarchy_tree(tree, extra)
+    from_mapping = plan_from_simulator_config({"hierarchy": _hierarchy_mapping(tree), **extra})
+
+    assert from_tree.asset_paths == from_mapping.asset_paths
+    assert [spec.metric_key for spec in from_tree.metrics] == [spec.metric_key for spec in from_mapping.metrics]
+
+
+def test_plan_from_hierarchy_tree_without_extra_has_no_plc_machines():
+    plan = plan_from_hierarchy_tree(_two_cell_tree())
+
+    assert all("/G1" not in path for path in plan.asset_paths)
+    assert "E/S/A/L/V101/SCADA" in plan.asset_paths
+    assert "E/S/A/L/V101/HMI" in plan.asset_paths
+
+
+@pytest.mark.asyncio
+async def test_applying_a_smaller_tree_prunes_the_removed_cell():
+    repository = RecordingRepository()
+
+    await apply_plan(repository, plan_from_hierarchy_tree(_two_cell_tree()))
+    assert "E/S/A/L/V102" in repository._path_set()
+
+    await apply_plan(repository, plan_from_hierarchy_tree(_one_cell_tree()))
+
+    remaining = repository._path_set()
+    assert "E/S/A/L/V101" in remaining
+    assert "E/S/A/L/V102" not in remaining
+    assert all(not path.startswith("E/S/A/L/V102/") for path in remaining)
+
+
+@pytest.mark.asyncio
+async def test_delete_asset_also_removes_descendants():
+    repository = RecordingRepository()
+    await apply_plan(repository, plan_from_hierarchy_tree(_two_cell_tree()))
+
+    removed = await repository.delete_asset("E/S/A/L/V101")
+
+    remaining = repository._path_set()
+    assert "E/S/A/L/V101" not in remaining
+    assert "E/S/A/L/V101/SCADA" not in remaining
+    assert "E/S/A/L/V102" in remaining
+    assert removed >= 2
+
+
+def test_seed_dry_run_loads_plant_yaml_when_present(tmp_path, monkeypatch, capsys):
+    plant_dir = tmp_path / "simulator"
+    plant_dir.mkdir()
+    (plant_dir / "plant.yaml").write_text(
+        yaml.safe_dump(_hierarchy_mapping(_two_cell_tree())),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("uns_model.cli.resolve_conf_dir", lambda: tmp_path)
+    monkeypatch.setattr("uns_model.cli.get_settings", lambda *_args, **_kwargs: {})
+
+    from uns_model.cli import seed
+
+    assert seed(["--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert "E/S/A/L/V101" in out
+    assert "E/S/A/L/V102" in out
+
+
+def test_seed_falls_back_to_settings_hierarchy_when_plant_yaml_is_absent(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr("uns_model.cli.resolve_conf_dir", lambda: tmp_path)
+    monkeypatch.setattr(
+        "uns_model.cli.get_settings",
+        lambda *_args, **_kwargs: {
+            "hierarchy": {
+                "enterprise": "FromSettings",
+                "site": "S",
+                "area": "A",
+                "line": "L",
+                "cell": "C",
+            },
+            "plc": [],
+            "equipment": {},
+        },
+    )
+
+    from uns_model.cli import seed
+
+    assert seed(["--dry-run"]) == 0
+    assert "FromSettings/S/A/L/C" in capsys.readouterr().out

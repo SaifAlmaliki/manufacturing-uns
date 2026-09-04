@@ -29,6 +29,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from uns_model.hierarchy import HierarchyTree
 from uns_model.repositories import AssetModelRepository, AssetSpec
 from uns_model.topic_path import SEPARATOR
 
@@ -171,6 +172,38 @@ def _machines(simulator: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
     return machines
 
 
+def _hierarchy_mapping(tree: HierarchyTree) -> dict[str, Any]:
+    """The list-of-objects shape `_cells` / `plan_from_simulator_config` already consume."""
+    return {
+        "enterprise": tree.enterprise,
+        "sites": [
+            {
+                "name": site.name,
+                "areas": [
+                    {
+                        "name": area.name,
+                        "lines": [{"name": line.name, "cells": list(line.cells)} for line in area.lines],
+                    }
+                    for area in site.areas
+                ],
+            }
+            for site in tree.sites
+        ],
+    }
+
+
+def plan_from_hierarchy_tree(tree: HierarchyTree, extra: Mapping[str, Any] | None = None) -> SeedPlan:
+    """
+    Build the same cell branches `plan_from_simulator_config` would from `tree`.
+
+    `extra` may carry `plc` / `equipment` for machines. When it is omitted, no PLC
+    machines are planned; SCADA/HMI still follow the existing first-cell seed rules.
+    """
+    payload: dict[str, Any] = dict(extra or {})
+    payload["hierarchy"] = _hierarchy_mapping(tree)
+    return plan_from_simulator_config(payload)
+
+
 def plan_from_simulator_config(simulator: Mapping[str, Any]) -> SeedPlan:
     """
     Read `simulator.hierarchy` / `simulator.plc` and return the Asset Model they imply.
@@ -229,14 +262,39 @@ def _deduplicate(metrics: Iterable[MetricSpec]) -> list[MetricSpec]:
     return list(seen.values())
 
 
+def _highest_paths(paths: set[str]) -> list[str]:
+    """Paths that are not descendants of another path in the set, shortest first."""
+    roots: list[str] = []
+    for path in sorted(paths, key=lambda item: (item.count(SEPARATOR), item)):
+        if any(path == root or path.startswith(root + SEPARATOR) for root in roots):
+            continue
+        roots.append(path)
+    return roots
+
+
+async def _prune_removed_assets(repository: AssetModelRepository, plan: SeedPlan) -> None:
+    """Delete Assets whose path is not in the plan.
+
+    Skips when the model is empty: there is no root to delete if none exists.
+    """
+    existing = await repository.list_assets()
+    if not existing:
+        return
+    keep = set(plan.asset_paths)
+    extra = {asset.path for asset in existing if asset.path not in keep}
+    for path in _highest_paths(extra):
+        await repository.delete_asset(path, rebind=False)
+
+
 async def apply_plan(repository: AssetModelRepository, plan: SeedPlan) -> dict[str, int]:
     """
     Write a plan to the Asset Model, then re-resolve the Topic Bindings.
 
     Idempotent: every Asset is upserted by path and every Metric Definition by
     (Asset, Metric Key), so re-seeding an edited config updates rather than
-    duplicates. The `rebind_all` at the end is not optional: Topic Bindings are
-    derived from the tree, so writing the tree leaves them stale (ADR-0003).
+    duplicates. Assets no longer in the plan are deleted, including descendants.
+    The `rebind_all` at the end is not optional: Topic Bindings are derived from
+    the tree, so writing the tree leaves them stale (ADR-0003).
     """
     for branch in plan.branches:
         await repository.ensure_branch(branch, rebind=False)
@@ -249,6 +307,7 @@ async def apply_plan(repository: AssetModelRepository, plan: SeedPlan) -> dict[s
             description=spec.description,
             announce=False,
         )
+    await _prune_removed_assets(repository, plan)
     rebound = await repository.rebind_all()
     return {
         "branches": len(plan.branches),
@@ -258,4 +317,10 @@ async def apply_plan(repository: AssetModelRepository, plan: SeedPlan) -> dict[s
     }
 
 
-__all__ = ["MetricSpec", "SeedPlan", "apply_plan", "plan_from_simulator_config"]
+__all__ = [
+    "MetricSpec",
+    "SeedPlan",
+    "apply_plan",
+    "plan_from_hierarchy_tree",
+    "plan_from_simulator_config",
+]

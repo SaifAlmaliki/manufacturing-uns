@@ -250,7 +250,9 @@ class AssetModelRepository:
     async def delete_asset(self, path: str, *, rebind: bool = True) -> int:
         """Delete an Asset and everything under it. Returns the number of Assets removed."""
         async with self._database.session() as session:
-            result = await session.execute(delete(Asset).where(Asset.path == path))
+            result = await session.execute(
+                delete(Asset).where((Asset.path == path) | Asset.path.like(path + SEPARATOR + "%"))
+            )
             removed = result.rowcount or 0
 
         if rebind:

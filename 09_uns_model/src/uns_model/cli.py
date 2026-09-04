@@ -31,15 +31,16 @@ import logging
 import sys
 from pathlib import Path
 
-from uns_config import get_settings
+from uns_config import get_settings, resolve_conf_dir
 
 from uns_model.engine import Database
+from uns_model.hierarchy_io import PLANT_FILENAME, PLANT_SUBDIR, load_plant_tree
 from uns_model.model_config import ModelConfig
 from uns_model.oee_master_data import OeeMasterDataRepository
 from uns_model.oee_seed import OeeSeedPlan, plan_from_oee_config, read_oee_conf
 from uns_model.oee_seed import apply_plan as apply_oee_plan
 from uns_model.repositories import AssetModelRepository
-from uns_model.seed import SeedPlan, apply_plan, plan_from_simulator_config
+from uns_model.seed import SeedPlan, apply_plan, plan_from_hierarchy_tree, plan_from_simulator_config
 
 LOGGER = logging.getLogger(__name__)
 
@@ -121,13 +122,15 @@ def seed(argv: list[str] | None = None) -> int:
     _configure_logging(args.verbose)
 
     settings = get_settings("simulator")
-    plan = plan_from_simulator_config(
-        {
-            "hierarchy": settings.get("hierarchy"),
-            "plc": settings.get("plc"),
-            "equipment": settings.get("equipment"),
-        }
-    )
+    extra = {
+        "plc": settings.get("plc"),
+        "equipment": settings.get("equipment"),
+    }
+    conf_dir = resolve_conf_dir()
+    if (conf_dir / PLANT_SUBDIR / PLANT_FILENAME).is_file():
+        plan = plan_from_hierarchy_tree(load_plant_tree(conf_dir), extra)
+    else:
+        plan = plan_from_simulator_config({"hierarchy": settings.get("hierarchy"), **extra})
 
     if args.dry_run:
         sys.stdout.write(plan.describe() + "\n")
