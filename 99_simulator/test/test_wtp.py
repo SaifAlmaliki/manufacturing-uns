@@ -179,6 +179,21 @@ def test_snapshot_has_spec_keys():
     assert set(snap["pressures_barg"]) == {"PT101", "PT201"}
 
 
+def test_fault_clears_after_120s_with_reset_pulse():
+    wtp = WTPProcess(random.Random(0), fault_p=1.0)
+    wtp.tick(1.0)
+    assert wtp.p101.fault is True
+    for _ in range(120):
+        wtp.tick(1.0)
+    assert wtp.p101.fault is True
+    wtp.tick(1.0)
+    assert wtp.p101.fault is False
+    assert wtp.p101.reset_fault is True
+    for _ in range(30):
+        wtp.tick(1.0)
+    assert wtp.p101.reset_fault is False
+
+
 def test_ait101_stays_in_band():
     wtp = WTPProcess(random.Random(1), fault_p=0.0)
     values = []

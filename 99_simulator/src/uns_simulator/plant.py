@@ -655,6 +655,8 @@ class MotorDOLState:
         self.runtime_h = 0.0
         self.start_count = 0
         self.auto = True
+        self.fault_age_s = 0.0
+        self.reset_age_s = 0.0
 
 
 class VFDState:
@@ -667,6 +669,8 @@ class VFDState:
         self.fault = False
         self.runtime_h = 0.0
         self.start_count = 0
+        self.fault_age_s = 0.0
+        self.reset_age_s = 0.0
 
 
 class TankState:
@@ -706,6 +710,7 @@ class WTPProcess:
     BACKWASH_TRIGGER_S = 1800.0
     BACKWASH_DURATION_S = 45.0
     FAULT_CLEAR_S = 120.0
+    RESET_FAULT_S = 30.0
     DIST_SPEED_SP = 87.5
 
     def __init__(self, rng: random.Random, *, fault_p: float = 1.0 / 3600.0) -> None:
@@ -842,6 +847,9 @@ class WTPProcess:
             if self.rng.random() < self.fault_p:
                 device.fault = True
                 device.running = False
+                device.fault_age_s = 0.0
+                device.reset_fault = False
+                device.reset_age_s = 0.0
                 events.append(f"Fault{tag}")
                 if tag in ("P101", "P102", "P103") and tag == self.duty_raw_pump:
                     nxt = self._next_raw_pump(tag)
@@ -857,11 +865,34 @@ class WTPProcess:
                     self.lead_dist_pump = "P202"
         return events
 
+    def _advance_fault_timers(self, dt: float) -> None:
+        """Age latched faults; after FAULT_CLEAR_S clear and pulse ResetFault for RESET_FAULT_S.
+
+        Restarting a cleared pump is left to the sequencer's _start_motor calls (which
+        honour `not fault`); a pump that faulted on duty has already been failed over,
+        so its cmd_start is stale intent and it should not auto-resume here.
+        """
+        for device in (self.p101, self.p102, self.p103, self.dp101, self.p201, self.p202):
+            if device.fault:
+                device.fault_age_s += dt
+                if device.fault_age_s > self.FAULT_CLEAR_S:
+                    device.fault = False
+                    device.fault_age_s = 0.0
+                    device.reset_fault = True
+                    device.reset_age_s = 0.0
+            elif device.reset_fault:
+                device.reset_age_s += dt
+                if device.reset_age_s >= self.RESET_FAULT_S:
+                    device.reset_fault = False
+                    device.reset_age_s = 0.0
+
     def advance_sequencer(self, dt: float) -> list[str]:
         events: list[str] = []
         if not self._initialized:
             self._initialize_running()
             self._initialized = True
+
+        self._advance_fault_timers(dt)
 
         if self.mode == "Backwash":
             self.backwash_s += dt
@@ -873,6 +904,7 @@ class WTPProcess:
         self.running_s += dt
         self.duty_s += dt
         if self.running_s >= self.BACKWASH_TRIGGER_S:
+            # Backwash wins: duty_s is paused (not applied) until Running resumes.
             events.extend(self._enter_backwash())
             return events
         if self.duty_s >= self.DUTY_CYCLE_S:
