@@ -6,13 +6,14 @@ vi.mock('../../lib/auth/directory', () => ({ fetchRealmMembers }));
 
 const getAccessGroups = vi.hoisted(() => vi.fn());
 const getAssets = vi.hoisted(() => vi.fn());
+const setAccessGroupMembers = vi.hoisted(() => vi.fn());
 vi.mock('../../services/graphql/client', () => ({
   unsGraphQLClient: {
     getAccessGroups,
     getAssets,
     saveAccessGroup: vi.fn(),
     deleteAccessGroup: vi.fn(),
-    setAccessGroupMembers: vi.fn(),
+    setAccessGroupMembers,
   },
 }));
 
@@ -39,6 +40,7 @@ beforeEach(() => {
   auth.roles = ['admin'];
   getAccessGroups.mockResolvedValue([FILTRATION_GROUP]);
   getAssets.mockResolvedValue([]);
+  setAccessGroupMembers.mockResolvedValue(FILTRATION_GROUP);
 });
 
 const MEMBERS = {
@@ -151,5 +153,52 @@ describe('Access Groups on Users and Access', () => {
     fireEvent.click(screen.getByRole('button', { name: /Create group/i }));
     expect(screen.getByRole('button', { name: /Save group/i })).toBeTruthy();
     await waitFor(() => expect(getAssets).toHaveBeenCalled());
+  });
+
+  it('saves Assign groups by calling setAccessGroupMembers once per group', async () => {
+    const packaging = {
+      id: 2,
+      name: 'Packaging',
+      roots: [{ path: 'AcmeWater/Site1/Packaging', segment: 'Packaging', level: 'AREA', assetId: 10 }],
+      subjects: [] as string[],
+    };
+    getAccessGroups.mockResolvedValue([FILTRATION_GROUP, packaging]);
+    fetchRealmMembers.mockResolvedValue(MEMBERS);
+    render(<UserManagementView />);
+
+    await waitFor(() => expect(screen.getByText('Erin Engineer')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Filtration')).toBeTruthy());
+    fireEvent.click(screen.getAllByRole('button', { name: /Assign groups/i })[0]);
+    await waitFor(() => expect(screen.getByText('Packaging')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: /^Save$/i }));
+
+    await waitFor(() => expect(setAccessGroupMembers).toHaveBeenCalledTimes(2));
+    expect(setAccessGroupMembers).toHaveBeenCalledWith(1, ['kc-1']);
+    expect(setAccessGroupMembers).toHaveBeenCalledWith(2, []);
+  });
+
+  it('treats a parent tick as covering descendants without ticking children', async () => {
+    getAssets.mockResolvedValue([
+      { id: 1, path: 'AcmeWater', segment: 'AcmeWater', level: 'ENTERPRISE' },
+      { id: 2, path: 'AcmeWater/Site1', segment: 'Site1', level: 'SITE' },
+      { id: 9, path: 'AcmeWater/Site1/Filtration', segment: 'Filtration', level: 'AREA' },
+    ]);
+    fetchRealmMembers.mockResolvedValue(MEMBERS);
+    render(<UserManagementView />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Access Groups/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Create group/i }));
+
+    const parent = await screen.findByRole('checkbox', { name: 'AcmeWater' });
+    const child = screen.getByRole('checkbox', { name: 'AcmeWater/Site1' });
+    const grandchild = screen.getByRole('checkbox', { name: 'AcmeWater/Site1/Filtration' });
+
+    fireEvent.click(parent);
+
+    expect(parent).toBeChecked();
+    expect(child).toBeChecked();
+    expect(child).toBeDisabled();
+    expect(grandchild).toBeChecked();
+    expect(grandchild).toBeDisabled();
   });
 });

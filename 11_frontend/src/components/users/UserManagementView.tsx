@@ -149,6 +149,7 @@ export const UserManagementView: React.FC = () => {
   const [editor, setEditor] = useState<GroupEditor | null>(null);
   const [assignPanel, setAssignPanel] = useState<AssignPanel | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const editorOpen = editor !== null;
 
   useEffect(() => {
     if (!isAdmin) {
@@ -171,7 +172,7 @@ export const UserManagementView: React.FC = () => {
   }, [isAdmin]);
 
   useEffect(() => {
-    if (!editor) {
+    if (!editorOpen) {
       return;
     }
     let cancelled = false;
@@ -183,7 +184,7 @@ export const UserManagementView: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [editor]);
+  }, [editorOpen]);
 
   const members = result?.kind === 'members' ? result.members : [];
 
@@ -238,9 +239,12 @@ export const UserManagementView: React.FC = () => {
         pathToId.set(root.path, root.assetId);
       }
     }
-    const rootAssetIds = editor.selectedPaths
-      .map((path) => pathToId.get(path))
-      .filter((id): id is number => id !== undefined);
+    const unresolved = editor.selectedPaths.filter((path) => pathToId.get(path) === undefined);
+    if (unresolved.length > 0) {
+      setSaveError('Cannot save: a selected Asset has no id');
+      return;
+    }
+    const rootAssetIds = editor.selectedPaths.map((path) => pathToId.get(path) as number);
     try {
       setSaveError(null);
       const saved = await unsGraphQLClient.saveAccessGroup(editor.name, rootAssetIds, editor.id);
@@ -258,14 +262,20 @@ export const UserManagementView: React.FC = () => {
     if (!window.confirm(`Delete ${group.name}? ${n} ${people} will lose that zone.`)) {
       return;
     }
-    await unsGraphQLClient.deleteAccessGroup(group.id);
-    await reloadGroups();
-    if (editor?.id === group.id) {
-      setEditor(null);
+    try {
+      setSaveError(null);
+      await unsGraphQLClient.deleteAccessGroup(group.id);
+      await reloadGroups();
+      if (editor?.id === group.id) {
+        setEditor(null);
+      }
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : String(error));
     }
   };
 
   const openAssign = (member: RealmMember) => {
+    setSaveError(null);
     setAssignPanel({
       memberId: member.id,
       selectedGroupIds: groups.filter((group) => group.subjects.includes(member.id)).map((group) => group.id),
@@ -277,19 +287,24 @@ export const UserManagementView: React.FC = () => {
       return;
     }
     const { memberId, selectedGroupIds } = assignPanel;
-    await Promise.all(
-      groups.map((group) => {
-        const selected = selectedGroupIds.includes(group.id);
-        const subjects = selected
-          ? group.subjects.includes(memberId)
-            ? group.subjects
-            : [...group.subjects, memberId]
-          : group.subjects.filter((subject) => subject !== memberId);
-        return unsGraphQLClient.setAccessGroupMembers(group.id, subjects);
-      }),
-    );
-    await reloadGroups();
-    setAssignPanel(null);
+    try {
+      setSaveError(null);
+      await Promise.all(
+        groups.map((group) => {
+          const selected = selectedGroupIds.includes(group.id);
+          const subjects = selected
+            ? group.subjects.includes(memberId)
+              ? group.subjects
+              : [...group.subjects, memberId]
+            : group.subjects.filter((subject) => subject !== memberId);
+          return unsGraphQLClient.setAccessGroupMembers(group.id, subjects);
+        }),
+      );
+      await reloadGroups();
+      setAssignPanel(null);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : String(error));
+    }
   };
 
   if (!isAdmin) {
@@ -466,9 +481,17 @@ That needs the realm-management view-users role. Users are managed in Keycloak."
                           ))
                         )}
                       </div>
+                      {saveError && <p className="text-xs text-rose-400">{saveError}</p>}
                       <div className="flex flex-wrap gap-2">
                         <BtnPrimary onClick={() => void saveAssign()}>Save</BtnPrimary>
-                        <BtnSecondary onClick={() => setAssignPanel(null)}>Cancel</BtnSecondary>
+                        <BtnSecondary
+                          onClick={() => {
+                            setAssignPanel(null);
+                            setSaveError(null);
+                          }}
+                        >
+                          Cancel
+                        </BtnSecondary>
                       </div>
                     </ConsoleCard>
                   )}
@@ -482,6 +505,8 @@ That needs the realm-management view-users role. Users are managed in Keycloak."
               <FilterToolbar
                 trailing={<BtnPrimary onClick={openCreate}>Create group</BtnPrimary>}
               />
+
+              {saveError && <p className="text-xs text-rose-400">{saveError}</p>}
 
               {editor ? (
                 <ConsoleCard padding="md" className="space-y-4">
@@ -533,8 +558,6 @@ That needs the realm-management view-users role. Users are managed in Keycloak."
                       </div>
                     )}
                   </div>
-
-                  {saveError && <p className="text-xs text-rose-400">{saveError}</p>}
 
                   <div className="flex flex-wrap gap-2">
                     <BtnPrimary onClick={() => void saveGroup()}>Save group</BtnPrimary>
