@@ -16,6 +16,9 @@ const auth = vi.hoisted(() => ({
 }));
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => auth }));
 
+const uns = vi.hoisted(() => ({ updateSettings: vi.fn() }));
+vi.mock('../../context/UNSContext', () => ({ useUNS: () => uns }));
+
 import { HierarchyView } from './HierarchyView';
 
 const TREE = {
@@ -95,6 +98,20 @@ describe('the plant hierarchy editor', () => {
       expect.objectContaining({ enterprise: 'Contoso' }),
       [{ oldPrefix: 'AcmeWater', newPrefix: 'Contoso' }],
     );
+  });
+
+  it('refreshes the sidebar organization from the saved enterprise', async () => {
+    saveHierarchy.mockResolvedValue({
+      tree: { ...TREE, enterprise: 'Contoso' },
+      job: { status: 'done', oldPrefix: 'AcmeWater', newPrefix: 'Contoso', rewritten: 0, error: null },
+    });
+    render(<HierarchyView />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Enterprise AcmeWater' })).toBeTruthy());
+
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Contoso' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(uns.updateSettings).toHaveBeenCalledWith({ organization: 'Contoso' }));
   });
 
   it('shows migrate job status after save and retries a failed job', async () => {

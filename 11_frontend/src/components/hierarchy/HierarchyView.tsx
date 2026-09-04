@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Factory, GitBranch, Plus, Trash2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useUNS } from '../../context/UNSContext';
 import { joinSegments, validateSegment } from '../../lib/uns/topics';
 import { unsGraphQLClient } from '../../services/graphql/client';
 import type {
@@ -391,6 +392,7 @@ function TreeNodeButton({
 export const HierarchyView: React.FC = () => {
   const { hasPermission } = useAuth();
   const canEdit = hasPermission('settings_edit');
+  const { updateSettings } = useUNS();
 
   const [tree, setTree] = useState<GraphqlHierarchyTree | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -516,6 +518,7 @@ export const HierarchyView: React.FC = () => {
       if (selected) {
         setDraftName(nodeName(result.tree, selected));
       }
+      updateSettings({ organization: result.tree.enterprise });
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Hierarchy was not saved');
     } finally {

@@ -193,6 +193,20 @@ export const UNSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [settings.graphqlUrl, settings.graphqlWsUrl]);
 
   useEffect(() => {
+    if (!isReady || !isAuthenticated) return;
+    let cancelled = false;
+    void unsGraphQLClient.getHierarchy().then((next) => {
+      if (cancelled || !next) return;
+      setSettings((prev) =>
+        prev.organization === next.enterprise ? prev : { ...prev, organization: next.enterprise },
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isReady, isAuthenticated]);
+
+  useEffect(() => {
     return unsGraphQLClient.onHealthChange((h) => setHealth(h));
   }, []);
 
