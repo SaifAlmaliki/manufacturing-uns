@@ -357,7 +357,7 @@ export const GET_HIERARCHY_QUERY = `
           kind
           lines {
             name
-            cells
+            cells { name machines }
           }
         }
       }
@@ -377,7 +377,7 @@ export const SAVE_HIERARCHY_MUTATION = `
             kind
             lines {
               name
-              cells
+              cells { name machines }
             }
           }
         }

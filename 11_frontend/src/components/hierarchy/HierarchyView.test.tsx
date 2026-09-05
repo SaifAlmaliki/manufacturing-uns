@@ -30,7 +30,7 @@ const TREE = {
         {
           name: 'RawWater',
           kind: 'production',
-          lines: [{ name: 'Train1', cells: ['V101'] }],
+          lines: [{ name: 'Train1', cells: [{ name: 'V101', machines: [] }] }],
         },
       ],
     },
@@ -149,5 +149,13 @@ describe('the plant hierarchy editor', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Cell V101' }));
     expect(screen.getByRole('button', { name: 'Add child' })).toBeDisabled();
+  });
+
+  it('adds a Cell object under a Line', async () => {
+    render(<HierarchyView />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Line Train1' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Line Train1' }));
+    fireEvent.click(screen.getByRole('button', { name: /add child|add cell/i }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cell Cell' })).toBeTruthy());
   });
 });

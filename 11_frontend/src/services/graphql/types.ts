@@ -149,10 +149,16 @@ export type GraphqlSpbNode = {
   body?: string | null
 }
 
+/** `HierarchyCellType` in the schema: a work cell (instance tag) and the machines under it. */
+export type GraphqlHierarchyCell = {
+  name: string
+  machines: string[]
+}
+
 /** `HierarchyLineType` in the schema: a line and the cells (instance tags) under it. */
 export type GraphqlHierarchyLine = {
   name: string
-  cells: string[]
+  cells: GraphqlHierarchyCell[]
 }
 
 /** `HierarchyAreaType` in the schema: an area in the ISA-95 tree. */
@@ -192,7 +198,7 @@ export type GraphqlHierarchySaveResult = {
 /** `HierarchyLineInput` in the schema. */
 export type GraphqlHierarchyLineInput = {
   name: string
-  cells: string[]
+  cells: GraphqlHierarchyCell[]
 }
 
 /** `HierarchyAreaInput` in the schema. `kind` defaults to production when omitted. */

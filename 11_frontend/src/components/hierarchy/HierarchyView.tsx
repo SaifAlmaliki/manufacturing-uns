@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Factory, GitBranch, Plus, Trash2 } from 'lucide-react';
+import { Cog, Factory, GitBranch, Plus, Trash2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useUNS } from '../../context/UNSContext';
 import { joinSegments, validateSegment } from '../../lib/uns/topics';
@@ -67,7 +67,7 @@ function cloneTree(tree: GraphqlHierarchyTree): GraphqlHierarchyTree {
         kind: area.kind,
         lines: area.lines.map((line) => ({
           name: line.name,
-          cells: [...line.cells],
+          cells: line.cells.map((cell) => ({ name: cell.name, machines: [...cell.machines] })),
         })),
       })),
     })),
@@ -85,7 +85,7 @@ function nodeName(tree: GraphqlHierarchyTree, ref: NodeRef): string {
     case 'line':
       return tree.sites[ref.site].areas[ref.area].lines[ref.line].name;
     case 'cell':
-      return tree.sites[ref.site].areas[ref.area].lines[ref.line].cells[ref.cell];
+      return tree.sites[ref.site].areas[ref.area].lines[ref.line].cells[ref.cell].name;
   }
 }
 
@@ -98,7 +98,7 @@ function nodePrefix(tree: GraphqlHierarchyTree, ref: NodeRef): string {
   if (ref.level === 'area') return joinSegments(enterprise, site, area);
   const line = tree.sites[ref.site].areas[ref.area].lines[ref.line].name;
   if (ref.level === 'line') return joinSegments(enterprise, site, area, line);
-  const cell = tree.sites[ref.site].areas[ref.area].lines[ref.line].cells[ref.cell];
+  const cell = tree.sites[ref.site].areas[ref.area].lines[ref.line].cells[ref.cell].name;
   return joinSegments(enterprise, site, area, line, cell);
 }
 
@@ -118,7 +118,7 @@ function siblingNames(tree: GraphqlHierarchyTree, ref: NodeRef): string[] {
     }
     case 'cell': {
       const cells = tree.sites[ref.site].areas[ref.area].lines[ref.line].cells;
-      return cells.filter((_, i) => i !== ref.cell);
+      return cells.filter((_, i) => i !== ref.cell).map((c) => c.name);
     }
   }
 }
@@ -146,7 +146,7 @@ function applyName(tree: GraphqlHierarchyTree, ref: NodeRef, name: string): Grap
       next.sites[ref.site].areas[ref.area].lines[ref.line].name = name;
       break;
     case 'cell':
-      next.sites[ref.site].areas[ref.area].lines[ref.line].cells[ref.cell] = name;
+      next.sites[ref.site].areas[ref.area].lines[ref.line].cells[ref.cell].name = name;
       break;
   }
   return next;
@@ -183,8 +183,8 @@ function addChild(
     }
     case 'line': {
       const cells = next.sites[ref.site].areas[ref.area].lines[ref.line].cells;
-      const name = uniqueChildName(cells, base);
-      cells.push(name);
+      const name = uniqueChildName(cells.map((c) => c.name), base);
+      cells.push({ name, machines: [] });
       return {
         tree: next,
         child: {
@@ -294,20 +294,30 @@ function dropRenamesUnder(renames: GraphqlPrefixRenameInput[], prefix: string): 
   return renames.filter((r) => !isPrefixOf(prefix, r.oldPrefix) && !isPrefixOf(prefix, r.newPrefix));
 }
 
-function treeCounts(tree: GraphqlHierarchyTree): { sites: number; areas: number; lines: number; cells: number } {
+function treeCounts(tree: GraphqlHierarchyTree): {
+  sites: number;
+  areas: number;
+  lines: number;
+  cells: number;
+  machines: number;
+} {
   let areas = 0;
   let lines = 0;
   let cells = 0;
+  let machines = 0;
   for (const site of tree.sites) {
     areas += site.areas.length;
     for (const area of site.areas) {
       lines += area.lines.length;
       for (const line of area.lines) {
         cells += line.cells.length;
+        for (const cell of line.cells) {
+          machines += cell.machines.length;
+        }
       }
     }
   }
-  return { sites: tree.sites.length, areas, lines, cells };
+  return { sites: tree.sites.length, areas, lines, cells, machines };
 }
 
 function validateEditableTree(tree: GraphqlHierarchyTree): string | null {
@@ -346,12 +356,22 @@ function validateEditableTree(tree: GraphqlHierarchyTree): string | null {
         const cellNames = new Set<string>();
         for (const cell of line.cells) {
           try {
-            validateSegment(cell);
+            validateSegment(cell.name);
           } catch (err) {
             return err instanceof Error ? err.message : 'Cell name is invalid';
           }
-          if (cellNames.has(cell)) return `duplicate cell under ${line.name}: ${cell}`;
-          cellNames.add(cell);
+          if (cellNames.has(cell.name)) return `duplicate cell under ${line.name}: ${cell.name}`;
+          cellNames.add(cell.name);
+          const machineNames = new Set<string>();
+          for (const machine of cell.machines) {
+            try {
+              validateSegment(machine);
+            } catch (err) {
+              return err instanceof Error ? err.message : 'Machine name is invalid';
+            }
+            if (machineNames.has(machine)) return `duplicate machine under ${cell.name}: ${machine}`;
+            machineNames.add(machine);
+          }
         }
       }
     }
@@ -593,6 +613,7 @@ export const HierarchyView: React.FC = () => {
             <PageStat compact label="Areas" value={counts?.areas ?? '—'} icon={<GitBranch className="size-3.5 text-muted-foreground" />} />
             <PageStat compact label="Lines" value={counts?.lines ?? '—'} icon={<GitBranch className="size-3.5 text-muted-foreground" />} />
             <PageStat compact label="Cells" value={counts?.cells ?? '—'} icon={<GitBranch className="size-3.5 text-muted-foreground" />} />
+            <PageStat compact label="Machines" value={counts?.machines ?? '—'} icon={<Cog className="size-3.5 text-muted-foreground" />} />
           </CompactKpiRow>
 
           <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
@@ -678,7 +699,7 @@ export const HierarchyView: React.FC = () => {
                               />
                               {line.cells.map((cell, cellIdx) => (
                                 <TreeNodeButton
-                                  key={`cell-${siteIdx}-${areaIdx}-${lineIdx}-${cellIdx}-${cell}`}
+                                  key={`cell-${siteIdx}-${areaIdx}-${lineIdx}-${cellIdx}-${cell.name}`}
                                   tree={tree}
                                   nodeRef={{
                                     level: 'cell',
