@@ -48,7 +48,10 @@ the missing Machine level on the hierarchy write path.
 - No true skipped levels on disk (a Line with no Area Asset). Insert default parents.
 - No Division, Product Line, Production Unit, or Work Cell as extra editor labels.
   Cell remains the Work Cell / instance tag (`V101`). Machine is the equipment leaf
-  (`Dryer`), matching Asset Level `MACHINE`.
+  (`Dryer`), matching Asset Level `MACHINE`. A PLC is also a Machine — the Asset
+  Level already means “a machine or PLC that publishes Metrics”. OPC / Modbus /
+  MQTT servers and their signals are **not** hierarchy nodes: the server lives in
+  Connectivity; each signal becomes a Metric on a MACHINE Asset at attach time.
 - The tree component is not copied onto Condition Monitoring or Connectivity in this
   slice. Those pages **read** Assets after Save; they do not write this tree.
 - No import/export, tree search, or empty-state illustration (the PwC “+ New Item /
@@ -237,7 +240,7 @@ the word `Machine`, not `M`.
 | Add control | + New menu, not a relabelled one-click button |
 | Menu placement | Tree header and selected-node pane |
 | What the menu lists | Every remaining editor level below the selection, including Machine |
-| Editor leaf | Machine. Cell is a Work Cell and can have machines |
+| Editor leaf | Machine. Cell is a Work Cell and can have machines. A PLC is a Machine. Signals are Metrics, not a level below Machine |
 | Skip on disk | Not in this slice; insert default parents so YAML stays nested |
 | Persistence | `saveHierarchy` / `plant.yaml` cells become `{ name, machines[] }` |
 | Seed | Authored machines win on that cell; empty cells keep PLC stamp |
