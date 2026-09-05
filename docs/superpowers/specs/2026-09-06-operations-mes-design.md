@@ -5,7 +5,7 @@ Modules: `13_uns_mes` (new), `98_sap_mock` (new), `11_frontend` (`components/ope
 Connectivity SAP tab, `/mes` proxy), `docker-compose.yml`, `08_uns_observability`
 (Prometheus scrape). Reads `model` and `oee` via existing services; does not extend
 `07_uns_graphql` with order types.
-Status: Draft pending review
+Status: Approved
 Extends: [OEE engine](./2026-09-01-oee-engine-design.md),
 ADR-0008 (OEE computed, downtime reasons), ADR-0009 (OIDC)
 

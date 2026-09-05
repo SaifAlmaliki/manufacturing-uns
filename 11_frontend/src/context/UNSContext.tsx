@@ -258,6 +258,8 @@ export const UNSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const roots = await unsGraphQLClient.getUnsRootNodes();
       setRootNodes(roots);
+      setNodeChildrenMap(new Map());
+      setExpandedNodes(new Set());
       setSelectedNode((prev) => prev ?? (roots.length > 0 ? roots[0] : null));
     } finally {
       setTreeLoading(false);

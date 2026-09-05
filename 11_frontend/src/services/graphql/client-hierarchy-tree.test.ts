@@ -85,4 +85,21 @@ describe('getUnsNodeChildren', () => {
 
     expect(children.map((n) => n.topic)).toEqual(['DemoWTP/Site10'])
   })
+
+  it('does not invent ProcessValue or Setpoint folders under a plant-tree machine', async () => {
+    mockGraphql({
+      getHierarchy: { getHierarchy: PLANT },
+      getAssetChildren: { getAssetChildren: [], getTopicContext: null },
+      getUnsNodes: { getUnsNodes: [] },
+    })
+
+    const children = await client().getUnsNodeChildren(
+      'DemoWTP/Site10/RawWater/Train10/P202/Machine3050',
+    )
+
+    expect(children.map((n) => n.name)).not.toEqual(
+      expect.arrayContaining(['ProcessValue', 'Setpoint', 'Status', 'Alarm', 'EVENT']),
+    )
+    expect(children).toEqual([])
+  })
 })

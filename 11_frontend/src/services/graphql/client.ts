@@ -344,9 +344,9 @@ export class UnsGraphQLClient {
    * Children of a node: authored plant-hierarchy children first, then the Asset
    * Model, then what was published.
    *
-   * The order is the point: what an engineer declared on Plant hierarchy beats
-   * what a wildcard query happens to find, and both beat the ISA-95 guesses that
-   * are only still here so that an unmodelled simulator install keeps working.
+   * When a plant.yaml exists, the tree stops at what was authored or published.
+   * The simulator's hardcoded ProcessValue / Setpoint / Status / Alarm / EVENT
+   * folders are not plant structure and must not appear under a Cell or Machine.
    */
   public async getUnsNodeChildren(parentTopic: string): Promise<UnsNode[]> {
     const tree = await this.getHierarchy()
@@ -355,7 +355,19 @@ export class UnsGraphQLClient {
       if (authored !== null && authored.length > 0) {
         return authored
       }
+      // On the plant tree a Cell/Machine has no authored child. Show only
+      // topics that were published — not the WTP seed's ProcessValue groups
+      // and never the hardcoded Setpoint/Status/Alarm/EVENT folders.
+      if (authored !== null) {
+        return this.getUnsNodes([childrenTopic(parentTopic)])
+      }
+      const modelled = await this.getModelledChildren(parentTopic)
+      if (modelled.length > 0) {
+        return modelled
+      }
+      return this.getUnsNodes([childrenTopic(parentTopic)])
     }
+
     const modelled = await this.getModelledChildren(parentTopic)
     if (modelled.length > 0) {
       return modelled
