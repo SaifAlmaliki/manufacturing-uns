@@ -36,6 +36,6 @@ describe('SignalChart', () => {
 
   it('exposes time and value on an accessible hover target', () => {
     render(<SignalChart samples={[s(Date.parse('2026-09-05T17:02:00.000Z'), 1.35)]} mode="line" />);
-    expect(screen.getByTitle(/1\.35/)).toBeTruthy();
+    expect(screen.getByLabelText(/1\.35/)).toBeTruthy();
   });
 });
