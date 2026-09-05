@@ -41,6 +41,13 @@ MUTATION_ROLES: dict[str, frozenset[str]] = {
     "saveAccessGroup": frozenset({"admin"}),
     "deleteAccessGroup": frozenset({"admin"}),
     "setAccessGroupMembers": frozenset({"admin"}),
+    # Connectivity catalog writes (Task 5): authoring a server and curating its
+    # tags is engineering work, so the five writes are engineer + admin.
+    "saveConnectivityServer": frozenset({"engineer", "admin"}),
+    "deleteConnectivityServer": frozenset({"engineer", "admin"}),
+    "subscribeOpcUaVariables": frozenset({"engineer", "admin"}),
+    "updateConnectivityTagTopic": frozenset({"engineer", "admin"}),
+    "unsubscribeConnectivityTag": frozenset({"engineer", "admin"}),
 }
 
 
@@ -87,3 +94,33 @@ async def require_path(info: Any, path: str) -> Identity:
         raise NotPermittedError(f"This Asset or topic is outside your Access Groups: {path}.")
 
     return identity
+
+
+def require_role(info: Any, allowed: frozenset[str]) -> Identity:
+    """The caller's identity, if their roles include one of `allowed`.
+
+    The query-side counterpart of `require`: the mutation table names a field, a query
+    or subscription gates by the role set directly, because there is no single role a
+    probe "is". Used for the OPC UA probes, which open an anonymous session to a PLC and
+    so are engineer + admin work, not a viewer's.
+    """
+    identity = identity_in(getattr(info, "context", None))
+    if identity is None:
+        raise NotPermittedError(
+            "This query needs a signed-in user. You are not signed in."
+        )
+
+    if not identity.has_any(allowed):
+        needed = ", ".join(sorted(allowed))
+        raise NotPermittedError(
+            f"This query needs one of these roles: {needed}. "
+            f"You hold: {', '.join(sorted(identity.roles)) or 'no recognised role'}."
+        )
+
+    return identity
+
+
+# OPC UA probes open an anonymous session to a PLC the caller names; a viewer must not
+# be able to point the console at an arbitrary opc.tcp endpoint. Engineer + admin, like
+# the connectivity writes.
+OPC_PROBE_ROLES: frozenset[str] = frozenset({"engineer", "admin"})

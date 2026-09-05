@@ -15,6 +15,10 @@ scrape_configs:
     static_configs:
       - targets: ["graphdb_client:9092"]
 
+  - job_name: uns_opcua
+    static_configs:
+      - targets: ["opcua_client:9093"]
+
   - job_name: uns_simulator
     static_configs:
       - targets: ["uns_simulator:9093"]

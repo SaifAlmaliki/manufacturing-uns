@@ -64,4 +64,9 @@ describe('featureAllowed', () => {
   it('grants nothing to a user with no recognised role', () => {
     expect(featureAllowed([], 'uns_tree')).toBe(false);
   });
+
+  it('grants connectivity to engineers but not viewers', () => {
+    expect(featureAllowed(['engineer'], 'connectivity')).toBe(true);
+    expect(featureAllowed(['viewer'], 'connectivity')).toBe(false);
+  });
 });

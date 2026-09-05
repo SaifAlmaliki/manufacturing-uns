@@ -31,6 +31,7 @@ import {
   DELETE_ALERT_RULE_MUTATION,
   GET_ALERT_RULES_QUERY,
   GET_ASSET_CHILDREN_QUERY,
+  GET_CONNECTIVITY_SERVERS_QUERY,
   GET_HIERARCHY_QUERY,
   GET_HISTORIC_EVENTS_BY_PROPERTY_QUERY,
   GET_HISTORIC_EVENTS_BY_PUBLISHERS_QUERY,
@@ -40,19 +41,29 @@ import {
   GET_UNS_NODES_BY_PROPERTY_QUERY,
   GET_UNS_NODES_QUERY,
   GET_UNS_TREE_CHILDREN_QUERY,
+  READ_OPCUA_NODES_QUERY,
   RECORD_ALERT_RULE_EVALUATION_MUTATION,
   RETRY_HIERARCHY_MIGRATE_MUTATION,
   SAVE_ALERT_RULES_MUTATION,
   SAVE_ALERT_RULE_MUTATION,
+  SAVE_CONNECTIVITY_SERVER_MUTATION,
   SAVE_HIERARCHY_MUTATION,
   SET_ALERT_RULE_ENABLED_MUTATION,
   SUBSCRIBE_KAFKA_MESSAGES,
   SUBSCRIBE_MQTT_MESSAGES,
+  SUBSCRIBE_OPCUA_DATA_CHANGES,
+  SUBSCRIBE_OPCUA_VARIABLES_MUTATION,
+  BROWSE_OPCUA_QUERY,
   DELETE_ACCESS_GROUP_MUTATION,
+  DELETE_CONNECTIVITY_SERVER_MUTATION,
+  DISCOVER_OPCUA_VARIABLES_QUERY,
   GET_ACCESS_GROUPS_QUERY,
   GET_ASSETS_QUERY,
   SAVE_ACCESS_GROUP_MUTATION,
   SET_ACCESS_GROUP_MEMBERS_MUTATION,
+  TEST_OPCUA_CONNECTION_QUERY,
+  UNSUBSCRIBE_CONNECTIVITY_TAG_MUTATION,
+  UPDATE_CONNECTIVITY_TAG_TOPIC_MUTATION,
 } from './queries'
 import {
   alertRuleToGraphqlInput,
@@ -64,6 +75,9 @@ import type {
   AccessGroupDto,
   GraphqlAlertRule,
   GraphqlAssetNode,
+  GraphqlConnectivityServer,
+  GraphqlConnectivityServerInput,
+  GraphqlConnectivityTestResult,
   GraphqlHistoricalEvent,
   GraphqlHierarchyMigrateJob,
   GraphqlHierarchySaveResult,
@@ -71,6 +85,8 @@ import type {
   GraphqlHierarchyTreeInput,
   GraphqlKafkaMessage,
   GraphqlMqttMessage,
+  GraphqlOpcUaBrowseNode,
+  GraphqlOpcUaDataValue,
   GraphqlPrefixRenameInput,
   GraphqlSpbNode,
   GraphqlTopicContext,
@@ -660,6 +676,180 @@ export class UnsGraphQLClient {
       segment: asset.segment,
       level: asset.level,
     }))
+  }
+
+  /**
+   * Assets & Connectivity (ADR-0008). Servers and tags live in `console.connectivity_*`;
+   * the console edits them only through GraphQL, and `opcua_client` polls the catalog.
+   * Null means the endpoint could not be reached, not that the platform has no servers.
+   */
+  public async getConnectivityServers(
+    protocol?: 'OPC_UA',
+  ): Promise<GraphqlConnectivityServer[] | null> {
+    const res = await this.executeQuery<{ getConnectivityServers: GraphqlConnectivityServer[] }>(
+      GET_CONNECTIVITY_SERVERS_QUERY,
+      protocol ? { protocol } : {},
+    )
+    if (res.error) {
+      return null
+    }
+    return res.data?.getConnectivityServers ?? []
+  }
+
+  public async saveConnectivityServer(
+    server: GraphqlConnectivityServerInput,
+  ): Promise<GraphqlConnectivityServer> {
+    const res = await this.executeQuery<{ saveConnectivityServer: GraphqlConnectivityServer }>(
+      SAVE_CONNECTIVITY_SERVER_MUTATION,
+      { server },
+    )
+    if (res.error || !res.data?.saveConnectivityServer) {
+      throw new Error(res.error || 'Connectivity server was not saved')
+    }
+    return res.data.saveConnectivityServer
+  }
+
+  public async deleteConnectivityServer(id: string): Promise<boolean> {
+    const res = await this.executeQuery<{ deleteConnectivityServer: boolean }>(
+      DELETE_CONNECTIVITY_SERVER_MUTATION,
+      { id },
+    )
+    if (res.error) {
+      throw new Error(res.error)
+    }
+    return res.data?.deleteConnectivityServer === true
+  }
+
+  public async testOpcUaConnection(endpoint: string): Promise<GraphqlConnectivityTestResult> {
+    const res = await this.executeQuery<{ testOpcUaConnection: GraphqlConnectivityTestResult }>(
+      TEST_OPCUA_CONNECTION_QUERY,
+      { endpoint },
+    )
+    if (res.error || !res.data?.testOpcUaConnection) {
+      return { ok: false, error: res.error ?? 'unreachable', elapsedMs: 0 }
+    }
+    return res.data.testOpcUaConnection
+  }
+
+  public async browseOpcUa(
+    endpoint: string,
+    nodeId?: string | null,
+  ): Promise<GraphqlOpcUaBrowseNode[]> {
+    const res = await this.executeQuery<{ browseOpcUa: GraphqlOpcUaBrowseNode[] }>(
+      BROWSE_OPCUA_QUERY,
+      { endpoint, nodeId: nodeId ?? null },
+    )
+    if (res.error) {
+      throw new Error(res.error)
+    }
+    return res.data?.browseOpcUa ?? []
+  }
+
+  public async discoverOpcUaVariables(
+    endpoint: string,
+    nodeId?: string | null,
+  ): Promise<GraphqlOpcUaBrowseNode[]> {
+    const res = await this.executeQuery<{ discoverOpcUaVariables: GraphqlOpcUaBrowseNode[] }>(
+      DISCOVER_OPCUA_VARIABLES_QUERY,
+      { endpoint, nodeId: nodeId ?? null },
+    )
+    if (res.error) {
+      throw new Error(res.error)
+    }
+    return res.data?.discoverOpcUaVariables ?? []
+  }
+
+  public async subscribeOpcUaVariables(
+    serverId: string,
+    nodeId?: string | null,
+  ): Promise<{ nodeId: string; browsePath: string; displayName: string; mqttTopic: string; subscribed: boolean }[]> {
+    const res = await this.executeQuery<{ subscribeOpcUaVariables: unknown[] }>(
+      SUBSCRIBE_OPCUA_VARIABLES_MUTATION,
+      { serverId, nodeId: nodeId ?? null },
+    )
+    if (res.error || !res.data?.subscribeOpcUaVariables) {
+      throw new Error(res.error || 'Subscribe failed')
+    }
+    return res.data.subscribeOpcUaVariables as never
+  }
+
+  public async updateConnectivityTagTopic(
+    serverId: string,
+    nodeId: string,
+    mqttTopic: string,
+  ): Promise<{ nodeId: string; mqttTopic: string; subscribed: boolean }> {
+    const res = await this.executeQuery<{ updateConnectivityTagTopic: unknown }>(
+      UPDATE_CONNECTIVITY_TAG_TOPIC_MUTATION,
+      { serverId, nodeId, mqttTopic },
+    )
+    if (res.error || !res.data?.updateConnectivityTagTopic) {
+      throw new Error(res.error || 'Topic was not updated')
+    }
+    return res.data.updateConnectivityTagTopic as never
+  }
+
+  public async unsubscribeConnectivityTag(serverId: string, nodeId: string): Promise<boolean> {
+    const res = await this.executeQuery<{ unsubscribeConnectivityTag: boolean }>(
+      UNSUBSCRIBE_CONNECTIVITY_TAG_MUTATION,
+      { serverId, nodeId },
+    )
+    if (res.error) {
+      throw new Error(res.error)
+    }
+    return res.data?.unsubscribeConnectivityTag === true
+  }
+
+  /** One-shot read of current OPC UA node values; the drawer polls this before subscribing. */
+  public async readOpcUaNodes(endpoint: string, nodeIds: string[]): Promise<GraphqlOpcUaDataValue[]> {
+    const res = await this.executeQuery<{ readOpcUaNodes: GraphqlOpcUaDataValue[] }>(
+      READ_OPCUA_NODES_QUERY,
+      { endpoint, nodeIds },
+    )
+    if (res.error) {
+      throw new Error(res.error)
+    }
+    return res.data?.readOpcUaNodes ?? []
+  }
+
+  /**
+   * Live OPC UA values over the graphql-transport-ws subscription. Returns an unsubscribe
+   * function. When the socket is not ready, the caller falls back to polling
+   * `readOpcUaNodes`; the server-side subscription exists either way.
+   */
+  public subscribeOpcUaDataChanges(
+    endpoint: string,
+    nodeIds: string[],
+    onData: (value: GraphqlOpcUaDataValue) => void,
+  ): () => void {
+    if (!this.wsConnected || !this.wsProtocolReady || this.ws?.readyState !== WebSocket.OPEN) {
+      return () => undefined
+    }
+
+    const subId = `sub_opcua_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    this.activeWsSubscriptions.set(subId, (data: unknown) => {
+      const payload = data as { opcUaDataChanges?: GraphqlOpcUaDataValue }
+      if (payload?.opcUaDataChanges) {
+        onData(payload.opcUaDataChanges)
+      }
+    })
+
+    this.ws.send(
+      JSON.stringify({
+        id: subId,
+        type: 'subscribe',
+        payload: {
+          query: SUBSCRIBE_OPCUA_DATA_CHANGES,
+          variables: { endpoint, nodeIds },
+        },
+      }),
+    )
+
+    return () => {
+      this.activeWsSubscriptions.delete(subId)
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify({ id: subId, type: 'complete' }))
+      }
+    }
   }
 
   private sendMqttSubscription(

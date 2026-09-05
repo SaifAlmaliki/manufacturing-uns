@@ -36,6 +36,11 @@ from sqlalchemy import text
 
 from uns_model.alert_rules import AlertRuleRepository, AlertRuleSpec
 from uns_model.asset_context import TopicContextResolver
+from uns_model.connectivity import (
+    ConnectivityRepository,
+    ConnectivityServerSpec,
+    ConnectivityTagSpec,
+)
 from uns_model.engine import Database
 from uns_model.model_config import ModelConfig
 from uns_model.notifications import AssetModelChangeListener
@@ -46,6 +51,7 @@ from uns_model.repositories import AssetModelRepository, AssetSpec
 TEST_ROOT = "PyTestUNS"
 TEST_METRIC_PREFIX = "PyTest/"
 TEST_RULE_PREFIX = "pytest-"
+TEST_SERVER_PREFIX = "pytest-server-"
 
 METRICS_TABLE = "public.uns_metrics"
 METRICS_1M_VIEW = "public.uns_metrics_1m"
@@ -657,3 +663,214 @@ async def test_asset_model_change_listener_hears_a_notify(repository: AssetModel
     finally:
         await listener.stop()
         await _clean(database)
+
+
+# --------------------------------------------------------------------------- #
+# Connectivity catalog
+# --------------------------------------------------------------------------- #
+
+
+def _server(server_id: str = f"{TEST_SERVER_PREFIX}wtp", **overrides) -> ConnectivityServerSpec:
+    defaults = {
+        "id": server_id,
+        "name": "Water Treatment Plant OPC-UA",
+        "protocol": "opc_ua",
+        "endpoint": "opc.tcp://wtp.local:4840",
+    }
+    return ConnectivityServerSpec(**(defaults | overrides))
+
+
+def _tag(node_id: str, **overrides) -> ConnectivityTagSpec:
+    defaults = {
+        "node_id": node_id,
+        "browse_path": f"Path/{node_id}",
+        "display_name": node_id,
+        "mqtt_topic": f"Plant/{node_id}",
+        "subscribed": True,
+    }
+    return ConnectivityTagSpec(**(defaults | overrides))
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def connectivity(database: Database):
+    """A ConnectivityRepository with no test servers in it, before and after."""
+
+    async def clean() -> None:
+        async with database.begin() as connection:
+            # Cascades to console.connectivity_tags.
+            await connection.execute(
+                text("DELETE FROM console.connectivity_servers WHERE starts_with(id, :prefix)"),
+                {"prefix": TEST_SERVER_PREFIX},
+            )
+
+    await clean()
+    yield ConnectivityRepository(database)
+    await clean()
+
+
+@pytest.mark.integrationtest
+@pytest.mark.asyncio(loop_scope="session")
+async def test_a_saved_connectivity_server_comes_back_whole(connectivity: ConnectivityRepository):
+    await connectivity.save_server(_server(name="WTP OPC-UA", endpoint="opc.tcp://wtp.local:4840"))
+
+    servers = await connectivity.list_servers()
+    matching = [server for server in servers if server.id.startswith(TEST_SERVER_PREFIX)]
+    assert len(matching) == 1
+    server = matching[0]
+    assert server.name == "WTP OPC-UA"
+    assert server.protocol == "opc_ua"
+    assert server.endpoint == "opc.tcp://wtp.local:4840"
+    # Defaults come from the table, not from the console.
+    assert server.last_status == "untested"
+    assert server.last_error == ""
+    assert server.last_tested_at is None
+
+
+@pytest.mark.integrationtest
+@pytest.mark.asyncio(loop_scope="session")
+async def test_saving_the_same_server_id_edits_it_rather_than_duplicating_it(
+    connectivity: ConnectivityRepository,
+):
+    await connectivity.save_server(_server(endpoint="opc.tcp://wtp.local:4840"))
+    await connectivity.save_server(_server(endpoint="opc.tcp://wtp.local:4841", name="Revised"))
+
+    servers = [server for server in await connectivity.list_servers() if server.id.startswith(TEST_SERVER_PREFIX)]
+    assert len(servers) == 1
+    assert servers[0].endpoint == "opc.tcp://wtp.local:4841"
+    assert servers[0].name == "Revised"
+
+
+@pytest.mark.integrationtest
+@pytest.mark.asyncio(loop_scope="session")
+async def test_list_servers_filters_by_protocol(connectivity: ConnectivityRepository):
+    await connectivity.save_server(_server())
+
+    opcua = await connectivity.list_servers(protocol="opc_ua")
+    assert any(server.id.startswith(TEST_SERVER_PREFIX) for server in opcua)
+    other = await connectivity.list_servers(protocol="modbus")
+    assert not any(server.id.startswith(TEST_SERVER_PREFIX) for server in other)
+
+
+@pytest.mark.integrationtest
+@pytest.mark.asyncio(loop_scope="session")
+async def test_deleting_a_server_takes_its_tags_with_it(
+    connectivity: ConnectivityRepository, database: Database
+):
+    server = await connectivity.save_server(_server())
+    await connectivity.replace_subscribed_tags(
+        server.id, [_tag("ns=3;s=A"), _tag("ns=3;s=B")]
+    )
+
+    assert await connectivity.delete_server(server.id) is True
+    assert await connectivity.delete_server(server.id) is False
+    async with database.begin() as connection:
+        orphans = (
+            await connection.execute(
+                text("SELECT count(*) FROM console.connectivity_tags WHERE server_id = :id"),
+                {"id": server.id},
+            )
+        ).scalar()
+    assert orphans == 0
+
+
+@pytest.mark.integrationtest
+@pytest.mark.asyncio(loop_scope="session")
+async def test_replace_subscribed_tags_keeps_an_engineer_edited_topic(connectivity: ConnectivityRepository):
+    """Re-discovery must not overwrite an `mqtt_topic` an engineer has set."""
+    server = await connectivity.save_server(_server())
+    await connectivity.replace_subscribed_tags(
+        server.id, [_tag("ns=3;s=A", mqtt_topic="Plant/A")]
+    )
+    # Engineer edits the topic, then re-discovery arrives with a different default.
+    await connectivity.update_tag_topic(server.id, "ns=3;s=A", "Plant/T101/Level")
+    await connectivity.replace_subscribed_tags(
+        server.id, [_tag("ns=3;s=A", mqtt_topic="RawWater/T101/Level")]
+    )
+
+    tags = await connectivity.list_subscribed_tags(server.id)
+    assert len(tags) == 1
+    assert tags[0].mqtt_topic == "Plant/T101/Level"
+    assert tags[0].subscribed is True
+
+
+@pytest.mark.integrationtest
+@pytest.mark.asyncio(loop_scope="session")
+async def test_replace_subscribed_tags_adds_new_nodes_and_does_not_unsubscribe_missing_ones(
+    connectivity: ConnectivityRepository,
+):
+    """Missing nodes stay subscribed until `unsubscribe_tag` (per the brief)."""
+    server = await connectivity.save_server(_server())
+    await connectivity.replace_subscribed_tags(
+        server.id, [_tag("ns=3;s=A", mqtt_topic="Plant/A")]
+    )
+    # A second discovery that drops A and adds B.
+    await connectivity.replace_subscribed_tags(
+        server.id, [_tag("ns=3;s=B", mqtt_topic="Plant/B")]
+    )
+
+    tags = {tag.node_id: tag for tag in await connectivity.list_subscribed_tags(server.id)}
+    assert set(tags) == {"ns=3;s=A", "ns=3;s=B"}
+    assert tags["ns=3;s=A"].subscribed is True
+    assert tags["ns=3;s=B"].subscribed is True
+    assert tags["ns=3;s=A"].mqtt_topic == "Plant/A"
+    assert tags["ns=3;s=B"].mqtt_topic == "Plant/B"
+
+
+@pytest.mark.integrationtest
+@pytest.mark.asyncio(loop_scope="session")
+async def test_unsubscribe_tag_marks_the_row_but_keeps_it(connectivity: ConnectivityRepository):
+    server = await connectivity.save_server(_server())
+    await connectivity.replace_subscribed_tags(server.id, [_tag("ns=3;s=A")])
+
+    unsubscribed = await connectivity.unsubscribe_tag(server.id, "ns=3;s=A")
+    assert unsubscribed is not None
+    assert unsubscribed.subscribed is False
+    # The row is still there, so a re-subscribe is a cheap update, not a re-discovery.
+    tags = await connectivity.list_subscribed_tags(server.id)
+    assert len(tags) == 1
+
+
+@pytest.mark.integrationtest
+@pytest.mark.asyncio(loop_scope="session")
+async def test_record_test_stamps_status_and_error_by_the_server(
+    connectivity: ConnectivityRepository,
+):
+    server = await connectivity.save_server(_server())
+
+    failed = await connectivity.record_test(server.id, ok=False, error="dial tcp: i/o timeout")
+    assert failed.last_status == "failed"
+    assert failed.last_error == "dial tcp: i/o timeout"
+    assert failed.last_tested_at is not None
+
+    ok = await connectivity.record_test(server.id, ok=True)
+    assert ok.last_status == "connected"
+    assert ok.last_error == ""
+    assert ok.last_tested_at >= failed.last_tested_at
+
+
+@pytest.mark.integrationtest
+@pytest.mark.asyncio(loop_scope="session")
+async def test_catalog_updated_at_tracks_writes(connectivity: ConnectivityRepository):
+    before = await connectivity.catalog_updated_at()
+
+    server = await connectivity.save_server(_server())
+    after_server = await connectivity.catalog_updated_at()
+    assert after_server is not None
+    if before is not None:
+        assert after_server >= before
+
+    await connectivity.replace_subscribed_tags(server.id, [_tag("ns=3;s=A")])
+    after_tags = await connectivity.catalog_updated_at()
+    assert after_tags is not None
+    assert after_tags >= after_server
+
+
+@pytest.mark.integrationtest
+@pytest.mark.asyncio(loop_scope="session")
+async def test_a_server_outside_the_vocabulary_never_reaches_the_database(
+    connectivity: ConnectivityRepository,
+):
+    with pytest.raises(ValueError, match="protocol must be one of"):
+        await connectivity.save_server(_server(protocol="modbus"))
+
+    assert await connectivity.list_servers(protocol="modbus") == []

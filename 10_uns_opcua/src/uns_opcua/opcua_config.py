@@ -31,6 +31,7 @@ class TagConfig:
     metric_path: str
     unit: str | None = None
     deadband: Deadband | None = None
+    mqtt_topic: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,8 +127,6 @@ def parse_server(raw: Any) -> ServerConfig:
     if not url:
         raise ValueError(f"opcua server {name!r} is missing 'url'")
     tags = tuple(parse_tag(tag) for tag in raw.get("tags") or ())
-    if not tags:
-        raise ValueError(f"opcua server {name!r} has no tags")
     return ServerConfig(
         name=str(name),
         url=str(url),

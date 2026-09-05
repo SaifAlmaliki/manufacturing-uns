@@ -101,9 +101,9 @@ def test_parse_server_defaults_publishing_interval():
     assert len(server.tags) == 1
 
 
-def test_parse_server_rejects_a_server_with_no_tags():
-    with pytest.raises(ValueError, match="no tags"):
-        parse_server({"name": "plc01", "url": "opc.tcp://host:4840/", "tags": []})
+def test_parse_server_allows_zero_tags():
+    server = parse_server({"name": "opcplc", "url": "opc.tcp://desktop-h4hdql2:50000/"})
+    assert server.tags == ()
 
 
 def test_parse_spool_defaults_and_normalises_synchronous():

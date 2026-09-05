@@ -31,11 +31,13 @@ from uns_graphql.auth.context import AuthenticatedGraphQLRouter, graphql_context
 from uns_graphql.graphql_config import PlatformConfig
 from uns_graphql.mutations.access_group import Mutation as AccessGroupMutation
 from uns_graphql.mutations.alert_rule import Mutation as AlertRuleMutation
+from uns_graphql.mutations.connectivity import Mutation as ConnectivityMutation
 from uns_graphql.mutations.hierarchy import Mutation as HierarchyMutation, Query as HierarchyQuery
 from uns_graphql.mutations.oee import Mutation as OeeMutation
-from uns_graphql.queries import access_group, alert_rule, asset, graph, historian, oee
+from uns_graphql.queries import access_group, alert_rule, asset, connectivity, graph, historian, oee
 from uns_graphql.subscriptions.kafka import KAFKASubscription
 from uns_graphql.subscriptions.mqtt import MQTTSubscription
+from uns_graphql.subscriptions.opcua import Subscription as OpcUaSubscription
 from uns_graphql.type.basetype import Int64
 
 LOGGER = logging.getLogger(__name__)
@@ -43,7 +45,14 @@ LOGGER = logging.getLogger(__name__)
 
 @strawberry.type(description="Query the UNS for current or historic Nodes/Events ")
 class Query(
-    historian.Query, graph.Query, asset.Query, alert_rule.Query, oee.Query, HierarchyQuery, access_group.Query
+    historian.Query,
+    graph.Query,
+    asset.Query,
+    alert_rule.Query,
+    oee.Query,
+    HierarchyQuery,
+    access_group.Query,
+    connectivity.Query,
 ):
     @classmethod
     async def on_startup(cls):
@@ -69,7 +78,13 @@ class Query(
 
 
 @strawberry.type(description="Write configuration to the UNS platform")
-class Mutation(AlertRuleMutation, OeeMutation, HierarchyMutation, AccessGroupMutation):
+class Mutation(
+    AlertRuleMutation,
+    OeeMutation,
+    HierarchyMutation,
+    AccessGroupMutation,
+    ConnectivityMutation,
+):
     """
     The mutations this service exposes.
 
@@ -90,7 +105,7 @@ class Mutation(AlertRuleMutation, OeeMutation, HierarchyMutation, AccessGroupMut
 
 
 @strawberry.type(description="Subscribe to UNS Events or Streams")
-class Subscription(MQTTSubscription, KAFKASubscription):
+class Subscription(MQTTSubscription, KAFKASubscription, OpcUaSubscription):
     @classmethod
     async def on_shutdown(cls):
         """
@@ -98,6 +113,7 @@ class Subscription(MQTTSubscription, KAFKASubscription):
         """
         await MQTTSubscription.on_shutdown()
         await KAFKASubscription.on_shutdown()
+        await OpcUaSubscription.on_shutdown()
 
 
 class UNSGraphql:

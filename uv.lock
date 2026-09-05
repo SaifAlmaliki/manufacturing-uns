@@ -1649,6 +1649,7 @@ dependencies = [
     { name = "strawberry-graphql", extra = ["cli", "fastapi"] },
     { name = "uns-config" },
     { name = "uns-model" },
+    { name = "uns-opcua" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -1666,6 +1667,7 @@ requires-dist = [
     { name = "strawberry-graphql", extras = ["fastapi", "cli"], specifier = ">=0.314.3" },
     { name = "uns-config", editable = "00_uns_config" },
     { name = "uns-model", editable = "09_uns_model" },
+    { name = "uns-opcua", editable = "10_uns_opcua" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34,<0.53" },
 ]
 
@@ -1757,6 +1759,7 @@ dependencies = [
     { name = "dynaconf" },
     { name = "logger" },
     { name = "pyyaml" },
+    { name = "ruamel-yaml" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "uns-config" },
 ]
@@ -1768,6 +1771,7 @@ requires-dist = [
     { name = "dynaconf", specifier = "~=3.2" },
     { name = "logger", specifier = "~=1.4" },
     { name = "pyyaml", specifier = ">=6.0.2,<7" },
+    { name = "ruamel-yaml", specifier = ">=0.18,<1" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.36,<3" },
     { name = "uns-config", editable = "00_uns_config" },
 ]

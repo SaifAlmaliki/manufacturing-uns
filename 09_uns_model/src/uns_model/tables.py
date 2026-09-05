@@ -445,3 +445,142 @@ class AlertRuleRole(Base):
 
     def __repr__(self) -> str:
         return f"AlertRuleRole(rule_id={self.rule_id!r}, role={self.role!r})"
+
+
+# The vocabularies the Connectivity catalog uses. Declared once here so the
+# CHECK constraints, the migration and the GraphQL enums cannot drift apart.
+CONNECTIVITY_PROTOCOLS: tuple[str, ...] = ("opc_ua",)
+
+CONNECTIVITY_STATUSES: tuple[str, ...] = ("untested", "connected", "failed")
+
+CONNECTIVITY_AUTH_MODES: tuple[str, ...] = ("anonymous", "username", "x509")
+
+CONNECTIVITY_SECURITY_POLICIES: tuple[str, ...] = (
+    "None",
+    "Basic256Sha256",
+    "Aes128Sha256RsaOaep",
+    "Aes256Sha256RsaPss",
+)
+
+CONNECTIVITY_SECURITY_MODES: tuple[str, ...] = ("None", "Sign", "SignAndEncrypt")
+
+
+class ConnectivityServer(Base):
+    """
+    An OPC-UA server the console dials.
+
+    Config, not time-series: a handful of rows an engineer edits, which is why
+    it lives in the `console` schema next to Alert Rules. The OPC-UA bridge
+    (10_uns_opcua) reads this catalog to know which servers to connect to and
+    which tags to republish over MQTT.
+
+    `id` is text and supplied by the caller: the console generates it, so a
+    server can be exported and re-imported without changing identity.
+    """
+
+    __tablename__ = "connectivity_servers"
+    __table_args__ = (
+        CheckConstraint(
+            _one_of("protocol", CONNECTIVITY_PROTOCOLS),
+            name="connectivity_servers_protocol_check",
+        ),
+        CheckConstraint(
+            _one_of("last_status", CONNECTIVITY_STATUSES),
+            name="connectivity_servers_last_status_check",
+        ),
+        CheckConstraint(
+            _one_of("auth_mode", CONNECTIVITY_AUTH_MODES),
+            name="connectivity_servers_auth_mode_check",
+        ),
+        CheckConstraint(
+            _one_of("security_policy", CONNECTIVITY_SECURITY_POLICIES),
+            name="connectivity_servers_security_policy_check",
+        ),
+        CheckConstraint(
+            _one_of("security_mode", CONNECTIVITY_SECURITY_MODES),
+            name="connectivity_servers_security_mode_check",
+        ),
+        Index("idx_connectivity_servers_protocol", "protocol"),
+        {"schema": CONSOLE_SCHEMA},
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    protocol: Mapped[str] = mapped_column(Text, nullable=False)
+    endpoint: Mapped[str] = mapped_column(Text, nullable=False)
+    auth_mode: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'anonymous'"))
+    security_policy: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'None'"))
+    security_mode: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'None'"))
+    username: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
+    password: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
+    certificate: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
+    private_key: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
+    server_certificate: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
+
+    last_status: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'untested'")
+    )
+    """untested | connected | failed. Updated by `ConnectivityRepository.record_test`."""
+
+    last_error: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
+    last_tested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    tags: Mapped[list[ConnectivityTag]] = relationship(
+        back_populates="server",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        lazy="selectin",
+    )
+
+    def __repr__(self) -> str:
+        return f"ConnectivityServer(id={self.id!r}, endpoint={self.endpoint!r})"
+
+
+class ConnectivityTag(Base):
+    """
+    An OPC-UA node the console subscribes to.
+
+    `subscribed` is set by the engineer (or by `replace_subscribed_tags` during
+    discovery) and is left untouched when a later discovery does not list the
+    node: an engineer unsubscribes deliberately via `unsubscribe_tag`, never by
+    omission. `mqtt_topic` is engineer-edited and must survive a re-discovery.
+    """
+
+    __tablename__ = "connectivity_tags"
+    __table_args__ = (
+        Index("idx_connectivity_tags_server", "server_id"),
+        Index(
+            "idx_connectivity_tags_subscribed",
+            "server_id",
+            "subscribed",
+            postgresql_where=text("subscribed"),
+        ),
+        {"schema": CONSOLE_SCHEMA},
+    )
+
+    server_id: Mapped[str] = mapped_column(
+        Text,
+        ForeignKey(f"{CONSOLE_SCHEMA}.connectivity_servers.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    node_id: Mapped[str] = mapped_column(Text, primary_key=True)
+
+    browse_path: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
+    display_name: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
+    mqtt_topic: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
+    subscribed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    server: Mapped[ConnectivityServer] = relationship(back_populates="tags")
+
+    def __repr__(self) -> str:
+        return f"ConnectivityTag(server_id={self.server_id!r}, node_id={self.node_id!r}, subscribed={self.subscribed})"

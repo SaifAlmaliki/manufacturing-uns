@@ -1,13 +1,21 @@
 """Tests for the supervisor's wiring and shutdown behaviour."""
 
 import asyncio
+from datetime import datetime
+from unittest.mock import AsyncMock
 
 import pytest
+from uns_model.connectivity import ConnectivityServerSpec, ConnectivityTagSpec
 from uns_opcua.main import (
     _idle_when_no_servers,
+    _poll_and_reload,
+    _supervise,
     build_bindings_for_all,
+    load_servers_from_catalog,
+    resolve_servers,
     run_connector,
     run_connector_keeping_metrics_alive,
+    should_reload,
 )
 from uns_opcua.opcua_config import ServerConfig, SpoolConfig, TagConfig
 
@@ -130,3 +138,185 @@ async def test_run_connector_cancels_every_task_on_shutdown(tmp_path, monkeypatc
     owned = {"spool_writer", "forwarder", "model_check", "collector:plc01"}
     leaked = [t.get_name() for t in asyncio.all_tasks() if t.get_name() in owned and not t.done()]
     assert leaked == []
+
+
+class _FakeCatalog:
+    """A stand-in for ConnectivityRepository that returns canned specs."""
+
+    def __init__(self, servers, tags_by_server_id, *, raise_on_read: bool = False):
+        self._servers = servers
+        self._tags = tags_by_server_id
+        self._raise = raise_on_read
+
+    async def list_servers(self):
+        if self._raise:
+            raise RuntimeError("catalog down")
+        return list(self._servers)
+
+    async def list_subscribed_tags(self, server_id):
+        if self._raise:
+            raise RuntimeError("catalog down")
+        return list(self._tags.get(server_id, ()))
+
+
+async def test_load_servers_from_catalog_returns_catalog_servers():
+    servers = [ConnectivityServerSpec("s1", "opcplc", "opc_ua", "opc.tcp://host:4840/")]
+    tags = {"s1": [ConnectivityTagSpec("ns=3;s=A", "Path/A", "A", "Plant/A", True)]}
+    repository = _FakeCatalog(servers, tags)
+    loaded = await load_servers_from_catalog(repository)
+    assert len(loaded) == 1
+    assert loaded[0].name == "opcplc"
+    assert loaded[0].tags[0].mqtt_topic == "Plant/A"
+
+
+async def test_load_servers_from_catalog_returns_empty_when_catalog_unreachable():
+    """A console that is briefly down must not stop a YAML-only connector."""
+    repository = _FakeCatalog([], {}, raise_on_read=True)
+    loaded = await load_servers_from_catalog(repository)
+    assert loaded == ()
+
+
+async def test_resolve_servers_prefers_catalog_when_non_empty():
+    catalog_server = ServerConfig(
+        name="catalog-plc",
+        url="opc.tcp://catalog:4840/",
+        publishing_interval_ms=200,
+        tags=(TagConfig(node_id="ns=2;s=1", asset="Plant/A", metric_path=""),),
+    )
+    assert resolve_servers((catalog_server,)) == (catalog_server,)
+
+
+async def test_resolve_servers_falls_back_to_yaml_when_catalog_empty(monkeypatch):
+    yaml_server = ServerConfig(
+        name="yaml-plc",
+        url="opc.tcp://yaml:4840/",
+        publishing_interval_ms=200,
+        tags=(TagConfig(node_id="ns=2;s=2", asset="Plant/B", metric_path=""),),
+    )
+    monkeypatch.setattr("uns_opcua.main.OpcUaConfig.servers", (yaml_server,))
+    assert resolve_servers(()) == (yaml_server,)
+
+
+def test_should_reload_true_when_timestamp_changes():
+    prev = datetime(2026, 1, 1, 12, 0, 0)
+    current = datetime(2026, 1, 1, 12, 0, 5)
+    assert should_reload(prev, current) is True
+
+
+def test_should_reload_true_when_catalog_appears_after_yaml_startup():
+    """prev=None (catalog unreachable at startup) and current set -> reload."""
+    assert should_reload(None, datetime(2026, 1, 1, 12, 0, 0)) is True
+
+
+def test_should_reload_false_when_timestamp_unchanged():
+    ts = datetime(2026, 1, 1, 12, 0, 0)
+    assert should_reload(ts, ts) is False
+
+
+def test_should_reload_false_when_catalog_still_unreachable():
+    """prev=None and current=None -> keep the running connectors."""
+    assert should_reload(None, None) is False
+
+
+def test_should_reload_false_when_catalog_goes_down_mid_run():
+    """A reachable catalog going to None must not tear down running collectors."""
+    prev = datetime(2026, 1, 1, 12, 0, 0)
+    assert should_reload(prev, None) is False
+
+
+class _FakeCatalogUpdatedAt:
+    """Returns successive `catalog_updated_at` values, one per call."""
+
+    def __init__(self, timestamps):
+        self._timestamps = list(timestamps)
+
+    async def catalog_updated_at(self):
+        return self._timestamps.pop(0) if self._timestamps else None
+
+
+async def test_poll_and_reload_cancels_connector_when_timestamp_moves():
+    started = asyncio.Event()
+
+    async def never_ending():
+        started.set()
+        await asyncio.Event().wait()
+
+    connector = asyncio.create_task(never_ending(), name="connector")
+    repo = _FakeCatalogUpdatedAt([datetime(2026, 1, 1, 12, 0, 5)])
+    poller = asyncio.create_task(
+        _poll_and_reload(repo, connector, datetime(2026, 1, 1, 12, 0, 0), interval_s=0)
+    )
+
+    await started.wait()
+    new_ts = await asyncio.wait_for(poller, timeout=2)
+    await asyncio.gather(connector, return_exceptions=True)
+    assert connector.cancelled()
+    assert new_ts == datetime(2026, 1, 1, 12, 0, 5)
+
+
+async def test_poll_and_reload_keeps_connector_when_timestamp_unchanged():
+    """An unchanged catalog must not cancel the running connector within the poll window."""
+    started = asyncio.Event()
+
+    async def never_ending():
+        started.set()
+        await asyncio.Event().wait()
+
+    connector = asyncio.create_task(never_ending(), name="connector")
+    repo = _FakeCatalogUpdatedAt([datetime(2026, 1, 1, 12, 0, 0)])
+    poller = asyncio.create_task(
+        _poll_and_reload(repo, connector, datetime(2026, 1, 1, 12, 0, 0), interval_s=0.05)
+    )
+
+    await started.wait()
+    await asyncio.sleep(0.2)
+    assert not connector.done()
+    assert not poller.done()
+    connector.cancel()
+    poller.cancel()
+    await asyncio.gather(connector, poller, return_exceptions=True)
+
+
+# --------------------------------------------------------------- _supervise shutdown
+
+
+async def test_supervise_re_raises_a_process_cancel_and_does_not_restart(monkeypatch):
+    """A CancelledError that is not a catalog reload is shutdown, not a restart trigger.
+
+    Swallowing it would loop forever: the supervisor would cancel the connector, catch the
+    CancelledError, and immediately start a new one, defeating Ctrl+C and container stop.
+    """
+    starts = {"connector": 0}
+
+    async def never_ending_connector(**kwargs):  # noqa: ANN001
+        starts["connector"] += 1
+        await asyncio.Event().wait()
+
+    async def never_ending_poller(*args, **kwargs):  # noqa: ANN001
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(
+        "uns_opcua.main.ConnectivityRepository", lambda *_args, **_kwargs: object()
+    )
+    monkeypatch.setattr(
+        "uns_opcua.main.run_connector_keeping_metrics_alive", never_ending_connector
+    )
+    monkeypatch.setattr("uns_opcua.main._poll_and_reload", never_ending_poller)
+    monkeypatch.setattr(
+        "uns_opcua.main.load_servers_from_catalog", AsyncMock(return_value=())
+    )
+    monkeypatch.setattr("uns_opcua.main.resolve_servers", lambda _: ())
+    monkeypatch.setattr(
+        "uns_opcua.main._safe_catalog_updated_at", AsyncMock(return_value=None)
+    )
+
+    task = asyncio.create_task(_supervise())
+    await asyncio.sleep(0.05)
+    assert starts["connector"] == 1
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    # The supervisor must not have restarted the connector after the process-level cancel.
+    assert starts["connector"] == 1

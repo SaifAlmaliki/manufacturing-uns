@@ -12,8 +12,10 @@ from uns_graphql.auth.require import (
     ANY_AUTHENTICATED_ROLE,
     MUTATION_ROLES,
     NotPermittedError,
+    OPC_PROBE_ROLES,
     require,
     require_path,
+    require_role,
 )
 from uns_graphql.auth.scope import AccessScope
 from uns_graphql.auth.token import CONSOLE_ROLES, Identity
@@ -33,6 +35,13 @@ EXPECTED = {
     "saveAccessGroup": {"admin"},
     "deleteAccessGroup": {"admin"},
     "setAccessGroupMembers": {"admin"},
+    # Connectivity catalog writes: authoring a server and curating its tags is
+    # engineering work, so the five writes are engineer + admin (Task 5 brief).
+    "saveConnectivityServer": {"engineer", "admin"},
+    "deleteConnectivityServer": {"engineer", "admin"},
+    "subscribeOpcUaVariables": {"engineer", "admin"},
+    "updateConnectivityTagTopic": {"engineer", "admin"},
+    "unsubscribeConnectivityTag": {"engineer", "admin"},
 }
 
 
@@ -150,3 +159,40 @@ async def test_require_path_allows_a_path_inside_the_scope():
         identity = await require_path(_info("operator"), "AcmeWater/Site1/Filtration/Train1")
 
     assert "operator" in identity.roles
+
+
+# --------------------------------------------------------------- require_role (queries)
+
+
+def test_opc_probe_roles_are_engineer_and_admin():
+    assert OPC_PROBE_ROLES == frozenset({"engineer", "admin"})
+
+
+@pytest.mark.parametrize("role", sorted(OPC_PROBE_ROLES))
+def test_require_role_permits_an_allowed_role(role: str):
+    identity = require_role(_info(role), OPC_PROBE_ROLES)
+
+    assert role in identity.roles
+
+
+@pytest.mark.parametrize("role", sorted(CONSOLE_ROLES - OPC_PROBE_ROLES))
+def test_require_role_refuses_a_role_outside_the_set(role: str):
+    with pytest.raises(NotPermittedError) as raised:
+        require_role(_info(role), OPC_PROBE_ROLES)
+
+    message = str(raised.value)
+    for needed in sorted(OPC_PROBE_ROLES):
+        assert needed in message
+
+
+def test_require_role_refuses_an_unauthenticated_context():
+    with pytest.raises(NotPermittedError) as raised:
+        require_role(FakeInfo(None), OPC_PROBE_ROLES)
+
+    assert "not signed in" in str(raised.value).lower()
+
+
+def test_require_role_admits_when_one_of_several_roles_matches():
+    identity = require_role(_info("viewer", "admin"), OPC_PROBE_ROLES)
+
+    assert "admin" in identity.roles

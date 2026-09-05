@@ -191,6 +191,54 @@ type BytesPayload {
   data: Base64!
 }
 
+"""A connectivity protocol the console can author a server for."""
+enum ConnectivityProtocol {
+  OPC_UA
+}
+
+"""
+A Connectivity server to create or replace. The id is supplied by the console.
+"""
+input ConnectivityServerInput {
+  id: String!
+  name: String!
+  protocol: ConnectivityProtocol!
+  endpoint: String!
+}
+
+"""An OPC UA server the console dials, with its subscribed tags."""
+type ConnectivityServerType {
+  id: String!
+  name: String!
+  protocol: ConnectivityProtocol!
+  endpoint: String!
+  lastStatus: String!
+  lastError: String!
+  lastTestedAt: DateTime
+  createdAt: DateTime
+  updatedAt: DateTime
+  tags: [ConnectivityTagType!]!
+}
+
+"""One OPC UA node the console subscribes to."""
+type ConnectivityTagType {
+  serverId: String!
+  nodeId: String!
+  browsePath: String!
+  displayName: String!
+  mqttTopic: String!
+  subscribed: Boolean!
+  createdAt: DateTime
+  updatedAt: DateTime
+}
+
+"""The outcome of a connection probe against one OPC UA endpoint."""
+type ConnectivityTestResultType {
+  ok: Boolean!
+  error: String
+  elapsedMs: Float!
+}
+
 """A console role that can be notified when a rule fires."""
 enum ConsoleRole {
   ADMIN
@@ -420,6 +468,29 @@ type Mutation {
   Replace the members of an Access Group. An empty list is allowed: those people then see no plant data. Unknown id fails with a readable message.
   """
   setAccessGroupMembers(id: Int64!, subjects: [String!]!): AccessGroupType!
+
+  """
+  Create or replace one Connectivity server and return it as stored. Fails with a readable message when a value is outside the allowed vocabulary.
+  """
+  saveConnectivityServer(server: ConnectivityServerInput!): ConnectivityServerType!
+
+  """
+  Delete a Connectivity server and its tags (cascade). False when there was no such server.
+  """
+  deleteConnectivityServer(id: String!): Boolean!
+
+  """
+  Discover Variables under nodeId (or the whole Objects tree) and fold them into the catalog. An engineer's edited mqttTopic survives; nodes missing from this discovery stay subscribed until unsubscribeConnectivityTag removes them.
+  """
+  subscribeOpcUaVariables(serverId: String!, nodeId: String): [ConnectivityTagType!]!
+
+  """Set the MQTT topic an engineer wants this node republished under."""
+  updateConnectivityTagTopic(serverId: String!, nodeId: String!, mqttTopic: String!): ConnectivityTagType!
+
+  """
+  Stop subscribing to a node. A deliberate act, never done by omission. False when there was no such tag.
+  """
+  unsubscribeConnectivityTag(serverId: String!, nodeId: String!): Boolean!
 }
 
 """One product's counts and rated cycle time within a shift."""
@@ -491,6 +562,30 @@ enum OeeStatus {
   NO_PRODUCTION
   MISSING_IDEAL_CYCLE_TIME
   NO_INPUT_DATA
+}
+
+"""An OPC UA node the console browsed or discovered."""
+type OpcUaBrowseNodeType {
+  nodeId: String!
+  browseName: String!
+  displayName: String!
+  browsePath: String!
+  nodeClass: String!
+  hasChildren: Boolean!
+}
+
+"""One OPC UA node's current value as read from the server."""
+type OpcUaDataValueType {
+  nodeId: String!
+  displayName: String!
+  browsePath: String!
+
+  """The current value as a JSON scalar"""
+  value: JSON!
+  dataType: String
+  sourceTimestamp: DateTime
+  serverTimestamp: DateTime
+  status: String!
 }
 
 """A topic-prefix rename the console recorded while editing."""
@@ -591,6 +686,29 @@ type Query {
   One Access Group by id, or null when it is missing or the caller is not an admin.
   """
   getAccessGroup(id: Int64!): AccessGroupType
+
+  """
+  Every Connectivity server, oldest first. Optionally only one protocol's.
+  """
+  getConnectivityServers(protocol: ConnectivityProtocol): [ConnectivityServerType!]!
+
+  """
+  Open an anonymous session to the endpoint and read the server node. When a saved server has this endpoint, the outcome is recorded against it.
+  """
+  testOpcUaConnection(endpoint: String!): ConnectivityTestResultType!
+
+  """
+  Browse the direct children of one OPC UA node, or of Objects when nodeId is omitted.
+  """
+  browseOpcUa(endpoint: String!, nodeId: String): [OpcUaBrowseNodeType!]!
+
+  """
+  Recursively discover every Variable under nodeId, or under Objects.
+  """
+  discoverOpcUaVariables(endpoint: String!, nodeId: String): [OpcUaBrowseNodeType!]!
+
+  """Read the current value of one or more OPC UA nodes by NodeId."""
+  readOpcUaNodes(endpoint: String!, nodeIds: [String!]!): [OpcUaDataValueType!]!
 }
 
 """Whether a stop was classified by the engine or corrected by a person."""
@@ -705,6 +823,11 @@ type Subscription {
   Subscribe to Kafka messages based on provided topics. Wildcards/Regex not supported
   """
   getKafkaMessages(topics: [KAFKATopicInput!]!): StreamingMessage!
+
+  """
+  Yield the current value of one or more OPC UA nodes each time the server reports a change.
+  """
+  opcUaDataChanges(endpoint: String!, nodeIds: [String!]!): OpcUaDataValueType!
 }
 
 """
