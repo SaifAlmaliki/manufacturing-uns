@@ -50,7 +50,7 @@ export function NewAssetMenu({
         <ul
           id={menuId}
           role="menu"
-          className="absolute z-20 mt-1 min-w-[18rem] rounded-md border border-zinc-800 bg-zinc-950 py-1 shadow-lg"
+          className="absolute right-0 z-20 mt-1 min-w-[18rem] rounded-md border border-zinc-800 bg-zinc-950 py-1 shadow-lg"
         >
           {items.map((target) => (
             <li key={target} role="none">

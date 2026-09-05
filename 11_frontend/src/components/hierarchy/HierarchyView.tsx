@@ -605,7 +605,7 @@ export const HierarchyView: React.FC = () => {
 
           {tree && (
             <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]">
-              <ConsoleCard padding="none" className="min-h-[280px] overflow-hidden">
+              <ConsoleCard padding="none" className="min-h-[280px] overflow-visible">
                 <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
                   <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                     Plant tree

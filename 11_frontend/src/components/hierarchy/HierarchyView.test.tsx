@@ -151,6 +151,13 @@ describe('the plant hierarchy editor', () => {
     expect(screen.getByRole('menuitem', { name: /^Line/ })).toBeTruthy();
   });
 
+  it('does not clip the tree-header New menu on the plant card', async () => {
+    render(<HierarchyView />);
+    await waitFor(() => expect(screen.getByText('Plant tree')).toBeTruthy());
+    const card = screen.getByText('Plant tree').parentElement?.parentElement;
+    expect(card?.className ?? '').not.toMatch(/overflow-hidden/);
+  });
+
   it('creates a Cell and Machine under a Line and selects the Machine', async () => {
     render(<HierarchyView />);
     await waitFor(() => expect(screen.getByRole('button', { name: 'Line Train1' })).toBeTruthy());
