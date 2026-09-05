@@ -10,6 +10,7 @@ servers to saturate one process would want a container per server instead.
 import asyncio
 import logging
 from collections.abc import Sequence
+from datetime import datetime
 
 from uns_model.connectivity import ConnectivityRepository
 from uns_model.engine import Database
@@ -25,6 +26,7 @@ from uns_opcua.tag_map import TagBinding, build_bindings, find_conflicts
 LOGGER = logging.getLogger(__name__)
 
 CATALOG_MODEL_ENV = "opcua"
+CATALOG_POLL_INTERVAL_S = 5.0
 
 
 def build_bindings_for_all(servers: Sequence[ServerConfig]) -> list[TagBinding]:
@@ -59,6 +61,55 @@ async def load_servers_from_catalog(repository: ConnectivityRepository) -> tuple
 def resolve_servers(catalog_servers: Sequence[ServerConfig]) -> tuple[ServerConfig, ...]:
     """Prefer the catalog when it yields servers with subscribed tags; else YAML."""
     return tuple(catalog_servers) if catalog_servers else OpcUaConfig.servers
+
+
+def should_reload(prev: datetime | None, current: datetime | None) -> bool:
+    """
+    True when the catalog moved, or when it appears for the first time after a
+    YAML-only startup.
+
+    A catalog that goes from reachable to unreachable (current is None) does not
+    trigger a reload: the running collectors keep going rather than being torn
+    down to fall back to YAML. A catalog that was unreachable at startup
+    (prev is None) and becomes reachable (current is set) does trigger, so the
+    connector picks up the catalog the moment the console is back.
+    """
+    return current is not None and current != prev
+
+
+async def _safe_catalog_updated_at(repository: ConnectivityRepository) -> datetime | None:
+    """`catalog_updated_at`, or None when the catalog is unreachable or empty."""
+    try:
+        return await repository.catalog_updated_at()
+    except Exception:
+        return None
+
+
+async def _poll_and_reload(
+    repository: ConnectivityRepository,
+    connector_task: asyncio.Task,
+    last_updated_at: datetime | None,
+    *,
+    interval_s: float = CATALOG_POLL_INTERVAL_S,
+) -> datetime | None:
+    """
+    Poll `catalog_updated_at` and cancel `connector_task` when it moves.
+
+    Returns the timestamp that triggered the reload so the supervisor can use it
+    as the baseline for the next poll. A poll that raises is treated as None:
+    the supervisor keeps the current connectors rather than tearing them down.
+    """
+    while True:
+        await asyncio.sleep(interval_s)
+        current = await _safe_catalog_updated_at(repository)
+        if should_reload(last_updated_at, current):
+            LOGGER.info(
+                "Connectivity catalog changed (updated_at %s -> %s); reloading connectors",
+                last_updated_at,
+                current,
+            )
+            connector_task.cancel()
+            return current
 
 
 async def run_connector(
@@ -178,23 +229,59 @@ def main() -> None:
 
 
 async def _supervise() -> None:
-    """Resolve servers (catalog first, YAML fallback) and run the connector."""
-    catalog_servers = await load_servers_from_catalog(ConnectivityRepository(Database.shared(CATALOG_MODEL_ENV)))
-    servers = resolve_servers(catalog_servers)
-    if catalog_servers:
-        LOGGER.info("Using %s server(s) from the Connectivity catalog", len(catalog_servers))
-    elif OpcUaConfig.servers:
-        LOGGER.info("Catalog empty; using %s server(s) from opcua.servers", len(OpcUaConfig.servers))
-    await run_connector_keeping_metrics_alive(
-        servers=servers,
-        spool_config=OpcUaConfig.spool,
-        client_id=OpcUaConfig.client_id,
-        qos=MQTTConfig.qos,
-        queue_maxsize=OpcUaConfig.queue_maxsize,
-        forward_batch_size=OpcUaConfig.forward_batch_size,
-        backoff_max_s=OpcUaConfig.reconnect_backoff_max_s,
-        model_check=OpcUaConfig.model_check,
-    )
+    """
+    Resolve servers (catalog first, YAML fallback), run the connector, and reload
+    it when the Connectivity catalog changes.
+
+    The metrics server is already up by the time we get here. The connector runs
+    as a cancellable task alongside a 5s catalog poller; when the poller sees
+    `catalog_updated_at` move, it cancels the connector and we loop, re-reading
+    the catalog. A YAML-only startup (catalog empty or unreachable) still reloads
+    the moment the catalog becomes available.
+    """
+    repository = ConnectivityRepository(Database.shared(CATALOG_MODEL_ENV))
+    last_updated_at = await _safe_catalog_updated_at(repository)
+    while True:
+        catalog_servers = await load_servers_from_catalog(repository)
+        servers = resolve_servers(catalog_servers)
+        if catalog_servers:
+            LOGGER.info("Using %s server(s) from the Connectivity catalog", len(catalog_servers))
+        elif OpcUaConfig.servers:
+            LOGGER.info("Catalog empty; using %s server(s) from opcua.servers", len(OpcUaConfig.servers))
+        else:
+            LOGGER.info("No servers configured; idling so /metrics stays available")
+
+        connector_task = asyncio.create_task(
+            run_connector_keeping_metrics_alive(
+                servers=servers,
+                spool_config=OpcUaConfig.spool,
+                client_id=OpcUaConfig.client_id,
+                qos=MQTTConfig.qos,
+                queue_maxsize=OpcUaConfig.queue_maxsize,
+                forward_batch_size=OpcUaConfig.forward_batch_size,
+                backoff_max_s=OpcUaConfig.reconnect_backoff_max_s,
+                model_check=OpcUaConfig.model_check,
+            ),
+            name="connector",
+        )
+        poller_task = asyncio.create_task(
+            _poll_and_reload(repository, connector_task, last_updated_at),
+            name="catalog_poller",
+        )
+        try:
+            await connector_task
+        except asyncio.CancelledError:
+            LOGGER.info("Reloading connectors after a connectivity catalog change")
+        except Exception:
+            # A config conflict or transient error must not spin the loop; back
+            # off and let the next catalog change retry.
+            LOGGER.exception("Connector exited unexpectedly; backing off before retry")
+            await asyncio.sleep(CATALOG_POLL_INTERVAL_S)
+        finally:
+            poller_task.cancel()
+            await asyncio.gather(poller_task, return_exceptions=True)
+            if poller_task.done() and not poller_task.cancelled():
+                last_updated_at = poller_task.result()
 
 
 if __name__ == "__main__":

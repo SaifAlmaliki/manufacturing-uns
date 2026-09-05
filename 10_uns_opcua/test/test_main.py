@@ -1,16 +1,19 @@
 """Tests for the supervisor's wiring and shutdown behaviour."""
 
 import asyncio
+from datetime import datetime
 
 import pytest
 from uns_model.connectivity import ConnectivityServerSpec, ConnectivityTagSpec
 from uns_opcua.main import (
     _idle_when_no_servers,
+    _poll_and_reload,
     build_bindings_for_all,
     load_servers_from_catalog,
     resolve_servers,
     run_connector,
     run_connector_keeping_metrics_alive,
+    should_reload,
 )
 from uns_opcua.opcua_config import ServerConfig, SpoolConfig, TagConfig
 
@@ -190,3 +193,83 @@ async def test_resolve_servers_falls_back_to_yaml_when_catalog_empty(monkeypatch
     )
     monkeypatch.setattr("uns_opcua.main.OpcUaConfig.servers", (yaml_server,))
     assert resolve_servers(()) == (yaml_server,)
+
+
+def test_should_reload_true_when_timestamp_changes():
+    prev = datetime(2026, 1, 1, 12, 0, 0)
+    current = datetime(2026, 1, 1, 12, 0, 5)
+    assert should_reload(prev, current) is True
+
+
+def test_should_reload_true_when_catalog_appears_after_yaml_startup():
+    """prev=None (catalog unreachable at startup) and current set -> reload."""
+    assert should_reload(None, datetime(2026, 1, 1, 12, 0, 0)) is True
+
+
+def test_should_reload_false_when_timestamp_unchanged():
+    ts = datetime(2026, 1, 1, 12, 0, 0)
+    assert should_reload(ts, ts) is False
+
+
+def test_should_reload_false_when_catalog_still_unreachable():
+    """prev=None and current=None -> keep the running connectors."""
+    assert should_reload(None, None) is False
+
+
+def test_should_reload_false_when_catalog_goes_down_mid_run():
+    """A reachable catalog going to None must not tear down running collectors."""
+    prev = datetime(2026, 1, 1, 12, 0, 0)
+    assert should_reload(prev, None) is False
+
+
+class _FakeCatalogUpdatedAt:
+    """Returns successive `catalog_updated_at` values, one per call."""
+
+    def __init__(self, timestamps):
+        self._timestamps = list(timestamps)
+
+    async def catalog_updated_at(self):
+        return self._timestamps.pop(0) if self._timestamps else None
+
+
+async def test_poll_and_reload_cancels_connector_when_timestamp_moves():
+    started = asyncio.Event()
+
+    async def never_ending():
+        started.set()
+        await asyncio.Event().wait()
+
+    connector = asyncio.create_task(never_ending(), name="connector")
+    repo = _FakeCatalogUpdatedAt([datetime(2026, 1, 1, 12, 0, 5)])
+    poller = asyncio.create_task(
+        _poll_and_reload(repo, connector, datetime(2026, 1, 1, 12, 0, 0), interval_s=0)
+    )
+
+    await started.wait()
+    new_ts = await asyncio.wait_for(poller, timeout=2)
+    await asyncio.gather(connector, return_exceptions=True)
+    assert connector.cancelled()
+    assert new_ts == datetime(2026, 1, 1, 12, 0, 5)
+
+
+async def test_poll_and_reload_keeps_connector_when_timestamp_unchanged():
+    """An unchanged catalog must not cancel the running connector within the poll window."""
+    started = asyncio.Event()
+
+    async def never_ending():
+        started.set()
+        await asyncio.Event().wait()
+
+    connector = asyncio.create_task(never_ending(), name="connector")
+    repo = _FakeCatalogUpdatedAt([datetime(2026, 1, 1, 12, 0, 0)])
+    poller = asyncio.create_task(
+        _poll_and_reload(repo, connector, datetime(2026, 1, 1, 12, 0, 0), interval_s=0.05)
+    )
+
+    await started.wait()
+    await asyncio.sleep(0.2)
+    assert not connector.done()
+    assert not poller.done()
+    connector.cancel()
+    poller.cancel()
+    await asyncio.gather(connector, poller, return_exceptions=True)
