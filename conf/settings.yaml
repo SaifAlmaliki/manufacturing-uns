@@ -7,7 +7,7 @@ default:
   platform:
     instance_name: "Instance01"
     organization_name: "AcmeWater"
-    display_name: "Acme Water UNS"
+    display_name: "AcmeWater UNS"
 
   applications:
     graphql:
@@ -41,10 +41,10 @@ default:
     # Vite dev proxies /grafana here. Compose keeps Grafana's 3000 unpublished; nginx on 8088 does.
     grafana_proxy_target: "http://localhost:8088"
     cors_origins:
-      - "http://localhost:5173"
-      - "http://127.0.0.1:5173"
-      - "http://localhost:8088"
-      - "http://127.0.0.1:8088"
+    - "http://localhost:5173"
+    - "http://127.0.0.1:5173"
+    - "http://localhost:8088"
+    - "http://127.0.0.1:8088"
 
   auth:
     # The realm is reached through the console's own nginx (/auth), so the issuer is the
@@ -82,14 +82,14 @@ default:
     # Depths beyond index 4 are stored as DEVICE_depth_N in Neo4j; listing them here exposes
     # G1 / ProcessValue / Temperature (etc.) in GraphQL getUnsNodes tree queries.
     uns_node_types:
-      - "ENTERPRISE"
-      - "FACILITY"
-      - "AREA"
-      - "LINE"
-      - "DEVICE"
-      - "DEVICE_depth_1"
-      - "DEVICE_depth_2"
-      - "DEVICE_depth_3"
+    - "ENTERPRISE"
+    - "FACILITY"
+    - "AREA"
+    - "LINE"
+    - "DEVICE"
+    - "DEVICE_depth_1"
+    - "DEVICE_depth_2"
+    - "DEVICE_depth_3"
     spB_node_types: ["spBv1_0", "GROUP", "MESSAGE_TYPE", "EDGE_NODE", "DEVICE"]
     nested_attribute_node_type: "NESTED_ATTRIBUTE"
     metrics_port: 9092
@@ -174,13 +174,13 @@ simulator:
   hierarchy:
     enterprise: "AcmeWater"
     sites:
-      - name: "Site1"
-        areas:
-          - name: "Production"
-            lines:
-              - name: "Train1"
-                cells:
-                  - "Cell1"
+    - name: "Site1"
+      areas:
+      - name: "Production"
+        lines:
+        - name: "Train1"
+          cells:
+          - "Cell1"
 
   # The legacy `plc:` list moved to conf/simulator/production.yaml as templates `001` and
   # `002`, unchanged. `simulator.py` still reads this key, so a deployment carrying its own

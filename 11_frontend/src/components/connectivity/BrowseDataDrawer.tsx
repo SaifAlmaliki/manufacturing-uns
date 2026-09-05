@@ -165,7 +165,7 @@ const AddressSpaceTree: React.FC<AddressSpaceTreeProps> = ({
           className={`flex items-center gap-1 rounded-sm border-l-2 px-1.5 py-1 text-sm ${
             isSelected
               ? 'border-[#FF7A00] bg-[#FF7A00]/12 text-[#FF7A00]'
-              : 'border-transparent text-zinc-300 hover:bg-zinc-800/60 hover:text-white'
+              : 'border-transparent text-foreground hover:bg-muted hover:text-foreground'
           }`}
         >
           {node.hasChildren ? (
@@ -173,7 +173,7 @@ const AddressSpaceTree: React.FC<AddressSpaceTreeProps> = ({
               type="button"
               aria-label={isExpanded ? `Collapse ${node.displayName}` : `Expand ${node.displayName}`}
               onClick={() => toggle(node)}
-              className="rounded p-0.5 text-zinc-500 hover:text-[#FF7A00]"
+              className="rounded p-0.5 text-muted-foreground hover:text-[#FF7A00]"
             >
               {isExpanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
             </button>
@@ -191,15 +191,15 @@ const AddressSpaceTree: React.FC<AddressSpaceTreeProps> = ({
             {isExpanded ? (
               <FolderOpen className="size-3.5 shrink-0 text-[#FF7A00]" />
             ) : (
-              <Folder className="size-3.5 shrink-0 text-zinc-500" />
+              <Folder className="size-3.5 shrink-0 text-muted-foreground" />
             )}
             <span className="truncate">{node.displayName || node.browseName}</span>
           </button>
         </div>
         {isExpanded && (
-          <div className="ml-3 border-l border-zinc-800/80">
+          <div className="ml-3 border-l border-border">
             {loadingIds.has(node.nodeId) && (
-              <div className="px-3 py-1 text-[11px] text-zinc-500">Loading…</div>
+              <div className="px-3 py-1 text-[11px] text-muted-foreground">Loading…</div>
             )}
             {kids?.map((child) => renderNode(child, level + 1))}
           </div>
@@ -209,10 +209,10 @@ const AddressSpaceTree: React.FC<AddressSpaceTreeProps> = ({
   };
 
   if (loadingRoot) {
-    return <div className="p-4 text-xs text-zinc-500">Loading address space…</div>;
+    return <div className="p-4 text-xs text-muted-foreground">Loading address space…</div>;
   }
   if (roots.length === 0) {
-    return <div className="p-4 text-xs text-zinc-500">No nodes under Objects.</div>;
+    return <div className="p-4 text-xs text-muted-foreground">No nodes under Objects.</div>;
   }
   return <div className="p-1">{roots.map((node) => renderNode(node, 0))}</div>;
 };
@@ -493,15 +493,15 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
       ariaLabel="Browse OPC UA data"
       className="flex h-[min(88vh,860px)] w-[min(1200px,96vw)] flex-col"
     >
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-zinc-800/80 px-4 py-3">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-4 py-3">
         <div className="min-w-0">
           <div className="text-[10px] font-medium uppercase tracking-[0.22em] text-[#FF7A00]">
             Browse data
           </div>
-          <div className="font-heading truncate text-lg font-semibold tracking-tight text-white">
+          <div className="font-heading truncate text-lg font-semibold tracking-tight text-foreground">
             {server.name}
           </div>
-          <div className="truncate font-mono text-[11px] text-zinc-500">
+          <div className="truncate font-mono text-[11px] text-muted-foreground">
             {selected
               ? selected.browsePath || selected.displayName
               : catalogSubscribed.length > 0
@@ -510,10 +510,10 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <div className="hidden items-center gap-2 rounded-md border border-zinc-800 bg-zinc-950/70 px-2.5 py-1.5 sm:flex">
+          <div className="hidden items-center gap-2 rounded-md border border-border bg-muted px-2.5 py-1.5 sm:flex">
             <span className="quality-lamp-dot quality-lamp-good" />
-            <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-400">Live</span>
-            <span className="font-mono text-[11px] tabular-nums text-white">{rows.length}</span>
+            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Live</span>
+            <span className="font-mono text-[11px] tabular-nums text-foreground">{rows.length}</span>
           </div>
           <Button
             onClick={() => void handleSubscribe()}
@@ -530,14 +530,14 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
       </div>
 
       {error && (
-        <div className="shrink-0 border-b border-rose-500/30 bg-rose-500/10 px-4 py-2 font-mono text-xs text-rose-200">
+        <div className="shrink-0 border-b border-rose-300 bg-rose-50 px-4 py-2 font-mono text-xs text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
           {error}
         </div>
       )}
 
       <div className="flex min-h-0 flex-1">
-        <div className="flex w-64 shrink-0 flex-col border-r border-zinc-800/80 bg-zinc-950/30">
-          <div className="shrink-0 border-b border-zinc-800/80 px-3 py-2 text-[10px] font-medium uppercase tracking-[0.18em] text-zinc-500">
+        <div className="flex w-64 shrink-0 flex-col border-r border-border bg-surface">
+          <div className="shrink-0 border-b border-border px-3 py-2 text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
             Address space
           </div>
           <div className="min-h-0 flex-1 overflow-auto">
@@ -547,13 +547,13 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
               className={`m-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded-sm border-l-2 px-2 py-1.5 text-left text-sm ${
                 selected === null
                   ? 'border-[#FF7A00] bg-[#FF7A00]/12 text-[#FF7A00]'
-                  : 'border-transparent text-zinc-300 hover:bg-zinc-800/60 hover:text-white'
+                  : 'border-transparent text-foreground hover:bg-muted hover:text-foreground'
               }`}
             >
               <Radio className="size-3.5 shrink-0" />
               <span className="min-w-0 flex-1 truncate">Subscribed</span>
               {catalogSubscribed.length > 0 && (
-                <span className="tabular-nums text-[11px] text-zinc-500">{catalogSubscribed.length}</span>
+                <span className="tabular-nums text-[11px] text-muted-foreground">{catalogSubscribed.length}</span>
               )}
             </button>
             <AddressSpaceTree
@@ -565,27 +565,27 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
           </div>
         </div>
 
-        <div className="min-h-0 min-w-0 flex-1 overflow-auto">
+        <div className="min-h-0 min-w-0 flex-1 overflow-auto bg-background">
           {!selected && catalogSubscribed.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-3 p-10 text-center">
               <div className="flex size-12 items-center justify-center rounded-md border border-[#FF7A00]/30 bg-[#FF7A00]/10">
                 <Radio className="size-5 text-[#FF7A00]" />
               </div>
-              <p className="max-w-sm text-sm text-zinc-400">
+              <p className="max-w-sm text-sm text-muted-foreground">
                 Select a folder to list its signals — same as dragging a section in UA Expert.
                 Subscribed signals stay in the catalog and show here when you reopen this
                 server.
               </p>
             </div>
           ) : loading ? (
-            <div className="p-8 text-center font-mono text-sm text-zinc-500">
+            <div className="p-8 text-center font-mono text-sm text-muted-foreground">
               Discovering signals under {selected.displayName || selected.browseName}…
             </div>
           ) : rows.length === 0 ? (
-            <div className="p-8 text-center font-mono text-sm text-zinc-500">No signals under this node.</div>
+            <div className="p-8 text-center font-mono text-sm text-muted-foreground">No signals under this node.</div>
           ) : (
             <table className="w-full border-collapse text-left text-sm">
-              <thead className="sticky top-0 bg-[#101014]/95 text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500 backdrop-blur-sm">
+              <thead className="sticky top-0 bg-surface/95 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground backdrop-blur-sm">
                 <tr>
                   <th className="px-3 py-2">Signal</th>
                   <th className="px-3 py-2">MQTT topic</th>
@@ -596,7 +596,7 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
                   <th className="w-24 px-3 py-2 text-right">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-800/70 text-xs">
+              <tbody className="divide-y divide-border text-xs">
                 {rows.map((row, index) => (
                   <tr
                     key={row.nodeId}
@@ -604,8 +604,8 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
                     style={{ animationDelay: `${Math.min(index, 12) * 28}ms` }}
                   >
                     <td className="px-3 py-2.5 align-top">
-                      <div className="font-heading font-semibold text-white">{row.displayName}</div>
-                      <div className="mt-0.5 break-all font-mono text-[11px] text-zinc-500">
+                      <div className="font-heading font-semibold text-foreground">{row.displayName}</div>
+                      <div className="mt-0.5 break-all font-mono text-[11px] text-muted-foreground">
                         {row.browsePath}
                       </div>
                     </td>
@@ -640,17 +640,17 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
                               }));
                               setEditingTopicId(row.nodeId);
                             }}
-                            className="shrink-0 text-[11px] text-zinc-400 underline-offset-2 hover:text-[#FF7A00] hover:underline"
+                            className="shrink-0 text-[11px] text-muted-foreground underline-offset-2 hover:text-[#FF7A00] hover:underline"
                           >
                             Edit
                           </button>
                         </div>
                       )}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 align-top font-mono text-zinc-100">
+                    <td className="whitespace-nowrap px-3 py-2.5 align-top font-mono text-foreground">
                       {row.value === null || row.value === undefined ? '—' : String(row.value)}
                       {row.dataType ? (
-                        <span className="ml-1 text-[10px] uppercase tracking-wider text-zinc-500">
+                        <span className="ml-1 text-[10px] uppercase tracking-wider text-muted-foreground">
                           {row.dataType}
                         </span>
                       ) : null}
@@ -659,13 +659,13 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
                       <QualityLamp status={row.status} />
                     </td>
                     <td
-                      className="whitespace-nowrap px-3 py-2.5 align-top font-mono tabular-nums text-[11px] text-zinc-500"
+                      className="whitespace-nowrap px-3 py-2.5 align-top font-mono tabular-nums text-[11px] text-muted-foreground"
                       title={row.sourceTimestamp ?? undefined}
                     >
                       {formatBrowseClock(row.sourceTimestamp)}
                     </td>
                     <td
-                      className="whitespace-nowrap px-3 py-2.5 align-top font-mono tabular-nums text-[11px] text-zinc-500"
+                      className="whitespace-nowrap px-3 py-2.5 align-top font-mono tabular-nums text-[11px] text-muted-foreground"
                       title={row.serverTimestamp ?? undefined}
                     >
                       {formatBrowseClock(row.serverTimestamp)}

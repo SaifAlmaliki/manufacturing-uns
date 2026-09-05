@@ -62,7 +62,7 @@ export const AppLayout: React.FC = () => {
     health.status === 'LIVE' ? 'Connected' : health.status === 'DEGRADED' ? 'Degraded' : 'Offline';
 
   return (
-    <div className="console-shell flex h-dvh w-screen overflow-hidden bg-[#070709] font-sans text-zinc-100">
+    <div className="console-shell flex h-dvh w-screen overflow-hidden bg-background font-sans text-foreground">
       <Sidebar
         isCollapsed={isCollapsed}
         onToggleCollapse={handleToggleCollapse}
@@ -93,7 +93,7 @@ export const AppLayout: React.FC = () => {
           )}
         </main>
 
-        <footer className="flex h-8 shrink-0 items-center justify-between border-t border-zinc-800/80 bg-[#101014] px-4 font-mono text-[11px] text-zinc-500">
+        <footer className="flex h-8 shrink-0 items-center justify-between border-t border-border bg-surface px-4 font-mono text-[11px] text-muted-foreground">
           <div className="flex items-center gap-3">
             <span
               className={`flex items-center gap-1.5 font-medium ${
@@ -115,7 +115,7 @@ export const AppLayout: React.FC = () => {
               />
               {connectionLabel}
             </span>
-            <span className="hidden text-zinc-600 sm:inline">·</span>
+            <span className="hidden text-muted-foreground/70 sm:inline">·</span>
             <span className="hidden tabular-nums sm:inline">
               {allLoadedNodes.length} nodes
             </span>
@@ -125,7 +125,7 @@ export const AppLayout: React.FC = () => {
             {staleNodesCount > 0 && (
               <span className="font-medium text-amber-500">{staleNodesCount} stale</span>
             )}
-            <span className="hidden text-zinc-600 md:inline">Mode: {health.mode}</span>
+            <span className="hidden text-muted-foreground md:inline">Mode: {health.mode}</span>
           </div>
         </footer>
       </div>

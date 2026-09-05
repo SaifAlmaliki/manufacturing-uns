@@ -97,15 +97,15 @@ export const LandingView: React.FC = () => {
       />
 
       {/* Theme toggle bar */}
-      <section className="border-b border-[#E2E8F0] dark:border-[#1E293B] bg-[#0B0B0C] px-4 py-4 sm:px-8">
+      <section className="border-b border-[#E2E8F0] dark:border-[#1E293B] bg-white dark:bg-[#0B0B0C] px-4 py-4 sm:px-8">
         <div className="mx-auto flex max-w-7xl items-center justify-end">
           <button
             id="landing-theme-toggle-btn"
             onClick={toggleTheme}
-            className="inline-flex cursor-pointer items-center gap-1.5 rounded border border-[#1E293B] bg-[#111114] px-2.5 py-1 text-xs text-[#94A3B8] transition-colors hover:text-[#FFC107]"
+            className="inline-flex cursor-pointer items-center gap-1.5 rounded border border-[#E2E8F0] bg-[#F8FAFC] px-2.5 py-1 text-xs text-[#475569] transition-colors hover:text-[#FF7A00] dark:border-[#1E293B] dark:bg-[#111114] dark:text-[#94A3B8] dark:hover:text-[#FF7A00]"
             title={`Switch to ${isDark ? 'Light' : 'Dark'} mode`}
           >
-            {isDark ? <Sun className="h-3.5 w-3.5 text-[#FFC107]" /> : <Moon className="h-3.5 w-3.5" />}
+            {isDark ? <Sun className="h-3.5 w-3.5 text-[#FF7A00]" /> : <Moon className="h-3.5 w-3.5" />}
             <span>{isDark ? 'Light' : 'Dark'}</span>
           </button>
         </div>

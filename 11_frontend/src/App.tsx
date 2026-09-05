@@ -17,7 +17,6 @@ import { AlarmProvider } from './context/AlarmContext';
 import { AppLayout } from './components/layout/AppLayout';
 import { LandingView } from './components/landing/LandingView';
 import { LoginView } from './components/auth/LoginView';
-import { HomeView } from './components/home/HomeView';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { ExploreView } from './components/explore/ExploreView';
 import { SparkplugView } from './components/sparkplug/SparkplugView';
@@ -32,6 +31,7 @@ import { SimulatorView } from './components/simulator/SimulatorView';
 import { UserManagementView } from './components/users/UserManagementView';
 import { HierarchyView } from './components/hierarchy/HierarchyView';
 import { ConnectivityView } from './components/connectivity/ConnectivityView';
+import { ConditionMonitoringView } from './components/condition-monitoring/ConditionMonitoringView';
 
 /**
  * Zero-Trust Protected Console Layout Guard
@@ -72,7 +72,8 @@ export default function App() {
                 {/* 3. Protected Enterprise Console Platform */}
                 <Route element={<ProtectedConsoleLayout />}>
                   <Route path="/dashboard" element={<DashboardView />} />
-                  <Route path="/tree" element={<HomeView />} />
+                  <Route path="/condition-monitoring" element={<ConditionMonitoringView />} />
+                  <Route path="/tree" element={<Navigate to="/condition-monitoring" replace />} />
                   <Route path="/alerts" element={<AlarmManagementLayout />}>
                     <Route index element={<Navigate to="active" replace />} />
                     <Route path="active" element={<AlarmActiveTab />} />

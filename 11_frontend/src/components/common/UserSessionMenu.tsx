@@ -52,8 +52,8 @@ export const UserSessionMenu: React.FC<UserSessionMenuProps> = ({ variant = 'hea
         onClick={() => setIsOpen(!isOpen)}
         className={`flex w-full items-center gap-3 rounded-xl transition-colors cursor-pointer select-none ${
           isSidebarStyle
-            ? 'p-2 hover:bg-zinc-800/60'
-            : 'gap-2 px-2.5 py-1 rounded-md bg-zinc-900 border border-zinc-800 hover:border-zinc-700'
+            ? 'p-2 hover:bg-muted'
+            : 'gap-2 px-2.5 py-1 rounded-md bg-surface border border-border hover:bg-muted'
         }`}
         title="Account menu"
         aria-label="Account menu"
@@ -70,10 +70,10 @@ export const UserSessionMenu: React.FC<UserSessionMenuProps> = ({ variant = 'hea
         {variant !== 'compact' && (
           <>
             <div className="min-w-0 flex-1 text-left">
-              <div className="truncate text-sm font-medium text-zinc-100">{currentUser.name}</div>
-              <div className="truncate text-xs text-zinc-500">{currentUser.email}</div>
+              <div className="truncate text-sm font-medium text-foreground">{currentUser.name}</div>
+              <div className="truncate text-xs text-muted-foreground">{currentUser.email}</div>
             </div>
-            <ChevronDown className={`size-4 shrink-0 text-zinc-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown className={`size-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`} />
           </>
         )}
       </button>
@@ -81,11 +81,11 @@ export const UserSessionMenu: React.FC<UserSessionMenuProps> = ({ variant = 'hea
       {isOpen && (
         <div
           id="user-session-dropdown"
-          className={`absolute z-50 w-72 rounded-2xl border border-zinc-800 bg-[#18181b] p-3 shadow-2xl text-sm ${
+          className={`absolute z-50 w-72 rounded-2xl border border-border bg-popover p-3 shadow-2xl text-sm ${
             isSidebarStyle ? 'bottom-full left-0 mb-2' : 'right-0 top-full mt-2'
           }`}
         >
-          <div className="mb-3 rounded-xl border border-zinc-800 bg-zinc-900/60 p-3">
+          <div className="mb-3 rounded-xl border border-border bg-muted/60 p-3">
             <div className="flex items-center gap-3">
               <div
                 className={`flex size-10 items-center justify-center rounded-full font-bold text-zinc-950 ${
@@ -95,8 +95,8 @@ export const UserSessionMenu: React.FC<UserSessionMenuProps> = ({ variant = 'hea
                 {currentUser.name.charAt(0).toUpperCase()}
               </div>
               <div className="min-w-0">
-                <div className="truncate font-semibold text-zinc-100">{currentUser.name}</div>
-                <div className="truncate text-xs text-zinc-500">{currentUser.email}</div>
+                <div className="truncate font-semibold text-foreground">{currentUser.name}</div>
+                <div className="truncate text-xs text-muted-foreground">{currentUser.email}</div>
                 <span className={`mt-1 inline-block rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase ${roleConfig.badgeBg} ${roleConfig.badgeText}`}>
                   {roleConfig.label}
                 </span>
@@ -121,14 +121,14 @@ export const UserSessionMenu: React.FC<UserSessionMenuProps> = ({ variant = 'hea
 
           <button
             onClick={toggleTheme}
-            className="mb-2 flex w-full items-center gap-2 rounded-xl p-2.5 text-left text-sm text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+            className="mb-2 flex w-full items-center gap-2 rounded-xl p-2.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
             Switch to {isDark ? 'light' : 'dark'} mode
           </button>
 
-          <div className="mb-2 border-t border-zinc-800 pt-2">
-            <div className="mb-1.5 px-1 text-[10px] font-medium uppercase tracking-wider text-zinc-600">
+          <div className="mb-2 border-t border-border pt-2">
+            <div className="mb-1.5 px-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
               Permissions
             </div>
             <div className="flex flex-wrap gap-1">
@@ -139,8 +139,8 @@ export const UserSessionMenu: React.FC<UserSessionMenuProps> = ({ variant = 'hea
                     key={feat.key}
                     className={`flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] ${
                       allowed
-                        ? 'bg-emerald-500/10 text-emerald-400'
-                        : 'bg-zinc-800 text-zinc-600 line-through'
+                        ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+                        : 'bg-muted text-muted-foreground line-through'
                     }`}
                   >
                     {allowed ? <UserCheck className="size-2.5" /> : <Lock className="size-2.5" />}
@@ -151,13 +151,13 @@ export const UserSessionMenu: React.FC<UserSessionMenuProps> = ({ variant = 'hea
             </div>
           </div>
 
-          <div className="flex gap-2 border-t border-zinc-800 pt-2">
+          <div className="flex gap-2 border-t border-border pt-2">
             <button
               onClick={() => {
                 setIsOpen(false);
                 navigate('/');
               }}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-zinc-800 py-2 text-xs font-medium text-zinc-300 transition-colors hover:bg-zinc-700"
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-muted py-2 text-xs font-medium text-foreground transition-colors hover:bg-muted/80"
             >
               <Home className="size-3.5" />
               Home
