@@ -4,7 +4,7 @@ Date: 2026-09-05
 Modules: `13_uns_factory_agent` (new), `11_frontend` (header drawer), `11_frontend/nginx.conf`,
 `11_frontend/vite.config.ts`, `docker-compose.yml`, `conf` (settings + secrets key),
 `uns_historian` schema `copilot` (conversation tables)
-Status: Draft for review
+Status: Approved
 UI skill: `frontend-design` (control-desk radio **paint**, screenshot **layout**).
 Console chrome stays `console-compact-layout`.
 
