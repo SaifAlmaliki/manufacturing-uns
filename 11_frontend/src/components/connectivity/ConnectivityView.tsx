@@ -8,17 +8,25 @@ import type {
   GraphqlConnectivityServerInput,
 } from '../../services/graphql/types';
 import { AccessRestricted } from '../common/AccessRestricted';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   BtnGhost,
   BtnPrimary,
-  BtnSecondary,
   ConsoleCard,
-  ConsoleInput,
   ConsoleSelect,
   FilterToolbar,
   PageContent,
   PageShell,
-  consoleTokens,
 } from '../ui/console-ui';
 import {
   PROTOCOL_TABS,
@@ -252,13 +260,13 @@ export const ConnectivityView: React.FC = () => {
             <ConsoleCard padding="none" className="overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[860px] border-collapse text-left text-sm">
-                  <thead className="border-b border-zinc-800 bg-zinc-900/80 text-[11px] uppercase text-zinc-500">
+                  <thead className="border-b border-zinc-800 bg-zinc-950/80 text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500">
                     <tr>
-                      <th className="px-4 py-3 font-medium">Name</th>
-                      <th className="px-4 py-3 font-medium">Endpoint</th>
-                      <th className="px-4 py-3 font-medium">Status</th>
-                      <th className="px-4 py-3 font-medium">Last test</th>
-                      <th className="px-4 py-3 text-right font-medium">Actions</th>
+                      <th className="px-4 py-3">Name</th>
+                      <th className="px-4 py-3">Endpoint</th>
+                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">Last test</th>
+                      <th className="px-4 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-800/80 text-xs">
@@ -273,7 +281,7 @@ export const ConnectivityView: React.FC = () => {
                             type="button"
                             aria-label={`Open ${server.name}`}
                             onClick={() => openSignalTerminal(server)}
-                            className="text-left font-semibold text-white hover:text-[#FF7A00] hover:underline"
+                            className="font-heading text-left font-semibold text-white hover:text-[#FF7A00] hover:underline"
                           >
                             {server.name}
                           </button>
@@ -292,7 +300,7 @@ export const ConnectivityView: React.FC = () => {
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-zinc-500">
+                        <td className="px-4 py-3 font-mono text-[11px] tabular-nums text-zinc-500">
                           {formatLastTestedAt(server.lastTestedAt)}
                         </td>
                         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
@@ -335,25 +343,37 @@ export const ConnectivityView: React.FC = () => {
         </PageContent>
       </div>
 
-      {addOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 backdrop-blur-sm">
-          <div
-            className={`${consoleTokens.card} flex max-h-[90vh] w-full max-w-lg flex-col gap-3 overflow-y-auto p-5 shadow-2xl`}
-            role="dialog"
-            aria-label="Add OPC UA server"
-          >
-            <h2 className="text-sm font-semibold text-white">Add OPC UA server</h2>
-            <p className="text-[11px] text-zinc-500">
-              OPC UA is what this slice serves. Other protocols stay listed for later.
+      <Dialog
+        open={addOpen}
+        onOpenChange={(open) => {
+          setAddOpen(open);
+          if (!open) resetDraft();
+        }}
+      >
+        <DialogContent
+          aria-label="Add OPC UA server"
+          showCloseButton={false}
+          className="instrument-panel instrument-grain max-h-[90vh] gap-4 overflow-y-auto border-[#FF7A00]/20 sm:max-w-lg"
+        >
+          <DialogHeader>
+            <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-[#FF7A00]">
+              New connection
             </p>
-            {saveError && (
-              <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
-                {saveError}
-              </div>
-            )}
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium text-zinc-500">Protocol</span>
+            <DialogTitle className="font-heading text-lg">Add OPC UA server</DialogTitle>
+            <DialogDescription>
+              OPC UA is what this slice serves. Other protocols stay listed for later.
+            </DialogDescription>
+          </DialogHeader>
+          {saveError && (
+            <div className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+              {saveError}
+            </div>
+          )}
+          <div className="grid gap-3">
+            <div className="grid gap-1.5">
+              <Label htmlFor="conn-protocol">Protocol</Label>
               <ConsoleSelect
+                id="conn-protocol"
                 aria-label="Protocol"
                 value={draftProtocol}
                 onChange={(e) => setDraftProtocol(e.target.value as ConnectivityTabId)}
@@ -365,34 +385,39 @@ export const ConnectivityView: React.FC = () => {
                   </option>
                 ))}
               </ConsoleSelect>
-            </label>
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium text-zinc-500">Name</span>
-              <ConsoleInput
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="conn-name">Name</Label>
+              <Input
+                id="conn-name"
                 aria-label="Name"
                 value={draftName}
                 onChange={(e) => setDraftName(e.target.value)}
                 placeholder="opcplc"
               />
-            </label>
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium text-zinc-500">Endpoint</span>
-              <ConsoleInput
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="conn-endpoint">Endpoint</Label>
+              <Input
+                id="conn-endpoint"
                 aria-label="Endpoint"
                 value={draftEndpoint}
                 onChange={(e) => setDraftEndpoint(e.target.value)}
                 placeholder="opc.tcp://host.docker.internal:50000/"
                 className="font-mono text-xs"
               />
-            </label>
+            </div>
+          </div>
 
-            <fieldset className="space-y-2 rounded-xl border border-zinc-800 p-3">
-              <legend className="px-1 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
-                Security
-              </legend>
-              <label className="block space-y-1.5">
-                <span className="text-xs font-medium text-zinc-500">Security policy</span>
+          <fieldset className="space-y-2 rounded-md border border-zinc-800 p-3">
+            <legend className="px-1 text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500">
+              Security
+            </legend>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-1.5">
+                <Label htmlFor="conn-sec-policy">Security policy</Label>
                 <ConsoleSelect
+                  id="conn-sec-policy"
                   aria-label="Security policy"
                   value={draftSecurityPolicy}
                   onChange={(e) => {
@@ -407,10 +432,11 @@ export const ConnectivityView: React.FC = () => {
                     </option>
                   ))}
                 </ConsoleSelect>
-              </label>
-              <label className="block space-y-1.5">
-                <span className="text-xs font-medium text-zinc-500">Security mode</span>
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="conn-sec-mode">Security mode</Label>
                 <ConsoleSelect
+                  id="conn-sec-mode"
                   aria-label="Security mode"
                   value={draftSecurityMode}
                   disabled={draftSecurityPolicy === 'None'}
@@ -424,152 +450,148 @@ export const ConnectivityView: React.FC = () => {
                     </option>
                   ))}
                 </ConsoleSelect>
-              </label>
-              {(draftSecurityPolicy !== 'None' || draftAuthMode === 'x509') && (
-                <>
-                  <p className="text-[11px] text-zinc-500">
-                    Client certificate for the secure channel — not part of Anonymous login.
-                  </p>
-                  <label className="block space-y-1.5">
-                    <span className="text-xs font-medium text-zinc-500">Certificate path</span>
-                    <ConsoleInput
-                      aria-label="Certificate path"
-                      value={draftCertificate}
-                      onChange={(e) => setDraftCertificate(e.target.value)}
-                      placeholder="/certs/client.der"
-                      className="font-mono text-xs"
-                    />
-                  </label>
-                  <label className="block space-y-1.5">
-                    <span className="text-xs font-medium text-zinc-500">Private key path</span>
-                    <ConsoleInput
-                      aria-label="Private key path"
-                      value={draftPrivateKey}
-                      onChange={(e) => setDraftPrivateKey(e.target.value)}
-                      placeholder="/certs/client.key"
-                      className="font-mono text-xs"
-                    />
-                  </label>
-                  <label className="block space-y-1.5">
-                    <span className="text-xs font-medium text-zinc-500">Server certificate path</span>
-                    <ConsoleInput
-                      aria-label="Server certificate path"
-                      value={draftServerCertificate}
-                      onChange={(e) => setDraftServerCertificate(e.target.value)}
-                      placeholder="optional"
-                      className="font-mono text-xs"
-                    />
-                  </label>
-                </>
-              )}
-            </fieldset>
-
-            <fieldset className="space-y-2 rounded-xl border border-zinc-800 p-3">
-              <legend className="px-1 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
-                Authentication
-              </legend>
-              <div className="flex flex-wrap gap-3 text-xs text-zinc-300">
-                {(
-                  [
-                    ['anonymous', 'Anonymous'],
-                    ['username', 'Username/Password'],
-                    ['x509', 'X509 Certificate'],
-                  ] as const
-                ).map(([value, label]) => (
-                  <label key={value} className="inline-flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="connectivity-auth-mode"
-                      value={value}
-                      checked={draftAuthMode === value}
-                      onChange={() => setDraftAuthMode(value)}
-                    />
-                    {label}
-                  </label>
-                ))}
               </div>
-              {draftAuthMode === 'username' && (
-                <>
-                  <label className="block space-y-1.5">
-                    <span className="text-xs font-medium text-zinc-500">Username</span>
-                    <ConsoleInput
-                      aria-label="Username"
-                      value={draftUsername}
-                      onChange={(e) => setDraftUsername(e.target.value)}
-                      autoComplete="off"
-                    />
-                  </label>
-                  <label className="block space-y-1.5">
-                    <span className="text-xs font-medium text-zinc-500">Password</span>
-                    <ConsoleInput
-                      aria-label="Password"
-                      type="password"
-                      value={draftPassword}
-                      onChange={(e) => setDraftPassword(e.target.value)}
-                      autoComplete="new-password"
-                    />
-                  </label>
-                </>
-              )}
-            </fieldset>
-
-            <div className="flex items-center justify-end gap-2 pt-1">
-              <BtnSecondary
-                onClick={() => {
-                  setAddOpen(false);
-                  resetDraft();
-                }}
-                className="px-3 py-1.5 text-xs"
-              >
-                Cancel
-              </BtnSecondary>
-              <BtnPrimary
-                onClick={() => void handleAdd()}
-                disabled={saving}
-                className="px-4 py-1.5 text-xs"
-                aria-label="Add"
-              >
-                {saving ? 'Adding…' : 'Add'}
-              </BtnPrimary>
             </div>
-          </div>
-        </div>
-      )}
+            {(draftSecurityPolicy !== 'None' || draftAuthMode === 'x509') && (
+              <>
+                <p className="text-[11px] text-zinc-500">
+                  Client certificate for the secure channel — not part of Anonymous login.
+                </p>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="conn-cert">Certificate path</Label>
+                  <Input
+                    id="conn-cert"
+                    aria-label="Certificate path"
+                    value={draftCertificate}
+                    onChange={(e) => setDraftCertificate(e.target.value)}
+                    placeholder="/certs/client.der"
+                    className="font-mono text-xs"
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="conn-key">Private key path</Label>
+                  <Input
+                    id="conn-key"
+                    aria-label="Private key path"
+                    value={draftPrivateKey}
+                    onChange={(e) => setDraftPrivateKey(e.target.value)}
+                    placeholder="/certs/client.key"
+                    className="font-mono text-xs"
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="conn-server-cert">Server certificate path</Label>
+                  <Input
+                    id="conn-server-cert"
+                    aria-label="Server certificate path"
+                    value={draftServerCertificate}
+                    onChange={(e) => setDraftServerCertificate(e.target.value)}
+                    placeholder="optional"
+                    className="font-mono text-xs"
+                  />
+                </div>
+              </>
+            )}
+          </fieldset>
 
-      {confirmDeleteId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 backdrop-blur-sm">
-          <div
-            className={`${consoleTokens.card} flex w-full max-w-sm flex-col gap-3 p-5 shadow-2xl`}
-            role="dialog"
-            aria-label="Confirm delete"
-          >
-            <h2 className="text-sm font-semibold text-white">Delete this server?</h2>
-            <p className="text-xs text-zinc-500">
+          <fieldset className="space-y-2 rounded-md border border-zinc-800 p-3">
+            <legend className="px-1 text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500">
+              Authentication
+            </legend>
+            <div className="flex flex-wrap gap-3 text-xs text-zinc-300">
+              {(
+                [
+                  ['anonymous', 'Anonymous'],
+                  ['username', 'Username/Password'],
+                  ['x509', 'X509 Certificate'],
+                ] as const
+              ).map(([value, label]) => (
+                <label key={value} className="inline-flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="connectivity-auth-mode"
+                    value={value}
+                    checked={draftAuthMode === value}
+                    onChange={() => setDraftAuthMode(value)}
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+            {draftAuthMode === 'username' && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="conn-user">Username</Label>
+                  <Input
+                    id="conn-user"
+                    aria-label="Username"
+                    value={draftUsername}
+                    onChange={(e) => setDraftUsername(e.target.value)}
+                    autoComplete="off"
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="conn-pass">Password</Label>
+                  <Input
+                    id="conn-pass"
+                    aria-label="Password"
+                    type="password"
+                    value={draftPassword}
+                    onChange={(e) => setDraftPassword(e.target.value)}
+                    autoComplete="new-password"
+                  />
+                </div>
+              </div>
+            )}
+          </fieldset>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setAddOpen(false);
+                resetDraft();
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={() => void handleAdd()} disabled={saving} aria-label="Add">
+              {saving ? 'Adding…' : 'Add'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(confirmDeleteId)} onOpenChange={(open) => !open && setConfirmDeleteId(null)}>
+        <DialogContent
+          aria-label="Confirm delete"
+          showCloseButton={false}
+          className="instrument-panel instrument-grain border-[#FF7A00]/20 sm:max-w-sm"
+        >
+          <DialogHeader>
+            <DialogTitle className="font-heading text-lg">Delete this server?</DialogTitle>
+            <DialogDescription>
               The server and its subscribed tags are removed from the catalog. The OPC UA
               collector stops publishing those topics on its next reload.
-            </p>
-            <div className="flex items-center justify-end gap-2 pt-1">
-              <BtnSecondary
-                onClick={() => setConfirmDeleteId(null)}
-                className="px-3 py-1.5 text-xs"
-              >
-                Cancel
-              </BtnSecondary>
-              <BtnPrimary
-                onClick={() => {
-                  const target = servers.find((s) => s.id === confirmDeleteId);
-                  if (target) void handleDelete(target);
-                }}
-                disabled={deletingId === confirmDeleteId}
-                className="px-4 py-1.5 text-xs"
-                aria-label="Confirm"
-              >
-                {deletingId === confirmDeleteId ? 'Deleting…' : 'Confirm'}
-              </BtnPrimary>
-            </div>
-          </div>
-        </div>
-      )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDeleteId(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                const target = servers.find((s) => s.id === confirmDeleteId);
+                if (target) void handleDelete(target);
+              }}
+              disabled={deletingId === confirmDeleteId}
+              aria-label="Confirm"
+            >
+              {deletingId === confirmDeleteId ? 'Deleting…' : 'Confirm'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {browseServer && (
         <BrowseDataDrawer

@@ -1,17 +1,57 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
-  --font-sans: "Inter", "Plus Jakarta Sans", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-sans: 'Oxanium', 'Plus Jakarta Sans', sans-serif;
+  --font-heading: 'Oxanium', 'Plus Jakarta Sans', sans-serif;
+  --font-mono: 'IBM Plex Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --color-background: var(--bg-0);
   --color-foreground: var(--text-100);
   --color-accent: #ff7a00;
   --color-accent-hover: #e66e00;
+  --color-lamp-good: #3dffa0;
+  --color-lamp-bad: #ff5c6a;
   --color-surface: var(--surface);
   --color-surface-elevated: var(--surface-elevated);
   --color-border-subtle: var(--border-subtle);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
 :root {
@@ -23,24 +63,86 @@
   --text-200: #334155;
   --text-300: #64748b;
   --text-400: #94a3b8;
-  --radius: 0.75rem;
+  --radius: 0.375rem;
+  --background: oklch(0.985 0.005 85);
+  --foreground: oklch(0.18 0.02 50);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.02 50);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.02 50);
+  --primary: oklch(0.705 0.186 47.6);
+  --primary-foreground: oklch(0.16 0.04 50);
+  --secondary: oklch(0.96 0.01 80);
+  --secondary-foreground: oklch(0.22 0.03 50);
+  --muted: oklch(0.96 0.01 80);
+  --muted-foreground: oklch(0.5 0.02 50);
+  --accent: oklch(0.705 0.186 47.6);
+  --accent-foreground: oklch(0.16 0.04 50);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.9 0.02 70);
+  --input: oklch(0.9 0.02 70);
+  --ring: oklch(0.705 0.186 47.6);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.705 0.186 47.6);
+  --sidebar-primary-foreground: oklch(0.16 0.04 50);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
 }
 
 .dark {
-  --bg-0: #0a0a0b;
-  --surface: #111114;
-  --surface-elevated: #18181b;
-  --border-subtle: #27272a;
-  --text-100: #fafafa;
-  --text-200: #e4e4e7;
-  --text-300: #a1a1aa;
-  --text-400: #71717a;
+  --bg-0: #070709;
+  --surface: #101014;
+  --surface-elevated: #17171c;
+  --border-subtle: #2a2a31;
+  --text-100: #f6f3ee;
+  --text-200: #d4d0c8;
+  --text-300: #9c9890;
+  --text-400: #6f6b64;
+  --background: oklch(0.145 0.01 80);
+  --foreground: oklch(0.96 0.01 85);
+  --card: oklch(0.18 0.012 80);
+  --card-foreground: oklch(0.96 0.01 85);
+  --popover: oklch(0.19 0.014 80);
+  --popover-foreground: oklch(0.96 0.01 85);
+  --primary: oklch(0.705 0.186 47.6);
+  --primary-foreground: oklch(0.16 0.04 50);
+  --secondary: oklch(0.24 0.012 80);
+  --secondary-foreground: oklch(0.96 0.01 85);
+  --muted: oklch(0.24 0.012 80);
+  --muted-foreground: oklch(0.68 0.02 80);
+  --accent: oklch(0.705 0.186 47.6);
+  --accent-foreground: oklch(0.16 0.04 50);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0.02 80 / 10%);
+  --input: oklch(1 0.02 80 / 12%);
+  --ring: oklch(0.705 0.186 47.6);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.17 0.012 80);
+  --sidebar-foreground: oklch(0.96 0.01 85);
+  --sidebar-primary: oklch(0.705 0.186 47.6);
+  --sidebar-primary-foreground: oklch(0.16 0.04 50);
+  --sidebar-accent: oklch(0.24 0.012 80);
+  --sidebar-accent-foreground: oklch(0.96 0.01 85);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
 }
 
 @layer base {
   html,
   body {
-    font-family: "Inter", "Plus Jakarta Sans", system-ui, sans-serif;
+    font-family: 'Oxanium', 'Plus Jakarta Sans', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -50,7 +152,20 @@
   kbd,
   samp,
   .font-mono {
-    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-family: 'IBM Plex Mono', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  .font-heading {
+    font-family: 'Oxanium', 'Plus Jakarta Sans', sans-serif;
+  }
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
   }
 }
 
@@ -78,4 +193,135 @@
 
 .dark ::-webkit-scrollbar-thumb:hover {
   background: #52525b;
+}
+
+.console-shell {
+  background-color: var(--bg-0);
+}
+
+.dark .console-shell {
+  background-image:
+    linear-gradient(rgb(255 255 255 / 0.016) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 0.016) 1px, transparent 1px);
+  background-size: 36px 36px;
+}
+
+.instrument-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background:
+    radial-gradient(900px 420px at 12% -8%, rgb(255 122 0 / 0.16), transparent 55%),
+    rgb(4 4 6 / 0.78);
+  backdrop-filter: blur(10px);
+}
+
+.instrument-panel {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgb(255 122 0 / 0.22);
+  background: var(--surface);
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.03),
+    0 28px 80px rgb(0 0 0 / 0.58);
+}
+
+.instrument-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: linear-gradient(90deg, #ff7a00 0%, #ffb15a 28%, transparent 70%);
+}
+
+.instrument-grain {
+  background-image:
+    linear-gradient(rgb(255 255 255 / 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 0.018) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.quality-lamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 999px;
+  border: 1px solid rgb(255 255 255 / 0.08);
+  background: rgb(0 0 0 / 0.28);
+  padding: 0.15rem 0.5rem 0.15rem 0.4rem;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.quality-lamp-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px rgb(255 255 255 / 0.04);
+}
+
+.quality-lamp-good {
+  color: #8dffc6;
+}
+
+.quality-lamp-good .quality-lamp-dot,
+.quality-lamp-dot.quality-lamp-good {
+  background: #3dffa0;
+  box-shadow: 0 0 10px #3dffa0;
+  animation: lamp-breathe 2.4s ease-in-out infinite;
+}
+
+.quality-lamp-bad {
+  color: #ff9aa4;
+}
+
+.quality-lamp-bad .quality-lamp-dot {
+  background: #ff5c6a;
+  box-shadow: 0 0 10px #ff5c6a;
+}
+
+.quality-lamp-unknown {
+  color: #b7b2a8;
+}
+
+.quality-lamp-unknown .quality-lamp-dot {
+  background: #6f6b64;
+}
+
+.topic-cable {
+  word-break: break-all;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  color: #ff9a3c;
+}
+
+@keyframes lamp-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.instrument-row {
+  animation: row-in 280ms ease-out both;
 }

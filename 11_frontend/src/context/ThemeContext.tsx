@@ -40,7 +40,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       root.classList.add('dark');
       root.classList.remove('light');
       root.setAttribute('data-theme', 'dark');
-      document.body.style.backgroundColor = '#0a0a0b';
+      document.body.style.backgroundColor = '#070709';
       document.body.style.color = '#fafafa';
     } else {
       root.classList.add('light');

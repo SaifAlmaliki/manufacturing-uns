@@ -113,7 +113,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         key={`${item.to}-${item.label}`}
         to={locked ? '#' : item.to}
         onClick={handleClick}
-        className={`group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
+        className={`group relative flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors ${
           active
             ? 'bg-[#FF7A00] text-white'
             : locked
@@ -165,19 +165,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const sidebarContent = (
     <aside
       id="application-left-menu"
-      className={`flex h-full flex-col bg-[#111114] border-r border-zinc-800/80 select-none transition-all duration-200 ${
+      className={`flex h-full flex-col select-none border-r border-zinc-800/80 bg-[#101014] transition-all duration-200 ${
         isCollapsed ? 'w-[72px]' : 'w-[260px]'
       }`}
     >
       {/* Brand */}
       <div className="flex h-16 shrink-0 items-center justify-between border-b border-zinc-800/80 px-4">
         <div className={`flex items-center gap-3 min-w-0 ${isCollapsed ? 'justify-center w-full' : ''}`}>
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-[#FF7A00]">
-            <span className="text-lg font-bold text-white">U</span>
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-[#FF7A00]">
+            <span className="font-heading text-lg font-bold text-[#140800]">U</span>
           </div>
           {!isCollapsed && (
             <div className="min-w-0 leading-tight">
-              <div className="truncate text-[15px] font-semibold text-white">UNS Console</div>
+              <div className="font-heading truncate text-[15px] font-semibold tracking-tight text-white">UNS Console</div>
               <div className="truncate text-xs text-zinc-500">
                 {settings.organization || 'Smart Manufacturing'}
               </div>
@@ -205,7 +205,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search menu..."
-              className="w-full rounded-xl border border-zinc-800 bg-zinc-900/80 py-2.5 pl-9 pr-12 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-[#FF7A00]/50 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/30"
+              className="w-full rounded-md border border-zinc-800 bg-zinc-950/80 py-2.5 pl-9 pr-12 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-[#FF7A00]/50 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/30"
             />
             <kbd className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-500 sm:flex">
               <Command className="size-2.5" />K
@@ -247,7 +247,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           }}
           title={platformStatusTitle}
           aria-label={platformStatusTitle}
-          className={`flex items-center rounded-xl text-zinc-400 transition-colors hover:bg-zinc-800/60 hover:text-zinc-200 ${
+          className={`flex items-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-800/60 hover:text-zinc-200 ${
             isCollapsed ? 'relative p-2.5' : 'w-full gap-2.5 px-3 py-2'
           }`}
         >

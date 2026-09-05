@@ -77,7 +77,7 @@ class MQTTSubscription:
                     topic=[(mqtt_topic.topic, MQTTConfig.qos) for mqtt_topic in topics], properties=MQTTConfig.properties
                 )
                 scope = await scope_from_info(info)
-                resolver = _context_resolver()
+                resolver = None if scope.unrestricted else _context_resolver()
                 async for msg in client.messages:
                     topic = str(msg.topic)
                     if not await allowed_topic(scope, topic, resolver):

@@ -50,6 +50,8 @@ def _repository() -> AlertRuleRepository:
 async def _require_visible_topic(info: strawberry.Info, topic: str) -> None:
     """Refuse a write aimed at a topic the caller may not see."""
     scope = await scope_from_info(info)
+    if scope.unrestricted:
+        return
     if not await allowed_topic(scope, topic, asset_query._context_resolver()):
         raise NotPermittedError(f"This Asset or topic is outside your Access Groups: {topic}.")
 

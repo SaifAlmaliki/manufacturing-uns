@@ -53,18 +53,29 @@ export function formatLastTestedAt(lastTestedAt: string | null | undefined): str
   try {
     const d = new Date(lastTestedAt)
     if (Number.isNaN(d.getTime())) return '—'
-    return d.toLocaleString()
+    return d.toLocaleString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
   } catch {
     return '—'
   }
 }
 
-/** Clock-only stamp for the browse table — ISO strings are too wide. */
+/** Clock-only stamp for the browse table — control-room 24h, no AM/PM. */
 export function formatBrowseClock(iso: string | null | undefined): string {
   if (!iso) return '—'
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return d.toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  })
 }
 
 /** Servers whose name or endpoint contains the query (case-insensitive). */

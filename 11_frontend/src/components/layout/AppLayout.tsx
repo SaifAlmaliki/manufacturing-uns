@@ -62,7 +62,7 @@ export const AppLayout: React.FC = () => {
     health.status === 'LIVE' ? 'Connected' : health.status === 'DEGRADED' ? 'Degraded' : 'Offline';
 
   return (
-    <div className="flex h-dvh w-screen overflow-hidden bg-[#0a0a0b] text-zinc-100 font-sans">
+    <div className="console-shell flex h-dvh w-screen overflow-hidden bg-[#070709] font-sans text-zinc-100">
       <Sidebar
         isCollapsed={isCollapsed}
         onToggleCollapse={handleToggleCollapse}
@@ -79,7 +79,7 @@ export const AppLayout: React.FC = () => {
           onToggleMobileSidebar={() => setIsMobileOpen((prev) => !prev)}
         />
 
-        <main className="flex min-h-0 flex-1 overflow-hidden bg-[#0a0a0b]">
+        <main className="flex min-h-0 flex-1 overflow-hidden bg-transparent">
           {!tabAccess.allowed ? (
             <AccessRestricted
               featureKey={tabAccess.requiredFeature}
@@ -93,7 +93,7 @@ export const AppLayout: React.FC = () => {
           )}
         </main>
 
-        <footer className="flex h-8 shrink-0 items-center justify-between border-t border-zinc-800/80 bg-[#111114] px-4 text-xs text-zinc-500">
+        <footer className="flex h-8 shrink-0 items-center justify-between border-t border-zinc-800/80 bg-[#101014] px-4 font-mono text-[11px] text-zinc-500">
           <div className="flex items-center gap-3">
             <span
               className={`flex items-center gap-1.5 font-medium ${

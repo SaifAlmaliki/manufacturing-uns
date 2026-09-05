@@ -19,6 +19,7 @@ Rename an ISA-95 graph node when a hierarchy prefix changes.
 """
 
 from unittest.mock import AsyncMock, patch
+from uuid import uuid4
 
 import pytest
 
@@ -177,7 +178,11 @@ async def test_rewrite_renames_enterprise_root():
     _assert_sets_last_segment(session, segments=["E"], new_segment="Nord")
 
 
-ENTERPRISE = "pytest-graph-rewrite"
+def _enterprise(kind: str) -> str:
+    """Fresh root name per invocation so parallel xdist workers cannot share a tree."""
+    return f"pytest-graph-rewrite-{kind}-{uuid4().hex}"
+
+
 SEED_CYPHER = """
 CREATE (e:ENTERPRISE {node_name: $enterprise})
 CREATE (e)-[:PARENT_OF]->(s1:FACILITY {node_name: 'S1'})
@@ -211,49 +216,53 @@ async def _values(session, query: str, **params) -> list:
 
 @pytest.mark.asyncio
 @pytest.mark.integrationtest
+@pytest.mark.xdist_group(name="graphql_graph_rewrite")
 async def test_rewrite_graph_prefix_renames_node_in_neo4j():
+    enterprise = _enterprise("rename")
     driver = await GraphDB.get_graphdb_driver()
     try:
         async with driver.session() as session:
-            await _run(session, WIPE_CYPHER, enterprise=ENTERPRISE)
-            await _run(session, SEED_CYPHER, enterprise=ENTERPRISE)
+            await _run(session, WIPE_CYPHER, enterprise=enterprise)
+            await _run(session, SEED_CYPHER, enterprise=enterprise)
         try:
-            changed = await rewrite_graph_prefix(f"{ENTERPRISE}/S1", f"{ENTERPRISE}/Nord")
+            changed = await rewrite_graph_prefix(f"{enterprise}/S1", f"{enterprise}/Nord")
             assert changed == 1
             async with driver.session() as session:
-                assert await _values(session, SITE_NAMES_CYPHER, enterprise=ENTERPRISE) == ["Nord", "S2"]
-                assert await _values(session, CHILD_NAMES_CYPHER, enterprise=ENTERPRISE, site="Nord") == ["a"]
+                assert await _values(session, SITE_NAMES_CYPHER, enterprise=enterprise) == ["Nord", "S2"]
+                assert await _values(session, CHILD_NAMES_CYPHER, enterprise=enterprise, site="Nord") == ["a"]
         finally:
             async with driver.session() as session:
-                await _run(session, WIPE_CYPHER, enterprise=ENTERPRISE)
+                await _run(session, WIPE_CYPHER, enterprise=enterprise)
     finally:
         await GraphDB.release_graphdb_driver()
 
 
 @pytest.mark.asyncio
 @pytest.mark.integrationtest
+@pytest.mark.xdist_group(name="graphql_graph_rewrite")
 async def test_rewrite_graph_prefix_collision_in_neo4j():
+    enterprise = _enterprise("collision")
     driver = await GraphDB.get_graphdb_driver()
     try:
         async with driver.session() as session:
-            await _run(session, WIPE_CYPHER, enterprise=ENTERPRISE)
-            await _run(session, SEED_CYPHER, enterprise=ENTERPRISE)
+            await _run(session, WIPE_CYPHER, enterprise=enterprise)
+            await _run(session, SEED_CYPHER, enterprise=enterprise)
             await _run(
                 session,
                 """
                 MATCH (e {node_name: $enterprise})
                 CREATE (e)-[:PARENT_OF]->(:FACILITY {node_name: 'Nord'})
                 """,
-                enterprise=ENTERPRISE,
+                enterprise=enterprise,
             )
         try:
             with pytest.raises(ValueError):
-                await rewrite_graph_prefix(f"{ENTERPRISE}/S1", f"{ENTERPRISE}/Nord")
+                await rewrite_graph_prefix(f"{enterprise}/S1", f"{enterprise}/Nord")
             async with driver.session() as session:
-                assert await _values(session, SITE_NAMES_CYPHER, enterprise=ENTERPRISE) == ["Nord", "S1", "S2"]
+                assert await _values(session, SITE_NAMES_CYPHER, enterprise=enterprise) == ["Nord", "S1", "S2"]
         finally:
             async with driver.session() as session:
-                await _run(session, WIPE_CYPHER, enterprise=ENTERPRISE)
+                await _run(session, WIPE_CYPHER, enterprise=enterprise)
     finally:
         await GraphDB.release_graphdb_driver()
 

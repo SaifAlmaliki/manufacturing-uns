@@ -72,7 +72,7 @@ class Query:
         if rule is None:
             return None
         scope = await scope_from_info(info)
-        if not await allowed_topic(scope, rule.topic, _context_resolver()):
+        if not scope.unrestricted and not await allowed_topic(scope, rule.topic, _context_resolver()):
             return None
         return AlertRuleType.from_rule(rule)
 

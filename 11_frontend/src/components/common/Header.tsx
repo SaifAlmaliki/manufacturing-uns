@@ -111,19 +111,19 @@ export const Header: React.FC<HeaderProps> = ({
   const { title, subtitle } = getPageHeading(location.pathname, firstName);
 
   return (
-    <header className="z-30 flex h-14 shrink-0 items-center justify-between border-b border-zinc-800/80 bg-[#0a0a0b] px-4 md:px-6">
+    <header className="z-30 flex h-14 shrink-0 items-center justify-between border-b border-zinc-800/80 bg-[#070709]/90 px-4 md:px-6">
       <div className="flex min-w-0 items-center gap-3">
         <button
           id="mobile-sidebar-toggle-btn"
           onClick={onToggleMobileSidebar}
-          className="flex size-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900 text-zinc-400 transition-colors hover:border-zinc-700 hover:text-white lg:hidden"
+          className="flex size-10 items-center justify-center rounded-md border border-zinc-800 bg-zinc-900 text-zinc-400 transition-colors hover:border-zinc-700 hover:text-white lg:hidden"
           aria-label="Open navigation menu"
         >
           <Menu className="size-5" />
         </button>
 
         <div className="min-w-0">
-          <h1 className="truncate text-base font-semibold text-white md:text-lg">{title}</h1>
+          <h1 className="font-heading truncate text-base font-semibold tracking-tight text-white md:text-lg">{title}</h1>
           {subtitle && (
             <p className="hidden truncate text-xs text-zinc-500 sm:block">{subtitle}</p>
           )}
@@ -133,7 +133,7 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
         {/* Date */}
         <button
-          className="hidden items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-300 transition-colors hover:border-zinc-700 sm:flex"
+          className="hidden items-center gap-2 rounded-md border border-zinc-800 bg-zinc-900 px-3 py-2 font-mono text-xs text-zinc-300 transition-colors hover:border-zinc-700 sm:flex"
           aria-label="Current date"
         >
           <Calendar className="size-4 text-zinc-500" />
@@ -144,7 +144,7 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           id="bookmarks-toggle-btn"
           onClick={onOpenBookmarks}
-          className="relative flex size-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900 text-zinc-400 transition-colors hover:border-zinc-700 hover:text-white"
+          className="relative flex size-10 items-center justify-center rounded-md border border-zinc-800 bg-zinc-900 text-zinc-400 transition-colors hover:border-zinc-700 hover:text-white"
           aria-label={`Bookmarks (${bookmarks.length})`}
           title="Saved bookmarks"
         >
@@ -160,7 +160,7 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           id="theme-toggle-btn"
           onClick={toggleTheme}
-          className="flex size-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900 text-zinc-400 transition-colors hover:border-zinc-700 hover:text-white"
+          className="flex size-10 items-center justify-center rounded-md border border-zinc-800 bg-zinc-900 text-zinc-400 transition-colors hover:border-zinc-700 hover:text-white"
           aria-label={`Switch to ${isDark ? 'light' : 'dark'} mode`}
         >
           {isDark ? <Sun className="size-[18px]" /> : <Moon className="size-[18px]" />}
@@ -170,7 +170,7 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           id="header-notifications-btn"
           onClick={handleNotifications}
-          className="relative flex size-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900 text-zinc-400 transition-colors hover:border-zinc-700 hover:text-white"
+          className="relative flex size-10 items-center justify-center rounded-md border border-zinc-800 bg-zinc-900 text-zinc-400 transition-colors hover:border-zinc-700 hover:text-white"
           aria-label={`Notifications (${notificationCount})`}
           title={
             notificationCount > 0

@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 import pytest
 from uns_model.access import covers  # only to document the same rule
 
-from uns_graphql.auth.scope import AccessScope, scope_for, visible_topic
+from uns_graphql.auth.scope import AccessScope, allowed_topic, scope_for, visible_topic
 from uns_graphql.auth.token import Identity
 
 ADMIN = AccessScope(unrestricted=True, root_paths=frozenset())
@@ -51,6 +51,14 @@ async def test_scope_for_none_is_empty():
     scope = await scope_for(None, roots_for=boom)
     assert scope == EMPTY
     boom.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_allowed_topic_skips_binding_when_unrestricted():
+    """Admin must not open the Asset Model — unit tests and All Modules CI have no historian secrets."""
+    resolver = AsyncMock()
+    assert await allowed_topic(ADMIN, "enterprise/site/area/oven/temperature", resolver) is True
+    resolver.resolve.assert_not_called()
 
 
 @pytest.mark.asyncio

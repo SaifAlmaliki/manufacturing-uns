@@ -2,29 +2,66 @@ import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { Search } from 'lucide-react';
 
-/** FlowBoard-style design tokens for console pages */
+/** Night-shift instrument tokens for console pages */
 export const consoleTokens = {
-  page: 'bg-[#0a0a0b] text-zinc-100',
-  card: 'rounded-2xl border border-zinc-800 bg-[#111114]',
-  cardMuted: 'rounded-2xl border border-zinc-800/60 bg-zinc-900/40',
+  page: 'bg-[#070709] text-zinc-100',
+  card: 'rounded-md border border-zinc-800/80 bg-[#101014]',
+  cardMuted: 'rounded-md border border-zinc-800/60 bg-zinc-900/40',
   input:
-    'w-full rounded-xl border border-zinc-800 bg-zinc-900/80 px-3 py-2.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-[#FF7A00]/50 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/30',
-  label: 'text-xs font-medium text-zinc-500',
-  tabActive: 'bg-[#FF7A00] text-white',
+    'w-full rounded-md border border-zinc-800 bg-zinc-950/80 px-3 py-2.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-[#FF7A00]/50 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/30',
+  label: 'text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500',
+  tabActive: 'bg-[#FF7A00] text-[#140800]',
   tabInactive: 'text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200',
   btnPrimary:
-    'inline-flex items-center gap-1.5 rounded-xl bg-[#FF7A00] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#e66e00] disabled:opacity-50',
+    'inline-flex items-center gap-1.5 rounded-md bg-[#FF7A00] px-4 py-2 text-sm font-semibold text-[#140800] transition-colors hover:bg-[#e66e00] disabled:opacity-50',
   btnSecondary:
-    'inline-flex items-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-300 transition-colors hover:border-zinc-700 hover:text-white',
+    'inline-flex items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-950 px-4 py-2 text-sm font-medium text-zinc-300 transition-colors hover:border-zinc-700 hover:text-white',
   btnGhost:
-    'inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-800/60 hover:text-zinc-100',
+    'inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-800/60 hover:text-zinc-100',
   accent: '#FF7A00',
   /** Dark inputs with orange text — simulator & technical panels */
   inputOrange:
-    'w-full rounded-xl border border-zinc-800 bg-zinc-900/80 px-3 py-2.5 text-sm text-[#FF7A00] placeholder:text-zinc-600 focus:border-[#FF7A00]/50 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/30',
-  pane: 'flex flex-col h-full bg-[#111114] text-zinc-100',
+    'w-full rounded-md border border-zinc-800 bg-zinc-950/80 px-3 py-2.5 text-sm text-[#FF7A00] placeholder:text-zinc-600 focus:border-[#FF7A00]/50 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/30',
+  pane: 'flex flex-col h-full bg-[#101014] text-zinc-100',
   paneHeader: 'shrink-0 border-b border-zinc-800 p-3',
 } as const;
+
+export function QualityLamp({ status }: { status: string }) {
+  const tone = status === 'Good' ? 'good' : status === 'Bad' ? 'bad' : 'unknown';
+  return (
+    <span className={`quality-lamp quality-lamp-${tone}`}>
+      <span className="quality-lamp-dot" />
+      {status}
+    </span>
+  );
+}
+
+export function ConsoleDialog({
+  children,
+  onClose,
+  ariaLabel,
+  className = '',
+  overlayClassName = '',
+}: {
+  children: React.ReactNode;
+  onClose: () => void;
+  ariaLabel: string;
+  className?: string;
+  overlayClassName?: string;
+}) {
+  return (
+    <div className={`instrument-overlay ${overlayClassName}`} onClick={onClose}>
+      <div
+        role="dialog"
+        aria-label={ariaLabel}
+        className={`instrument-panel instrument-grain ${className}`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
 
 interface PageShellProps {
   children: React.ReactNode;
@@ -104,7 +141,7 @@ export const PageStat: React.FC<PageStatProps> = ({
         <div className="text-xs text-zinc-500">{label}</div>
         <div className={`mt-1 text-xl font-semibold tabular-nums ${valueClassName}`}>{value}</div>
       </div>
-      <div className={`flex size-10 items-center justify-center rounded-xl ${iconBg}`}>{icon}</div>
+      <div className={`flex size-10 items-center justify-center rounded-md ${iconBg}`}>{icon}</div>
     </div>
   );
 };
@@ -132,7 +169,7 @@ function segmentTabClass(isActive: boolean) {
 }
 
 export const SegmentTabs: React.FC<SegmentTabsProps> = ({ tabs, active, onChange, className = '' }) => (
-  <div className={`flex flex-wrap gap-1 rounded-xl border border-zinc-800 bg-zinc-900/60 p-1 ${className}`}>
+  <div className={`flex flex-wrap gap-1 rounded-md border border-zinc-800 bg-zinc-900/60 p-1 ${className}`}>
     {tabs.map((tab) => {
       const Icon = tab.icon;
       const badge =
@@ -188,7 +225,7 @@ interface PageToolbarProps {
 export const PageToolbar: React.FC<PageToolbarProps> = ({ title, description, icon, actions }) => (
   <ConsoleCard className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
     <div className="flex items-start gap-3">
-      {icon && <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#FF7A00]/15">{icon}</div>}
+      {icon && <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-[#FF7A00]/15">{icon}</div>}
       <div>
         <h2 className="text-base font-semibold text-white">{title}</h2>
         {description && <p className="mt-0.5 text-sm text-zinc-500">{description}</p>}
@@ -269,7 +306,7 @@ export const FilterToolbar: React.FC<{
   className?: string;
 }> = ({ tabs, search, selects, trailing, className = '' }) => (
   <div
-    className={`flex flex-wrap items-center gap-1 rounded-xl border border-zinc-800 bg-zinc-900/60 p-1 ${className}`}
+    className={`flex flex-wrap items-center gap-1 rounded-md border border-zinc-800 bg-zinc-900/60 p-1 ${className}`}
   >
     {tabs?.items.map((tab) => (
       <button

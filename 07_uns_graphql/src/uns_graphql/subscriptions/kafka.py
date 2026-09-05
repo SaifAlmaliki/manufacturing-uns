@@ -101,7 +101,7 @@ class KAFKASubscription:
 
         # Yield messages from the Kafka listener that this caller may see
         scope = await scope_from_info(info)
-        resolver = _context_resolver()
+        resolver = None if scope.unrestricted else _context_resolver()
         async for message in kafka_listener():
             if not await allowed_topic(scope, message.topic, resolver):
                 continue
