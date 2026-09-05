@@ -11,7 +11,10 @@ import asyncio
 import logging
 from collections.abc import Sequence
 
+from uns_model.connectivity import ConnectivityRepository
+from uns_model.engine import Database
 from uns_opcua import prometheus_metrics as metrics
+from uns_opcua.catalog import servers_from_catalog
 from uns_opcua.collector import Collector
 from uns_opcua.forwarder import Forwarder, SpoolWriter, opened_spool
 from uns_opcua.model_check import report_at_startup
@@ -20,6 +23,8 @@ from uns_opcua.spool import Spool, SpoolRow
 from uns_opcua.tag_map import TagBinding, build_bindings, find_conflicts
 
 LOGGER = logging.getLogger(__name__)
+
+CATALOG_MODEL_ENV = "opcua"
 
 
 def build_bindings_for_all(servers: Sequence[ServerConfig]) -> list[TagBinding]:
@@ -31,6 +36,29 @@ def build_bindings_for_all(servers: Sequence[ServerConfig]) -> list[TagBinding]:
             LOGGER.error("Configuration conflict: %s", conflict)
         raise ValueError(f"{len(conflicts)} conflict(s) in the opcua tag configuration")
     return bindings
+
+
+async def load_servers_from_catalog(repository: ConnectivityRepository) -> tuple[ServerConfig, ...]:
+    """
+    Read the Connectivity catalog and fold it into `ServerConfig`s.
+
+    Returns () when the catalog is empty or unreachable, so the caller can fall
+    back to YAML. A catalog read failure is logged, not raised: a console that
+    is briefly down must not stop an edge connector that already has a working
+    YAML mapping.
+    """
+    try:
+        servers = await repository.list_servers()
+        tags_by_server_id = {server.id: await repository.list_subscribed_tags(server.id) for server in servers}
+    except Exception:
+        LOGGER.warning("Connectivity catalog read failed; falling back to opcua.servers", exc_info=True)
+        return ()
+    return servers_from_catalog(servers, tags_by_server_id)
+
+
+def resolve_servers(catalog_servers: Sequence[ServerConfig]) -> tuple[ServerConfig, ...]:
+    """Prefer the catalog when it yields servers with subscribed tags; else YAML."""
+    return tuple(catalog_servers) if catalog_servers else OpcUaConfig.servers
 
 
 async def run_connector(
@@ -144,20 +172,29 @@ def main() -> None:
 
     metrics.start_metrics_server(OpcUaConfig.metrics_port)
     try:
-        asyncio.run(
-            run_connector_keeping_metrics_alive(
-                servers=OpcUaConfig.servers,
-                spool_config=OpcUaConfig.spool,
-                client_id=OpcUaConfig.client_id,
-                qos=MQTTConfig.qos,
-                queue_maxsize=OpcUaConfig.queue_maxsize,
-                forward_batch_size=OpcUaConfig.forward_batch_size,
-                backoff_max_s=OpcUaConfig.reconnect_backoff_max_s,
-                model_check=OpcUaConfig.model_check,
-            )
-        )
+        asyncio.run(_supervise())
     except KeyboardInterrupt:
         LOGGER.info("Shutting down on interrupt")
+
+
+async def _supervise() -> None:
+    """Resolve servers (catalog first, YAML fallback) and run the connector."""
+    catalog_servers = await load_servers_from_catalog(ConnectivityRepository(Database.shared(CATALOG_MODEL_ENV)))
+    servers = resolve_servers(catalog_servers)
+    if catalog_servers:
+        LOGGER.info("Using %s server(s) from the Connectivity catalog", len(catalog_servers))
+    elif OpcUaConfig.servers:
+        LOGGER.info("Catalog empty; using %s server(s) from opcua.servers", len(OpcUaConfig.servers))
+    await run_connector_keeping_metrics_alive(
+        servers=servers,
+        spool_config=OpcUaConfig.spool,
+        client_id=OpcUaConfig.client_id,
+        qos=MQTTConfig.qos,
+        queue_maxsize=OpcUaConfig.queue_maxsize,
+        forward_batch_size=OpcUaConfig.forward_batch_size,
+        backoff_max_s=OpcUaConfig.reconnect_backoff_max_s,
+        model_check=OpcUaConfig.model_check,
+    )
 
 
 if __name__ == "__main__":

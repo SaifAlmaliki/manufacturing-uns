@@ -3,9 +3,12 @@
 import asyncio
 
 import pytest
+from uns_model.connectivity import ConnectivityServerSpec, ConnectivityTagSpec
 from uns_opcua.main import (
     _idle_when_no_servers,
     build_bindings_for_all,
+    load_servers_from_catalog,
+    resolve_servers,
     run_connector,
     run_connector_keeping_metrics_alive,
 )
@@ -130,3 +133,60 @@ async def test_run_connector_cancels_every_task_on_shutdown(tmp_path, monkeypatc
     owned = {"spool_writer", "forwarder", "model_check", "collector:plc01"}
     leaked = [t.get_name() for t in asyncio.all_tasks() if t.get_name() in owned and not t.done()]
     assert leaked == []
+
+
+class _FakeCatalog:
+    """A stand-in for ConnectivityRepository that returns canned specs."""
+
+    def __init__(self, servers, tags_by_server_id, *, raise_on_read: bool = False):
+        self._servers = servers
+        self._tags = tags_by_server_id
+        self._raise = raise_on_read
+
+    async def list_servers(self):
+        if self._raise:
+            raise RuntimeError("catalog down")
+        return list(self._servers)
+
+    async def list_subscribed_tags(self, server_id):
+        if self._raise:
+            raise RuntimeError("catalog down")
+        return list(self._tags.get(server_id, ()))
+
+
+async def test_load_servers_from_catalog_returns_catalog_servers():
+    servers = [ConnectivityServerSpec("s1", "opcplc", "opc_ua", "opc.tcp://host:4840/")]
+    tags = {"s1": [ConnectivityTagSpec("ns=3;s=A", "Path/A", "A", "Plant/A", True)]}
+    repository = _FakeCatalog(servers, tags)
+    loaded = await load_servers_from_catalog(repository)
+    assert len(loaded) == 1
+    assert loaded[0].name == "opcplc"
+    assert loaded[0].tags[0].mqtt_topic == "Plant/A"
+
+
+async def test_load_servers_from_catalog_returns_empty_when_catalog_unreachable():
+    """A console that is briefly down must not stop a YAML-only connector."""
+    repository = _FakeCatalog([], {}, raise_on_read=True)
+    loaded = await load_servers_from_catalog(repository)
+    assert loaded == ()
+
+
+async def test_resolve_servers_prefers_catalog_when_non_empty():
+    catalog_server = ServerConfig(
+        name="catalog-plc",
+        url="opc.tcp://catalog:4840/",
+        publishing_interval_ms=200,
+        tags=(TagConfig(node_id="ns=2;s=1", asset="Plant/A", metric_path=""),),
+    )
+    assert resolve_servers((catalog_server,)) == (catalog_server,)
+
+
+async def test_resolve_servers_falls_back_to_yaml_when_catalog_empty(monkeypatch):
+    yaml_server = ServerConfig(
+        name="yaml-plc",
+        url="opc.tcp://yaml:4840/",
+        publishing_interval_ms=200,
+        tags=(TagConfig(node_id="ns=2;s=2", asset="Plant/B", metric_path=""),),
+    )
+    monkeypatch.setattr("uns_opcua.main.OpcUaConfig.servers", (yaml_server,))
+    assert resolve_servers(()) == (yaml_server,)
