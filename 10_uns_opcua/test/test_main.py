@@ -2,12 +2,14 @@
 
 import asyncio
 from datetime import datetime
+from unittest.mock import AsyncMock
 
 import pytest
 from uns_model.connectivity import ConnectivityServerSpec, ConnectivityTagSpec
 from uns_opcua.main import (
     _idle_when_no_servers,
     _poll_and_reload,
+    _supervise,
     build_bindings_for_all,
     load_servers_from_catalog,
     resolve_servers,
@@ -273,3 +275,48 @@ async def test_poll_and_reload_keeps_connector_when_timestamp_unchanged():
     connector.cancel()
     poller.cancel()
     await asyncio.gather(connector, poller, return_exceptions=True)
+
+
+# --------------------------------------------------------------- _supervise shutdown
+
+
+async def test_supervise_re_raises_a_process_cancel_and_does_not_restart(monkeypatch):
+    """A CancelledError that is not a catalog reload is shutdown, not a restart trigger.
+
+    Swallowing it would loop forever: the supervisor would cancel the connector, catch the
+    CancelledError, and immediately start a new one, defeating Ctrl+C and container stop.
+    """
+    starts = {"connector": 0}
+
+    async def never_ending_connector(**kwargs):  # noqa: ANN001
+        starts["connector"] += 1
+        await asyncio.Event().wait()
+
+    async def never_ending_poller(*args, **kwargs):  # noqa: ANN001
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(
+        "uns_opcua.main.ConnectivityRepository", lambda *_args, **_kwargs: object()
+    )
+    monkeypatch.setattr(
+        "uns_opcua.main.run_connector_keeping_metrics_alive", never_ending_connector
+    )
+    monkeypatch.setattr("uns_opcua.main._poll_and_reload", never_ending_poller)
+    monkeypatch.setattr(
+        "uns_opcua.main.load_servers_from_catalog", AsyncMock(return_value=())
+    )
+    monkeypatch.setattr("uns_opcua.main.resolve_servers", lambda _: ())
+    monkeypatch.setattr(
+        "uns_opcua.main._safe_catalog_updated_at", AsyncMock(return_value=None)
+    )
+
+    task = asyncio.create_task(_supervise())
+    await asyncio.sleep(0.05)
+    assert starts["connector"] == 1
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    # The supervisor must not have restarted the connector after the process-level cancel.
+    assert starts["connector"] == 1

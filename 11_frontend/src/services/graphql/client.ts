@@ -60,7 +60,7 @@ import {
   GET_ASSETS_QUERY,
   SAVE_ACCESS_GROUP_MUTATION,
   SET_ACCESS_GROUP_MEMBERS_MUTATION,
-  TEST_OPCUA_CONNECTION_MUTATION,
+  TEST_OPCUA_CONNECTION_QUERY,
   UNSUBSCRIBE_CONNECTIVITY_TAG_MUTATION,
   UPDATE_CONNECTIVITY_TAG_TOPIC_MUTATION,
 } from './queries'
@@ -721,7 +721,7 @@ export class UnsGraphQLClient {
 
   public async testOpcUaConnection(endpoint: string): Promise<GraphqlConnectivityTestResult> {
     const res = await this.executeQuery<{ testOpcUaConnection: GraphqlConnectivityTestResult }>(
-      TEST_OPCUA_CONNECTION_MUTATION,
+      TEST_OPCUA_CONNECTION_QUERY,
       { endpoint },
     )
     if (res.error || !res.data?.testOpcUaConnection) {
@@ -735,6 +735,9 @@ export class UnsGraphQLClient {
       DISCOVER_OPCUA_VARIABLES_QUERY,
       { endpoint },
     )
+    if (res.error) {
+      throw new Error(res.error)
+    }
     return res.data?.discoverOpcUaVariables ?? []
   }
 
@@ -783,6 +786,9 @@ export class UnsGraphQLClient {
       READ_OPCUA_NODES_QUERY,
       { endpoint, nodeIds },
     )
+    if (res.error) {
+      throw new Error(res.error)
+    }
     return res.data?.readOpcUaNodes ?? []
   }
 

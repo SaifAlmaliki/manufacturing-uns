@@ -487,3 +487,35 @@ async def test_read_opc_ua_nodes_returns_data_values():
     read.assert_awaited_once()
     assert read.await_args.args[1] == ["ns=2;s=Temperature"]
 
+
+# --------------------------------------------------------------- role gate on probes
+
+
+@pytest.mark.asyncio(loop_scope="function")
+@pytest.mark.parametrize(
+    "document",
+    [
+        "{ getConnectivityServers { id } }",
+        '{ testOpcUaConnection(endpoint: "opc.tcp://plc1:4840") { ok } }',
+        '{ browseOpcUa(endpoint: "opc.tcp://plc1:4840") { nodeId } }',
+        '{ discoverOpcUaVariables(endpoint: "opc.tcp://plc1:4840") { nodeId } }',
+        '{ readOpcUaNodes(endpoint: "opc.tcp://plc1:4840", nodeIds: ["i=1"]) { nodeId } }',
+    ],
+    ids=[
+        "getConnectivityServers",
+        "testOpcUaConnection",
+        "browseOpcUa",
+        "discoverOpcUaVariables",
+        "readOpcUaNodes",
+    ],
+)
+async def test_a_viewer_cannot_run_an_opc_ua_probe_and_is_told_which_role_they_need(document: str):
+    repository = AsyncMock()
+
+    with patch(QUERY_REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(document, context_value=VIEWER)
+
+    assert result.errors
+    assert "engineer" in result.errors[0].message
+    repository.list_servers.assert_not_awaited()
+

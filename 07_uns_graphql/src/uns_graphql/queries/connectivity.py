@@ -16,6 +16,7 @@ from uns_model.engine import Database
 from uns_opcua import browse as opcua_browse
 from uns_opcua.session import open_client
 
+from uns_graphql.auth.require import OPC_PROBE_ROLES, require_role
 from uns_graphql.type.connectivity import (
     ConnectivityProtocol,
     ConnectivityServerType,
@@ -38,9 +39,10 @@ class Query:
     )
     async def get_connectivity_servers(
         self,
-        info: strawberry.Info,  # noqa: ARG002
+        info: strawberry.Info,
         protocol: ConnectivityProtocol | None = strawberry.UNSET,
     ) -> list[ConnectivityServerType]:
+        require_role(info, OPC_PROBE_ROLES)
         servers = await _repository().list_servers(
             protocol=protocol.value if protocol is not strawberry.UNSET else None
         )
@@ -52,9 +54,10 @@ class Query:
     )
     async def test_opc_ua_connection(
         self,
-        info: strawberry.Info,  # noqa: ARG002
+        info: strawberry.Info,
         endpoint: str,
     ) -> ConnectivityTestResultType:
+        require_role(info, OPC_PROBE_ROLES)
         ok, error, elapsed_ms = await opcua_browse.test_connection(endpoint)
         # Record the test against a saved server that owns this endpoint, if any.
         # The bridge also calls record_test; this is the console's own probe, so the
@@ -70,10 +73,11 @@ class Query:
     )
     async def browse_opc_ua(
         self,
-        info: strawberry.Info,  # noqa: ARG002
+        info: strawberry.Info,
         endpoint: str,
         node_id: str | None = strawberry.UNSET,
     ) -> list[OpcUaBrowseNodeType]:
+        require_role(info, OPC_PROBE_ROLES)
         async with await open_client(endpoint) as client:
             rows = await opcua_browse.browse_children(
                 client, node_id if node_id is not strawberry.UNSET else None
@@ -85,9 +89,10 @@ class Query:
     )
     async def discover_opc_ua_variables(
         self,
-        info: strawberry.Info,  # noqa: ARG002
+        info: strawberry.Info,
         endpoint: str,
     ) -> list[OpcUaBrowseNodeType]:
+        require_role(info, OPC_PROBE_ROLES)
         async with await open_client(endpoint) as client:
             rows = await opcua_browse.discover_variables(client)
         return [OpcUaBrowseNodeType.from_browse(row) for row in rows]
@@ -95,10 +100,11 @@ class Query:
     @strawberry.field(description="Read the current value of one or more OPC UA nodes by NodeId.")
     async def read_opc_ua_nodes(
         self,
-        info: strawberry.Info,  # noqa: ARG002
+        info: strawberry.Info,
         endpoint: str,
         node_ids: list[str],
     ) -> list[OpcUaDataValueType]:
+        require_role(info, OPC_PROBE_ROLES)
         async with await open_client(endpoint) as client:
             rows = await opcua_browse.read_nodes(client, node_ids)
         return [OpcUaDataValueType.from_row(row) for row in rows]

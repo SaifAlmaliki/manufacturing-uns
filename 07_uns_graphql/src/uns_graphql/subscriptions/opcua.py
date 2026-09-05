@@ -17,7 +17,9 @@ import strawberry
 from uns_opcua import browse as opcua_browse
 from uns_opcua.session import open_client
 
+from uns_graphql.auth.require import OPC_PROBE_ROLES, require_role
 from uns_graphql.type.connectivity import OpcUaDataValueType
+from uns_opcua.payload import quality_from_code
 
 LOGGER = logging.getLogger(__name__)
 
@@ -27,23 +29,25 @@ class _DataChangeHandler:
 
     Called from the client's task, so it must not block: it maps a single
     DataValue to an `OpcUaDataValueType` and enqueues, mirroring the collector's
-    `SubscriptionHandler` discipline.
+    `SubscriptionHandler` discipline (same `(node, val, data)` signature and
+    `data.monitored_item.Value` unwrap).
     """
 
     def __init__(self, queue: asyncio.Queue[OpcUaDataValueType]) -> None:
         self._queue = queue
 
-    def datachange_notification(self, node, data_value, _client_handle):  # noqa: ANN001
+    def datachange_notification(self, node, val, data) -> None:  # noqa: ANN001 - asyncua protocol
         try:
+            data_value = data.monitored_item.Value
             row = opcua_browse.DataValueRow(
                 node_id=node.nodeid.to_string(),
-                display_name="",  # display_name is resolved on first change below
+                display_name="",  # display_name is resolved by the drawer from the browse tree
                 browse_path="",
-                value=data_value.Value.Value if data_value.Value is not None else None,
+                value=val,
                 data_type=None,
                 source_timestamp=data_value.SourceTimestamp,
                 server_timestamp=data_value.ServerTimestamp,
-                status="good",
+                status=quality_from_code(int(data_value.StatusCode.value)),
             )
             self._queue.put_nowait(OpcUaDataValueType.from_row(row))
         except Exception:  # noqa: BLE001 - a callback must not kill the client task
@@ -57,10 +61,11 @@ class Subscription:
     )
     async def opc_ua_data_changes(
         self,
-        info: strawberry.Info,  # noqa: ARG002
+        info: strawberry.Info,
         endpoint: str,
         node_ids: list[str],
     ) -> typing.AsyncGenerator[OpcUaDataValueType]:
+        require_role(info, OPC_PROBE_ROLES)
         queue: asyncio.Queue[OpcUaDataValueType] = asyncio.Queue()
         handler = _DataChangeHandler(queue)
         async with await open_client(endpoint) as client:

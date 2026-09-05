@@ -525,8 +525,8 @@ export const DELETE_CONNECTIVITY_SERVER_MUTATION = `
   }
 `
 
-export const TEST_OPCUA_CONNECTION_MUTATION = `
-  mutation TestOpcUaConnection($endpoint: String!) {
+export const TEST_OPCUA_CONNECTION_QUERY = `
+  query TestOpcUaConnection($endpoint: String!) {
     testOpcUaConnection(endpoint: $endpoint) {
       ok
       error

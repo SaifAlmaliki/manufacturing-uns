@@ -271,7 +271,14 @@ async def _supervise() -> None:
         try:
             await connector_task
         except asyncio.CancelledError:
-            LOGGER.info("Reloading connectors after a connectivity catalog change")
+            # The poller cancels the connector and returns the new timestamp when the
+            # catalog moves; that is the only restart we tolerate. A CancelledError that
+            # arrives any other way is the process shutting down, and swallowing it
+            # would restart the connector forever instead of letting the loop unwind.
+            if poller_task.done() and not poller_task.cancelled():
+                LOGGER.info("Reloading connectors after a connectivity catalog change")
+            else:
+                raise
         except Exception:
             # A config conflict or transient error must not spin the loop; back
             # off and let the next catalog change retry.
