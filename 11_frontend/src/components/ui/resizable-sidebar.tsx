@@ -23,6 +23,7 @@ type ResizableSidebarProps = {
   maxWidth?: number
   'aria-label': string
   className?: string
+  id?: string
 }
 
 export const ResizableSidebar: React.FC<ResizableSidebarProps> = ({
@@ -33,6 +34,7 @@ export const ResizableSidebar: React.FC<ResizableSidebarProps> = ({
   maxWidth = MAX_WIDTH,
   'aria-label': ariaLabel,
   className = '',
+  id,
 }) => {
   const [width, setWidth] = useState(() => readWidth(storageKey, defaultWidth, minWidth, maxWidth))
   const widthRef = React.useRef(width)
@@ -89,6 +91,7 @@ export const ResizableSidebar: React.FC<ResizableSidebarProps> = ({
   return (
     <div className={`flex min-h-0 shrink-0 ${className}`}>
       <section
+        id={id}
         aria-label={ariaLabel}
         className="min-h-0 min-w-0 overflow-hidden"
         style={{ width, flexBasis: width, flexGrow: 0, flexShrink: 0 }}
