@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Cog, Factory, GitBranch, Plus, Trash2 } from 'lucide-react';
+import { Cog, Factory, GitBranch, Trash2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useUNS } from '../../context/UNSContext';
 import { joinSegments, validateSegment } from '../../lib/uns/topics';
@@ -21,8 +21,10 @@ import {
   PageShell,
   PageStat,
 } from '../ui/console-ui';
-import { LEAF_TITLE, levelDef, remainingChildren } from './hierarchyLevels';
-import { type NodeRef, addChild, cloneTree } from './hierarchyTree';
+import { AssetLevelIcon } from './AssetLevelIcon';
+import { NewAssetMenu } from './NewAssetMenu';
+import { levelDef, type NodeLevel } from './hierarchyLevels';
+import { type NodeRef, cloneTree, insertDescendant } from './hierarchyTree';
 
 const SIMULATOR_BANNER =
   'The simulator still publishes the shipped WTP paths. Renamed nodes will not match live simulator topics until the publisher is retargeted. The old graph branch reappears while anything still publishes the old prefix; the graph rename is durable only after the publisher is retargeted.';
@@ -40,7 +42,10 @@ function nodeName(tree: GraphqlHierarchyTree, ref: NodeRef): string {
     case 'cell':
       return tree.sites[ref.site].areas[ref.area].lines[ref.line].cells[ref.cell].name;
     case 'machine':
-      return tree.sites[ref.site].areas[ref.area].lines[ref.line].cells[ref.cell].machines[ref.machine];
+      return (
+        tree.sites[ref.site].areas[ref.area].lines[ref.line].cells[ref.cell].machines[ref.machine] ??
+        ''
+      );
   }
 }
 
@@ -352,8 +357,15 @@ function TreeNodeButton({
       }`}
       style={{ paddingLeft: `${8 + indent * 12}px` }}
     >
-      <span className={`text-[10px] uppercase tracking-wider ${active ? 'text-white/70' : 'text-muted-foreground'}`}>
-        {levelDef(nodeRef.level).label[0]}
+      <AssetLevelIcon
+        level={nodeRef.level}
+        className={`size-3.5 shrink-0 ${active ? 'text-white' : 'text-muted-foreground'}`}
+      />
+      <span className={`shrink-0 text-[10px] tracking-wider ${active ? 'text-white/70' : 'text-muted-foreground'}`}>
+        {levelDef(nodeRef.level).label}
+      </span>
+      <span aria-hidden="true" className={active ? 'text-white/50' : 'text-muted-foreground'}>
+        ·
       </span>
       <span className="truncate font-medium">{name}</span>
     </button>
@@ -441,11 +453,11 @@ export const HierarchyView: React.FC = () => {
     setFieldError(null);
   };
 
-  const handleAddChild = () => {
-    if (!selected) return;
+  const handleAdd = (target: NodeLevel) => {
+    const parent = selected ?? ({ level: 'enterprise' } as const);
     const committed = applyDraft();
     if (!committed) return;
-    const result = addChild(committed.tree, selected);
+    const result = insertDescendant(committed.tree, parent, target);
     if (!result) return;
     setTree(result.tree);
     setSelected(result.child);
@@ -511,7 +523,7 @@ export const HierarchyView: React.FC = () => {
   };
 
   const counts = useMemo(() => (tree ? treeCounts(tree) : null), [tree]);
-  const childLevel = selected ? remainingChildren(selected.level)[0] ?? null : null;
+  const menuParent = selected?.level ?? 'enterprise';
   const jobFailed = job?.status === 'failed';
   const draftDirty = Boolean(tree && selected && draftName.trim() !== nodeName(tree, selected));
   const canSave = Boolean(tree) && !saving && (dirty || draftDirty);
@@ -594,8 +606,11 @@ export const HierarchyView: React.FC = () => {
           {tree && (
             <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]">
               <ConsoleCard padding="none" className="min-h-[280px] overflow-hidden">
-                <div className="border-b border-border px-3 py-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Plant tree
+                <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+                  <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                    Plant tree
+                  </div>
+                  <NewAssetMenu parentLevel={menuParent} onPick={handleAdd} />
                 </div>
                 <div className="max-h-[calc(100vh-22rem)] space-y-0.5 overflow-y-auto p-2">
                   <TreeNodeButton tree={tree} nodeRef={{ level: 'enterprise' }} selected={selected} onSelect={selectNode} />
@@ -624,19 +639,36 @@ export const HierarchyView: React.FC = () => {
                                 onSelect={selectNode}
                               />
                               {line.cells.map((cell, cellIdx) => (
-                                <TreeNodeButton
-                                  key={`cell-${siteIdx}-${areaIdx}-${lineIdx}-${cellIdx}-${cell.name}`}
-                                  tree={tree}
-                                  nodeRef={{
-                                    level: 'cell',
-                                    site: siteIdx,
-                                    area: areaIdx,
-                                    line: lineIdx,
-                                    cell: cellIdx,
-                                  }}
-                                  selected={selected}
-                                  onSelect={selectNode}
-                                />
+                                <React.Fragment key={`cell-${siteIdx}-${areaIdx}-${lineIdx}-${cellIdx}-${cell.name}`}>
+                                  <TreeNodeButton
+                                    tree={tree}
+                                    nodeRef={{
+                                      level: 'cell',
+                                      site: siteIdx,
+                                      area: areaIdx,
+                                      line: lineIdx,
+                                      cell: cellIdx,
+                                    }}
+                                    selected={selected}
+                                    onSelect={selectNode}
+                                  />
+                                  {cell.machines.map((machine, machineIdx) => (
+                                    <TreeNodeButton
+                                      key={`machine-${siteIdx}-${areaIdx}-${lineIdx}-${cellIdx}-${machineIdx}-${machine}`}
+                                      tree={tree}
+                                      nodeRef={{
+                                        level: 'machine',
+                                        site: siteIdx,
+                                        area: areaIdx,
+                                        line: lineIdx,
+                                        cell: cellIdx,
+                                        machine: machineIdx,
+                                      }}
+                                      selected={selected}
+                                      onSelect={selectNode}
+                                    />
+                                  ))}
+                                </React.Fragment>
                               ))}
                             </React.Fragment>
                           ))}
@@ -650,7 +682,8 @@ export const HierarchyView: React.FC = () => {
               <ConsoleCard padding="md" className="space-y-3">
                 {selected ? (
                   <>
-                    <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                    <div className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                      <AssetLevelIcon level={selected.level} />
                       {levelDef(selected.level).label}
                     </div>
                     <label className="block space-y-1.5">
@@ -673,10 +706,7 @@ export const HierarchyView: React.FC = () => {
                     {fieldError && <p className="text-xs text-rose-400">{fieldError}</p>}
                     <p className="font-mono text-[11px] text-muted-foreground">{nodePrefix(tree, selected)}</p>
                     <div className="flex flex-wrap gap-2 pt-1">
-                      <BtnSecondary onClick={handleAddChild} disabled={!childLevel} title={childLevel ? `Add ${levelDef(childLevel).label.toLowerCase()}` : LEAF_TITLE}>
-                        <Plus className="size-3.5" />
-                        Add child
-                      </BtnSecondary>
+                      <NewAssetMenu parentLevel={menuParent} onPick={handleAdd} />
                       <BtnGhost
                         onClick={handleRemove}
                         disabled={selected.level === 'enterprise'}
