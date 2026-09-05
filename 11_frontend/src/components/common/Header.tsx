@@ -63,11 +63,8 @@ function getPageHeading(
       subtitle: "Here's what's happening across your plant namespace today.",
     };
   }
-  if (path.startsWith('/tree')) {
-    return {
-      title: `${getGreeting()}, ${firstName} 👋`,
-      subtitle: 'Browse the ISA-95 namespace tree and inspect live payloads.',
-    };
+  if (path.startsWith('/condition-monitoring') || path.startsWith('/tree')) {
+    return { title: 'Condition Monitoring' };
   }
   return {
     title: `${getGreeting()}, ${firstName} 👋`,

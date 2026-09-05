@@ -44,7 +44,7 @@ interface NavItem {
 
 const MAIN_MENU: NavItem[] = [
   { to: '/dashboard', tabId: 'home', label: 'Dashboard', icon: LayoutDashboard, featureKey: 'uns_tree' },
-  { to: '/tree', tabId: 'home', label: 'UNS Tree', icon: Layers, featureKey: 'uns_tree' },
+  { to: '/condition-monitoring', tabId: 'home', label: 'Condition Monitoring', icon: Layers, featureKey: 'uns_tree' },
   { to: '/alerts', tabId: 'alarms', label: 'Alarms', icon: Bell, featureKey: 'alarms' },
   { to: '/historian', tabId: 'explore', label: 'Historian', icon: Search, featureKey: 'historian' },
   { to: '/sparkplug', tabId: 'sparkplug', label: 'Sparkplug B', icon: Radio, featureKey: 'sparkplug' },
@@ -75,6 +75,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const isActive = (item: NavItem) => {
     if (item.to === '/dashboard') {
       return location.pathname === '/dashboard';
+    }
+    if (item.to === '/condition-monitoring') {
+      return location.pathname === '/condition-monitoring' || location.pathname.startsWith('/condition-monitoring/');
     }
     if (item.to === '/tree') {
       return location.pathname === '/tree';
