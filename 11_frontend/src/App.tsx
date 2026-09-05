@@ -31,6 +31,7 @@ import { SystemHealthView } from './components/system/SystemHealthView';
 import { SimulatorView } from './components/simulator/SimulatorView';
 import { UserManagementView } from './components/users/UserManagementView';
 import { HierarchyView } from './components/hierarchy/HierarchyView';
+import { ConnectivityView } from './components/connectivity/ConnectivityView';
 
 /**
  * Zero-Trust Protected Console Layout Guard
@@ -88,6 +89,7 @@ export default function App() {
                   <Route path="/simulator" element={<SimulatorView />} />
                   <Route path="/users" element={<UserManagementView />} />
                   <Route path="/hierarchy" element={<HierarchyView />} />
+                  <Route path="/connectivity" element={<ConnectivityView />} />
                 </Route>
 
                 {/* Catch-all Wildcard: return to landing page */}

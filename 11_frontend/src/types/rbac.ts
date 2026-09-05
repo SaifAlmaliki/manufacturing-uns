@@ -16,6 +16,7 @@ export type FeatureKey =
   | 'user_management'
   | 'export_csv'
   | 'settings_edit'
+  | 'connectivity'
   | 'payload_publish'
   | 'topic_bookmarks';
 
@@ -102,6 +103,12 @@ export const SYSTEM_FEATURES: FeatureDefinition[] = [
     category: 'System & Admin',
   },
   {
+    key: 'connectivity',
+    label: 'Assets & Connectivity',
+    description: 'Add OPC UA servers, test endpoints, browse tags, and subscribe variables to the UNS',
+    category: 'Core Navigation',
+  },
+  {
     key: 'topic_bookmarks',
     label: 'Manage Topic Bookmarks',
     description: 'Save, edit, and organize persistent topic shortcuts and aliases',
@@ -139,6 +146,7 @@ export const ROLE_CONFIGS: Record<UserRole, RoleConfig> = {
       user_management: true,
       export_csv: true,
       settings_edit: true,
+      connectivity: true,
       payload_publish: true,
       topic_bookmarks: true,
     },
@@ -162,6 +170,7 @@ export const ROLE_CONFIGS: Record<UserRole, RoleConfig> = {
       user_management: false,
       export_csv: true,
       settings_edit: false,
+      connectivity: true,
       payload_publish: true,
       topic_bookmarks: true,
     },
@@ -185,6 +194,7 @@ export const ROLE_CONFIGS: Record<UserRole, RoleConfig> = {
       user_management: false,
       export_csv: false,
       settings_edit: false,
+      connectivity: false,
       payload_publish: false,
       topic_bookmarks: true,
     },
@@ -208,6 +218,7 @@ export const ROLE_CONFIGS: Record<UserRole, RoleConfig> = {
       user_management: false,
       export_csv: true,
       settings_edit: false,
+      connectivity: false,
       payload_publish: false,
       topic_bookmarks: true,
     },
@@ -231,6 +242,7 @@ export const ROLE_CONFIGS: Record<UserRole, RoleConfig> = {
       user_management: false,
       export_csv: false,
       settings_edit: false,
+      connectivity: false,
       payload_publish: false,
       topic_bookmarks: false,
     },

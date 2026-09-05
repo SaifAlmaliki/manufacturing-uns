@@ -54,6 +54,9 @@ function getPageHeading(
   if (path.startsWith('/hierarchy')) {
     return { title: 'Plant hierarchy' };
   }
+  if (path.startsWith('/connectivity')) {
+    return { title: 'Assets & Connectivity' };
+  }
   if (path === '/dashboard') {
     return {
       title: `${getGreeting()}, ${firstName} 👋`,
