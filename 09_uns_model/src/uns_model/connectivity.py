@@ -129,7 +129,7 @@ def merge_discovered(
                 browse_path=tag.browse_path,
                 display_name=tag.display_name,
                 mqtt_topic=kept.mqtt_topic,
-                subscribed=kept.subscribed or True,
+                subscribed=True,
             )
         else:
             by_node[tag.node_id] = ConnectivityTagSpec(
@@ -199,8 +199,17 @@ class ConnectivityRepository:
         latter only ever goes True here; missing nodes stay subscribed until
         `unsubscribe_tag`). New tags are inserted with `subscribed=True`.
         """
-        existing = await self.list_subscribed_tags(server_id)
-        merged = merge_discovered(existing, tags)
+        existing_specs = [
+            ConnectivityTagSpec(
+                node_id=row.node_id,
+                browse_path=row.browse_path,
+                display_name=row.display_name,
+                mqtt_topic=row.mqtt_topic,
+                subscribed=row.subscribed,
+            )
+            for row in await self.list_subscribed_tags(server_id)
+        ]
+        merged = merge_discovered(existing_specs, tags)
         async with self._database.session() as session:
             for tag in merged:
                 values: dict[str, Any] = {
