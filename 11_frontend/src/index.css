@@ -324,6 +324,13 @@ html:not(.dark) .instrument-overlay {
     0 28px 80px rgb(0 0 0 / 0.58);
 }
 
+html:not(.dark) .instrument-panel {
+  border-color: rgb(255 122 0 / 0.28);
+  box-shadow:
+    0 0 0 1px rgb(15 23 42 / 0.04),
+    0 24px 56px rgb(15 23 42 / 0.16);
+}
+
 .instrument-panel::before {
   content: '';
   position: absolute;
@@ -337,6 +344,10 @@ html:not(.dark) .instrument-overlay {
     linear-gradient(rgb(255 255 255 / 0.018) 1px, transparent 1px),
     linear-gradient(90deg, rgb(255 255 255 / 0.018) 1px, transparent 1px);
   background-size: 24px 24px;
+}
+
+html:not(.dark) .instrument-grain {
+  background-image: none;
 }
 
 .quality-lamp {

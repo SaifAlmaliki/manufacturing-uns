@@ -1,4 +1,4 @@
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getConnectivityServers = vi.hoisted(() => vi.fn());
@@ -341,6 +341,20 @@ describe('the Browse data drawer', () => {
         'ns=3;s=WTP_T101_Level',
       ]),
     );
+  });
+
+  it('uses the same light surfaces for sidebar, title, and live badge', async () => {
+    render(<ConnectivityView />);
+    await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: /open opcplc/i }));
+    const dialog = await screen.findByRole('dialog', { name: /browse opc ua data/i });
+    const chrome = within(dialog);
+
+    expect(chrome.getByText('opcplc').className).toContain('text-foreground');
+    expect(chrome.getByText('Address space').className).toContain('text-muted-foreground');
+    expect(chrome.getByText('Live').closest('div')?.className).toMatch(/bg-muted/);
+    expect(dialog.innerHTML).not.toContain('bg-zinc-950');
+    expect(dialog.innerHTML).not.toContain('text-white');
   });
 
   it('keeps subscribed signals after the terminal is closed and opened again', async () => {
