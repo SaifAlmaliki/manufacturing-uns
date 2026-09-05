@@ -2,7 +2,7 @@
 
 Date: 2026-09-05
 Modules: `11_frontend` (route, view, cards, name-matching). No new GraphQL types.
-Status: Draft — awaiting review
+Status: Approved, not yet implemented
 
 ## 1. Problem
 
