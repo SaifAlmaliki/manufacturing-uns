@@ -19,13 +19,24 @@ const samples: Sample[] = [
 ];
 
 describe('SignalCard', () => {
-  it('shows name, topic, latest value, and Graph by default', () => {
+  it('shows name, topic, latest value, BOOLEAN hint, and Graph by default', () => {
     render(<SignalCard tag={TAG} samples={samples} latest={samples[1]} />);
     expect(screen.getByText('Fault')).toBeTruthy();
     expect(screen.getByText('Server/OpcPlc/P201/Fault')).toBeTruthy();
     expect(screen.getByText('1')).toBeTruthy();
+    expect(screen.getByText('BOOLEAN')).toBeTruthy();
     expect(screen.getByRole('img', { name: /signal trend/i })).toBeTruthy();
     expect(screen.queryByText(/0 → 1/)).toBeNull();
+  });
+
+  it('shows DOUBLE next to a numeric latest value', () => {
+    const numeric: Sample[] = [{ t: Date.parse('2026-09-05T17:00:00.000Z'), v: 1.35, quality: 'GOOD', boolean: false }];
+    render(
+      <SignalCard tag={{ ...TAG, displayName: 'Speed', mqttTopic: 'Server/OpcPlc/P202/Speed' }} samples={numeric} latest={numeric[0]} />,
+    );
+    expect(screen.getByText('1.35')).toBeTruthy();
+    expect(screen.getByText('DOUBLE')).toBeTruthy();
+    expect(screen.queryByText('BOOLEAN')).toBeNull();
   });
 
   it('switches to a boolean transition table', () => {

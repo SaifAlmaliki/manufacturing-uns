@@ -260,6 +260,59 @@ describe('ConditionMonitoringView historian and live tail', () => {
     expect(screen.getByText('Fault')).toBeTruthy();
   });
 
+  it('keeps successful topic series when another historian topic throws', async () => {
+    const historianTs = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    getHistoricEvents.mockImplementation(async (topic: string) => {
+      if (topic.endsWith('Fault')) {
+        throw new Error('topic missing');
+      }
+      return [{ id: 'h1', topic, timestamp: historianTs, payload: { value: 42 } }];
+    });
+    await renderPage();
+    await waitFor(() => expect(screen.getByText(/topic missing/i)).toBeTruthy());
+    expect(screen.getByText('Fault')).toBeTruthy();
+    expect(screen.getByText('Speed')).toBeTruthy();
+    expect(screen.getByText('42')).toBeTruthy();
+  });
+
+  it('keeps in-window live samples after a historian refetch on range change', async () => {
+    const historianTs = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const liveTs = new Date().toISOString();
+    getHistoricEvents.mockImplementation(async (topic: string) => {
+      if (topic.endsWith('Fault')) {
+        return [{ id: 'h1', topic, timestamp: historianTs, payload: { value: false } }];
+      }
+      return [];
+    });
+    let onMsg: ((msg: { topic: string; payload: unknown; timestamp: string; id: string }) => void) | undefined;
+    subscribeMqttMessages.mockImplementation((topics: string[], cb: typeof onMsg) => {
+      onMsg = cb;
+      return () => undefined;
+    });
+    await renderPage();
+    await waitFor(() => expect(subscribeMqttMessages).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(getHistoricEvents.mock.results.filter((r) => r.type === 'return').length).toBeGreaterThan(0),
+    );
+    act(() => {
+      onMsg?.({
+        id: 'm1',
+        topic: 'Server/OpcPlc/Distribution/P201/Fault',
+        payload: { value: true },
+        timestamp: liveTs,
+      });
+    });
+    fireEvent.click(screen.getAllByRole('button', { name: /^table$/i })[0]);
+    await waitFor(() => expect(screen.getByText(/0 → 1/)).toBeTruthy());
+    const callsBefore = getHistoricEvents.mock.calls.length;
+    fireEvent.change(screen.getByRole('combobox', { name: /time range/i }), { target: { value: '15m' } });
+    await waitFor(() => expect(getHistoricEvents.mock.calls.length).toBeGreaterThan(callsBefore));
+    await waitFor(() =>
+      expect(getHistoricEvents.mock.results.every((r) => r.type !== 'incomplete')).toBe(true),
+    );
+    expect(screen.getByText(/0 → 1/)).toBeTruthy();
+  });
+
   it('subscribes to the two visible mqttTopics (sorted)', async () => {
     await renderPage();
     await waitFor(() => expect(subscribeMqttMessages).toHaveBeenCalled());

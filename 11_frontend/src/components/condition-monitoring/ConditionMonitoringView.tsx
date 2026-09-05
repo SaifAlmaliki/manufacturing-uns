@@ -70,25 +70,28 @@ export const ConditionMonitoringView: React.FC = () => {
     setHistorianError(null);
     void Promise.all(
       topics.map(async (topic) => {
-        const events = await unsGraphQLClient.getHistoricEvents(topic, fromIso, toIso);
-        return [
-          topic,
-          events
-            .map((e) => extractSample(e.payload, e.timestamp))
-            .filter((s): s is Sample => s !== null),
-        ] as const;
-      }),
-    )
-      .then((entries) => {
-        if (cancelled) return;
-        setHistorianByTopic(Object.fromEntries(entries));
-        setLiveByTopic({});
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setHistorianError(err instanceof Error ? err.message : 'Historian query failed.');
+        try {
+          const events = await unsGraphQLClient.getHistoricEvents(topic, fromIso, toIso);
+          return {
+            topic,
+            samples: events
+              .map((e) => extractSample(e.payload, e.timestamp))
+              .filter((s): s is Sample => s !== null),
+            error: null as string | null,
+          };
+        } catch (err: unknown) {
+          return {
+            topic,
+            samples: [] as Sample[],
+            error: err instanceof Error ? err.message : 'Historian query failed.',
+          };
         }
-      });
+      }),
+    ).then((entries) => {
+      if (cancelled) return;
+      setHistorianByTopic(Object.fromEntries(entries.map((e) => [e.topic, e.samples])));
+      setHistorianError(entries.find((e) => e.error)?.error ?? null);
+    });
     return () => {
       cancelled = true;
     };
@@ -145,7 +148,14 @@ export const ConditionMonitoringView: React.FC = () => {
         );
         const latest = samples[samples.length - 1];
         return (
-          <SignalCard key={`${tag.serverId}:${tag.nodeId}`} tag={tag} samples={samples} latest={latest} />
+          <SignalCard
+            key={`${tag.serverId}:${tag.nodeId}`}
+            tag={tag}
+            samples={samples}
+            latest={latest}
+            fromMs={timeWindow.fromMs}
+            toMs={timeWindow.toMs}
+          />
         );
       })}
     </div>

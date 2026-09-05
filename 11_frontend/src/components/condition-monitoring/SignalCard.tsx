@@ -20,9 +20,12 @@ export const SignalCard: React.FC<{
   tag: GraphqlConnectivityTag;
   samples: Sample[];
   latest: Sample | undefined;
-}> = ({ tag, samples, latest }) => {
+  fromMs?: number;
+  toMs?: number;
+}> = ({ tag, samples, latest, fromMs, toMs }) => {
   const [mode, setMode] = useState<'graph' | 'table'>('graph');
   const isBoolean = samples.some((s) => s.boolean) || latest?.boolean === true;
+  const typeHint = latest == null ? null : isBoolean ? 'BOOLEAN' : 'DOUBLE';
   const transitions = useMemo(() => booleanTransitions(samples), [samples]);
   const rows = useMemo(() => numericTableRows(samples), [samples]);
 
@@ -36,6 +39,9 @@ export const SignalCard: React.FC<{
         <div className="text-right">
           <p className="text-sm tabular-nums text-emerald-400">
             {latest ? String(latest.v) : '—'}
+            {typeHint ? (
+              <span className="ml-1 text-[10px] font-normal text-zinc-500">{typeHint}</span>
+            ) : null}
           </p>
           <p className="text-[11px] text-zinc-500">{latest?.quality ?? '—'}</p>
         </div>
@@ -57,7 +63,7 @@ export const SignalCard: React.FC<{
         </button>
       </div>
       {mode === 'graph' ? (
-        <SignalChart samples={samples} mode={isBoolean ? 'step' : 'line'} />
+        <SignalChart samples={samples} mode={isBoolean ? 'step' : 'line'} fromMs={fromMs} toMs={toMs} />
       ) : isBoolean ? (
         <table className="w-full text-left text-[11px] text-zinc-300">
           <tbody>
