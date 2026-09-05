@@ -59,6 +59,14 @@ export function formatLastTestedAt(lastTestedAt: string | null | undefined): str
   }
 }
 
+/** Clock-only stamp for the browse table — ISO strings are too wide. */
+export function formatBrowseClock(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
+
 /** Servers whose name or endpoint contains the query (case-insensitive). */
 export function filterServers(
   servers: GraphqlConnectivityServer[],

@@ -47,7 +47,6 @@ export const ConnectivityView: React.FC = () => {
   const { hasPermission } = useAuth();
   const canMutate = hasPermission('connectivity');
 
-  const [activeTab, setActiveTab] = useState<ConnectivityTabId>('opc_ua');
   const [search, setSearch] = useState('');
   const [servers, setServers] = useState<GraphqlConnectivityServer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -128,11 +127,6 @@ export const ConnectivityView: React.FC = () => {
     setSaving(true);
     setSaveError(null);
     try {
-      const probe = await unsGraphQLClient.testOpcUaConnection(draftEndpoint.trim());
-      if (!probe.ok) {
-        setSaveError(probe.error || 'Connection test failed. The server was not added.');
-        return;
-      }
       const input: GraphqlConnectivityServerInput = {
         id: newServerId(),
         name: draftName.trim(),
@@ -143,6 +137,7 @@ export const ConnectivityView: React.FC = () => {
       setServers((prev) => [...prev, saved]);
       setAddOpen(false);
       resetDraft();
+      await applyConnectionTest(saved);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Server was not added');
     } finally {
@@ -150,7 +145,7 @@ export const ConnectivityView: React.FC = () => {
     }
   };
 
-  const handleTest = async (server: GraphqlConnectivityServer) => {
+  const applyConnectionTest = async (server: GraphqlConnectivityServer) => {
     setTestingId(server.id);
     try {
       const result = await unsGraphQLClient.testOpcUaConnection(server.endpoint);
@@ -179,6 +174,10 @@ export const ConnectivityView: React.FC = () => {
     }
   };
 
+  const handleTest = async (server: GraphqlConnectivityServer) => {
+    await applyConnectionTest(server);
+  };
+
   const handleDelete = async (server: GraphqlConnectivityServer) => {
     setDeletingId(server.id);
     setConfirmDeleteId(null);
@@ -200,18 +199,11 @@ export const ConnectivityView: React.FC = () => {
     );
   }
 
-  const showTable = isProtocolInSlice(activeTab);
-
   return (
     <PageShell id="connectivity-view" scroll={false} className="flex flex-col font-mono">
       <div className="min-h-0 flex-1 overflow-y-auto">
         <PageContent fullWidth className="flex min-h-full flex-col gap-3 pb-4">
           <FilterToolbar
-            tabs={{
-              items: PROTOCOL_TABS,
-              active: activeTab,
-              onChange: (id) => setActiveTab(id as ConnectivityTabId),
-            }}
             search={{ value: search, onChange: setSearch, placeholder: 'Search name or endpoint…' }}
             trailing={
               canMutate ? (
@@ -236,12 +228,7 @@ export const ConnectivityView: React.FC = () => {
             </div>
           )}
 
-          {!showTable ? (
-            <ConsoleCard padding="md" className="text-sm text-zinc-500">
-              Not in this slice. OPC UA is the only connectivity protocol wired through the
-              console catalog in this release.
-            </ConsoleCard>
-          ) : loading ? (
+          {loading ? (
             <ConsoleCard padding="md" className="text-sm text-zinc-500">
               Loading OPC UA servers…
             </ConsoleCard>
@@ -415,6 +402,43 @@ export const ConnectivityView: React.FC = () => {
                   ))}
                 </ConsoleSelect>
               </label>
+              {(draftSecurityPolicy !== 'None' || draftAuthMode === 'x509') && (
+                <>
+                  <p className="text-[11px] text-zinc-500">
+                    Client certificate for the secure channel — not part of Anonymous login.
+                  </p>
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-medium text-zinc-500">Certificate path</span>
+                    <ConsoleInput
+                      aria-label="Certificate path"
+                      value={draftCertificate}
+                      onChange={(e) => setDraftCertificate(e.target.value)}
+                      placeholder="/certs/client.der"
+                      className="font-mono text-xs"
+                    />
+                  </label>
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-medium text-zinc-500">Private key path</span>
+                    <ConsoleInput
+                      aria-label="Private key path"
+                      value={draftPrivateKey}
+                      onChange={(e) => setDraftPrivateKey(e.target.value)}
+                      placeholder="/certs/client.key"
+                      className="font-mono text-xs"
+                    />
+                  </label>
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-medium text-zinc-500">Server certificate path</span>
+                    <ConsoleInput
+                      aria-label="Server certificate path"
+                      value={draftServerCertificate}
+                      onChange={(e) => setDraftServerCertificate(e.target.value)}
+                      placeholder="optional"
+                      className="font-mono text-xs"
+                    />
+                  </label>
+                </>
+              )}
             </fieldset>
 
             <fieldset className="space-y-2 rounded-xl border border-zinc-800 p-3">
@@ -460,40 +484,6 @@ export const ConnectivityView: React.FC = () => {
                       value={draftPassword}
                       onChange={(e) => setDraftPassword(e.target.value)}
                       autoComplete="new-password"
-                    />
-                  </label>
-                </>
-              )}
-              {(draftAuthMode === 'x509' || draftSecurityPolicy !== 'None') && (
-                <>
-                  <label className="block space-y-1.5">
-                    <span className="text-xs font-medium text-zinc-500">Certificate path</span>
-                    <ConsoleInput
-                      aria-label="Certificate path"
-                      value={draftCertificate}
-                      onChange={(e) => setDraftCertificate(e.target.value)}
-                      placeholder="/certs/client.der"
-                      className="font-mono text-xs"
-                    />
-                  </label>
-                  <label className="block space-y-1.5">
-                    <span className="text-xs font-medium text-zinc-500">Private key path</span>
-                    <ConsoleInput
-                      aria-label="Private key path"
-                      value={draftPrivateKey}
-                      onChange={(e) => setDraftPrivateKey(e.target.value)}
-                      placeholder="/certs/client.key"
-                      className="font-mono text-xs"
-                    />
-                  </label>
-                  <label className="block space-y-1.5">
-                    <span className="text-xs font-medium text-zinc-500">Server certificate path</span>
-                    <ConsoleInput
-                      aria-label="Server certificate path"
-                      value={draftServerCertificate}
-                      onChange={(e) => setDraftServerCertificate(e.target.value)}
-                      placeholder="optional"
-                      className="font-mono text-xs"
                     />
                   </label>
                 </>

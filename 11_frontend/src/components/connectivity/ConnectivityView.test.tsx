@@ -56,7 +56,14 @@ beforeEach(() => {
   auth.isAdmin = true;
   auth.roles = ['admin'];
   getConnectivityServers.mockResolvedValue([SERVER]);
-  saveConnectivityServer.mockResolvedValue(SERVER);
+  saveConnectivityServer.mockImplementation(async (input) => ({
+    ...SERVER,
+    ...input,
+    lastStatus: 'untested',
+    lastError: '',
+    lastTestedAt: null,
+    tags: [],
+  }));
   deleteConnectivityServer.mockResolvedValue(true);
   testOpcUaConnection.mockResolvedValue({ ok: true, error: null, elapsedMs: 12 });
   browseOpcUa.mockImplementation(async (_endpoint: string, nodeId?: string | null) => {
@@ -169,13 +176,15 @@ describe('the OPC UA server table', () => {
     expect(screen.getByLabelText('Protocol')).toBeTruthy();
     expect(screen.getByLabelText('Security policy')).toBeTruthy();
     expect(screen.getByText('Anonymous')).toBeTruthy();
+    expect(screen.queryByLabelText('Certificate path')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /^add$/i }));
 
-    await waitFor(() => expect(testOpcUaConnection).toHaveBeenCalledWith('opc.tcp://desktop-h4hdql2:50000/'));
     await waitFor(() => expect(saveConnectivityServer).toHaveBeenCalled());
     expect(saveConnectivityServer).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'wtp', endpoint: 'opc.tcp://desktop-h4hdql2:50000/' }),
     );
+    await waitFor(() => expect(testOpcUaConnection).toHaveBeenCalledWith('opc.tcp://desktop-h4hdql2:50000/'));
+    await waitFor(() => expect(screen.getAllByText('Connected').length).toBeGreaterThan(0));
   });
 
   it('does not add a server when username is chosen without a password', async () => {
@@ -212,12 +221,17 @@ describe('the OPC UA server table', () => {
     await waitFor(() => expect(deleteConnectivityServer).toHaveBeenCalledWith('s1'));
   });
 
-  it('renders a one-line empty state for protocols not in this slice', async () => {
+  it('keeps later protocols on the Add dropdown, not as empty page tabs', async () => {
     render(<ConnectivityView />);
     await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
 
-    fireEvent.click(screen.getByRole('button', { name: /modbus tcp/i }));
-    expect(screen.getByText(/not in this slice/i)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /modbus tcp/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^sql$/i })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /add server/i }));
+    const protocol = await screen.findByLabelText('Protocol');
+    expect(protocol).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'OPC UA' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: /Modbus TCP — later/i })).toBeDisabled();
   });
 });
 

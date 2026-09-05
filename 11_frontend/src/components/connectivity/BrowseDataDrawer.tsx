@@ -6,6 +6,7 @@ import type {
   GraphqlOpcUaDataValue,
 } from '../../services/graphql/types';
 import { unsGraphQLClient } from '../../services/graphql/client';
+import { formatBrowseClock } from '../../lib/connectivity/map-servers';
 import { BtnGhost, BtnPrimary } from '../ui/console-ui';
 
 interface BrowseDataDrawerProps {
@@ -348,6 +349,41 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
     }
   };
 
+  const handleSubscribeRow = async (nodeId: string) => {
+    setBusyNodeId(nodeId);
+    setError(null);
+    try {
+      const tags = await unsGraphQLClient.subscribeOpcUaVariables(server.id, nodeId);
+      const tag = tags.find((t) => t.nodeId === nodeId);
+      setRows((prev) =>
+        prev.map((r) =>
+          r.nodeId === nodeId
+            ? {
+                ...r,
+                subscribed: true,
+                mqttTopic: tag?.mqttTopic ?? r.mqttTopic,
+              }
+            : r,
+        ),
+      );
+      onSubscribed({
+        ...server,
+        tags: tags.map((t) => ({
+          serverId: server.id,
+          nodeId: t.nodeId,
+          browsePath: t.browsePath,
+          displayName: t.displayName,
+          mqttTopic: t.mqttTopic,
+          subscribed: t.subscribed,
+        })),
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Subscribe failed');
+    } finally {
+      setBusyNodeId(null);
+    }
+  };
+
   const handleUnsubscribe = async (nodeId: string) => {
     setBusyNodeId(nodeId);
     try {
@@ -363,144 +399,161 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
   };
 
   return (
-    <aside
-      className="fixed inset-y-0 right-0 z-40 flex w-full max-w-6xl flex-col border-l border-zinc-800 bg-[#111114] shadow-2xl"
-      role="dialog"
-      aria-label="Browse OPC UA data"
+    <div
+      className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      onClick={onClose}
     >
-      <div className="flex shrink-0 items-center justify-between border-b border-zinc-800 px-4 py-3">
-        <div className="min-w-0">
-          <div className="text-[10px] uppercase tracking-wider text-zinc-500">Browse data</div>
-          <div className="truncate text-sm font-semibold text-white">{server.name}</div>
-          <div className="truncate font-mono text-[11px] text-zinc-500">
-            {selected
-              ? `${server.endpoint} · ${selected.browsePath || selected.displayName}`
-              : server.endpoint}
+      <div
+        className="flex h-[min(88vh,840px)] w-[min(1080px,96vw)] flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-[#111114] shadow-2xl"
+        role="dialog"
+        aria-label="Browse OPC UA data"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-zinc-800 px-4 py-3">
+          <div className="min-w-0">
+            <div className="text-[10px] uppercase tracking-wider text-zinc-500">Browse data</div>
+            <div className="truncate text-sm font-semibold text-white">{server.name}</div>
+            <div className="truncate text-xs text-zinc-500">
+              {selected
+                ? selected.browsePath || selected.displayName
+                : 'Pick a folder in the address space'}
+            </div>
           </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <BtnPrimary
-            onClick={() => void handleSubscribe()}
-            disabled={subscribing || loading || !selected || discovered.length === 0}
-            className="px-3 py-1.5 text-xs"
-          >
-            <RefreshCw className="size-3.5" />
-            {subscribing ? 'Subscribing…' : selected ? 'Subscribe folder' : 'Subscribe'}
-          </BtnPrimary>
-          <BtnGhost onClick={onClose} aria-label="Close" className="px-2 py-1.5">
-            <X className="size-4" />
-          </BtnGhost>
-        </div>
-      </div>
-
-      {error && (
-        <div className="shrink-0 border-b border-rose-500/30 bg-rose-500/10 px-4 py-2 text-xs text-rose-200">
-          {error}
-        </div>
-      )}
-
-      <div className="flex min-h-0 flex-1">
-        <div className="flex w-72 shrink-0 flex-col border-r border-zinc-800">
-          <div className="shrink-0 border-b border-zinc-800 px-3 py-2 text-[10px] uppercase tracking-wider text-zinc-500">
-            Address space
-          </div>
-          <div className="min-h-0 flex-1 overflow-auto">
-            <AddressSpaceTree
-              endpoint={server.endpoint}
-              selectedId={selected?.nodeId ?? null}
-              onSelect={setSelected}
-              onError={handleTreeError}
-            />
+          <div className="flex shrink-0 items-center gap-2">
+            <BtnPrimary
+              onClick={() => void handleSubscribe()}
+              disabled={subscribing || loading || !selected || discovered.length === 0}
+              className="px-3 py-1.5 text-xs"
+            >
+              <RefreshCw className="size-3.5" />
+              {subscribing ? 'Subscribing…' : selected ? 'Subscribe folder' : 'Subscribe'}
+            </BtnPrimary>
+            <BtnGhost onClick={onClose} aria-label="Close" className="px-2 py-1.5">
+              <X className="size-4" />
+            </BtnGhost>
           </div>
         </div>
 
-        <div className="min-h-0 min-w-0 flex-1 overflow-auto">
-          {!selected ? (
-            <div className="p-8 text-center text-sm text-zinc-500">
-              Select a folder to list its variables — same as dragging a section in UA Expert.
+        {error && (
+          <div className="shrink-0 border-b border-rose-500/30 bg-rose-500/10 px-4 py-2 text-xs text-rose-200">
+            {error}
+          </div>
+        )}
+
+        <div className="flex min-h-0 flex-1">
+          <div className="flex w-64 shrink-0 flex-col border-r border-zinc-800">
+            <div className="shrink-0 border-b border-zinc-800 px-3 py-2 text-[10px] uppercase tracking-wider text-zinc-500">
+              Address space
             </div>
-          ) : loading ? (
-            <div className="p-8 text-center text-sm text-zinc-500">
-              Discovering variables under {selected.displayName || selected.browseName}…
+            <div className="min-h-0 flex-1 overflow-auto">
+              <AddressSpaceTree
+                endpoint={server.endpoint}
+                selectedId={selected?.nodeId ?? null}
+                onSelect={setSelected}
+                onError={handleTreeError}
+              />
             </div>
-          ) : rows.length === 0 ? (
-            <div className="p-8 text-center text-sm text-zinc-500">
-              No variables under this node.
-            </div>
-          ) : (
-            <table className="w-full min-w-[1100px] border-collapse text-left text-xs">
-              <thead className="sticky top-0 bg-zinc-900/95 text-[10px] uppercase text-zinc-500">
-                <tr>
-                  <th className="px-3 py-2 font-medium">NodeId</th>
-                  <th className="px-3 py-2 font-medium">Browse path</th>
-                  <th className="px-3 py-2 font-medium">MQTT topic</th>
-                  <th className="px-3 py-2 font-medium">Display name</th>
-                  <th className="px-3 py-2 font-medium">Value</th>
-                  <th className="px-3 py-2 font-medium">Data type</th>
-                  <th className="px-3 py-2 font-medium">Source time</th>
-                  <th className="px-3 py-2 font-medium">Server time</th>
-                  <th className="px-3 py-2 font-medium">Status</th>
-                  <th className="px-3 py-2 text-right font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-800/80">
-                {rows.map((row) => (
-                  <tr key={row.nodeId} className="hover:bg-zinc-800/30">
-                    <td className="px-3 py-2 font-mono text-[11px] text-zinc-300">{row.nodeId}</td>
-                    <td className="px-3 py-2 font-mono text-[11px] text-zinc-400">{row.browsePath}</td>
-                    <td className="px-3 py-2">
-                      <input
-                        type="text"
-                        value={draftTopics[row.nodeId] ?? row.mqttTopic}
-                        onChange={(e) =>
-                          setDraftTopics((prev) => ({ ...prev, [row.nodeId]: e.target.value }))
-                        }
-                        onBlur={() => void handleTopicBlur(row.nodeId)}
-                        disabled={busyNodeId === row.nodeId}
-                        className="w-full rounded-md border border-zinc-800 bg-zinc-900/80 px-2 py-1 font-mono text-[11px] text-[#FF7A00] focus:border-[#FF7A00]/50 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/30 disabled:opacity-50"
-                      />
-                    </td>
-                    <td className="px-3 py-2 text-zinc-300">{row.displayName}</td>
-                    <td className="px-3 py-2 font-mono text-zinc-200">
-                      {row.value === null || row.value === undefined ? '—' : String(row.value)}
-                    </td>
-                    <td className="px-3 py-2 text-zinc-400">{row.dataType ?? '—'}</td>
-                    <td className="px-3 py-2 text-zinc-500">{row.sourceTimestamp ?? '—'}</td>
-                    <td className="px-3 py-2 text-zinc-500">{row.serverTimestamp ?? '—'}</td>
-                    <td className="px-3 py-2">
-                      <span
-                        className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                          row.status === 'Good'
-                            ? 'bg-emerald-500/15 text-emerald-300'
-                            : row.status === 'Bad'
-                              ? 'bg-rose-500/15 text-rose-300'
-                              : 'bg-zinc-700/40 text-zinc-300'
-                        }`}
-                      >
-                        {row.status}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      {row.subscribed ? (
-                        <button
-                          type="button"
-                          onClick={() => void handleUnsubscribe(row.nodeId)}
-                          disabled={busyNodeId === row.nodeId}
-                          className="rounded-md border border-zinc-700 px-2 py-1 text-[10px] text-zinc-300 hover:border-rose-500/50 hover:text-rose-300 disabled:opacity-50"
-                        >
-                          Unsubscribe
-                        </button>
-                      ) : (
-                        <span className="text-[10px] text-zinc-600">not subscribed</span>
-                      )}
-                    </td>
+          </div>
+
+          <div className="min-h-0 min-w-0 flex-1 overflow-auto">
+            {!selected ? (
+              <div className="p-8 text-center text-sm text-zinc-500">
+                Select a folder to list its signals — same as dragging a section in UA Expert.
+              </div>
+            ) : loading ? (
+              <div className="p-8 text-center text-sm text-zinc-500">
+                Discovering signals under {selected.displayName || selected.browseName}…
+              </div>
+            ) : rows.length === 0 ? (
+              <div className="p-8 text-center text-sm text-zinc-500">No signals under this node.</div>
+            ) : (
+              <table className="w-full border-collapse text-left text-sm">
+                <thead className="sticky top-0 bg-zinc-900/95 text-[10px] uppercase text-zinc-500">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">Signal</th>
+                    <th className="min-w-[220px] px-3 py-2 font-medium">MQTT topic</th>
+                    <th className="px-3 py-2 font-medium">Value</th>
+                    <th className="px-3 py-2 font-medium">Quality</th>
+                    <th className="w-20 px-3 py-2 font-medium">Updated</th>
+                    <th className="w-28 px-3 py-2 text-right font-medium">Action</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+                </thead>
+                <tbody className="divide-y divide-zinc-800/80 text-xs">
+                  {rows.map((row) => (
+                    <tr key={row.nodeId} className="hover:bg-zinc-800/30">
+                      <td className="px-3 py-2 align-top">
+                        <div className="font-medium text-white">{row.displayName}</div>
+                        <div className="mt-0.5 break-all font-mono text-[11px] text-zinc-500">
+                          {row.browsePath}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        <input
+                          type="text"
+                          aria-label={`MQTT topic for ${row.displayName}`}
+                          value={draftTopics[row.nodeId] ?? row.mqttTopic}
+                          onChange={(e) =>
+                            setDraftTopics((prev) => ({ ...prev, [row.nodeId]: e.target.value }))
+                          }
+                          onBlur={() => void handleTopicBlur(row.nodeId)}
+                          disabled={busyNodeId === row.nodeId}
+                          className="w-full min-w-[12rem] rounded-md border border-zinc-800 bg-zinc-900/80 px-2 py-1.5 font-mono text-xs text-[#FF7A00] focus:border-[#FF7A00]/50 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/30 disabled:opacity-50"
+                        />
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 align-top font-mono text-zinc-200">
+                        {row.value === null || row.value === undefined ? '—' : String(row.value)}
+                        {row.dataType ? (
+                          <span className="ml-1 text-[10px] text-zinc-500">{row.dataType}</span>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                            row.status === 'Good'
+                              ? 'bg-emerald-500/15 text-emerald-300'
+                              : row.status === 'Bad'
+                                ? 'bg-rose-500/15 text-rose-300'
+                                : 'bg-zinc-700/40 text-zinc-300'
+                          }`}
+                        >
+                          {row.status}
+                        </span>
+                      </td>
+                      <td
+                        className="whitespace-nowrap px-3 py-2 align-top tabular-nums text-zinc-500"
+                        title={row.sourceTimestamp ?? undefined}
+                      >
+                        {formatBrowseClock(row.sourceTimestamp ?? row.serverTimestamp)}
+                      </td>
+                      <td className="px-3 py-2 text-right align-top">
+                        {row.subscribed ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleUnsubscribe(row.nodeId)}
+                            disabled={busyNodeId === row.nodeId}
+                            className="rounded-md border border-zinc-700 px-2 py-1 text-[11px] text-zinc-300 hover:border-rose-500/50 hover:text-rose-300 disabled:opacity-50"
+                          >
+                            Unsubscribe
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => void handleSubscribeRow(row.nodeId)}
+                            disabled={busyNodeId === row.nodeId}
+                            className="rounded-md border border-[#FF7A00]/40 px-2 py-1 text-[11px] text-[#FF7A00] hover:bg-[#FF7A00]/10 disabled:opacity-50"
+                          >
+                            Subscribe
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
       </div>
-    </aside>
+    </div>
   );
 };
