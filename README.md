@@ -149,6 +149,7 @@ Point it at the published MQTT port (`localhost:1883`) while the stack from Opti
 | `uns_kafka_broker` | Kafka broker for streaming UNS messages to other systems. Host port: `9092`. |
 | `graphdb_client` | MQTT subscriber that writes live namespace messages into Neo4j (current state / tree). |
 | `historian_client` | MQTT subscriber that writes events into TimescaleDB (history) and binds each distinct topic to the Asset Model after a successful persist. Shares one Postgres engine with `09_uns_model` (ADR-0004). |
+| `opcua_client` | OPC UA edge connector. Polls the console connectivity catalog every 5s, subscribes to engineer-configured nodes, and publishes them into the UNS via MQTT (with disk-backed store-and-forward). Metrics on `9093`, unpublished. `extra_hosts` lets it reach OPC servers on the host. |
 | `spb_mapper_client` | Sparkplug B translator: listens on Sparkplug topics, decodes protobuf, republishes JSON on the ISA-95 UNS topics. |
 | `kafka_mapper_client` | MQTT-to-Kafka bridge: copies UNS MQTT messages onto Kafka topics. |
 | `uns_simulator` | Synthetic PLC / HMI / SCADA publisher used for local demos. Not for production. |
@@ -183,6 +184,7 @@ Images built from this repo (`manufacturing-uns-<service>`):
 - `spb_mapper_client` — Sparkplug B translator: protobuf in, ISA-95 JSON out.
 - `graphdb_client` — MQTT subscriber that writes the live namespace into Neo4j.
 - `historian_client` — MQTT subscriber that writes events into TimescaleDB.
+- `opcua_client` — OPC UA edge connector that publishes subscribed catalog tags into the UNS.
 
 ---
 

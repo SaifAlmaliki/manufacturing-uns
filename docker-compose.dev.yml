@@ -19,3 +19,4 @@ services:
       - historian_client
       - graphdb_client
       - oee_client
+      - opcua_client

@@ -202,6 +202,38 @@ services:
       asset_model_setup:
         condition: service_completed_successfully
 
+  # OPC UA edge connector. Polls the console connectivity catalog every 5s and
+  # publishes subscribed tags into the UNS via MQTT. Falls back to opcua.servers
+  # in conf when the catalog is empty. extra_hosts lets it reach OPC servers on
+  # the host (e.g. opc.tcp://desktop-h4hdql2:50000/).
+  opcua_client:
+    build:
+      context: .
+      dockerfile: ./10_uns_opcua/Dockerfile
+    volumes:
+      - ./conf:/app/conf
+      - opcua_spool:/var/lib/uns_opcua
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      UNS_CONF_DIR: /app/conf
+      UNS_MODULE: 10_uns_opcua
+      UNS_mqtt__host: uns_mqtt_broker
+      UNS_opcua__metrics_port: 9093
+      UNS_historian__hostname: uns_timescale_db
+      UNS_historian__database: "uns_historian"
+      UNS_historian__username: uns_dbuser
+      UNS_historian__password: ${UNS_historian__password}
+    depends_on:
+      uns_mqtt_broker:
+        condition: service_healthy
+      uns_timescale_db:
+        condition: service_healthy
+      tsdb_setup_script:
+        condition: service_completed_successfully
+      asset_model_setup:
+        condition: service_completed_successfully
+
   spb_mapper_client:
     build:
       context: .
@@ -299,6 +331,8 @@ services:
       dockerfile: ./07_uns_graphql/Dockerfile
     volumes:
       - ./conf:/app/conf
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8000:8000"
     environment:
@@ -393,6 +427,7 @@ services:
       - graphdb_client
       - uns_simulator
       - oee_client
+      - opcua_client
 
   uns_grafana:
     image: "grafana/grafana:latest"
@@ -454,3 +489,6 @@ services:
       # half-started IdP and fail with a confusing upstream error.
       uns_keycloak:
         condition: service_healthy
+
+volumes:
+  opcua_spool:
