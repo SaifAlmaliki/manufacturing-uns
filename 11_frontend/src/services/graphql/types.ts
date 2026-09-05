@@ -219,3 +219,68 @@ export type GraphqlPrefixRenameInput = {
   oldPrefix: string
   newPrefix: string
 }
+
+/** `ConnectivityProtocol` enum on the server. Only OPC_UA is in this slice. */
+export type GraphqlConnectivityProtocol = 'OPC_UA'
+
+/** `ConnectivityServerType`: an OPC UA server the console dials, with its subscribed tags. */
+export type GraphqlConnectivityTag = {
+  serverId: string
+  nodeId: string
+  browsePath: string
+  displayName: string
+  mqttTopic: string
+  subscribed: boolean
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
+export type GraphqlConnectivityServer = {
+  id: string
+  name: string
+  protocol: GraphqlConnectivityProtocol
+  endpoint: string
+  lastStatus: string
+  lastError: string
+  lastTestedAt?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+  tags: GraphqlConnectivityTag[]
+}
+
+/** `ConnectivityServerInput`: the id is supplied by the console. */
+export type GraphqlConnectivityServerInput = {
+  id: string
+  name: string
+  protocol: GraphqlConnectivityProtocol
+  endpoint: string
+}
+
+/** `ConnectivityTestResultType`: the outcome of a probe against one OPC UA endpoint. */
+export type GraphqlConnectivityTestResult = {
+  ok: boolean
+  error: string | null
+  elapsedMs: number
+}
+
+/** `OpcUaBrowseNodeType`: an OPC UA node the console browsed or discovered. */
+export type GraphqlOpcUaBrowseNode = {
+  nodeId: string
+  browseName: string
+  displayName: string
+  browsePath: string
+  nodeClass: string
+  hasChildren: boolean
+}
+
+/** `OpcUaDataValueType`: one OPC UA node's current value as read from the server. */
+export type GraphqlOpcUaDataValue = {
+  nodeId: string
+  displayName: string
+  browsePath: string
+  value: unknown
+  dataType: string | null
+  sourceTimestamp: string | null
+  serverTimestamp: string | null
+  status: string
+}

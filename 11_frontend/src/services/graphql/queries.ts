@@ -465,3 +465,137 @@ export const GET_ASSETS_QUERY = `
     }
   }
 `
+
+/**
+ * Assets & Connectivity (ADR-0008). Servers and tags live in `console.connectivity_*`;
+ * the console only edits them through GraphQL, and `opcua_client` polls the catalog.
+ */
+const CONNECTIVITY_SERVER_FIELDS = `
+  id
+  name
+  protocol
+  endpoint
+  lastStatus
+  lastError
+  lastTestedAt
+  createdAt
+  updatedAt
+  tags {
+    serverId
+    nodeId
+    browsePath
+    displayName
+    mqttTopic
+    subscribed
+    createdAt
+    updatedAt
+  }
+`
+
+const CONNECTIVITY_TAG_FIELDS = `
+  serverId
+  nodeId
+  browsePath
+  displayName
+  mqttTopic
+  subscribed
+  createdAt
+  updatedAt
+`
+
+export const GET_CONNECTIVITY_SERVERS_QUERY = `
+  query GetConnectivityServers($protocol: ConnectivityProtocol) {
+    getConnectivityServers(protocol: $protocol) {
+      ${CONNECTIVITY_SERVER_FIELDS}
+    }
+  }
+`
+
+export const SAVE_CONNECTIVITY_SERVER_MUTATION = `
+  mutation SaveConnectivityServer($server: ConnectivityServerInput!) {
+    saveConnectivityServer(server: $server) {
+      ${CONNECTIVITY_SERVER_FIELDS}
+    }
+  }
+`
+
+export const DELETE_CONNECTIVITY_SERVER_MUTATION = `
+  mutation DeleteConnectivityServer($id: String!) {
+    deleteConnectivityServer(id: $id)
+  }
+`
+
+export const TEST_OPCUA_CONNECTION_MUTATION = `
+  mutation TestOpcUaConnection($endpoint: String!) {
+    testOpcUaConnection(endpoint: $endpoint) {
+      ok
+      error
+      elapsedMs
+    }
+  }
+`
+
+export const DISCOVER_OPCUA_VARIABLES_QUERY = `
+  query DiscoverOpcUaVariables($endpoint: String!) {
+    discoverOpcUaVariables(endpoint: $endpoint) {
+      nodeId
+      browseName
+      displayName
+      browsePath
+      nodeClass
+      hasChildren
+    }
+  }
+`
+
+export const SUBSCRIBE_OPCUA_VARIABLES_MUTATION = `
+  mutation SubscribeOpcUaVariables($serverId: String!) {
+    subscribeOpcUaVariables(serverId: $serverId) {
+      ${CONNECTIVITY_TAG_FIELDS}
+    }
+  }
+`
+
+export const UPDATE_CONNECTIVITY_TAG_TOPIC_MUTATION = `
+  mutation UpdateConnectivityTagTopic($serverId: String!, $nodeId: String!, $mqttTopic: String!) {
+    updateConnectivityTagTopic(serverId: $serverId, nodeId: $nodeId, mqttTopic: $mqttTopic) {
+      ${CONNECTIVITY_TAG_FIELDS}
+    }
+  }
+`
+
+export const UNSUBSCRIBE_CONNECTIVITY_TAG_MUTATION = `
+  mutation UnsubscribeConnectivityTag($serverId: String!, $nodeId: String!) {
+    unsubscribeConnectivityTag(serverId: $serverId, nodeId: $nodeId)
+  }
+`
+
+export const READ_OPCUA_NODES_QUERY = `
+  query ReadOpcUaNodes($endpoint: String!, $nodeIds: [String!]!) {
+    readOpcUaNodes(endpoint: $endpoint, nodeIds: $nodeIds) {
+      nodeId
+      displayName
+      browsePath
+      value
+      dataType
+      sourceTimestamp
+      serverTimestamp
+      status
+    }
+  }
+`
+
+export const SUBSCRIBE_OPCUA_DATA_CHANGES = `
+  subscription OpcUaDataChanges($endpoint: String!, $nodeIds: [String!]!) {
+    opcUaDataChanges(endpoint: $endpoint, nodeIds: $nodeIds) {
+      nodeId
+      displayName
+      browsePath
+      value
+      dataType
+      sourceTimestamp
+      serverTimestamp
+      status
+    }
+  }
+`

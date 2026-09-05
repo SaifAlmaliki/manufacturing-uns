@@ -1,0 +1,190 @@
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const getConnectivityServers = vi.hoisted(() => vi.fn());
+const saveConnectivityServer = vi.hoisted(() => vi.fn());
+const deleteConnectivityServer = vi.hoisted(() => vi.fn());
+const testOpcUaConnection = vi.hoisted(() => vi.fn());
+const discoverOpcUaVariables = vi.hoisted(() => vi.fn());
+const subscribeOpcUaVariables = vi.hoisted(() => vi.fn());
+const updateConnectivityTagTopic = vi.hoisted(() => vi.fn());
+const unsubscribeConnectivityTag = vi.hoisted(() => vi.fn());
+const subscribeOpcUaDataChanges = vi.hoisted(() => vi.fn());
+
+vi.mock('../../services/graphql/client', () => ({
+  unsGraphQLClient: {
+    getConnectivityServers,
+    saveConnectivityServer,
+    deleteConnectivityServer,
+    testOpcUaConnection,
+    discoverOpcUaVariables,
+    subscribeOpcUaVariables,
+    updateConnectivityTagTopic,
+    unsubscribeConnectivityTag,
+    subscribeOpcUaDataChanges,
+  },
+}));
+
+const auth = vi.hoisted(() => ({
+  hasPermission: (feature: string): boolean => feature === 'connectivity',
+  isAdmin: true,
+  roles: ['admin'] as ('admin' | 'operator')[],
+  currentUser: null as null,
+}));
+vi.mock('../../context/AuthContext', () => ({ useAuth: () => auth }));
+
+import { ConnectivityView } from './ConnectivityView';
+
+const SERVER = {
+  id: 's1',
+  name: 'opcplc',
+  protocol: 'opc_ua',
+  endpoint: 'opc.tcp://desktop-h4hdql2:50000/',
+  lastStatus: 'untested',
+  lastError: '',
+  lastTestedAt: null,
+  tags: [],
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  auth.hasPermission = (feature: string): boolean => feature === 'connectivity';
+  auth.isAdmin = true;
+  auth.roles = ['admin'];
+  getConnectivityServers.mockResolvedValue([SERVER]);
+  saveConnectivityServer.mockResolvedValue(SERVER);
+  deleteConnectivityServer.mockResolvedValue(true);
+  testOpcUaConnection.mockResolvedValue({ ok: true, error: null, elapsedMs: 12 });
+  discoverOpcUaVariables.mockResolvedValue([
+    {
+      nodeId: 'ns=3;s=WTP_T101_Level',
+      browseName: 'Level',
+      displayName: 'Level',
+      browsePath: 'RawWater/T101/Level',
+      nodeClass: 'Variable',
+      hasChildren: false,
+    },
+  ]);
+  subscribeOpcUaVariables.mockResolvedValue([
+    {
+      serverId: 's1',
+      nodeId: 'ns=3;s=WTP_T101_Level',
+      browsePath: 'RawWater/T101/Level',
+      displayName: 'Level',
+      mqttTopic: 'RawWater/T101/Level',
+      subscribed: true,
+    },
+  ]);
+  updateConnectivityTagTopic.mockResolvedValue({
+    serverId: 's1',
+    nodeId: 'ns=3;s=WTP_T101_Level',
+    browsePath: 'RawWater/T101/Level',
+    displayName: 'Level',
+    mqttTopic: 'Plant/T101/Level',
+    subscribed: true,
+  });
+  unsubscribeConnectivityTag.mockResolvedValue(true);
+  subscribeOpcUaDataChanges.mockReturnValue(() => () => undefined);
+});
+
+describe('access', () => {
+  it('shows AccessRestricted when connectivity is denied', async () => {
+    auth.hasPermission = (_feature: string): boolean => false;
+    render(<ConnectivityView />);
+
+    await waitFor(() => expect(screen.getByText(/permission required/i)).toBeTruthy());
+    expect(getConnectivityServers).not.toHaveBeenCalled();
+  });
+});
+
+describe('the OPC UA server table', () => {
+  it('lists an OPC server and offers Browse data', async () => {
+    render(<ConnectivityView />);
+    await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
+    expect(screen.getByRole('button', { name: /browse data/i })).toBeTruthy();
+  });
+
+  it('hides Add Server when the signed-in role cannot mutate connectivity', async () => {
+    auth.hasPermission = (_feature: string): boolean => false;
+    render(<ConnectivityView />);
+
+    await waitFor(() => expect(screen.getByText(/permission required/i)).toBeTruthy());
+    expect(screen.queryByRole('button', { name: /add server/i })).toBeNull();
+  });
+
+  it('opens the Add Server modal and saves the server', async () => {
+    render(<ConnectivityView />);
+    await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: /add server/i }));
+    const nameInput = await screen.findByLabelText(/name/i);
+    const endpointInput = await screen.findByLabelText(/endpoint/i);
+    fireEvent.change(nameInput, { target: { value: 'wtp' } });
+    fireEvent.change(endpointInput, { target: { value: 'opc.tcp://desktop-h4hdql2:50000/' } });
+    fireEvent.click(screen.getByRole('button', { name: /save/i }));
+
+    await waitFor(() => expect(saveConnectivityServer).toHaveBeenCalled());
+    expect(saveConnectivityServer).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'wtp', endpoint: 'opc.tcp://desktop-h4hdql2:50000/' }),
+    );
+  });
+
+  it('tests a connection and reports the outcome', async () => {
+    render(<ConnectivityView />);
+    await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: /test/i }));
+    await waitFor(() => expect(testOpcUaConnection).toHaveBeenCalledWith('opc.tcp://desktop-h4hdql2:50000/'));
+  });
+
+  it('deletes a server after confirming', async () => {
+    render(<ConnectivityView />);
+    await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: /delete/i }));
+    fireEvent.click(screen.getByRole('button', { name: /confirm/i }));
+    await waitFor(() => expect(deleteConnectivityServer).toHaveBeenCalledWith('s1'));
+  });
+
+  it('renders a one-line empty state for protocols not in this slice', async () => {
+    render(<ConnectivityView />);
+    await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: /modbus tcp/i }));
+    expect(screen.getByText(/not in this slice/i)).toBeTruthy();
+  });
+});
+
+describe('the Browse data drawer', () => {
+  it('discovers variables, subscribes, and edits a topic', async () => {
+    render(<ConnectivityView />);
+    await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: /browse data/i }));
+    await waitFor(() => expect(discoverOpcUaVariables).toHaveBeenCalledWith('opc.tcp://desktop-h4hdql2:50000/'));
+    expect(screen.getByText('RawWater/T101/Level')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /subscribe/i }));
+    await waitFor(() => expect(subscribeOpcUaVariables).toHaveBeenCalledWith('s1'));
+
+    const topicInput = screen.getByDisplayValue('RawWater/T101/Level');
+    fireEvent.change(topicInput, { target: { value: 'Plant/T101/Level' } });
+    fireEvent.blur(topicInput);
+    await waitFor(() =>
+      expect(updateConnectivityTagTopic).toHaveBeenCalledWith('s1', 'ns=3;s=WTP_T101_Level', 'Plant/T101/Level'),
+    );
+  });
+
+  it('unsubscribes a tag from the drawer', async () => {
+    render(<ConnectivityView />);
+    await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: /browse data/i }));
+    await waitFor(() => expect(discoverOpcUaVariables).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: /subscribe/i }));
+    await waitFor(() => expect(subscribeOpcUaVariables).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: /unsubscribe/i }));
+    await waitFor(() => expect(unsubscribeConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=WTP_T101_Level'));
+  });
+});
