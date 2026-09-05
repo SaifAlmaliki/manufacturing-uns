@@ -255,7 +255,7 @@ async function openDrawerAndSelectWtp() {
 describe('the Browse data drawer', () => {
   it('browses the address space, then discovers only the selected folder', async () => {
     await openDrawerAndSelectWtp();
-    expect(screen.getByText('RawWater/T101/Level')).toBeTruthy();
+    expect(screen.getAllByText('RawWater/T101/Level').length).toBeGreaterThan(0);
     expect(screen.getByText('RawWater')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: /subscribe folder/i }));
@@ -263,6 +263,7 @@ describe('the Browse data drawer', () => {
       expect(subscribeOpcUaVariables).toHaveBeenCalledWith('s1', 'ns=3;s=WaterTreatmentPlant'),
     );
 
+    fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
     const topicInput = screen.getByDisplayValue('RawWater/T101/Level');
     fireEvent.change(topicInput, { target: { value: 'Plant/T101/Level' } });
     fireEvent.blur(topicInput);
@@ -278,5 +279,58 @@ describe('the Browse data drawer', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /unsubscribe/i }));
     await waitFor(() => expect(unsubscribeConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=WTP_T101_Level'));
+  });
+
+  it('opens the signal terminal when the server name is clicked', async () => {
+    render(<ConnectivityView />);
+    await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: /open opcplc/i }));
+    expect(await screen.findByRole('dialog', { name: /browse opc ua data/i })).toBeTruthy();
+    await waitFor(() => expect(browseOpcUa).toHaveBeenCalled());
+  });
+
+  it('shows catalog-subscribed signals when the terminal opens, without picking a folder', async () => {
+    getConnectivityServers.mockResolvedValue([
+      {
+        ...SERVER,
+        tags: [
+          {
+            serverId: 's1',
+            nodeId: 'ns=3;s=WTP_T101_Level',
+            browsePath: 'RawWater/T101/Level',
+            displayName: 'Level',
+            mqttTopic: 'RawWater/T101/Level',
+            subscribed: true,
+          },
+        ],
+      },
+    ]);
+    render(<ConnectivityView />);
+    await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: /open opcplc/i }));
+    expect(await screen.findByText('Level')).toBeTruthy();
+    expect(screen.getAllByText('RawWater/T101/Level').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: /unsubscribe/i })).toBeTruthy();
+    expect(discoverOpcUaVariables).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(readOpcUaNodes).toHaveBeenCalledWith('opc.tcp://desktop-h4hdql2:50000/', [
+        'ns=3;s=WTP_T101_Level',
+      ]),
+    );
+  });
+
+  it('keeps subscribed signals after the terminal is closed and opened again', async () => {
+    await openDrawerAndSelectWtp();
+    fireEvent.click(screen.getByRole('button', { name: /subscribe folder/i }));
+    await waitFor(() => expect(subscribeOpcUaVariables).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: /close/i }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /browse opc ua data/i })).toBeNull());
+
+    fireEvent.click(screen.getByRole('button', { name: /open opcplc/i }));
+    expect(await screen.findByText('Level')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /unsubscribe/i })).toBeTruthy();
   });
 });

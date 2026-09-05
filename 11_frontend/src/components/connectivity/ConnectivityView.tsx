@@ -184,11 +184,21 @@ export const ConnectivityView: React.FC = () => {
     try {
       await unsGraphQLClient.deleteConnectivityServer(server.id);
       setServers((prev) => prev.filter((s) => s.id !== server.id));
+      setBrowseServer((prev) => (prev?.id === server.id ? null : prev));
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : 'Delete failed');
     } finally {
       setDeletingId(null);
     }
+  };
+
+  const openSignalTerminal = (server: GraphqlConnectivityServer) => {
+    setBrowseServer(server);
+  };
+
+  const applyServerUpdate = (updated: GraphqlConnectivityServer) => {
+    setServers((prev) => prev.map((s) => (s.id === updated.id ? { ...s, ...updated } : s)));
+    setBrowseServer((prev) => (prev && prev.id === updated.id ? { ...prev, ...updated } : prev));
   };
 
   if (!canMutate) {
@@ -253,8 +263,21 @@ export const ConnectivityView: React.FC = () => {
                   </thead>
                   <tbody className="divide-y divide-zinc-800/80 text-xs">
                     {filtered.map((server) => (
-                      <tr key={server.id} className="hover:bg-zinc-800/30">
-                        <td className="px-4 py-3 font-semibold text-white">{server.name}</td>
+                      <tr
+                        key={server.id}
+                        className="cursor-pointer hover:bg-zinc-800/30"
+                        onClick={() => openSignalTerminal(server)}
+                      >
+                        <td className="px-4 py-3">
+                          <button
+                            type="button"
+                            aria-label={`Open ${server.name}`}
+                            onClick={() => openSignalTerminal(server)}
+                            className="text-left font-semibold text-white hover:text-[#FF7A00] hover:underline"
+                          >
+                            {server.name}
+                          </button>
+                        </td>
                         <td className="px-4 py-3 font-mono text-[11px] text-zinc-400">
                           {server.endpoint}
                         </td>
@@ -272,7 +295,7 @@ export const ConnectivityView: React.FC = () => {
                         <td className="px-4 py-3 text-zinc-500">
                           {formatLastTestedAt(server.lastTestedAt)}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                           <div className="flex items-center justify-end gap-1">
                             <BtnGhost
                               onClick={() => void handleTest(server)}
@@ -284,7 +307,7 @@ export const ConnectivityView: React.FC = () => {
                               Test
                             </BtnGhost>
                             <BtnGhost
-                              onClick={() => setBrowseServer(server)}
+                              onClick={() => openSignalTerminal(server)}
                               className="px-2 py-1 text-[11px]"
                               aria-label="Browse data"
                             >
@@ -552,9 +575,7 @@ export const ConnectivityView: React.FC = () => {
         <BrowseDataDrawer
           server={browseServer}
           onClose={() => setBrowseServer(null)}
-          onSubscribed={(updated) => {
-            setServers((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
-          }}
+          onSubscribed={applyServerUpdate}
         />
       )}
     </PageShell>

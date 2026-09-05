@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Folder, FolderOpen, RefreshCw, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Folder, FolderOpen, Radio, RefreshCw, X } from 'lucide-react';
 import type {
   GraphqlConnectivityServer,
+  GraphqlConnectivityTag,
   GraphqlOpcUaBrowseNode,
   GraphqlOpcUaDataValue,
 } from '../../services/graphql/types';
@@ -35,6 +36,21 @@ function uniqueDiscovered(nodes: GraphqlOpcUaBrowseNode[]): GraphqlOpcUaBrowseNo
     seen.add(node.nodeId);
     return true;
   });
+}
+
+function subscribedTags(tags: GraphqlConnectivityTag[]): GraphqlConnectivityTag[] {
+  return tags.filter((tag) => tag.subscribed);
+}
+
+function nodesFromTags(tags: GraphqlConnectivityTag[]): GraphqlOpcUaBrowseNode[] {
+  return tags.map((tag) => ({
+    nodeId: tag.nodeId,
+    browseName: tag.displayName,
+    displayName: tag.displayName,
+    browsePath: tag.browsePath,
+    nodeClass: 'Variable',
+    hasChildren: false,
+  }));
 }
 
 function mergeRows(
@@ -208,20 +224,89 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
   const [subscribing, setSubscribing] = useState(false);
   const [busyNodeId, setBusyNodeId] = useState<string | null>(null);
   const [draftTopics, setDraftTopics] = useState<Record<string, string>>({});
+  const [editingTopicId, setEditingTopicId] = useState<string | null>(null);
   const unsubRef = useRef<(() => void) | null>(null);
+  const tagsRef = useRef(server.tags);
+  tagsRef.current = server.tags;
+
+  const catalogSubscribed = useMemo(() => subscribedTags(server.tags), [server.tags]);
+
+  const emitServerTags = useCallback(
+    (tags: GraphqlConnectivityTag[]) => {
+      onSubscribed({ ...server, tags });
+    },
+    [onSubscribed, server],
+  );
 
   const handleTreeError = useCallback((message: string) => {
     setError(message);
   }, []);
 
+  const applyLiveValues = useCallback(
+    (nodes: GraphqlOpcUaBrowseNode[], tags: GraphqlConnectivityTag[], cancelled: () => boolean) => {
+      const initial = mergeRows(nodes, tags, []);
+      setRows(initial);
+      const drafts: Record<string, string> = {};
+      for (const r of initial) drafts[r.nodeId] = r.mqttTopic;
+      setDraftTopics(drafts);
+      if (nodes.length === 0) return;
+      const nodeIds = nodes.map((n) => n.nodeId);
+      void unsGraphQLClient
+        .readOpcUaNodes(server.endpoint, nodeIds)
+        .then((values) => {
+          if (cancelled()) return;
+          setRows(mergeRows(nodes, tags, values));
+        })
+        .catch(() => {
+          // Value reads can fail on demo nodes after the list is already on screen.
+        });
+      if (unsubRef.current) {
+        unsubRef.current();
+        unsubRef.current = null;
+      }
+      unsubRef.current = unsGraphQLClient.subscribeOpcUaDataChanges(
+        server.endpoint,
+        nodeIds,
+        (value: GraphqlOpcUaDataValue) => {
+          setRows((prev) =>
+            prev.map((r) =>
+              r.nodeId === value.nodeId
+                ? {
+                    ...r,
+                    value: value.value,
+                    dataType: value.dataType,
+                    sourceTimestamp: value.sourceTimestamp,
+                    serverTimestamp: value.serverTimestamp,
+                    status: value.status,
+                  }
+                : r,
+            ),
+          );
+        },
+      );
+    },
+    [server.endpoint],
+  );
+
   useEffect(() => {
+    if (selected) return;
     let cancelled = false;
-    if (!selected) {
-      setDiscovered([]);
-      setRows([]);
-      setLoading(false);
-      return;
-    }
+    const nodes = nodesFromTags(catalogSubscribed);
+    setDiscovered(nodes);
+    setLoading(false);
+    applyLiveValues(nodes, server.tags, () => cancelled);
+    return () => {
+      cancelled = true;
+      if (unsubRef.current) {
+        unsubRef.current();
+        unsubRef.current = null;
+      }
+    };
+  }, [applyLiveValues, catalogSubscribed, selected, server.tags]);
+
+  useEffect(() => {
+    if (!selected) return;
+    let cancelled = false;
     setLoading(true);
     setError(null);
     void (async () => {
@@ -231,25 +316,7 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
         );
         if (cancelled) return;
         setDiscovered(nodes);
-        const initial = mergeRows(nodes, server.tags, []);
-        setRows(initial);
-        const drafts: Record<string, string> = {};
-        for (const r of initial) drafts[r.nodeId] = r.mqttTopic;
-        setDraftTopics(drafts);
-        if (nodes.length > 0) {
-          void unsGraphQLClient
-            .readOpcUaNodes(
-              server.endpoint,
-              nodes.map((n) => n.nodeId),
-            )
-            .then((values) => {
-              if (cancelled) return;
-              setRows(mergeRows(nodes, server.tags, values));
-            })
-            .catch(() => {
-              // Value reads can fail on demo nodes after the list is already on screen.
-            });
-        }
+        applyLiveValues(nodes, tagsRef.current, () => cancelled);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Browse failed');
       } finally {
@@ -263,7 +330,7 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
         unsubRef.current = null;
       }
     };
-  }, [server.endpoint, server.tags, selected]);
+  }, [applyLiveValues, selected, server.endpoint]);
 
   const nodeIds = useMemo(() => discovered.map((n) => n.nodeId), [discovered]);
 
@@ -308,9 +375,8 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
           },
         );
       }
-      onSubscribed({
-        ...server,
-        tags: tags.map((t) => ({
+      emitServerTags(
+        tags.map((t) => ({
           serverId: server.id,
           nodeId: t.nodeId,
           browsePath: t.browsePath,
@@ -318,7 +384,7 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
           mqttTopic: t.mqttTopic,
           subscribed: t.subscribed,
         })),
-      });
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Subscribe failed');
     } finally {
@@ -341,6 +407,23 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
         prev.map((r) =>
           r.nodeId === nodeId ? { ...r, mqttTopic: updated.mqttTopic, subscribed: true } : r,
         ),
+      );
+      emitServerTags(
+        server.tags.some((t) => t.nodeId === nodeId)
+          ? server.tags.map((t) =>
+              t.nodeId === nodeId ? { ...t, mqttTopic: updated.mqttTopic, subscribed: true } : t,
+            )
+          : [
+              ...server.tags,
+              {
+                serverId: server.id,
+                nodeId,
+                browsePath: rows.find((r) => r.nodeId === nodeId)?.browsePath ?? nodeId,
+                displayName: rows.find((r) => r.nodeId === nodeId)?.displayName ?? nodeId,
+                mqttTopic: updated.mqttTopic,
+                subscribed: true,
+              },
+            ],
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Topic was not updated');
@@ -366,9 +449,8 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
             : r,
         ),
       );
-      onSubscribed({
-        ...server,
-        tags: tags.map((t) => ({
+      emitServerTags(
+        tags.map((t) => ({
           serverId: server.id,
           nodeId: t.nodeId,
           browsePath: t.browsePath,
@@ -376,7 +458,7 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
           mqttTopic: t.mqttTopic,
           subscribed: t.subscribed,
         })),
-      });
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Subscribe failed');
     } finally {
@@ -388,8 +470,13 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
     setBusyNodeId(nodeId);
     try {
       await unsGraphQLClient.unsubscribeConnectivityTag(server.id, nodeId);
+      emitServerTags(
+        server.tags.map((t) => (t.nodeId === nodeId ? { ...t, subscribed: false } : t)),
+      );
       setRows((prev) =>
-        prev.map((r) => (r.nodeId === nodeId ? { ...r, subscribed: false } : r)),
+        selected
+          ? prev.map((r) => (r.nodeId === nodeId ? { ...r, subscribed: false } : r))
+          : prev.filter((r) => r.nodeId !== nodeId),
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unsubscribe failed');
@@ -404,7 +491,7 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
       onClick={onClose}
     >
       <div
-        className="flex h-[min(88vh,840px)] w-[min(1080px,96vw)] flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-[#111114] shadow-2xl"
+        className="flex h-[min(88vh,860px)] w-[min(1200px,96vw)] flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-[#111114] shadow-2xl"
         role="dialog"
         aria-label="Browse OPC UA data"
         onClick={(e) => e.stopPropagation()}
@@ -416,7 +503,9 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
             <div className="truncate text-xs text-zinc-500">
               {selected
                 ? selected.browsePath || selected.displayName
-                : 'Pick a folder in the address space'}
+                : catalogSubscribed.length > 0
+                  ? `${catalogSubscribed.length} subscribed signal${catalogSubscribed.length === 1 ? '' : 's'}`
+                  : 'Pick a folder in the address space'}
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -446,6 +535,21 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
               Address space
             </div>
             <div className="min-h-0 flex-1 overflow-auto">
+              <button
+                type="button"
+                onClick={() => setSelected(null)}
+                className={`m-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm ${
+                  selected === null
+                    ? 'bg-[#FF7A00]/15 text-[#FF7A00]'
+                    : 'text-zinc-300 hover:bg-zinc-800/60 hover:text-white'
+                }`}
+              >
+                <Radio className="size-3.5 shrink-0" />
+                <span className="min-w-0 flex-1 truncate">Subscribed</span>
+                {catalogSubscribed.length > 0 && (
+                  <span className="tabular-nums text-[11px] text-zinc-500">{catalogSubscribed.length}</span>
+                )}
+              </button>
               <AddressSpaceTree
                 endpoint={server.endpoint}
                 selectedId={selected?.nodeId ?? null}
@@ -456,9 +560,11 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
           </div>
 
           <div className="min-h-0 min-w-0 flex-1 overflow-auto">
-            {!selected ? (
+            {!selected && catalogSubscribed.length === 0 ? (
               <div className="p-8 text-center text-sm text-zinc-500">
                 Select a folder to list its signals — same as dragging a section in UA Expert.
+                Subscribed signals stay in the catalog and show here when you reopen this
+                server.
               </div>
             ) : loading ? (
               <div className="p-8 text-center text-sm text-zinc-500">
@@ -471,11 +577,12 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
                 <thead className="sticky top-0 bg-zinc-900/95 text-[10px] uppercase text-zinc-500">
                   <tr>
                     <th className="px-3 py-2 font-medium">Signal</th>
-                    <th className="min-w-[220px] px-3 py-2 font-medium">MQTT topic</th>
+                    <th className="px-3 py-2 font-medium">MQTT topic</th>
                     <th className="px-3 py-2 font-medium">Value</th>
                     <th className="px-3 py-2 font-medium">Quality</th>
-                    <th className="w-20 px-3 py-2 font-medium">Updated</th>
-                    <th className="w-28 px-3 py-2 text-right font-medium">Action</th>
+                    <th className="w-[4.5rem] px-3 py-2 font-medium">Source</th>
+                    <th className="w-[4.5rem] px-3 py-2 font-medium">Server</th>
+                    <th className="w-24 px-3 py-2 text-right font-medium">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-800/80 text-xs">
@@ -488,17 +595,42 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
                         </div>
                       </td>
                       <td className="px-3 py-2 align-top">
-                        <input
-                          type="text"
-                          aria-label={`MQTT topic for ${row.displayName}`}
-                          value={draftTopics[row.nodeId] ?? row.mqttTopic}
-                          onChange={(e) =>
-                            setDraftTopics((prev) => ({ ...prev, [row.nodeId]: e.target.value }))
-                          }
-                          onBlur={() => void handleTopicBlur(row.nodeId)}
-                          disabled={busyNodeId === row.nodeId}
-                          className="w-full min-w-[12rem] rounded-md border border-zinc-800 bg-zinc-900/80 px-2 py-1.5 font-mono text-xs text-[#FF7A00] focus:border-[#FF7A00]/50 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/30 disabled:opacity-50"
-                        />
+                        {editingTopicId === row.nodeId ? (
+                          <input
+                            type="text"
+                            aria-label={`MQTT topic for ${row.displayName}`}
+                            value={draftTopics[row.nodeId] ?? row.mqttTopic}
+                            onChange={(e) =>
+                              setDraftTopics((prev) => ({ ...prev, [row.nodeId]: e.target.value }))
+                            }
+                            onBlur={() => {
+                              void handleTopicBlur(row.nodeId);
+                              setEditingTopicId(null);
+                            }}
+                            disabled={busyNodeId === row.nodeId}
+                            autoFocus
+                            className="w-full rounded-md border border-[#FF7A00]/50 bg-zinc-900/80 px-2 py-1.5 font-mono text-xs text-[#FF7A00] focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/30 disabled:opacity-50"
+                          />
+                        ) : (
+                          <div className="flex items-start gap-2">
+                            <div className="min-w-0 flex-1 break-all font-mono text-xs leading-5 text-[#FF7A00]">
+                              {row.mqttTopic}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDraftTopics((prev) => ({
+                                  ...prev,
+                                  [row.nodeId]: prev[row.nodeId] ?? row.mqttTopic,
+                                }));
+                                setEditingTopicId(row.nodeId);
+                              }}
+                              className="shrink-0 text-[11px] text-zinc-400 underline-offset-2 hover:text-[#FF7A00] hover:underline"
+                            >
+                              Edit
+                            </button>
+                          </div>
+                        )}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2 align-top font-mono text-zinc-200">
                         {row.value === null || row.value === undefined ? '—' : String(row.value)}
@@ -520,10 +652,16 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
                         </span>
                       </td>
                       <td
-                        className="whitespace-nowrap px-3 py-2 align-top tabular-nums text-zinc-500"
+                        className="whitespace-nowrap px-3 py-2 align-top tabular-nums text-[11px] text-zinc-500"
                         title={row.sourceTimestamp ?? undefined}
                       >
-                        {formatBrowseClock(row.sourceTimestamp ?? row.serverTimestamp)}
+                        {formatBrowseClock(row.sourceTimestamp)}
+                      </td>
+                      <td
+                        className="whitespace-nowrap px-3 py-2 align-top tabular-nums text-[11px] text-zinc-500"
+                        title={row.serverTimestamp ?? undefined}
+                      >
+                        {formatBrowseClock(row.serverTimestamp)}
                       </td>
                       <td className="px-3 py-2 text-right align-top">
                         {row.subscribed ? (
