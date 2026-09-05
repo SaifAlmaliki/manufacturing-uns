@@ -162,6 +162,10 @@ def _cell_entries(
     hierarchy: Mapping[str, Any],
 ) -> list[tuple[str, str, str, str, str, tuple[str, ...]]]:
     """One row per Work Cell: path segments plus authored machine names."""
+    enterprise = hierarchy.get("enterprise")
+    if not enterprise:
+        raise ValueError("simulator.hierarchy.enterprise is required")
+
     rows: list[tuple[str, str, str, str, str, tuple[str, ...]]] = []
     for site in hierarchy.get("sites") or []:
         site_name = _named(site)
@@ -175,7 +179,7 @@ def _cell_entries(
                         authored = tuple(str(m) for m in (cell.get("machines") or ()))
                     rows.append(
                         (
-                            str(hierarchy["enterprise"]),
+                            str(enterprise),
                             site_name,
                             area_name,
                             line_name,

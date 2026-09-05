@@ -41,6 +41,27 @@ def test_duplicate_sibling_cells_are_rejected():
     raise AssertionError("expected ValueError")
 
 
+def test_cell_mapping_coerces_authored_machines():
+    tree = tree_from_mapping(
+        {
+            "enterprise": "E",
+            "sites": [
+                {
+                    "name": "S",
+                    "areas": [
+                        {
+                            "name": "A",
+                            "kind": "production",
+                            "lines": [{"name": "L", "cells": [{"name": "V101", "machines": ["Dryer"]}]}],
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+    assert tree.sites[0].areas[0].lines[0].cells == (HierarchyCell("V101", ("Dryer",)),)
+
+
 def test_string_cells_coerce_to_cells_with_no_machines():
     tree = tree_from_mapping(
         {

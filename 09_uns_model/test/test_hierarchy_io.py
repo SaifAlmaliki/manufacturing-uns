@@ -90,7 +90,7 @@ def _sample_tree() -> HierarchyTree:
                     HierarchyArea(
                         name="RawWater",
                         kind="production",
-                        lines=(HierarchyLine(name="Train1", cells=(HierarchyCell("V101"), HierarchyCell("V102"))),),
+                        lines=(HierarchyLine(name="Train1", cells=(HierarchyCell("V101", ("Dryer",)), HierarchyCell("V102"))),),
                     ),
                 ),
             ),
@@ -169,7 +169,7 @@ def test_save_writes_the_list_of_objects_sites_shape(tmp_path: Path):
     assert doc["sites"][0]["areas"][0]["kind"] == "production"
     assert doc["sites"][0]["areas"][0]["lines"][0]["name"] == "Train1"
     assert doc["sites"][0]["areas"][0]["lines"][0]["cells"] == [
-        {"name": "V101", "machines": []},
+        {"name": "V101", "machines": ["Dryer"]},
         {"name": "V102", "machines": []},
     ]
 

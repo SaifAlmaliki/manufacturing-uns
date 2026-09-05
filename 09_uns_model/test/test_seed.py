@@ -21,6 +21,7 @@ from uns_model.hierarchy import (
 from uns_model.repositories import AssetSpec
 from uns_model.seed import (
     SIMULATOR_LEVELS,
+    _cell_entries,
     apply_plan,
     plan_from_hierarchy_tree,
     plan_from_simulator_config,
@@ -201,6 +202,34 @@ def test_the_legacy_flat_hierarchy_still_seeds():
 def test_a_missing_hierarchy_is_an_error_rather_than_an_empty_model():
     with pytest.raises(ValueError, match="hierarchy"):
         plan_from_simulator_config({"plc": []})
+
+
+@pytest.mark.parametrize(
+    "hierarchy",
+    [
+        {
+            "sites": [
+                {
+                    "name": "S",
+                    "areas": [{"name": "A", "lines": [{"name": "L", "cells": ["C1"]}]}],
+                }
+            ]
+        },
+        {
+            "enterprise": "",
+            "sites": [
+                {
+                    "name": "S",
+                    "areas": [{"name": "A", "lines": [{"name": "L", "cells": ["C1"]}]}],
+                }
+            ]
+        },
+    ],
+    ids=["missing", "empty"],
+)
+def test_nested_sites_without_enterprise_raise_value_error(hierarchy):
+    with pytest.raises(ValueError, match="simulator.hierarchy.enterprise is required"):
+        _cell_entries(hierarchy)
 
 
 def _two_cell_tree() -> HierarchyTree:
