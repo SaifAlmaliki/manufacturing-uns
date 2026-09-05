@@ -1,12 +1,12 @@
 """
 Pure ISA-95 hierarchy types and validators.
 
-The hierarchy is `Enterprise > Site > Area > Line > Cell`. Each level carries a
-name that must be a legal single topic segment (no `/`, non-empty), so that the
-path to any node — `Enterprise/Site/Area/Line/Cell` — is a well-formed MQTT
-prefix. This module is deliberately free of database and I/O concerns: it only
-checks shapes and computes prefixes, so it can be tested exhaustively without
-Postgres or YAML.
+The hierarchy is `Enterprise > Site > Area > Line > Cell > Machine`. Each level
+carries a name that must be a legal single topic segment (no `/`, non-empty), so
+that the path to any node — `Enterprise/Site/Area/Line/Cell/Machine` — is a
+well-formed MQTT prefix. This module is deliberately free of database and I/O
+concerns: it only checks shapes and computes prefixes, so it can be tested
+exhaustively without Postgres or YAML.
 """
 
 from __future__ import annotations
@@ -20,9 +20,15 @@ DEFAULT_AREA_KIND = "production"
 
 
 @dataclass(frozen=True, slots=True)
+class HierarchyCell:
+    name: str
+    machines: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class HierarchyLine:
     name: str
-    cells: tuple[str, ...]
+    cells: tuple[HierarchyCell, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +72,26 @@ def _cell_prefix(enterprise: str, site: str, area: str, line: str, cell: str) ->
     return join_segments(enterprise, site, area, line, cell)
 
 
+def _coerce_cell(raw: object) -> HierarchyCell:
+    if isinstance(raw, str):
+        return HierarchyCell(name=raw)
+    if isinstance(raw, HierarchyCell):
+        return raw
+    if isinstance(raw, Mapping):
+        machines = raw.get("machines", ())
+        return HierarchyCell(name=str(raw["name"]), machines=tuple(str(m) for m in machines))
+    return HierarchyCell(
+        name=str(getattr(raw, "name")),
+        machines=tuple(str(m) for m in getattr(raw, "machines", ())),
+    )
+
+
+def _coerce_cells(raw: object) -> tuple[HierarchyCell, ...]:
+    if raw is None:
+        return ()
+    return tuple(_coerce_cell(item) for item in raw)
+
+
 def _coerce_lines(raw: object) -> tuple[HierarchyLine, ...]:
     if isinstance(raw, Mapping):
         items = raw.items()
@@ -73,7 +99,7 @@ def _coerce_lines(raw: object) -> tuple[HierarchyLine, ...]:
         items = ((entry["name"], entry) for entry in raw)  # type: ignore[union-attr]
     lines: list[HierarchyLine] = []
     for name, body in items:
-        cells = tuple(body.get("cells", ())) if isinstance(body, Mapping) else tuple(getattr(body, "cells", ()))
+        cells = _coerce_cells(body.get("cells") if isinstance(body, Mapping) else getattr(body, "cells", ()))
         lines.append(HierarchyLine(name=name, cells=cells))
     return tuple(lines)
 
@@ -129,7 +155,16 @@ def tree_to_mapping(tree: HierarchyTree) -> dict[str, object]:
                     {
                         "name": area.name,
                         "kind": area.kind or DEFAULT_AREA_KIND,
-                        "lines": [{"name": line.name, "cells": list(line.cells)} for line in area.lines],
+                        "lines": [
+                            {
+                                "name": line.name,
+                                "cells": [
+                                    {"name": cell.name, "machines": list(cell.machines)}
+                                    for cell in line.cells
+                                ],
+                            }
+                            for line in area.lines
+                        ],
                     }
                     for area in site.areas
                 ],
@@ -172,14 +207,20 @@ def validate_tree(tree: HierarchyTree) -> None:
             )
             for line in area.lines:
                 _require_unique(
-                    line.cells,
+                    [cell.name for cell in line.cells],
                     "cell",
                     f"{tree.enterprise}/{site.name}/{area.name}/{line.name}",
                 )
+                for cell in line.cells:
+                    _require_unique(
+                        cell.machines,
+                        "machine",
+                        f"{tree.enterprise}/{site.name}/{area.name}/{line.name}/{cell.name}",
+                    )
 
 
 def all_prefixes(tree: HierarchyTree) -> frozenset[str]:
-    """Every node path in the tree, from the enterprise down to each cell."""
+    """Every node path in the tree, from the enterprise down to each machine."""
     prefixes: set[str] = {tree.enterprise}
     for site in tree.sites:
         site_prefix = _site_prefix(tree.enterprise, site.name)
@@ -191,7 +232,10 @@ def all_prefixes(tree: HierarchyTree) -> frozenset[str]:
                 line_prefix = _line_prefix(tree.enterprise, site.name, area.name, line.name)
                 prefixes.add(line_prefix)
                 for cell in line.cells:
-                    prefixes.add(_cell_prefix(tree.enterprise, site.name, area.name, line.name, cell))
+                    cell_prefix = _cell_prefix(tree.enterprise, site.name, area.name, line.name, cell.name)
+                    prefixes.add(cell_prefix)
+                    for machine in cell.machines:
+                        prefixes.add(join_segments(cell_prefix, machine))
     return frozenset(prefixes)
 
 

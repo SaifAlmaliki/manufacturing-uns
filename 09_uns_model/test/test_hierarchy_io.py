@@ -14,6 +14,7 @@ import yaml
 
 from uns_model.hierarchy import (
     HierarchyArea,
+    HierarchyCell,
     HierarchyLine,
     HierarchySite,
     HierarchyTree,
@@ -89,7 +90,7 @@ def _sample_tree() -> HierarchyTree:
                     HierarchyArea(
                         name="RawWater",
                         kind="production",
-                        lines=(HierarchyLine(name="Train1", cells=("V101", "V102")),),
+                        lines=(HierarchyLine(name="Train1", cells=(HierarchyCell("V101"), HierarchyCell("V102"))),),
                     ),
                 ),
             ),
@@ -115,7 +116,7 @@ def test_load_plant_tree_reads_the_shipped_list_shape(tmp_path: Path):
                 HierarchyArea(
                     name="RawWater",
                     kind="production",
-                    lines=(HierarchyLine(name="Train1", cells=("V101", "V102")),),
+                    lines=(HierarchyLine(name="Train1", cells=(HierarchyCell("V101"), HierarchyCell("V102"))),),
                 ),
             ),
         ),
@@ -167,7 +168,10 @@ def test_save_writes_the_list_of_objects_sites_shape(tmp_path: Path):
     assert doc["sites"][0]["areas"][0]["name"] == "RawWater"
     assert doc["sites"][0]["areas"][0]["kind"] == "production"
     assert doc["sites"][0]["areas"][0]["lines"][0]["name"] == "Train1"
-    assert doc["sites"][0]["areas"][0]["lines"][0]["cells"] == ["V101", "V102"]
+    assert doc["sites"][0]["areas"][0]["lines"][0]["cells"] == [
+        {"name": "V101", "machines": []},
+        {"name": "V102", "machines": []},
+    ]
 
 
 def test_save_replaces_enterprise_and_sites_keeps_plant_and_profiles(tmp_path: Path):
@@ -192,7 +196,7 @@ def test_save_defaults_empty_area_kind_to_production(tmp_path: Path):
         sites=(
             HierarchySite(
                 name="S",
-                areas=(HierarchyArea(name="A", kind="", lines=(HierarchyLine("L", ("C",)),)),),
+                areas=(HierarchyArea(name="A", kind="", lines=(HierarchyLine("L", (HierarchyCell("C"),)),)),),
             ),
         ),
     )

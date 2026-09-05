@@ -10,7 +10,14 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from uns_model.hierarchy import HierarchyArea, HierarchyLine, HierarchySite, HierarchyTree, tree_to_mapping
+from uns_model.hierarchy import (
+    HierarchyArea,
+    HierarchyCell,
+    HierarchyLine,
+    HierarchySite,
+    HierarchyTree,
+    tree_to_mapping,
+)
 from uns_model.repositories import AssetSpec
 from uns_model.seed import (
     SIMULATOR_LEVELS,
@@ -202,7 +209,7 @@ def _two_cell_tree() -> HierarchyTree:
         sites=(
             HierarchySite(
                 "S",
-                (HierarchyArea("A", "production", (HierarchyLine("L", ("V101", "V102")),)),),
+                (HierarchyArea("A", "production", (HierarchyLine("L", (HierarchyCell("V101"), HierarchyCell("V102"))),)),),
             ),
         ),
     )
@@ -214,7 +221,7 @@ def _one_cell_tree() -> HierarchyTree:
         sites=(
             HierarchySite(
                 "S",
-                (HierarchyArea("A", "production", (HierarchyLine("L", ("V101",)),)),),
+                (HierarchyArea("A", "production", (HierarchyLine("L", (HierarchyCell("V101"),)),)),),
             ),
         ),
     )
@@ -227,8 +234,8 @@ def _two_area_tree() -> HierarchyTree:
             HierarchySite(
                 "Site",
                 (
-                    HierarchyArea("PressShop", "production", (HierarchyLine("L1", ("C1",)),)),
-                    HierarchyArea("RawWater", "production", (HierarchyLine("L1", ("C1",)),)),
+                    HierarchyArea("PressShop", "production", (HierarchyLine("L1", (HierarchyCell("C1"),)),)),
+                    HierarchyArea("RawWater", "production", (HierarchyLine("L1", (HierarchyCell("C1"),)),)),
                 ),
             ),
         ),
