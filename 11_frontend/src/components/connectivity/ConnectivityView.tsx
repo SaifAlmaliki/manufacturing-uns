@@ -82,12 +82,15 @@ export const ConnectivityView: React.FC = () => {
   const loadServers = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
-    const result = await unsGraphQLClient.getConnectivityServers('OPC_UA');
-    if (result === null) {
-      setLoadError('Connectivity catalog could not be loaded. GraphQL is unreachable.');
+    try {
+      setServers(await unsGraphQLClient.getConnectivityServers('OPC_UA'));
+    } catch (err) {
+      setLoadError(
+        err instanceof Error
+          ? `Connectivity catalog could not be loaded. ${err.message}`
+          : 'Connectivity catalog could not be loaded. GraphQL returned an error — not an empty plant.',
+      );
       setServers([]);
-    } else {
-      setServers(result);
     }
     setLoading(false);
   }, []);
@@ -250,7 +253,7 @@ export const ConnectivityView: React.FC = () => {
             <ConsoleCard padding="md" className="text-sm text-zinc-500">
               Loading OPC UA servers…
             </ConsoleCard>
-          ) : filtered.length === 0 ? (
+          ) : loadError ? null : filtered.length === 0 ? (
             <ConsoleCard padding="md" className="text-sm text-zinc-500">
               {search
                 ? 'No servers match this search.'
@@ -353,7 +356,7 @@ export const ConnectivityView: React.FC = () => {
         <DialogContent
           aria-label="Add OPC UA server"
           showCloseButton={false}
-          className="instrument-panel instrument-grain max-h-[90vh] gap-4 overflow-y-auto border-[#FF7A00]/20 sm:max-w-lg"
+          className="instrument-panel instrument-grain !overflow-y-auto max-h-[min(90dvh,52rem)] gap-4 overflow-x-hidden border-[#FF7A00]/20 sm:max-w-lg"
         >
           <DialogHeader>
             <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-[#FF7A00]">

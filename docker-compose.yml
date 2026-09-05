@@ -405,16 +405,14 @@ services:
     ports:
       - "8088:80"
     depends_on:
-      - graphql_server
-      # nginx.conf proxies /simulator to it, and nginx will not start on an unresolvable
-      # upstream hostname.
-      - uns_simulator
-      # nginx.conf proxies /grafana to it. Without this, System Operations shows the SPA
-      # fallback instead of the dashboards.
-      - uns_grafana
-      # nginx.conf proxies /auth to it — same reason: nginx refuses to start when an
-      # upstream hostname does not resolve.
-      - uns_keycloak
+      graphql_server:
+        condition: service_healthy
+      uns_simulator:
+        condition: service_started
+      uns_grafana:
+        condition: service_started
+      uns_keycloak:
+        condition: service_healthy
 
   uns_prometheus:
     image: "prom/prometheus:latest"

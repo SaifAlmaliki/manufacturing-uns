@@ -150,6 +150,28 @@ describe('access', () => {
 });
 
 describe('the OPC UA server table', () => {
+  it('shows a GraphQL catalog error without the empty-plant copy', async () => {
+    getConnectivityServers.mockRejectedValue(
+      new Error('column connectivity_servers.auth_mode does not exist'),
+    );
+    render(<ConnectivityView />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/column connectivity_servers.auth_mode does not exist/i),
+      ).toBeTruthy(),
+    );
+    expect(screen.queryByText(/no opc ua servers yet/i)).toBeNull();
+  });
+
+  it('shows the empty-plant copy when the catalog has no servers', async () => {
+    getConnectivityServers.mockResolvedValue([]);
+    render(<ConnectivityView />);
+
+    await waitFor(() => expect(screen.getByText(/no opc ua servers yet/i)).toBeTruthy());
+    expect(screen.queryByText(/could not be loaded/i)).toBeNull();
+  });
+
   it('lists an OPC server and offers Browse data', async () => {
     render(<ConnectivityView />);
     await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());

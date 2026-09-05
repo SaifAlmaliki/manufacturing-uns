@@ -26,8 +26,12 @@ services:
 
   uns_frontend:
     depends_on: !reset
-      - graphql_server
-      - uns_grafana
+      graphql_server:
+        condition: service_healthy
+      uns_grafana:
+        condition: service_started
+      uns_keycloak:
+        condition: service_healthy
 
   uns_prometheus:
     depends_on: !reset

@@ -681,17 +681,18 @@ export class UnsGraphQLClient {
   /**
    * Assets & Connectivity (ADR-0008). Servers and tags live in `console.connectivity_*`;
    * the console edits them only through GraphQL, and `opcua_client` polls the catalog.
-   * Null means the endpoint could not be reached, not that the platform has no servers.
+   * Throws when GraphQL is down or the catalog query fails — an empty array is a
+   * plant with no servers, not a transport problem.
    */
   public async getConnectivityServers(
     protocol?: 'OPC_UA',
-  ): Promise<GraphqlConnectivityServer[] | null> {
+  ): Promise<GraphqlConnectivityServer[]> {
     const res = await this.executeQuery<{ getConnectivityServers: GraphqlConnectivityServer[] }>(
       GET_CONNECTIVITY_SERVERS_QUERY,
       protocol ? { protocol } : {},
     )
     if (res.error) {
-      return null
+      throw new Error(res.error)
     }
     return res.data?.getConnectivityServers ?? []
   }
