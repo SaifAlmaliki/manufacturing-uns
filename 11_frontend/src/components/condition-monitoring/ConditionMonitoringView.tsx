@@ -8,7 +8,8 @@ import { unsGraphQLClient } from '../../services/graphql/client';
 import type { GraphqlConnectivityServer } from '../../services/graphql/types';
 import { filterTagsBySearch, tagInScope } from '../../lib/condition-monitoring/match-tags';
 import { conditionKpis } from '../../lib/condition-monitoring/kpis';
-import { DEFAULT_TIME_RANGE, type TimeRangePreset } from '../../lib/condition-monitoring/time-range';
+import { extractSample, mergeSeries, type Sample } from '../../lib/condition-monitoring/series';
+import { DEFAULT_TIME_RANGE, rangeWindow, type TimeRangePreset } from '../../lib/condition-monitoring/time-range';
 import { AccessRestricted } from '../common/AccessRestricted';
 import { UnsTreeView } from '../home/UnsTreeView';
 import {
@@ -30,6 +31,10 @@ export const ConditionMonitoringView: React.FC = () => {
   const [scoped, setScoped] = useState(false);
   const [search, setSearch] = useState('');
   const [preset, setPreset] = useState<TimeRangePreset>(DEFAULT_TIME_RANGE);
+  const [historianByTopic, setHistorianByTopic] = useState<Record<string, Sample[]>>({});
+  const [liveByTopic, setLiveByTopic] = useState<Record<string, Sample[]>>({});
+  const [liveTopics, setLiveTopics] = useState<Set<string>>(() => new Set());
+  const [historianError, setHistorianError] = useState<string | null>(null);
 
   useEffect(() => {
     if (selectedNode) setScoped(true);
@@ -54,10 +59,58 @@ export const ConditionMonitoringView: React.FC = () => {
   const subscribed = servers.flatMap((s) => s.tags.filter((t) => t.subscribed));
   const scopedTags = subscribed.filter((t) => tagInScope(t, scoped ? selectedNode : null));
   const visible = filterTagsBySearch(scopedTags, search);
+  const visibleTopicsKey = visible.map((t) => t.mqttTopic).join('|');
+  const timeWindow = rangeWindow(preset, Date.now());
+
+  useEffect(() => {
+    const topics = visible.map((t) => t.mqttTopic);
+    const { fromIso, toIso } = rangeWindow(preset, Date.now());
+    let cancelled = false;
+    setHistorianError(null);
+    void Promise.all(
+      topics.map(async (topic) => {
+        const events = await unsGraphQLClient.getHistoricEvents(topic, fromIso, toIso);
+        return [
+          topic,
+          events
+            .map((e) => extractSample(e.payload, e.timestamp))
+            .filter((s): s is Sample => s !== null),
+        ] as const;
+      }),
+    )
+      .then((entries) => {
+        if (cancelled) return;
+        setHistorianByTopic(Object.fromEntries(entries));
+        setLiveByTopic({});
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setHistorianError(err instanceof Error ? err.message : 'Historian query failed.');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [preset, visibleTopicsKey]);
+
+  useEffect(() => {
+    const topics = visible.map((t) => t.mqttTopic);
+    if (topics.length === 0) return undefined;
+    return unsGraphQLClient.subscribeMqttMessages(topics, (msg) => {
+      const sample = extractSample(msg.payload, msg.timestamp);
+      if (!sample) return;
+      setLiveTopics((prev) => new Set(prev).add(msg.topic));
+      setLiveByTopic((prev) => ({
+        ...prev,
+        [msg.topic]: [...(prev[msg.topic] ?? []), sample],
+      }));
+    });
+  }, [visibleTopicsKey]);
+
   const kpis = conditionKpis({
     tags: visible,
     latestByTopic: {},
-    liveTopics: new Set(),
+    liveTopics,
     alarms: activeAlarms,
   });
 
@@ -71,9 +124,18 @@ export const ConditionMonitoringView: React.FC = () => {
 
   let body: React.ReactNode = (
     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-      {visible.map((tag) => (
-        <SignalCard key={`${tag.serverId}:${tag.nodeId}`} tag={tag} samples={[]} latest={undefined} />
-      ))}
+      {visible.map((tag) => {
+        const samples = mergeSeries(
+          historianByTopic[tag.mqttTopic] ?? [],
+          liveByTopic[tag.mqttTopic] ?? [],
+          timeWindow.fromMs,
+          Date.now(),
+        );
+        const latest = samples[samples.length - 1];
+        return (
+          <SignalCard key={`${tag.serverId}:${tag.nodeId}`} tag={tag} samples={samples} latest={latest} />
+        );
+      })}
     </div>
   );
   if (loadError) {
@@ -143,6 +205,11 @@ export const ConditionMonitoringView: React.FC = () => {
             {loadError ? (
               <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
                 {loadError}
+              </div>
+            ) : null}
+            {historianError ? (
+              <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+                {historianError}
               </div>
             ) : null}
             <FilterToolbar

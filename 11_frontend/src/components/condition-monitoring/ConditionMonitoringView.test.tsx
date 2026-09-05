@@ -168,3 +168,58 @@ describe('ConditionMonitoringView catalog', () => {
     expect(screen.queryByText('Fault')).toBeNull();
   });
 });
+
+describe('ConditionMonitoringView historian and live tail', () => {
+  it('loads historian points for visible topics and appends live MQTT samples', async () => {
+    const historianTs = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const liveTs = new Date().toISOString();
+    getHistoricEvents.mockImplementation(async (topic: string) => {
+      if (topic.endsWith('Fault')) {
+        return [
+          {
+            id: 'h1',
+            topic,
+            timestamp: historianTs,
+            payload: { value: false },
+          },
+        ];
+      }
+      return [];
+    });
+    let onMsg: ((msg: { topic: string; payload: unknown; timestamp: string; id: string }) => void) | undefined;
+    subscribeMqttMessages.mockImplementation((topics: string[], cb: typeof onMsg) => {
+      onMsg = cb;
+      return () => undefined;
+    });
+    renderPage();
+    await waitFor(() => expect(getHistoricEvents).toHaveBeenCalled());
+    expect(getHistoricEvents.mock.calls.map((c) => c[0]).sort()).toEqual([
+      'Server/OpcPlc/Distribution/P201/Fault',
+      'Server/OpcPlc/Distribution/P202/Speed',
+    ]);
+    expect(getHistoricEvents.mock.calls.every((c) => c.length === 3)).toBe(true);
+    expect(getHistoricEvents.mock.calls[0][1]).toEqual(expect.any(String));
+    expect(getHistoricEvents.mock.calls[0][2]).toEqual(expect.any(String));
+    await waitFor(() => expect(subscribeMqttMessages).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(
+        getHistoricEvents.mock.results.filter((r) => r.type === 'return').length,
+      ).toBeGreaterThan(0),
+    );
+    onMsg?.({
+      id: 'm1',
+      topic: 'Server/OpcPlc/Distribution/P201/Fault',
+      payload: { value: true },
+      timestamp: liveTs,
+    });
+    fireEvent.click(screen.getAllByRole('button', { name: /^table$/i })[0]);
+    await waitFor(() => expect(screen.getByText(/0 → 1/)).toBeTruthy());
+  });
+
+  it('shows a historian banner when getHistoricEvents throws and keeps cards', async () => {
+    getHistoricEvents.mockRejectedValue(new Error('historian down'));
+    renderPage();
+    await waitFor(() => expect(screen.getByText(/historian down/i)).toBeTruthy());
+    expect(screen.getByText('Fault')).toBeTruthy();
+  });
+});
