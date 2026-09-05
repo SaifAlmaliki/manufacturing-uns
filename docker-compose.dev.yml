@@ -5,6 +5,11 @@
 # for Vite on :5173; the main compose file keeps it unpublished by default.
 
 services:
+  # Plant seed is AcmeWater WTP; conf/oee/*.yaml still names the old Covestro line.
+  # Importing it fails the one-shot job and blocks GraphQL. Skip OEE on this overlay.
+  asset_model_setup:
+    command: ["--skip-oee-import"]
+
   uns_simulator:
     ports:
       - "8099:8099"
