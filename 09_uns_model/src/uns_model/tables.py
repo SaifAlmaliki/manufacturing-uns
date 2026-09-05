@@ -453,6 +453,17 @@ CONNECTIVITY_PROTOCOLS: tuple[str, ...] = ("opc_ua",)
 
 CONNECTIVITY_STATUSES: tuple[str, ...] = ("untested", "connected", "failed")
 
+CONNECTIVITY_AUTH_MODES: tuple[str, ...] = ("anonymous", "username", "x509")
+
+CONNECTIVITY_SECURITY_POLICIES: tuple[str, ...] = (
+    "None",
+    "Basic256Sha256",
+    "Aes128Sha256RsaOaep",
+    "Aes256Sha256RsaPss",
+)
+
+CONNECTIVITY_SECURITY_MODES: tuple[str, ...] = ("None", "Sign", "SignAndEncrypt")
+
 
 class ConnectivityServer(Base):
     """
@@ -477,6 +488,18 @@ class ConnectivityServer(Base):
             _one_of("last_status", CONNECTIVITY_STATUSES),
             name="connectivity_servers_last_status_check",
         ),
+        CheckConstraint(
+            _one_of("auth_mode", CONNECTIVITY_AUTH_MODES),
+            name="connectivity_servers_auth_mode_check",
+        ),
+        CheckConstraint(
+            _one_of("security_policy", CONNECTIVITY_SECURITY_POLICIES),
+            name="connectivity_servers_security_policy_check",
+        ),
+        CheckConstraint(
+            _one_of("security_mode", CONNECTIVITY_SECURITY_MODES),
+            name="connectivity_servers_security_mode_check",
+        ),
         Index("idx_connectivity_servers_protocol", "protocol"),
         {"schema": CONSOLE_SCHEMA},
     )
@@ -485,6 +508,14 @@ class ConnectivityServer(Base):
     name: Mapped[str] = mapped_column(Text, nullable=False)
     protocol: Mapped[str] = mapped_column(Text, nullable=False)
     endpoint: Mapped[str] = mapped_column(Text, nullable=False)
+    auth_mode: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'anonymous'"))
+    security_policy: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'None'"))
+    security_mode: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'None'"))
+    username: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
+    password: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
+    certificate: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
+    private_key: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
+    server_certificate: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
 
     last_status: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=text("'untested'")

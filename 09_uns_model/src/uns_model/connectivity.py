@@ -38,11 +38,18 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 
 from uns_model.engine import Database
+import re
+
 from uns_model.tables import (
+    CONNECTIVITY_AUTH_MODES,
     CONNECTIVITY_PROTOCOLS,
+    CONNECTIVITY_SECURITY_MODES,
+    CONNECTIVITY_SECURITY_POLICIES,
     ConnectivityServer,
     ConnectivityTag,
 )
+
+_ENDPOINT = re.compile(r"^opc\.tcp://[^\s/:]+:\d{1,5}(/.*)?$")
 
 LOGGER = logging.getLogger(__name__)
 
@@ -61,6 +68,14 @@ class ConnectivityServerSpec:
     name: str
     protocol: str
     endpoint: str
+    auth_mode: str = "anonymous"
+    security_policy: str = "None"
+    security_mode: str = "None"
+    username: str = ""
+    password: str = ""
+    certificate: str = ""
+    private_key: str = ""
+    server_certificate: str = ""
 
     def validate(self) -> None:
         """Reject what the vocabularies do not allow, before Postgres does."""
@@ -70,7 +85,25 @@ class ConnectivityServerSpec:
             raise ValueError(f"Connectivity server {self.id!r} needs a name")
         if not self.endpoint:
             raise ValueError(f"Connectivity server {self.id!r} needs an endpoint")
+        if not _ENDPOINT.match(self.endpoint):
+            raise ValueError("Endpoint must be opc.tcp://host:port")
         _require_one_of("protocol", self.protocol, CONNECTIVITY_PROTOCOLS)
+        _require_one_of("auth_mode", self.auth_mode, CONNECTIVITY_AUTH_MODES)
+        _require_one_of("security_policy", self.security_policy, CONNECTIVITY_SECURITY_POLICIES)
+        _require_one_of("security_mode", self.security_mode, CONNECTIVITY_SECURITY_MODES)
+        if self.security_policy == "None" and self.security_mode != "None":
+            raise ValueError("Security mode must be None when the policy is None")
+        if self.security_policy != "None" and self.security_mode == "None":
+            raise ValueError("Choose Sign or SignAndEncrypt when a security policy is set")
+        if self.security_policy != "None" and (not self.certificate or not self.private_key):
+            raise ValueError("Certificate and private key paths are required for a secured channel")
+        if self.auth_mode == "username" and (not self.username or not self.password):
+            raise ValueError("Username and password are required")
+        if self.auth_mode == "x509":
+            if not self.certificate or not self.private_key:
+                raise ValueError("Certificate and private key paths are required for X509 authentication")
+            if self.security_policy == "None":
+                raise ValueError("X509 authentication needs a security policy other than None")
 
     def column_values(self) -> dict[str, Any]:
         """The spec as column values."""
@@ -165,6 +198,10 @@ class ConnectivityRepository:
     async def save_server(self, spec: ConnectivityServerSpec) -> ConnectivityServer:
         """Create or replace one OPC-UA server."""
         spec.validate()
+        if not spec.password:
+            existing = await self._server_by_id(spec.id)
+            if existing is not None and existing.password:
+                spec.password = existing.password
         values = spec.column_values()
         async with self._database.session() as session:
             statement = (
@@ -180,6 +217,12 @@ class ConnectivityRepository:
             return (
                 await session.execute(select(ConnectivityServer).where(ConnectivityServer.id == spec.id))
             ).scalar_one()
+
+    async def _server_by_id(self, server_id: str) -> ConnectivityServer | None:
+        async with self._database.session() as session:
+            return (
+                await session.execute(select(ConnectivityServer).where(ConnectivityServer.id == server_id))
+            ).scalar_one_or_none()
 
     async def delete_server(self, server_id: str) -> bool:
         """Delete a server and its tags (cascade). False when there was nothing to delete."""

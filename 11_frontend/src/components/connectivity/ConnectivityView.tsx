@@ -14,6 +14,7 @@ import {
   BtnSecondary,
   ConsoleCard,
   ConsoleInput,
+  ConsoleSelect,
   FilterToolbar,
   PageContent,
   PageShell,
@@ -28,6 +29,14 @@ import {
   statusDotClass,
   statusLabel,
 } from '../../lib/connectivity/map-servers';
+import {
+  CONNECTIVITY_SECURITY_MODES,
+  CONNECTIVITY_SECURITY_POLICIES,
+  validateConnectivityServer,
+  type ConnectivityAuthMode,
+  type ConnectivitySecurityMode,
+  type ConnectivitySecurityPolicy,
+} from '../../lib/connectivity/validate-server';
 import { BrowseDataDrawer } from './BrowseDataDrawer';
 
 function newServerId(): string {
@@ -44,8 +53,18 @@ export const ConnectivityView: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [draftProtocol, setDraftProtocol] = useState<ConnectivityTabId>('opc_ua');
   const [draftName, setDraftName] = useState('');
   const [draftEndpoint, setDraftEndpoint] = useState('opc.tcp://');
+  const [draftAuthMode, setDraftAuthMode] = useState<ConnectivityAuthMode>('anonymous');
+  const [draftSecurityPolicy, setDraftSecurityPolicy] =
+    useState<ConnectivitySecurityPolicy>('None');
+  const [draftSecurityMode, setDraftSecurityMode] = useState<ConnectivitySecurityMode>('None');
+  const [draftUsername, setDraftUsername] = useState('');
+  const [draftPassword, setDraftPassword] = useState('');
+  const [draftCertificate, setDraftCertificate] = useState('');
+  const [draftPrivateKey, setDraftPrivateKey] = useState('');
+  const [draftServerCertificate, setDraftServerCertificate] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
@@ -73,27 +92,59 @@ export const ConnectivityView: React.FC = () => {
 
   const filtered = useMemo(() => filterServers(servers, search), [servers, search]);
 
+  const resetDraft = () => {
+    setDraftProtocol('opc_ua');
+    setDraftName('');
+    setDraftEndpoint('opc.tcp://');
+    setDraftAuthMode('anonymous');
+    setDraftSecurityPolicy('None');
+    setDraftSecurityMode('None');
+    setDraftUsername('');
+    setDraftPassword('');
+    setDraftCertificate('');
+    setDraftPrivateKey('');
+    setDraftServerCertificate('');
+    setSaveError(null);
+  };
+
   const handleAdd = async () => {
-    if (!draftName.trim() || !draftEndpoint.trim()) {
-      setSaveError('Name and endpoint are required.');
+    const invalid = validateConnectivityServer({
+      protocol: draftProtocol,
+      name: draftName,
+      endpoint: draftEndpoint,
+      authMode: draftAuthMode,
+      securityPolicy: draftSecurityPolicy,
+      securityMode: draftSecurityMode,
+      username: draftUsername,
+      password: draftPassword,
+      certificate: draftCertificate,
+      privateKey: draftPrivateKey,
+      serverCertificate: draftServerCertificate,
+    });
+    if (invalid) {
+      setSaveError(invalid);
       return;
     }
     setSaving(true);
     setSaveError(null);
-    const input: GraphqlConnectivityServerInput = {
-      id: newServerId(),
-      name: draftName.trim(),
-      protocol: 'OPC_UA' as GraphqlConnectivityProtocol,
-      endpoint: draftEndpoint.trim(),
-    };
     try {
+      const probe = await unsGraphQLClient.testOpcUaConnection(draftEndpoint.trim());
+      if (!probe.ok) {
+        setSaveError(probe.error || 'Connection test failed. The server was not added.');
+        return;
+      }
+      const input: GraphqlConnectivityServerInput = {
+        id: newServerId(),
+        name: draftName.trim(),
+        protocol: 'OPC_UA' as GraphqlConnectivityProtocol,
+        endpoint: draftEndpoint.trim(),
+      };
       const saved = await unsGraphQLClient.saveConnectivityServer(input);
       setServers((prev) => [...prev, saved]);
       setAddOpen(false);
-      setDraftName('');
-      setDraftEndpoint('opc.tcp://');
+      resetDraft();
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Server was not saved');
+      setSaveError(err instanceof Error ? err.message : 'Server was not added');
     } finally {
       setSaving(false);
     }
@@ -165,7 +216,10 @@ export const ConnectivityView: React.FC = () => {
             trailing={
               canMutate ? (
                 <BtnPrimary
-                  onClick={() => setAddOpen(true)}
+                  onClick={() => {
+                    resetDraft();
+                    setAddOpen(true);
+                  }}
                   className="px-3 py-1.5 text-xs"
                   aria-label="Add Server"
                 >
@@ -274,19 +328,38 @@ export const ConnectivityView: React.FC = () => {
       {addOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 backdrop-blur-sm">
           <div
-            className={`${consoleTokens.card} flex w-full max-w-md flex-col gap-3 p-5 shadow-2xl`}
+            className={`${consoleTokens.card} flex max-h-[90vh] w-full max-w-lg flex-col gap-3 overflow-y-auto p-5 shadow-2xl`}
             role="dialog"
             aria-label="Add OPC UA server"
           >
             <h2 className="text-sm font-semibold text-white">Add OPC UA server</h2>
+            <p className="text-[11px] text-zinc-500">
+              OPC UA is what this slice serves. Other protocols stay listed for later.
+            </p>
             {saveError && (
               <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
                 {saveError}
               </div>
             )}
             <label className="block space-y-1.5">
+              <span className="text-xs font-medium text-zinc-500">Protocol</span>
+              <ConsoleSelect
+                aria-label="Protocol"
+                value={draftProtocol}
+                onChange={(e) => setDraftProtocol(e.target.value as ConnectivityTabId)}
+              >
+                {PROTOCOL_TABS.map((tab) => (
+                  <option key={tab.id} value={tab.id} disabled={!isProtocolInSlice(tab.id)}>
+                    {tab.label}
+                    {isProtocolInSlice(tab.id) ? '' : ' — later'}
+                  </option>
+                ))}
+              </ConsoleSelect>
+            </label>
+            <label className="block space-y-1.5">
               <span className="text-xs font-medium text-zinc-500">Name</span>
               <ConsoleInput
+                aria-label="Name"
                 value={draftName}
                 onChange={(e) => setDraftName(e.target.value)}
                 placeholder="opcplc"
@@ -295,22 +368,155 @@ export const ConnectivityView: React.FC = () => {
             <label className="block space-y-1.5">
               <span className="text-xs font-medium text-zinc-500">Endpoint</span>
               <ConsoleInput
+                aria-label="Endpoint"
                 value={draftEndpoint}
                 onChange={(e) => setDraftEndpoint(e.target.value)}
-                placeholder="opc.tcp://desktop-h4hdql2:50000/"
+                placeholder="opc.tcp://host.docker.internal:50000/"
                 className="font-mono text-xs"
               />
             </label>
+
+            <fieldset className="space-y-2 rounded-xl border border-zinc-800 p-3">
+              <legend className="px-1 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+                Security
+              </legend>
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium text-zinc-500">Security policy</span>
+                <ConsoleSelect
+                  aria-label="Security policy"
+                  value={draftSecurityPolicy}
+                  onChange={(e) => {
+                    const next = e.target.value as ConnectivitySecurityPolicy;
+                    setDraftSecurityPolicy(next);
+                    setDraftSecurityMode(next === 'None' ? 'None' : 'SignAndEncrypt');
+                  }}
+                >
+                  {CONNECTIVITY_SECURITY_POLICIES.map((policy) => (
+                    <option key={policy} value={policy}>
+                      {policy}
+                    </option>
+                  ))}
+                </ConsoleSelect>
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium text-zinc-500">Security mode</span>
+                <ConsoleSelect
+                  aria-label="Security mode"
+                  value={draftSecurityMode}
+                  disabled={draftSecurityPolicy === 'None'}
+                  onChange={(e) => setDraftSecurityMode(e.target.value as ConnectivitySecurityMode)}
+                >
+                  {CONNECTIVITY_SECURITY_MODES.filter(
+                    (mode) => draftSecurityPolicy !== 'None' || mode === 'None',
+                  ).map((mode) => (
+                    <option key={mode} value={mode}>
+                      {mode}
+                    </option>
+                  ))}
+                </ConsoleSelect>
+              </label>
+            </fieldset>
+
+            <fieldset className="space-y-2 rounded-xl border border-zinc-800 p-3">
+              <legend className="px-1 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+                Authentication
+              </legend>
+              <div className="flex flex-wrap gap-3 text-xs text-zinc-300">
+                {(
+                  [
+                    ['anonymous', 'Anonymous'],
+                    ['username', 'Username/Password'],
+                    ['x509', 'X509 Certificate'],
+                  ] as const
+                ).map(([value, label]) => (
+                  <label key={value} className="inline-flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="connectivity-auth-mode"
+                      value={value}
+                      checked={draftAuthMode === value}
+                      onChange={() => setDraftAuthMode(value)}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+              {draftAuthMode === 'username' && (
+                <>
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-medium text-zinc-500">Username</span>
+                    <ConsoleInput
+                      aria-label="Username"
+                      value={draftUsername}
+                      onChange={(e) => setDraftUsername(e.target.value)}
+                      autoComplete="off"
+                    />
+                  </label>
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-medium text-zinc-500">Password</span>
+                    <ConsoleInput
+                      aria-label="Password"
+                      type="password"
+                      value={draftPassword}
+                      onChange={(e) => setDraftPassword(e.target.value)}
+                      autoComplete="new-password"
+                    />
+                  </label>
+                </>
+              )}
+              {(draftAuthMode === 'x509' || draftSecurityPolicy !== 'None') && (
+                <>
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-medium text-zinc-500">Certificate path</span>
+                    <ConsoleInput
+                      aria-label="Certificate path"
+                      value={draftCertificate}
+                      onChange={(e) => setDraftCertificate(e.target.value)}
+                      placeholder="/certs/client.der"
+                      className="font-mono text-xs"
+                    />
+                  </label>
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-medium text-zinc-500">Private key path</span>
+                    <ConsoleInput
+                      aria-label="Private key path"
+                      value={draftPrivateKey}
+                      onChange={(e) => setDraftPrivateKey(e.target.value)}
+                      placeholder="/certs/client.key"
+                      className="font-mono text-xs"
+                    />
+                  </label>
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-medium text-zinc-500">Server certificate path</span>
+                    <ConsoleInput
+                      aria-label="Server certificate path"
+                      value={draftServerCertificate}
+                      onChange={(e) => setDraftServerCertificate(e.target.value)}
+                      placeholder="optional"
+                      className="font-mono text-xs"
+                    />
+                  </label>
+                </>
+              )}
+            </fieldset>
+
             <div className="flex items-center justify-end gap-2 pt-1">
-              <BtnSecondary onClick={() => setAddOpen(false)} className="px-3 py-1.5 text-xs">
+              <BtnSecondary
+                onClick={() => {
+                  setAddOpen(false);
+                  resetDraft();
+                }}
+                className="px-3 py-1.5 text-xs"
+              >
                 Cancel
               </BtnSecondary>
               <BtnPrimary
                 onClick={() => void handleAdd()}
                 disabled={saving}
                 className="px-4 py-1.5 text-xs"
+                aria-label="Add"
               >
-                {saving ? 'Saving…' : 'Save'}
+                {saving ? 'Adding…' : 'Add'}
               </BtnPrimary>
             </div>
           </div>

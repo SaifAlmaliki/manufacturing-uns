@@ -162,16 +162,37 @@ describe('the OPC UA server table', () => {
     await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
 
     fireEvent.click(screen.getByRole('button', { name: /add server/i }));
-    const nameInput = await screen.findByLabelText(/name/i);
-    const endpointInput = await screen.findByLabelText(/endpoint/i);
+    const nameInput = await screen.findByLabelText('Name');
+    const endpointInput = await screen.findByLabelText('Endpoint');
     fireEvent.change(nameInput, { target: { value: 'wtp' } });
     fireEvent.change(endpointInput, { target: { value: 'opc.tcp://desktop-h4hdql2:50000/' } });
-    fireEvent.click(screen.getByRole('button', { name: /save/i }));
+    expect(screen.getByLabelText('Protocol')).toBeTruthy();
+    expect(screen.getByLabelText('Security policy')).toBeTruthy();
+    expect(screen.getByText('Anonymous')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /^add$/i }));
 
+    await waitFor(() => expect(testOpcUaConnection).toHaveBeenCalledWith('opc.tcp://desktop-h4hdql2:50000/'));
     await waitFor(() => expect(saveConnectivityServer).toHaveBeenCalled());
     expect(saveConnectivityServer).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'wtp', endpoint: 'opc.tcp://desktop-h4hdql2:50000/' }),
     );
+  });
+
+  it('does not add a server when username is chosen without a password', async () => {
+    render(<ConnectivityView />);
+    await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: /add server/i }));
+    fireEvent.change(await screen.findByLabelText('Name'), { target: { value: 'wtp' } });
+    fireEvent.change(screen.getByLabelText('Endpoint'), {
+      target: { value: 'opc.tcp://host.docker.internal:50000/' },
+    });
+    fireEvent.click(screen.getByLabelText('Username/Password'));
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'eng' } });
+    fireEvent.click(screen.getByRole('button', { name: /^add$/i }));
+
+    expect(screen.getByText('Username and password are required.')).toBeTruthy();
+    expect(saveConnectivityServer).not.toHaveBeenCalled();
   });
 
   it('tests a connection and reports the outcome', async () => {
