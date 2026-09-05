@@ -59,7 +59,7 @@ sites:
         machines: []
       - name: P202
         machines:
-        - Machine3050
+        - Machine3060
       - name: FT201
         machines: []
       - name: PT201
