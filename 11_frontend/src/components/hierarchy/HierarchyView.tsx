@@ -9,6 +9,15 @@ import type {
   GraphqlHierarchyTree,
   GraphqlPrefixRenameInput,
 } from '../../services/graphql/types';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { AccessRestricted } from '../common/AccessRestricted';
 import {
   BtnGhost,
@@ -25,9 +34,6 @@ import { AssetLevelIcon } from './AssetLevelIcon';
 import { NewAssetMenu } from './NewAssetMenu';
 import { levelDef, type NodeLevel } from './hierarchyLevels';
 import { type NodeRef, cloneTree, insertDescendant } from './hierarchyTree';
-
-const SIMULATOR_BANNER =
-  'The simulator still publishes the shipped WTP paths. Renamed nodes will not match live simulator topics until the publisher is retargeted. The old graph branch reappears while anything still publishes the old prefix; the graph rename is durable only after the publisher is retargeted.';
 
 function nodeName(tree: GraphqlHierarchyTree, ref: NodeRef): string {
   switch (ref.level) {
@@ -47,6 +53,31 @@ function nodeName(tree: GraphqlHierarchyTree, ref: NodeRef): string {
         ''
       );
   }
+}
+
+function treePrefixes(tree: GraphqlHierarchyTree): Set<string> {
+  const prefixes = new Set<string>();
+  prefixes.add(tree.enterprise);
+  for (const site of tree.sites) {
+    const sitePrefix = joinSegments(tree.enterprise, site.name);
+    prefixes.add(sitePrefix);
+    for (const area of site.areas) {
+      const areaPrefix = joinSegments(sitePrefix, area.name);
+      prefixes.add(areaPrefix);
+      for (const line of area.lines) {
+        const linePrefix = joinSegments(areaPrefix, line.name);
+        prefixes.add(linePrefix);
+        for (const cell of line.cells) {
+          const cellPrefix = joinSegments(linePrefix, cell.name);
+          prefixes.add(cellPrefix);
+          for (const machine of cell.machines) {
+            prefixes.add(joinSegments(cellPrefix, machine));
+          }
+        }
+      }
+    }
+  }
+  return prefixes;
 }
 
 function nodePrefix(tree: GraphqlHierarchyTree, ref: NodeRef): string {
@@ -179,8 +210,17 @@ function recordRename(
   renames: GraphqlPrefixRenameInput[],
   oldPrefix: string,
   newPrefix: string,
+  knownOldPrefixes?: Set<string>,
 ): GraphqlPrefixRenameInput[] {
   if (oldPrefix === newPrefix) return renames;
+  const chainedFromKnown = renames.some((r) => r.newPrefix === oldPrefix);
+  if (
+    knownOldPrefixes &&
+    !knownOldPrefixes.has(oldPrefix) &&
+    !chainedFromKnown
+  ) {
+    return renames;
+  }
   let next = [...renames];
   const chained = next.findIndex((r) => r.newPrefix === oldPrefix);
   if (chained >= 0) {
@@ -378,6 +418,7 @@ export const HierarchyView: React.FC = () => {
   const { updateSettings } = useUNS();
 
   const [tree, setTree] = useState<GraphqlHierarchyTree | null>(null);
+  const [baseline, setBaseline] = useState<GraphqlHierarchyTree | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState<NodeRef | null>(null);
   const [draftName, setDraftName] = useState('');
@@ -388,6 +429,7 @@ export const HierarchyView: React.FC = () => {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [job, setJob] = useState<GraphqlHierarchyMigrateJob | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
 
   useEffect(() => {
     if (!canEdit) return;
@@ -400,6 +442,7 @@ export const HierarchyView: React.FC = () => {
         return;
       }
       setTree(next);
+      setBaseline(next);
       setSelected({ level: 'enterprise' });
       setDraftName(next.enterprise);
       setLoadError(null);
@@ -430,13 +473,18 @@ export const HierarchyView: React.FC = () => {
     const oldPrefix = nodePrefix(tree, selected);
     const nextTree = applyName(tree, selected, nextName);
     const newPrefix = nodePrefix(nextTree, selected);
-    const nextRenames = recordRename(renames, oldPrefix, newPrefix);
+    const nextRenames = recordRename(
+      renames,
+      oldPrefix,
+      newPrefix,
+      baseline ? treePrefixes(baseline) : undefined,
+    );
     setTree(nextTree);
     setRenames(nextRenames);
     setDirty(true);
     setFieldError(null);
     return { tree: nextTree, renames: nextRenames };
-  }, [tree, selected, draftName, renames]);
+  }, [tree, selected, draftName, renames, baseline]);
 
   const selectNode = (ref: NodeRef) => {
     if (selected && !refsEqual(selected, ref)) {
@@ -495,6 +543,7 @@ export const HierarchyView: React.FC = () => {
     try {
       const result = await unsGraphQLClient.saveHierarchy(committed.tree, committed.renames);
       setTree(result.tree);
+      setBaseline(result.tree);
       setRenames([]);
       setDirty(false);
       setJob(result.job);
@@ -553,10 +602,6 @@ export const HierarchyView: React.FC = () => {
             <PageStat compact label="Cells" value={counts?.cells ?? '—'} icon={<GitBranch className="size-3.5 text-muted-foreground" />} />
             <PageStat compact label="Machines" value={counts?.machines ?? '—'} icon={<Cog className="size-3.5 text-muted-foreground" />} />
           </CompactKpiRow>
-
-          <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-            {SIMULATOR_BANNER}
-          </div>
 
           {job && (
             <div
@@ -708,7 +753,7 @@ export const HierarchyView: React.FC = () => {
                     <div className="flex flex-wrap gap-2 pt-1">
                       <NewAssetMenu parentLevel={menuParent} onPick={handleAdd} />
                       <BtnGhost
-                        onClick={handleRemove}
+                        onClick={() => setConfirmRemove(true)}
                         disabled={selected.level === 'enterprise'}
                         className="text-rose-400 hover:text-rose-300"
                       >
@@ -725,6 +770,37 @@ export const HierarchyView: React.FC = () => {
           )}
         </PageContent>
       </div>
+
+      <Dialog open={confirmRemove} onOpenChange={(open) => !open && setConfirmRemove(false)}>
+        <DialogContent
+          aria-label="Confirm remove"
+          showCloseButton={false}
+          className="instrument-panel instrument-grain border-[#FF7A00]/20 sm:max-w-sm"
+        >
+          <DialogHeader>
+            <DialogTitle className="font-heading text-lg">
+              Remove this {selected ? levelDef(selected.level).label.toLowerCase() : 'node'}?
+            </DialogTitle>
+            <DialogDescription>
+              {draftName || 'This node'} and anything under it leave the plant tree. Save to persist.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmRemove(false)}>
+              Cancel
+            </Button>
+            <Button
+              aria-label="Confirm"
+              onClick={() => {
+                handleRemove();
+                setConfirmRemove(false);
+              }}
+            >
+              Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </PageShell>
   );
 };

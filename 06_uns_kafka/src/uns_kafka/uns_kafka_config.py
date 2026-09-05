@@ -22,6 +22,7 @@ import logging
 from typing import Literal
 
 from uns_config import get_settings
+from uns_config.kafka import sanitize_kafka_config
 from uns_mqtt.mqtt_listener import MQTTVersion
 
 # Logger
@@ -69,4 +70,4 @@ class KAFKAConfig:
     Read the Kafka configurations required to connect to the Kafka broker
     """
 
-    kafka_config_map: dict = settings.get("kafka.config")
+    kafka_config_map: dict = sanitize_kafka_config(settings.get("kafka.config"))

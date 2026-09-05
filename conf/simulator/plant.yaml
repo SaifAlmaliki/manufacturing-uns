@@ -7,45 +7,65 @@ sites:
     lines:
     - name: Train10
       cells:
-      - V101
-      - P101
-      - P102
-      - P103
-      - T101
-      - FT101
-      - PT101
+      - name: V101
+        machines: []
+      - name: P101
+        machines: []
+      - name: P102
+        machines: []
+      - name: P103
+        machines: []
+      - name: T101
+        machines: []
+      - name: FT101
+        machines: []
+      - name: PT101
+        machines: []
   - name: Treatment
     kind: production
     lines:
     - name: Train1
       cells:
-      - B101
-      - DP101
-      - AIT101
+      - name: B101
+        machines: []
+      - name: DP101
+        machines: []
+      - name: AIT101
+        machines: []
   - name: Filtration
     kind: production
     lines:
     - name: Train1
       cells:
-      - F101
-      - V201
-      - V202
+      - name: F101
+        machines: []
+      - name: V201
+        machines: []
+      - name: V202
+        machines: []
   - name: Storage
     kind: production
     lines:
     - name: Train1
       cells:
-      - T201
+      - name: T201
+        machines: []
   - name: Distribution
     kind: production
     lines:
     - name: Train1
       cells:
-      - P201
-      - P202
-      - FT201
-      - PT201
-      - V301
+      - name: P201111
+        machines: []
+      - name: P202
+        machines:
+        - Machine3050
+      - name: FT201
+        machines: []
+      - name: PT201
+        machines: []
+      - name: V301
+        machines: []
 plant: {}
 profiles:
   wtp:

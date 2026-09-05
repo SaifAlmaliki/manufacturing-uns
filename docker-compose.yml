@@ -258,7 +258,9 @@ services:
       UNS_CONF_DIR: /app/conf
       UNS_MODULE: 06_uns_kafka
       UNS_mqtt__host: uns_mqtt_broker
-      UNS_kafka__config: '@json {"client.id": "uns_kafka_client", "bootstrap.servers": "uns_kafka_broker:9092", "enable.idempotence": true, "retries": 10, "compression.type": "gzip"}'
+      # 29092 is the in-network PLAINTEXT listener. 9092 advertises localhost and
+      # breaks producers that run inside the compose network.
+      UNS_kafka__config: '@json {"client.id": "uns_kafka_client", "bootstrap.servers": "uns_kafka_broker:29092", "enable.idempotence": true, "retries": 10, "compression.type": "gzip"}'
     depends_on:
       uns_mqtt_broker:
         condition: service_healthy
