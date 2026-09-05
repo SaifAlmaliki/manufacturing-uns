@@ -158,6 +158,37 @@ def _cells(hierarchy: Mapping[str, Any]) -> list[tuple[str, str, str, str, str]]
     return cells
 
 
+def _cell_entries(
+    hierarchy: Mapping[str, Any],
+) -> list[tuple[str, str, str, str, str, tuple[str, ...]]]:
+    """One row per Work Cell: path segments plus authored machine names."""
+    rows: list[tuple[str, str, str, str, str, tuple[str, ...]]] = []
+    for site in hierarchy.get("sites") or []:
+        site_name = _named(site)
+        for area in _as_mapping(site).get("areas") or []:
+            area_name = _named(area)
+            for line in _as_mapping(area).get("lines") or []:
+                line_name = _named(line)
+                for cell in _as_mapping(line).get("cells") or []:
+                    authored: tuple[str, ...] = ()
+                    if isinstance(cell, Mapping):
+                        authored = tuple(str(m) for m in (cell.get("machines") or ()))
+                    rows.append(
+                        (
+                            str(hierarchy["enterprise"]),
+                            site_name,
+                            area_name,
+                            line_name,
+                            _named(cell),
+                            authored,
+                        )
+                    )
+    if not rows:
+        # Preserve the existing flat-shape and empty-sites errors via _cells.
+        return [(*segments, ()) for segments in _cells(hierarchy)]
+    return rows
+
+
 def _machines(simulator: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
     """
     Machine name to its sensor definitions.
@@ -211,14 +242,15 @@ def plan_from_simulator_config(simulator: Mapping[str, Any]) -> SeedPlan:
     sites_seen: set[str] = set()
     lines_seen: set[tuple[str, ...]] = set()
 
-    for segments in _cells(_as_mapping(hierarchy)):
+    for *segments, authored in _cell_entries(_as_mapping(hierarchy)):
+        segments = tuple(segments)
         cell_branch = [
             AssetSpec(segment=segment, level=level)
             for segment, level in zip(segments, SIMULATOR_LEVELS, strict=True)
         ]
         plan.branches.append(cell_branch)
 
-        cell_machines = list(machines)
+        cell_machines = list(authored) if authored else list(machines)
         if segments[1] not in sites_seen:
             sites_seen.add(segments[1])
             cell_machines.append(SITE_MACHINE)

@@ -395,6 +395,40 @@ def test_plan_from_hierarchy_tree_without_extra_has_no_plc_machines():
     assert "E/S/A/L/V101/HMI" in plan.asset_paths
 
 
+def test_authored_machines_replace_the_plc_stamp_on_that_cell():
+    tree = HierarchyTree(
+        "E",
+        (
+            HierarchySite(
+                "S",
+                (
+                    HierarchyArea(
+                        "A",
+                        "production",
+                        (
+                            HierarchyLine(
+                                "L",
+                                (
+                                    HierarchyCell("V101", ("Dryer",)),
+                                    HierarchyCell("P101"),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    extra = {"plc": [{"equipment": "G1", "sensors": {"Temperature": {"unit": "°C"}}}]}
+    plan = plan_from_hierarchy_tree(tree, extra)
+    paths = plan.asset_paths
+    assert "E/S/A/L/V101/Dryer" in paths
+    assert "E/S/A/L/V101/G1" not in paths
+    assert "E/S/A/L/P101/G1" in paths
+    assert "E/S/A/L/V101/SCADA" in paths
+    assert "E/S/A/L/V101/HMI" in paths
+
+
 @pytest.mark.asyncio
 async def test_applying_a_smaller_tree_prunes_the_removed_cell():
     repository = RecordingRepository()
