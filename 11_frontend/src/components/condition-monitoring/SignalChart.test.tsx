@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
-import { chartPath, SignalChart } from './SignalChart';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import { chartPath, formatChartTime, SignalChart } from './SignalChart';
 import type { Sample } from '../../lib/condition-monitoring/series';
 
 const s = (t: number, v: number): Sample => ({ t, v, quality: null, boolean: false });
@@ -37,5 +37,39 @@ describe('SignalChart', () => {
   it('exposes time and value on an accessible hover target', () => {
     render(<SignalChart samples={[s(Date.parse('2026-09-05T17:02:00.000Z'), 1.35)]} mode="line" />);
     expect(screen.getByLabelText(/1\.35/)).toBeTruthy();
+  });
+
+  it('labels the time window and value range on the axes', () => {
+    const from = Date.parse('2026-09-05T17:00:00.000Z');
+    const to = Date.parse('2026-09-05T17:15:00.000Z');
+    render(
+      <SignalChart samples={[s(from, 1.1), s(to, 2.4)]} mode="line" fromMs={from} toMs={to} />,
+    );
+    expect(screen.getByTestId('chart-x-start')).toHaveTextContent(formatChartTime(from));
+    expect(screen.getByTestId('chart-x-end')).toHaveTextContent(formatChartTime(to));
+    expect(screen.getByTestId('chart-y-min')).toHaveTextContent('1.1');
+    expect(screen.getByTestId('chart-y-max')).toHaveTextContent('2.4');
+  });
+
+  it('shows a live hover readout with time and value', () => {
+    const t = Date.parse('2026-09-05T17:02:00.000Z');
+    render(<SignalChart samples={[s(t, 1.35)]} mode="line" />);
+    const svg = screen.getByRole('img', { name: /signal trend/i });
+    vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      bottom: 132,
+      right: 320,
+      width: 320,
+      height: 132,
+      toJSON: () => ({}),
+    });
+    expect(screen.queryByRole('status')).toBeNull();
+    fireEvent.mouseMove(svg, { clientX: 40, clientY: 40 });
+    const readout = screen.getByRole('status');
+    expect(readout.textContent).toMatch(/1\.35/);
+    expect(readout.textContent).toContain(formatChartTime(t));
   });
 });

@@ -23,7 +23,7 @@ describe('SignalCard', () => {
     render(<SignalCard tag={TAG} samples={samples} latest={samples[1]} />);
     expect(screen.getByText('Fault')).toBeTruthy();
     expect(screen.getByText('Server/OpcPlc/P201/Fault')).toBeTruthy();
-    expect(screen.getByText('1')).toBeTruthy();
+    expect(screen.getAllByText('1').length).toBeGreaterThan(0);
     expect(screen.getByText('BOOLEAN')).toBeTruthy();
     expect(screen.getByRole('img', { name: /signal trend/i })).toBeTruthy();
     expect(screen.queryByText(/0 → 1/)).toBeNull();
@@ -34,7 +34,7 @@ describe('SignalCard', () => {
     render(
       <SignalCard tag={{ ...TAG, displayName: 'Speed', mqttTopic: 'Server/OpcPlc/P202/Speed' }} samples={numeric} latest={numeric[0]} />,
     );
-    expect(screen.getByText('1.35')).toBeTruthy();
+    expect(screen.getAllByText('1.35').length).toBeGreaterThan(0);
     expect(screen.getByText('DOUBLE')).toBeTruthy();
     expect(screen.queryByText('BOOLEAN')).toBeNull();
   });
@@ -44,6 +44,29 @@ describe('SignalCard', () => {
     fireEvent.click(screen.getByRole('button', { name: /^table$/i }));
     expect(screen.getByText(/0 → 1/)).toBeTruthy();
     expect(screen.queryByRole('img', { name: /signal trend/i })).toBeNull();
+  });
+
+  it('keeps the table inside a fixed-height scroll region', () => {
+    const numeric: Sample[] = Array.from({ length: 40 }, (_, i) => ({
+      t: Date.parse('2026-09-05T17:00:00.000Z') + i * 1000,
+      v: 1 + i / 100,
+      quality: 'GOOD',
+      boolean: false,
+    }));
+    render(
+      <SignalCard
+        tag={{ ...TAG, displayName: 'Speed', mqttTopic: 'Server/OpcPlc/P202/Speed' }}
+        samples={numeric}
+        latest={numeric[numeric.length - 1]}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^table$/i }));
+    const body = screen.getByTestId('signal-card-body');
+    const card = body.parentElement;
+    expect(card?.className).toMatch(/h-\[17rem\]/);
+    expect(card?.className).toMatch(/overflow-hidden/);
+    expect(body.className).toMatch(/overflow-y-auto/);
+    expect(screen.getByText('1.01')).toBeTruthy();
   });
 
   it('renders — when quality is missing', () => {

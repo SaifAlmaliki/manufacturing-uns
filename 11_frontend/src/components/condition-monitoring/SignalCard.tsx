@@ -30,8 +30,8 @@ export const SignalCard: React.FC<{
   const rows = useMemo(() => numericTableRows(samples), [samples]);
 
   return (
-    <ConsoleCard padding="sm" className="flex min-h-[11rem] flex-col gap-2">
-      <div className="flex items-start justify-between gap-2">
+    <ConsoleCard padding="sm" className="flex h-[17rem] flex-col gap-2 overflow-hidden">
+      <div className="flex shrink-0 items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-foreground">{tag.displayName}</p>
           <p className="break-all font-mono text-[11px] text-muted-foreground">{tag.mqttTopic}</p>
@@ -46,7 +46,7 @@ export const SignalCard: React.FC<{
           <p className="text-[11px] text-muted-foreground">{latest?.quality ?? '—'}</p>
         </div>
       </div>
-      <div className="flex gap-1">
+      <div className="flex shrink-0 gap-1">
         <button
           type="button"
           className={`rounded px-2 py-0.5 text-[11px] ${mode === 'graph' ? 'bg-muted text-foreground' : 'text-muted-foreground'}`}
@@ -62,33 +62,35 @@ export const SignalCard: React.FC<{
           Table
         </button>
       </div>
-      {mode === 'graph' ? (
-        <SignalChart samples={samples} mode={isBoolean ? 'step' : 'line'} fromMs={fromMs} toMs={toMs} />
-      ) : isBoolean ? (
-        <table className="w-full text-left text-[11px] text-foreground">
-          <tbody>
-            {transitions.map((row) => (
-              <tr key={row.t}>
-                <td className="py-0.5 tabular-nums text-muted-foreground">{clock(row.t)}</td>
-                <td>
-                  {row.from} → {row.to}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : (
-        <table className="w-full text-left text-[11px] text-foreground">
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.t}>
-                <td className="py-0.5 tabular-nums text-muted-foreground">{clock(row.t)}</td>
-                <td className="tabular-nums">{row.v}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <div data-testid="signal-card-body" className="min-h-0 flex-1 overflow-y-auto">
+        {mode === 'graph' ? (
+          <SignalChart samples={samples} mode={isBoolean ? 'step' : 'line'} fromMs={fromMs} toMs={toMs} />
+        ) : isBoolean ? (
+          <table className="w-full text-left text-[11px] text-foreground">
+            <tbody>
+              {transitions.map((row) => (
+                <tr key={row.t}>
+                  <td className="py-0.5 tabular-nums text-muted-foreground">{clock(row.t)}</td>
+                  <td>
+                    {row.from} → {row.to}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <table className="w-full text-left text-[11px] text-foreground">
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.t}>
+                  <td className="py-0.5 tabular-nums text-muted-foreground">{clock(row.t)}</td>
+                  <td className="tabular-nums">{row.v}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </ConsoleCard>
   );
 };
