@@ -313,7 +313,7 @@ def _filter_hierarchy(scope: AccessScope, tree: HierarchyTree) -> HierarchyTree:
                 cells = [
                     cell
                     for cell in line.cells
-                    if scope.covers_path(join_segments(line_path, cell))
+                    if scope.covers_path(join_segments(line_path, cell.name))
                 ]
                 if cells or scope.covers_path(line_path):
                     lines.append(HierarchyLine(name=line.name, cells=tuple(cells)))
