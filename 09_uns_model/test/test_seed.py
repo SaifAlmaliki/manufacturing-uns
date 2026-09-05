@@ -520,7 +520,7 @@ async def test_delete_asset_also_removes_descendants():
 
 
 def test_seed_dry_run_loads_plant_yaml_when_present(tmp_path, monkeypatch, capsys):
-    plant_dir = tmp_path / "simulator"
+    plant_dir = tmp_path / "hierarchy"
     plant_dir.mkdir()
     (plant_dir / "plant.yaml").write_text(
         yaml.safe_dump(tree_to_mapping(_two_cell_tree())),

@@ -66,11 +66,3 @@ sites:
         machines: []
       - name: V301
         machines: []
-plant: {}
-profiles:
-  wtp:
-    tier_scale: 1.0
-    sites:
-    - Site10
-    families:
-    - wtp

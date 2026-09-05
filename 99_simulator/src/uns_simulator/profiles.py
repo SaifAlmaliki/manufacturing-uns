@@ -364,6 +364,7 @@ def load_profile(raw: Mapping[str, Any], profile_name: str = "wtp", *, seed: int
 
 
 SIMULATOR_CONF_SUBDIR: Final = "simulator"
+HIERARCHY_CONF_SUBDIR: Final = "hierarchy"
 
 # Everything in plant.yaml that is *not* one of these is hierarchy. Lifting by exclusion
 # rather than by an allow-list means a future hierarchy key needs no change here.
@@ -393,11 +394,20 @@ def read_simulator_conf(conf_dir: Path | None = None) -> dict[str, Any]:
     land-one-family-at-a-time work, and what keeps spec 12's promise that a deployment
     with no conf/simulator/ still runs off `simulator.hierarchy` in settings.yaml.
     """
-    directory = (conf_dir if conf_dir is not None else resolve_conf_dir()) / SIMULATOR_CONF_SUBDIR
+    conf_root = conf_dir if conf_dir is not None else resolve_conf_dir()
+    directory = conf_root / SIMULATOR_CONF_SUBDIR
     raw: dict[str, Any] = {}
 
-    if (plant_doc := _read_yaml_mapping(directory / "plant.yaml")) is not None:
+    hierarchy_doc = _read_yaml_mapping(conf_root / HIERARCHY_CONF_SUBDIR / "plant.yaml")
+    plant_doc = _read_yaml_mapping(directory / "plant.yaml")
+    if hierarchy_doc is not None:
+        raw["hierarchy"] = {
+            key: value for key, value in hierarchy_doc.items() if key not in _PLANT_NON_HIERARCHY_KEYS
+        }
+    elif plant_doc is not None:
         raw["hierarchy"] = {key: value for key, value in plant_doc.items() if key not in _PLANT_NON_HIERARCHY_KEYS}
+
+    if plant_doc is not None:
         raw["plant"] = plant_doc.get("plant") or {}
         raw["profiles"] = plant_doc.get("profiles") or {}
 

@@ -6,8 +6,8 @@
 default:
   platform:
     instance_name: "Instance01"
-    organization_name: "AcmeWater"
-    display_name: "AcmeWater UNS"
+    organization_name: "DemoWTP"
+    display_name: "DemoWTP UNS"
 
   applications:
     graphql:
@@ -138,11 +138,11 @@ graphql:
 
 graphdb:
   mqtt:
-    topics: ["test/uns/#", "AcmeWater/#", "spBv1.0/uns_group/#"]
+    topics: [test/uns/#, DemoWTP/#, spBv1.0/uns_group/#]
 
 historian:
   mqtt:
-    topics: ["test/uns/#", "AcmeWater/#", "spBv1.0/#"]
+    topics: [test/uns/#, DemoWTP/#, spBv1.0/#]
 
 opcua:
   opcua:
@@ -152,7 +152,7 @@ opcua:
 
 kafka_mapper:
   mqtt:
-    topics: ["test/uns/#", "AcmeWater/#"]
+    topics: [test/uns/#, DemoWTP/#]
   kafka:
     config:
       client.id: "uns_kafka_client"
@@ -168,9 +168,9 @@ sparkplugb:
 simulator:
   mqtt:
     client_id: "uns_simulator_client"
-  # Fallback only. conf/simulator/plant.yaml replaces this whole block when it exists, and it
+  # Fallback only. conf/hierarchy/plant.yaml replaces this whole block when it exists, and it
   # does in this repository - so edits here have no effect unless that file is removed. Kept
-  # because a deployment with no conf/simulator/ directory still has to have a plant.
+  # because a deployment with no conf/hierarchy/ directory still has to have a plant.
   hierarchy:
     enterprise: "AcmeWater"
     sites:

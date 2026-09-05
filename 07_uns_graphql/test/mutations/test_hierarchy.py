@@ -194,8 +194,8 @@ def _stale_started_at() -> str:
 
 
 def _write_conf(conf_dir: Path, plant: str = PLANT_YAML) -> None:
-    (conf_dir / "simulator").mkdir(parents=True, exist_ok=True)
-    (conf_dir / "simulator" / "plant.yaml").write_text(plant, encoding="utf-8")
+    (conf_dir / "hierarchy").mkdir(parents=True, exist_ok=True)
+    (conf_dir / "hierarchy" / "plant.yaml").write_text(plant, encoding="utf-8")
     (conf_dir / "settings.yaml").write_text(SETTINGS_YAML, encoding="utf-8")
 
 
@@ -204,7 +204,9 @@ def _job_path(conf_dir: Path) -> Path:
 
 
 def _write_job(conf_dir: Path, **fields: object) -> None:
-    _job_path(conf_dir).write_text(yaml.safe_dump(fields), encoding="utf-8")
+    path = _job_path(conf_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(fields), encoding="utf-8")
 
 
 def _read_job(conf_dir: Path) -> dict:
@@ -212,7 +214,7 @@ def _read_job(conf_dir: Path) -> dict:
 
 
 def _read_plant(conf_dir: Path) -> dict:
-    return yaml.safe_load((conf_dir / "simulator" / "plant.yaml").read_text(encoding="utf-8"))
+    return yaml.safe_load((conf_dir / "hierarchy" / "plant.yaml").read_text(encoding="utf-8"))
 
 
 @pytest.fixture

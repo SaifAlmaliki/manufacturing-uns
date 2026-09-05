@@ -341,7 +341,7 @@ export const SUBSCRIBE_KAFKA_MESSAGES = `
 `
 
 /**
- * The plant hierarchy stored in plant.yaml (ADR-0003). One query, one mutation, and
+ * The plant hierarchy stored in conf/hierarchy/plant.yaml (ADR-0005). One query, one mutation, and
  * one retry: the console edits the whole tree locally and saves once, because there
  * is no safe meaning to "rename one site without saying what the rest of the plant
  * now is". Field set matches `07_uns_graphql/test/mutations/test_hierarchy.py`.

@@ -1,7 +1,7 @@
 status: done
-old_prefix: AcmeWater/Site10/Distribution/Train1/P202/Machine2050
-new_prefix: AcmeWater/Site10/Distribution/Train1/P202/Machine3050
+old_prefix: AcmeWater
+new_prefix: DemoWTP
 rewritten: 0
 error: null
-started_at: '2026-09-05T22:53:18.739506+00:00'
+started_at: '2026-09-05T22:55:12.999150+00:00'
 pending: []

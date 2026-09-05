@@ -326,7 +326,7 @@ def _filter_hierarchy(scope: AccessScope, tree: HierarchyTree) -> HierarchyTree:
 
 @strawberry.type(description="Read the plant hierarchy stored in plant.yaml")
 class Query:
-    @strawberry.field(description="The ISA-95 tree from conf/simulator/plant.yaml.")
+    @strawberry.field(description="The ISA-95 tree from conf/hierarchy/plant.yaml.")
     async def get_hierarchy(self, info: strawberry.Info) -> HierarchyTreeType:
         tree = load_plant_tree(_conf_dir())
         scope = await scope_from_info(info)
