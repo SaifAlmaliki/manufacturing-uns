@@ -19,6 +19,7 @@ import {
   metricChildNodes,
   topicContextProperties,
 } from '../../lib/uns/map-assets'
+import { hierarchyChildNodes, hierarchyRootNodes } from '../../lib/uns/map-hierarchy'
 import type {
   HistoricEvent,
   KafkaMessage,
@@ -317,13 +318,21 @@ export class UnsGraphQLClient {
   }
 
   /**
-   * The roots of the tree: the Asset Model's, or the graph database's when nothing has
-   * been modelled yet.
+   * The roots of the tree: the authored plant hierarchy first, then the Asset
+   * Model, then the graph database when nothing has been modelled yet.
    *
-   * An empty Asset Model is a platform that has been deployed but not yet described,
-   * and it must still show the traffic it is receiving.
+   * Plant hierarchy is the single platform tree (Condition Monitoring,
+   * Connectivity, Assets). MQTT leftovers such as `test/uns` must not appear as
+   * a second structure when a plant.yaml exists.
    */
   public async getUnsRootNodes(): Promise<UnsNode[]> {
+    const tree = await this.getHierarchy()
+    if (tree) {
+      const authored = hierarchyRootNodes(tree)
+      if (authored.length > 0) {
+        return authored
+      }
+    }
     const roots = await this.getAssetChildren(null)
     if (roots.length > 0) {
       return roots.map(assetToUnsNode)
@@ -332,14 +341,21 @@ export class UnsGraphQLClient {
   }
 
   /**
-   * Children of a node, from the Asset Model where it reaches and from what was
-   * published where it does not.
+   * Children of a node: authored plant-hierarchy children first, then the Asset
+   * Model, then what was published.
    *
-   * The order is the point: what an engineer declared beats what a wildcard query
-   * happens to find, and both beat the ISA-95 guesses that are only still here so that
-   * an unmodelled simulator install keeps working.
+   * The order is the point: what an engineer declared on Plant hierarchy beats
+   * what a wildcard query happens to find, and both beat the ISA-95 guesses that
+   * are only still here so that an unmodelled simulator install keeps working.
    */
   public async getUnsNodeChildren(parentTopic: string): Promise<UnsNode[]> {
+    const tree = await this.getHierarchy()
+    if (tree) {
+      const authored = hierarchyChildNodes(tree, parentTopic)
+      if (authored !== null && authored.length > 0) {
+        return authored
+      }
+    }
     const modelled = await this.getModelledChildren(parentTopic)
     if (modelled.length > 0) {
       return modelled

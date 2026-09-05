@@ -30,6 +30,7 @@ import {
   PageShell,
   PageStat,
 } from '../ui/console-ui';
+import { ResizableSidebar } from '../ui/resizable-sidebar';
 import { AssetLevelIcon } from './AssetLevelIcon';
 import { NewAssetMenu } from './NewAssetMenu';
 import { levelDef, type NodeLevel } from './hierarchyLevels';
@@ -407,7 +408,9 @@ function TreeNodeButton({
       <span aria-hidden="true" className={active ? 'text-white/50' : 'text-muted-foreground'}>
         ·
       </span>
-      <span className="truncate font-medium">{name}</span>
+      <span className="truncate font-medium" title={name}>
+        {name}
+      </span>
     </button>
   );
 }
@@ -649,15 +652,23 @@ export const HierarchyView: React.FC = () => {
           )}
 
           {tree && (
-            <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]">
-              <ConsoleCard padding="none" className="min-h-[280px] overflow-visible">
+            <div className="flex min-h-0 flex-1 flex-col gap-3 lg:flex-row">
+              <ResizableSidebar
+                storageKey="uns_console_hierarchy_tree_width"
+                defaultWidth={420}
+                minWidth={240}
+                maxWidth={800}
+                aria-label="Plant tree"
+                className="min-h-[280px] max-w-full"
+              >
+              <ConsoleCard padding="none" className="h-full min-h-[280px] overflow-visible">
                 <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
                   <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                     Plant tree
                   </div>
                   <NewAssetMenu parentLevel={menuParent} onPick={handleAdd} />
                 </div>
-                <div className="max-h-[calc(100vh-22rem)] space-y-0.5 overflow-y-auto p-2">
+                <div className="max-h-[calc(100vh-22rem)] space-y-0.5 overflow-x-auto overflow-y-auto p-2">
                   <TreeNodeButton tree={tree} nodeRef={{ level: 'enterprise' }} selected={selected} onSelect={selectNode} />
                   {tree.sites.map((site, siteIdx) => (
                     <React.Fragment key={`site-${siteIdx}`}>
@@ -723,8 +734,9 @@ export const HierarchyView: React.FC = () => {
                   ))}
                 </div>
               </ConsoleCard>
+              </ResizableSidebar>
 
-              <ConsoleCard padding="md" className="space-y-3">
+              <ConsoleCard padding="md" className="min-w-0 flex-1 space-y-3">
                 {selected ? (
                   <>
                     <div className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">

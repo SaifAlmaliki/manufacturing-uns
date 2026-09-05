@@ -77,6 +77,7 @@ describe('the plant hierarchy editor', () => {
     expect(screen.queryByText(/durable only after the publisher is retargeted/i)).toBeNull();
     expect(screen.getByRole('button', { name: 'Site Site1' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Cell V101' })).toBeTruthy();
+    expect(screen.getByRole('separator', { name: /resize plant tree/i })).toBeTruthy();
   });
 
   it('asks for confirmation before removing a node', async () => {

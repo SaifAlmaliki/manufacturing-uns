@@ -61,7 +61,8 @@ sites:
         machines:
         - Machine3060
       - name: FT201
-        machines: []
+        machines:
+        - flowmeterX12
       - name: PT201
         machines: []
       - name: V301
