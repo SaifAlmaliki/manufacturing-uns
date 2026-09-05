@@ -42,6 +42,16 @@ async def test_read_reports_good_double(opcua_server):
     assert rows[0].value == pytest.approx(99.3)
 
 
+async def test_discover_and_read_share_browse_path(opcua_server):
+    async with await open_client(ENDPOINT) as client:
+        nodes = await discover_variables(client)
+        level = next(n for n in nodes if n.browse_path.endswith("RawWater/T101/Level"))
+        rows = await read_nodes(client, [level.node_id])
+    assert rows[0].browse_path == level.browse_path
+    assert level.browse_path == "RawWater/T101/Level"
+    assert not rows[0].browse_path.startswith("Objects/")
+
+
 async def test_bad_endpoint_fails_cleanly():
     ok, error, elapsed_ms = await test_connection("opc.tcp://127.0.0.1:1/")
     assert ok is False

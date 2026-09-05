@@ -130,7 +130,15 @@ async def _node_browse_path(node: ua.Node) -> str:
     if not path_parts:
         browse_name = await node.read_browse_name()
         return browse_name.Name
-    return "/".join(part.split(":", 1)[-1] for part in path_parts)
+    segments = [
+        part.split(":", 1)[-1]
+        for part in path_parts
+        if part.split(":", 1)[-1] not in _ROOT_BROWSE_NAMES
+    ]
+    if not segments:
+        browse_name = await node.read_browse_name()
+        return browse_name.Name
+    return "/".join(segments)
 
 
 async def _node_data_type(node: ua.Node) -> str | None:
@@ -142,3 +150,5 @@ async def _node_data_type(node: ua.Node) -> str | None:
 
 
 test_connection.__test__ = False
+
+_ROOT_BROWSE_NAMES = frozenset({"Root", "Objects"})
