@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Activity, AlertTriangle, Bell, Radio, Zap } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Activity, AlertTriangle, Bell, Layers } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useUNS } from '../../context/UNSContext';
 import { useAlarms } from '../../context/AlarmContext';
@@ -26,6 +26,7 @@ export const ConditionMonitoringView: React.FC = () => {
   const { hasPermission } = useAuth();
   const { selectedNode } = useUNS();
   const { activeAlarms } = useAlarms();
+  const navigate = useNavigate();
   const [servers, setServers] = useState<GraphqlConnectivityServer[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [scoped, setScoped] = useState(false);
@@ -107,9 +108,20 @@ export const ConditionMonitoringView: React.FC = () => {
     });
   }, [visibleTopicsKey]);
 
+  const latestByTopic = Object.fromEntries(
+    visible.map((tag) => {
+      const samples = mergeSeries(
+        historianByTopic[tag.mqttTopic] ?? [],
+        liveByTopic[tag.mqttTopic] ?? [],
+        timeWindow.fromMs,
+        Date.now(),
+      );
+      return [tag.mqttTopic, samples[samples.length - 1]];
+    }),
+  );
   const kpis = conditionKpis({
     tags: visible,
-    latestByTopic: {},
+    latestByTopic,
     liveTopics,
     alarms: activeAlarms,
   });
@@ -174,33 +186,47 @@ export const ConditionMonitoringView: React.FC = () => {
                 compact
                 label="In view"
                 value={kpis.inView}
-                icon={<Activity className="size-3.5 text-zinc-400" />}
+                icon={<Layers className="size-3.5 text-zinc-400" />}
               />
               <PageStat
                 compact
                 label="Live"
                 value={kpis.live}
-                icon={<Radio className="size-3.5 text-zinc-400" />}
+                icon={<Activity className="size-3.5 text-zinc-400" />}
               />
               <PageStat
                 compact
                 label="Faults on"
                 value={kpis.faultsOn}
-                icon={<Zap className="size-3.5 text-zinc-400" />}
+                icon={<AlertTriangle className="size-3.5 text-zinc-400" />}
               />
-              <PageStat
-                compact
-                label="Unacked"
-                value={kpis.unacked}
-                icon={<Bell className="size-3.5 text-zinc-400" />}
-              />
-              <PageStat
-                compact
-                label="Critical"
-                value={kpis.critical}
-                icon={<AlertTriangle className="size-3.5 text-red-400" />}
-                iconBg="bg-red-500/15"
-              />
+              <button
+                type="button"
+                aria-label="Unacked"
+                className="rounded-lg border-0 bg-transparent p-0 text-left"
+                onClick={() => navigate('/alerts')}
+              >
+                <PageStat
+                  compact
+                  label="Unacked"
+                  value={kpis.unacked}
+                  icon={<Bell className="size-3.5 text-zinc-400" />}
+                />
+              </button>
+              <button
+                type="button"
+                aria-label="Critical"
+                className="rounded-lg border-0 bg-transparent p-0 text-left"
+                onClick={() => navigate('/alerts')}
+              >
+                <PageStat
+                  compact
+                  label="Critical"
+                  value={kpis.critical}
+                  icon={<AlertTriangle className="size-3.5 text-red-400" />}
+                  iconBg="bg-red-500/15"
+                />
+              </button>
             </CompactKpiRow>
             {loadError ? (
               <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">

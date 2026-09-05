@@ -6,6 +6,22 @@ import type { UnsNode } from '../../types/uns';
 const getConnectivityServers = vi.hoisted(() => vi.fn());
 const getHistoricEvents = vi.hoisted(() => vi.fn());
 const subscribeMqttMessages = vi.hoisted(() => vi.fn());
+const navigate = vi.hoisted(() => vi.fn());
+const alarms = vi.hoisted(() => ({
+  activeAlarms: [] as {
+    id: string;
+    ruleId: string;
+    ruleName: string;
+    topic: string;
+    severity: string;
+    category: string;
+    conditionDescription: string;
+    currentValue: boolean;
+    status: string;
+    triggeredAt: string;
+    targetRoles: string[];
+  }[],
+}));
 
 vi.mock('../../services/graphql/client', () => ({
   unsGraphQLClient: { getConnectivityServers, getHistoricEvents, subscribeMqttMessages },
@@ -15,9 +31,11 @@ const uns = vi.hoisted(() => ({
   selectedNode: null as UnsNode | null,
 }));
 vi.mock('../../context/UNSContext', () => ({ useUNS: () => uns }));
-vi.mock('../../context/AlarmContext', () => ({
-  useAlarms: () => ({ activeAlarms: [] }),
-}));
+vi.mock('../../context/AlarmContext', () => ({ useAlarms: () => alarms }));
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
+  return { ...actual, useNavigate: () => navigate };
+});
 
 const auth = vi.hoisted(() => ({
   hasPermission: (feature: string): boolean => feature === 'uns_tree',
@@ -53,6 +71,7 @@ const SPEED = {
 beforeEach(() => {
   vi.clearAllMocks();
   uns.selectedNode = null;
+  alarms.activeAlarms = [];
   auth.hasPermission = (feature: string): boolean => feature === 'uns_tree';
   getConnectivityServers.mockResolvedValue([
     {
@@ -262,5 +281,46 @@ describe('ConditionMonitoringView historian and live tail', () => {
     unsubscribe.mockClear();
     unmount();
     expect(unsubscribe).toHaveBeenCalled();
+  });
+});
+
+describe('ConditionMonitoringView KPIs', () => {
+  it('shows KPI counts for visible tags and goes to alerts on Unacked', async () => {
+    alarms.activeAlarms = [
+      {
+        id: 'a1',
+        ruleId: 'r',
+        ruleName: 'f',
+        topic: 'AcmeWater/Site1/P201/Fault',
+        severity: 'CRITICAL',
+        category: 'SAFETY',
+        conditionDescription: '',
+        currentValue: true,
+        status: 'ACTIVE_UNACK',
+        triggeredAt: '',
+        targetRoles: ['engineer'],
+      },
+    ];
+    const historianTs = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    getHistoricEvents.mockImplementation(async (topic: string) => {
+      if (topic.endsWith('Fault')) {
+        return [{ id: 'h1', topic, timestamp: historianTs, payload: { value: true } }];
+      }
+      return [];
+    });
+    await renderPage();
+    await waitFor(() => expect(screen.getByText('Fault')).toBeTruthy());
+    await waitFor(() =>
+      expect(getHistoricEvents.mock.results.every((r) => r.type !== 'incomplete')).toBe(true),
+    );
+    expect(screen.getByText('In view').parentElement?.textContent).toMatch(/2/);
+    expect(screen.getByText('Faults on').parentElement?.textContent).toMatch(/1/);
+    expect(screen.getByText('Unacked').parentElement?.textContent).toMatch(/1/);
+    expect(screen.getByText('Critical').parentElement?.textContent).toMatch(/1/);
+    fireEvent.click(screen.getByRole('button', { name: /unacked/i }));
+    expect(navigate).toHaveBeenCalledWith('/alerts');
+    fireEvent.click(screen.getByRole('button', { name: /critical/i }));
+    expect(navigate).toHaveBeenCalledTimes(2);
+    expect(navigate).toHaveBeenLastCalledWith('/alerts');
   });
 });
