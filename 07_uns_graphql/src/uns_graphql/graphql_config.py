@@ -27,6 +27,7 @@ from aiomqtt import ProtocolVersion, TLSParameters
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 from uns_config import AuthConfig, PlatformConfig, get_settings  # noqa: F401  (re-exported; Task 3 consumes it)
+from uns_config.kafka import sanitize_kafka_config
 
 # Logger
 LOGGER = logging.getLogger(__name__)
@@ -134,7 +135,7 @@ class KAFKAConfig:
     from the repository root conf/settings.yaml and conf/.secrets.yaml
     """
 
-    config_map: dict = settings.get("kafka.config")
+    config_map: dict = sanitize_kafka_config(settings.get("kafka.config"))
     consumer_poll_timeout: float = float(settings.get("kafka.consumer_timeout", 1.0))
 
 

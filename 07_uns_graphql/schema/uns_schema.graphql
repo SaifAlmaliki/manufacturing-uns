@@ -303,16 +303,28 @@ type HierarchyAreaType {
   lines: [HierarchyLineType!]!
 }
 
+"""A work cell and the machines under it."""
+input HierarchyCellInput {
+  name: String!
+  machines: [String!] = null
+}
+
+"""A work cell (instance tag) and the machines under it."""
+type HierarchyCellType {
+  name: String!
+  machines: [String!]!
+}
+
 """A line and the cells (instance tags) under it."""
 input HierarchyLineInput {
   name: String!
-  cells: [String!]!
+  cells: [HierarchyCellInput!]!
 }
 
 """A line and the cells (instance tags) under it."""
 type HierarchyLineType {
   name: String!
-  cells: [String!]!
+  cells: [HierarchyCellType!]!
 }
 
 """One-at-a-time prefix migrate of historian topics and graph nodes."""
@@ -674,7 +686,7 @@ type Query {
   """
   downtimePareto(assetPath: String!, from: DateTime!, to: DateTime!): [DowntimeParetoBucket!]!
 
-  """The ISA-95 tree from conf/simulator/plant.yaml."""
+  """The ISA-95 tree from conf/hierarchy/plant.yaml."""
   getHierarchy: HierarchyTreeType!
 
   """
@@ -702,9 +714,7 @@ type Query {
   """
   browseOpcUa(endpoint: String!, nodeId: String): [OpcUaBrowseNodeType!]!
 
-  """
-  Recursively discover every Variable under nodeId, or under Objects.
-  """
+  """Recursively discover every Variable under nodeId, or under Objects."""
   discoverOpcUaVariables(endpoint: String!, nodeId: String): [OpcUaBrowseNodeType!]!
 
   """Read the current value of one or more OPC UA nodes by NodeId."""

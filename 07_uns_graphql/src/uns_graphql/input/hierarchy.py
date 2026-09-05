@@ -11,6 +11,7 @@ import strawberry
 from uns_model.hierarchy import (
     DEFAULT_AREA_KIND,
     HierarchyArea,
+    HierarchyCell,
     HierarchyLine,
     HierarchySite,
     HierarchyTree,
@@ -27,10 +28,19 @@ class PrefixRenameInput:
         return PrefixRename(old_prefix=self.old_prefix, new_prefix=self.new_prefix)
 
 
+@strawberry.input(description="A work cell and the machines under it.")
+class HierarchyCellInput:
+    name: str
+    machines: list[str] | None = None
+
+    def to_cell(self) -> HierarchyCell:
+        return HierarchyCell(name=self.name, machines=tuple(self.machines or ()))
+
+
 @strawberry.input(description="A line and the cells (instance tags) under it.")
 class HierarchyLineInput:
     name: str
-    cells: list[str]
+    cells: list[HierarchyCellInput]
 
 
 @strawberry.input(description="An area. kind defaults to production when omitted.")
@@ -62,7 +72,7 @@ class HierarchyTreeInput:
                             name=area.name,
                             kind=area.kind or DEFAULT_AREA_KIND,
                             lines=tuple(
-                                HierarchyLine(name=line.name, cells=tuple(line.cells))
+                                HierarchyLine(name=line.name, cells=tuple(cell.to_cell() for cell in line.cells))
                                 for line in area.lines
                             ),
                         )

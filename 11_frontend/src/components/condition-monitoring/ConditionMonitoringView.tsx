@@ -20,6 +20,7 @@ import {
   PageShell,
   PageStat,
 } from '../ui/console-ui';
+import { ResizableSidebar } from '../ui/resizable-sidebar';
 import { SignalCard } from './SignalCard';
 
 export const ConditionMonitoringView: React.FC = () => {
@@ -183,12 +184,14 @@ export const ConditionMonitoringView: React.FC = () => {
         >
           <UnsTreeView />
         </section>
-        <section
+        <ResizableSidebar
+          storageKey="uns_console_cm_tree_width"
+          defaultWidth={320}
           aria-label="UNS Hierarchy Tree"
-          className="hidden w-[280px] shrink-0 overflow-hidden border-r border-border bg-surface md:block"
+          className="hidden border-r border-border bg-surface md:flex"
         >
           <UnsTreeView />
-        </section>
+        </ResizableSidebar>
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
           <PageContent fullWidth className="flex min-h-full flex-col gap-3 pb-4">
             <CompactKpiRow>

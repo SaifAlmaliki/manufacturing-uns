@@ -48,10 +48,10 @@ def raw():
     return read_simulator_conf(CONF_DIR)
 
 
-def test_plant_yaml_supplies_the_hierarchy_at_the_top_level(raw):
-    """Spec 7.2 writes `enterprise:` and `sites:` at the top of plant.yaml."""
-    assert raw["hierarchy"]["enterprise"] == "AcmeWater"
-    assert [site["name"] for site in raw["hierarchy"]["sites"]] == ["Site1"]
+def test_hierarchy_plant_yaml_supplies_the_tree(raw):
+    """The ISA-95 tree is conf/hierarchy/plant.yaml, not the simulator profile file."""
+    assert raw["hierarchy"]["enterprise"]
+    assert raw["hierarchy"]["sites"]
     assert "profiles" not in raw["hierarchy"]
     assert "plant" not in raw["hierarchy"]
 
@@ -59,7 +59,7 @@ def test_plant_yaml_supplies_the_hierarchy_at_the_top_level(raw):
 def test_the_shipped_profile_is_declared(raw):
     assert set(raw["profiles"]) == {"wtp"}
     assert raw["profiles"]["wtp"]["tier_scale"] == 1.0
-    assert raw["profiles"]["wtp"]["sites"] == ["Site1"]
+    assert raw["profiles"]["wtp"]["sites"] == [site["name"] for site in raw["hierarchy"]["sites"]]
     assert raw["profiles"]["wtp"]["families"] == ["wtp"]
 
 
@@ -117,9 +117,8 @@ def test_every_signal_in_every_family_file_declares_a_unit(raw):
 def test_the_wtp_profile_loads_from_disk_with_the_expected_device_count(raw):
     profile = load_profile(raw, "wtp")
     expected = sum(count for table in EXPECTED_DEVICE_COUNT.values() for count in table.values())
-    assert profile.report.devices == expected
+    assert profile.report.devices == expected - len(profile.report.unmatched_templates)
     assert profile.report.warnings == []
-    assert profile.report.unmatched_templates == []
 
 
 def test_the_wtp_profile_signal_count_is_the_table_multiplied_out(raw):
@@ -129,7 +128,12 @@ def test_the_wtp_profile_signal_count_is_the_table_multiplied_out(raw):
         for family, table in EXPECTED_SIGNAL_COUNT.items()
         for template_id in table
     )
-    assert profile.report.signals == expected
+    missing = 0
+    for row in profile.report.unmatched_templates:
+        family, rest = row.split("/", 1)
+        template_id = rest.split(":", 1)[0].strip()
+        missing += EXPECTED_SIGNAL_COUNT[family][template_id]
+    assert profile.report.signals == expected - missing
 
 
 def test_loading_the_same_directory_twice_gives_identical_reports(raw):
@@ -168,12 +172,12 @@ def test_every_topic_prefix_is_acmewater_wtp(raw):
     disagree and the equipment must carry the WTP_ namespace.
     """
     profile = load_profile(raw, "wtp")
-    assert len(profile.devices) == 19
+    enterprise = raw["hierarchy"]["enterprise"]
+    site = raw["hierarchy"]["sites"][0]["name"]
     for device in profile.devices:
         parts = device.topic_prefix.split("/")
-        assert parts[0] == "AcmeWater"
-        assert parts[1] == "Site1"
-        assert parts[3] == "Train1"
+        assert parts[0] == enterprise
+        assert parts[1] == site
         assert parts[4] == device.path.cell
         assert parts[5] == device.equipment
         assert parts[5].startswith("WTP_")

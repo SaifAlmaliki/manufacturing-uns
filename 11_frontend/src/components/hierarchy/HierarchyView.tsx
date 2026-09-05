@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Factory, GitBranch, Plus, Trash2 } from 'lucide-react';
+import { Cog, Factory, GitBranch, Trash2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useUNS } from '../../context/UNSContext';
 import { joinSegments, validateSegment } from '../../lib/uns/topics';
@@ -9,6 +9,15 @@ import type {
   GraphqlHierarchyTree,
   GraphqlPrefixRenameInput,
 } from '../../services/graphql/types';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { AccessRestricted } from '../common/AccessRestricted';
 import {
   BtnGhost,
@@ -21,58 +30,11 @@ import {
   PageShell,
   PageStat,
 } from '../ui/console-ui';
-
-type NodeLevel = 'enterprise' | 'site' | 'area' | 'line' | 'cell';
-
-type NodeRef =
-  | { level: 'enterprise' }
-  | { level: 'site'; site: number }
-  | { level: 'area'; site: number; area: number }
-  | { level: 'line'; site: number; area: number; line: number }
-  | { level: 'cell'; site: number; area: number; line: number; cell: number };
-
-const CHILD_LEVEL: Record<NodeLevel, NodeLevel | null> = {
-  enterprise: 'site',
-  site: 'area',
-  area: 'line',
-  line: 'cell',
-  cell: null,
-};
-
-const CHILD_BASE_NAME: Record<Exclude<NodeLevel, 'enterprise'>, string> = {
-  site: 'Site',
-  area: 'Area',
-  line: 'Line',
-  cell: 'Cell',
-};
-
-const LEVEL_LABEL: Record<NodeLevel, string> = {
-  enterprise: 'Enterprise',
-  site: 'Site',
-  area: 'Area',
-  line: 'Line',
-  cell: 'Cell',
-};
-
-const SIMULATOR_BANNER =
-  'The simulator still publishes the shipped WTP paths. Renamed nodes will not match live simulator topics until the publisher is retargeted. The old graph branch reappears while anything still publishes the old prefix; the graph rename is durable only after the publisher is retargeted.';
-
-function cloneTree(tree: GraphqlHierarchyTree): GraphqlHierarchyTree {
-  return {
-    enterprise: tree.enterprise,
-    sites: tree.sites.map((site) => ({
-      name: site.name,
-      areas: site.areas.map((area) => ({
-        name: area.name,
-        kind: area.kind,
-        lines: area.lines.map((line) => ({
-          name: line.name,
-          cells: [...line.cells],
-        })),
-      })),
-    })),
-  };
-}
+import { ResizableSidebar } from '../ui/resizable-sidebar';
+import { AssetLevelIcon } from './AssetLevelIcon';
+import { NewAssetMenu } from './NewAssetMenu';
+import { levelDef, type NodeLevel } from './hierarchyLevels';
+import { type NodeRef, cloneTree, insertDescendant } from './hierarchyTree';
 
 function nodeName(tree: GraphqlHierarchyTree, ref: NodeRef): string {
   switch (ref.level) {
@@ -85,8 +47,38 @@ function nodeName(tree: GraphqlHierarchyTree, ref: NodeRef): string {
     case 'line':
       return tree.sites[ref.site].areas[ref.area].lines[ref.line].name;
     case 'cell':
-      return tree.sites[ref.site].areas[ref.area].lines[ref.line].cells[ref.cell];
+      return tree.sites[ref.site].areas[ref.area].lines[ref.line].cells[ref.cell].name;
+    case 'machine':
+      return (
+        tree.sites[ref.site].areas[ref.area].lines[ref.line].cells[ref.cell].machines[ref.machine] ??
+        ''
+      );
   }
+}
+
+function treePrefixes(tree: GraphqlHierarchyTree): Set<string> {
+  const prefixes = new Set<string>();
+  prefixes.add(tree.enterprise);
+  for (const site of tree.sites) {
+    const sitePrefix = joinSegments(tree.enterprise, site.name);
+    prefixes.add(sitePrefix);
+    for (const area of site.areas) {
+      const areaPrefix = joinSegments(sitePrefix, area.name);
+      prefixes.add(areaPrefix);
+      for (const line of area.lines) {
+        const linePrefix = joinSegments(areaPrefix, line.name);
+        prefixes.add(linePrefix);
+        for (const cell of line.cells) {
+          const cellPrefix = joinSegments(linePrefix, cell.name);
+          prefixes.add(cellPrefix);
+          for (const machine of cell.machines) {
+            prefixes.add(joinSegments(cellPrefix, machine));
+          }
+        }
+      }
+    }
+  }
+  return prefixes;
 }
 
 function nodePrefix(tree: GraphqlHierarchyTree, ref: NodeRef): string {
@@ -98,8 +90,10 @@ function nodePrefix(tree: GraphqlHierarchyTree, ref: NodeRef): string {
   if (ref.level === 'area') return joinSegments(enterprise, site, area);
   const line = tree.sites[ref.site].areas[ref.area].lines[ref.line].name;
   if (ref.level === 'line') return joinSegments(enterprise, site, area, line);
-  const cell = tree.sites[ref.site].areas[ref.area].lines[ref.line].cells[ref.cell];
-  return joinSegments(enterprise, site, area, line, cell);
+  const cell = tree.sites[ref.site].areas[ref.area].lines[ref.line].cells[ref.cell].name;
+  if (ref.level === 'cell') return joinSegments(enterprise, site, area, line, cell);
+  const machine = tree.sites[ref.site].areas[ref.area].lines[ref.line].cells[ref.cell].machines[ref.machine];
+  return joinSegments(enterprise, site, area, line, cell, machine);
 }
 
 function siblingNames(tree: GraphqlHierarchyTree, ref: NodeRef): string[] {
@@ -118,16 +112,13 @@ function siblingNames(tree: GraphqlHierarchyTree, ref: NodeRef): string[] {
     }
     case 'cell': {
       const cells = tree.sites[ref.site].areas[ref.area].lines[ref.line].cells;
-      return cells.filter((_, i) => i !== ref.cell);
+      return cells.filter((_, i) => i !== ref.cell).map((c) => c.name);
+    }
+    case 'machine': {
+      const machines = tree.sites[ref.site].areas[ref.area].lines[ref.line].cells[ref.cell].machines;
+      return machines.filter((_, i) => i !== ref.machine);
     }
   }
-}
-
-function uniqueChildName(existing: string[], base: string): string {
-  if (!existing.includes(base)) return base;
-  let n = 2;
-  while (existing.includes(`${base}${n}`)) n += 1;
-  return `${base}${n}`;
 }
 
 function applyName(tree: GraphqlHierarchyTree, ref: NodeRef, name: string): GraphqlHierarchyTree {
@@ -146,59 +137,13 @@ function applyName(tree: GraphqlHierarchyTree, ref: NodeRef, name: string): Grap
       next.sites[ref.site].areas[ref.area].lines[ref.line].name = name;
       break;
     case 'cell':
-      next.sites[ref.site].areas[ref.area].lines[ref.line].cells[ref.cell] = name;
+      next.sites[ref.site].areas[ref.area].lines[ref.line].cells[ref.cell].name = name;
+      break;
+    case 'machine':
+      next.sites[ref.site].areas[ref.area].lines[ref.line].cells[ref.cell].machines[ref.machine] = name;
       break;
   }
   return next;
-}
-
-function addChild(
-  tree: GraphqlHierarchyTree,
-  ref: NodeRef,
-): { tree: GraphqlHierarchyTree; child: NodeRef } | null {
-  const nextLevel = CHILD_LEVEL[ref.level];
-  if (!nextLevel) return null;
-  const next = cloneTree(tree);
-  const base = CHILD_BASE_NAME[nextLevel];
-  switch (ref.level) {
-    case 'enterprise': {
-      const name = uniqueChildName(next.sites.map((s) => s.name), base);
-      next.sites.push({ name, areas: [] });
-      return { tree: next, child: { level: 'site', site: next.sites.length - 1 } };
-    }
-    case 'site': {
-      const areas = next.sites[ref.site].areas;
-      const name = uniqueChildName(areas.map((a) => a.name), base);
-      areas.push({ name, kind: 'production', lines: [] });
-      return { tree: next, child: { level: 'area', site: ref.site, area: areas.length - 1 } };
-    }
-    case 'area': {
-      const lines = next.sites[ref.site].areas[ref.area].lines;
-      const name = uniqueChildName(lines.map((l) => l.name), base);
-      lines.push({ name, cells: [] });
-      return {
-        tree: next,
-        child: { level: 'line', site: ref.site, area: ref.area, line: lines.length - 1 },
-      };
-    }
-    case 'line': {
-      const cells = next.sites[ref.site].areas[ref.area].lines[ref.line].cells;
-      const name = uniqueChildName(cells, base);
-      cells.push(name);
-      return {
-        tree: next,
-        child: {
-          level: 'cell',
-          site: ref.site,
-          area: ref.area,
-          line: ref.line,
-          cell: cells.length - 1,
-        },
-      };
-    }
-    case 'cell':
-      return null;
-  }
 }
 
 function parentRef(ref: NodeRef): NodeRef | null {
@@ -213,6 +158,14 @@ function parentRef(ref: NodeRef): NodeRef | null {
       return { level: 'area', site: ref.site, area: ref.area };
     case 'cell':
       return { level: 'line', site: ref.site, area: ref.area, line: ref.line };
+    case 'machine':
+      return {
+        level: 'cell',
+        site: ref.site,
+        area: ref.area,
+        line: ref.line,
+        cell: ref.cell,
+      };
   }
 }
 
@@ -231,6 +184,12 @@ function removeNode(tree: GraphqlHierarchyTree, ref: NodeRef): GraphqlHierarchyT
       break;
     case 'cell':
       next.sites[ref.site].areas[ref.area].lines[ref.line].cells.splice(ref.cell, 1);
+      break;
+    case 'machine':
+      next.sites[ref.site].areas[ref.area].lines[ref.line].cells[ref.cell].machines.splice(
+        ref.machine,
+        1,
+      );
       break;
   }
   return next;
@@ -252,8 +211,17 @@ function recordRename(
   renames: GraphqlPrefixRenameInput[],
   oldPrefix: string,
   newPrefix: string,
+  knownOldPrefixes?: Set<string>,
 ): GraphqlPrefixRenameInput[] {
   if (oldPrefix === newPrefix) return renames;
+  const chainedFromKnown = renames.some((r) => r.newPrefix === oldPrefix);
+  if (
+    knownOldPrefixes &&
+    !knownOldPrefixes.has(oldPrefix) &&
+    !chainedFromKnown
+  ) {
+    return renames;
+  }
   let next = [...renames];
   const chained = next.findIndex((r) => r.newPrefix === oldPrefix);
   if (chained >= 0) {
@@ -294,20 +262,30 @@ function dropRenamesUnder(renames: GraphqlPrefixRenameInput[], prefix: string): 
   return renames.filter((r) => !isPrefixOf(prefix, r.oldPrefix) && !isPrefixOf(prefix, r.newPrefix));
 }
 
-function treeCounts(tree: GraphqlHierarchyTree): { sites: number; areas: number; lines: number; cells: number } {
+function treeCounts(tree: GraphqlHierarchyTree): {
+  sites: number;
+  areas: number;
+  lines: number;
+  cells: number;
+  machines: number;
+} {
   let areas = 0;
   let lines = 0;
   let cells = 0;
+  let machines = 0;
   for (const site of tree.sites) {
     areas += site.areas.length;
     for (const area of site.areas) {
       lines += area.lines.length;
       for (const line of area.lines) {
         cells += line.cells.length;
+        for (const cell of line.cells) {
+          machines += cell.machines.length;
+        }
       }
     }
   }
-  return { sites: tree.sites.length, areas, lines, cells };
+  return { sites: tree.sites.length, areas, lines, cells, machines };
 }
 
 function validateEditableTree(tree: GraphqlHierarchyTree): string | null {
@@ -346,12 +324,22 @@ function validateEditableTree(tree: GraphqlHierarchyTree): string | null {
         const cellNames = new Set<string>();
         for (const cell of line.cells) {
           try {
-            validateSegment(cell);
+            validateSegment(cell.name);
           } catch (err) {
             return err instanceof Error ? err.message : 'Cell name is invalid';
           }
-          if (cellNames.has(cell)) return `duplicate cell under ${line.name}: ${cell}`;
-          cellNames.add(cell);
+          if (cellNames.has(cell.name)) return `duplicate cell under ${line.name}: ${cell.name}`;
+          cellNames.add(cell.name);
+          const machineNames = new Set<string>();
+          for (const machine of cell.machines) {
+            try {
+              validateSegment(machine);
+            } catch (err) {
+              return err instanceof Error ? err.message : 'Machine name is invalid';
+            }
+            if (machineNames.has(machine)) return `duplicate machine under ${cell.name}: ${machine}`;
+            machineNames.add(machine);
+          }
         }
       }
     }
@@ -369,7 +357,9 @@ function refsEqual(a: NodeRef | null, b: NodeRef | null): boolean {
   if (a.level === 'area' || b.level === 'area') return true;
   if (a.line !== b.line) return false;
   if (a.level === 'line' || b.level === 'line') return true;
-  return a.cell === b.cell;
+  if (a.cell !== b.cell) return false;
+  if (a.level === 'cell' || b.level === 'cell') return true;
+  return a.machine === b.machine;
 }
 
 function TreeNodeButton({
@@ -394,11 +384,13 @@ function TreeNodeButton({
           ? 2
           : nodeRef.level === 'line'
             ? 3
-            : 4;
+            : nodeRef.level === 'cell'
+              ? 4
+              : 5;
   return (
     <button
       type="button"
-      aria-label={`${LEVEL_LABEL[nodeRef.level]} ${name}`}
+      aria-label={`${levelDef(nodeRef.level).label} ${name}`}
       aria-current={active ? 'true' : undefined}
       onClick={() => onSelect(nodeRef)}
       className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors ${
@@ -406,10 +398,19 @@ function TreeNodeButton({
       }`}
       style={{ paddingLeft: `${8 + indent * 12}px` }}
     >
-      <span className={`text-[10px] uppercase tracking-wider ${active ? 'text-white/70' : 'text-muted-foreground'}`}>
-        {LEVEL_LABEL[nodeRef.level][0]}
+      <AssetLevelIcon
+        level={nodeRef.level}
+        className={`size-3.5 shrink-0 ${active ? 'text-white' : 'text-muted-foreground'}`}
+      />
+      <span className={`shrink-0 text-[10px] tracking-wider ${active ? 'text-white/70' : 'text-muted-foreground'}`}>
+        {levelDef(nodeRef.level).label}
       </span>
-      <span className="truncate font-medium">{name}</span>
+      <span aria-hidden="true" className={active ? 'text-white/50' : 'text-muted-foreground'}>
+        ·
+      </span>
+      <span className="truncate font-medium" title={name}>
+        {name}
+      </span>
     </button>
   );
 }
@@ -420,6 +421,7 @@ export const HierarchyView: React.FC = () => {
   const { updateSettings } = useUNS();
 
   const [tree, setTree] = useState<GraphqlHierarchyTree | null>(null);
+  const [baseline, setBaseline] = useState<GraphqlHierarchyTree | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState<NodeRef | null>(null);
   const [draftName, setDraftName] = useState('');
@@ -430,6 +432,7 @@ export const HierarchyView: React.FC = () => {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [job, setJob] = useState<GraphqlHierarchyMigrateJob | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
 
   useEffect(() => {
     if (!canEdit) return;
@@ -442,6 +445,7 @@ export const HierarchyView: React.FC = () => {
         return;
       }
       setTree(next);
+      setBaseline(next);
       setSelected({ level: 'enterprise' });
       setDraftName(next.enterprise);
       setLoadError(null);
@@ -472,13 +476,18 @@ export const HierarchyView: React.FC = () => {
     const oldPrefix = nodePrefix(tree, selected);
     const nextTree = applyName(tree, selected, nextName);
     const newPrefix = nodePrefix(nextTree, selected);
-    const nextRenames = recordRename(renames, oldPrefix, newPrefix);
+    const nextRenames = recordRename(
+      renames,
+      oldPrefix,
+      newPrefix,
+      baseline ? treePrefixes(baseline) : undefined,
+    );
     setTree(nextTree);
     setRenames(nextRenames);
     setDirty(true);
     setFieldError(null);
     return { tree: nextTree, renames: nextRenames };
-  }, [tree, selected, draftName, renames]);
+  }, [tree, selected, draftName, renames, baseline]);
 
   const selectNode = (ref: NodeRef) => {
     if (selected && !refsEqual(selected, ref)) {
@@ -495,11 +504,11 @@ export const HierarchyView: React.FC = () => {
     setFieldError(null);
   };
 
-  const handleAddChild = () => {
-    if (!selected) return;
+  const handleAdd = (target: NodeLevel) => {
+    const parent = selected ?? ({ level: 'enterprise' } as const);
     const committed = applyDraft();
     if (!committed) return;
-    const result = addChild(committed.tree, selected);
+    const result = insertDescendant(committed.tree, parent, target);
     if (!result) return;
     setTree(result.tree);
     setSelected(result.child);
@@ -537,6 +546,7 @@ export const HierarchyView: React.FC = () => {
     try {
       const result = await unsGraphQLClient.saveHierarchy(committed.tree, committed.renames);
       setTree(result.tree);
+      setBaseline(result.tree);
       setRenames([]);
       setDirty(false);
       setJob(result.job);
@@ -565,7 +575,7 @@ export const HierarchyView: React.FC = () => {
   };
 
   const counts = useMemo(() => (tree ? treeCounts(tree) : null), [tree]);
-  const childLevel = selected ? CHILD_LEVEL[selected.level] : null;
+  const menuParent = selected?.level ?? 'enterprise';
   const jobFailed = job?.status === 'failed';
   const draftDirty = Boolean(tree && selected && draftName.trim() !== nodeName(tree, selected));
   const canSave = Boolean(tree) && !saving && (dirty || draftDirty);
@@ -593,11 +603,8 @@ export const HierarchyView: React.FC = () => {
             <PageStat compact label="Areas" value={counts?.areas ?? '—'} icon={<GitBranch className="size-3.5 text-muted-foreground" />} />
             <PageStat compact label="Lines" value={counts?.lines ?? '—'} icon={<GitBranch className="size-3.5 text-muted-foreground" />} />
             <PageStat compact label="Cells" value={counts?.cells ?? '—'} icon={<GitBranch className="size-3.5 text-muted-foreground" />} />
+            <PageStat compact label="Machines" value={counts?.machines ?? '—'} icon={<Cog className="size-3.5 text-muted-foreground" />} />
           </CompactKpiRow>
-
-          <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-            {SIMULATOR_BANNER}
-          </div>
 
           {job && (
             <div
@@ -645,12 +652,23 @@ export const HierarchyView: React.FC = () => {
           )}
 
           {tree && (
-            <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]">
-              <ConsoleCard padding="none" className="min-h-[280px] overflow-hidden">
-                <div className="border-b border-border px-3 py-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Plant tree
+            <div className="flex min-h-0 flex-1 flex-col gap-3 lg:flex-row">
+              <ResizableSidebar
+                storageKey="uns_console_hierarchy_tree_width"
+                defaultWidth={420}
+                minWidth={240}
+                maxWidth={800}
+                aria-label="Plant tree"
+                className="min-h-[280px] max-w-full"
+              >
+              <ConsoleCard padding="none" className="h-full min-h-[280px] overflow-visible">
+                <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+                  <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                    Plant tree
+                  </div>
+                  <NewAssetMenu parentLevel={menuParent} onPick={handleAdd} />
                 </div>
-                <div className="max-h-[calc(100vh-22rem)] space-y-0.5 overflow-y-auto p-2">
+                <div className="max-h-[calc(100vh-22rem)] space-y-0.5 overflow-x-auto overflow-y-auto p-2">
                   <TreeNodeButton tree={tree} nodeRef={{ level: 'enterprise' }} selected={selected} onSelect={selectNode} />
                   {tree.sites.map((site, siteIdx) => (
                     <React.Fragment key={`site-${siteIdx}`}>
@@ -677,19 +695,36 @@ export const HierarchyView: React.FC = () => {
                                 onSelect={selectNode}
                               />
                               {line.cells.map((cell, cellIdx) => (
-                                <TreeNodeButton
-                                  key={`cell-${siteIdx}-${areaIdx}-${lineIdx}-${cellIdx}-${cell}`}
-                                  tree={tree}
-                                  nodeRef={{
-                                    level: 'cell',
-                                    site: siteIdx,
-                                    area: areaIdx,
-                                    line: lineIdx,
-                                    cell: cellIdx,
-                                  }}
-                                  selected={selected}
-                                  onSelect={selectNode}
-                                />
+                                <React.Fragment key={`cell-${siteIdx}-${areaIdx}-${lineIdx}-${cellIdx}-${cell.name}`}>
+                                  <TreeNodeButton
+                                    tree={tree}
+                                    nodeRef={{
+                                      level: 'cell',
+                                      site: siteIdx,
+                                      area: areaIdx,
+                                      line: lineIdx,
+                                      cell: cellIdx,
+                                    }}
+                                    selected={selected}
+                                    onSelect={selectNode}
+                                  />
+                                  {cell.machines.map((machine, machineIdx) => (
+                                    <TreeNodeButton
+                                      key={`machine-${siteIdx}-${areaIdx}-${lineIdx}-${cellIdx}-${machineIdx}-${machine}`}
+                                      tree={tree}
+                                      nodeRef={{
+                                        level: 'machine',
+                                        site: siteIdx,
+                                        area: areaIdx,
+                                        line: lineIdx,
+                                        cell: cellIdx,
+                                        machine: machineIdx,
+                                      }}
+                                      selected={selected}
+                                      onSelect={selectNode}
+                                    />
+                                  ))}
+                                </React.Fragment>
                               ))}
                             </React.Fragment>
                           ))}
@@ -699,12 +734,14 @@ export const HierarchyView: React.FC = () => {
                   ))}
                 </div>
               </ConsoleCard>
+              </ResizableSidebar>
 
-              <ConsoleCard padding="md" className="space-y-3">
+              <ConsoleCard padding="md" className="min-w-0 flex-1 space-y-3">
                 {selected ? (
                   <>
-                    <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                      {LEVEL_LABEL[selected.level]}
+                    <div className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                      <AssetLevelIcon level={selected.level} />
+                      {levelDef(selected.level).label}
                     </div>
                     <label className="block space-y-1.5">
                       <span className="text-xs font-medium text-muted-foreground">Name</span>
@@ -726,12 +763,9 @@ export const HierarchyView: React.FC = () => {
                     {fieldError && <p className="text-xs text-rose-400">{fieldError}</p>}
                     <p className="font-mono text-[11px] text-muted-foreground">{nodePrefix(tree, selected)}</p>
                     <div className="flex flex-wrap gap-2 pt-1">
-                      <BtnSecondary onClick={handleAddChild} disabled={!childLevel} title={childLevel ? `Add ${LEVEL_LABEL[childLevel].toLowerCase()}` : 'A cell is a leaf'}>
-                        <Plus className="size-3.5" />
-                        Add child
-                      </BtnSecondary>
+                      <NewAssetMenu parentLevel={menuParent} onPick={handleAdd} />
                       <BtnGhost
-                        onClick={handleRemove}
+                        onClick={() => setConfirmRemove(true)}
                         disabled={selected.level === 'enterprise'}
                         className="text-rose-400 hover:text-rose-300"
                       >
@@ -748,6 +782,37 @@ export const HierarchyView: React.FC = () => {
           )}
         </PageContent>
       </div>
+
+      <Dialog open={confirmRemove} onOpenChange={(open) => !open && setConfirmRemove(false)}>
+        <DialogContent
+          aria-label="Confirm remove"
+          showCloseButton={false}
+          className="instrument-panel instrument-grain border-[#FF7A00]/20 sm:max-w-sm"
+        >
+          <DialogHeader>
+            <DialogTitle className="font-heading text-lg">
+              Remove this {selected ? levelDef(selected.level).label.toLowerCase() : 'node'}?
+            </DialogTitle>
+            <DialogDescription>
+              {draftName || 'This node'} and anything under it leave the plant tree. Save to persist.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmRemove(false)}>
+              Cancel
+            </Button>
+            <Button
+              aria-label="Confirm"
+              onClick={() => {
+                handleRemove();
+                setConfirmRemove(false);
+              }}
+            >
+              Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </PageShell>
   );
 };

@@ -70,13 +70,13 @@ kafka_mapper:
 """
 
 GET_HIERARCHY = """
-    { getHierarchy { enterprise sites { name areas { name kind lines { name cells } } } } }
+    { getHierarchy { enterprise sites { name areas { name kind lines { name cells { name machines } } } } } }
 """
 
 SAVE_HIERARCHY = """
     mutation Save($tree: HierarchyTreeInput!, $renames: [PrefixRenameInput!]!) {
         saveHierarchy(tree: $tree, renames: $renames) {
-            tree { enterprise sites { name areas { name kind lines { name cells } } } }
+            tree { enterprise sites { name areas { name kind lines { name cells { name machines } } } } }
             job { oldPrefix newPrefix status rewritten error }
         }
     }
@@ -85,6 +85,10 @@ SAVE_HIERARCHY = """
 RETRY_MIGRATE = """
     mutation { retryHierarchyMigrate { oldPrefix newPrefix status rewritten error } }
 """
+
+def _cells(*names: str) -> list[dict]:
+    return [{"name": name, "machines": []} for name in names]
+
 
 TREE_SITE1 = {
     "enterprise": "OldCo",
@@ -95,7 +99,7 @@ TREE_SITE1 = {
                 {
                     "name": "RawWater",
                     "kind": "production",
-                    "lines": [{"name": "Train1", "cells": ["V101", "V102"]}],
+                    "lines": [{"name": "Train1", "cells": _cells("V101", "V102")}],
                 }
             ],
         }
@@ -111,7 +115,7 @@ TREE_NORD = {
                 {
                     "name": "RawWater",
                     "kind": "production",
-                    "lines": [{"name": "Train1", "cells": ["V101", "V102"]}],
+                    "lines": [{"name": "Train1", "cells": _cells("V101", "V102")}],
                 }
             ],
         }
@@ -163,7 +167,7 @@ TREE_TWO_RENAMED = {
                 {
                     "name": "RawWater",
                     "kind": "production",
-                    "lines": [{"name": "Train1", "cells": ["V101", "V102"]}],
+                    "lines": [{"name": "Train1", "cells": _cells("V101", "V102")}],
                 }
             ],
         },
@@ -173,7 +177,7 @@ TREE_TWO_RENAMED = {
                 {
                     "name": "RawWater",
                     "kind": "production",
-                    "lines": [{"name": "Train1", "cells": ["V201"]}],
+                    "lines": [{"name": "Train1", "cells": _cells("V201")}],
                 }
             ],
         },
@@ -190,8 +194,8 @@ def _stale_started_at() -> str:
 
 
 def _write_conf(conf_dir: Path, plant: str = PLANT_YAML) -> None:
-    (conf_dir / "simulator").mkdir(parents=True, exist_ok=True)
-    (conf_dir / "simulator" / "plant.yaml").write_text(plant, encoding="utf-8")
+    (conf_dir / "hierarchy").mkdir(parents=True, exist_ok=True)
+    (conf_dir / "hierarchy" / "plant.yaml").write_text(plant, encoding="utf-8")
     (conf_dir / "settings.yaml").write_text(SETTINGS_YAML, encoding="utf-8")
 
 
@@ -200,7 +204,9 @@ def _job_path(conf_dir: Path) -> Path:
 
 
 def _write_job(conf_dir: Path, **fields: object) -> None:
-    _job_path(conf_dir).write_text(yaml.safe_dump(fields), encoding="utf-8")
+    path = _job_path(conf_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(fields), encoding="utf-8")
 
 
 def _read_job(conf_dir: Path) -> dict:
@@ -208,7 +214,7 @@ def _read_job(conf_dir: Path) -> dict:
 
 
 def _read_plant(conf_dir: Path) -> dict:
-    return yaml.safe_load((conf_dir / "simulator" / "plant.yaml").read_text(encoding="utf-8"))
+    return yaml.safe_load((conf_dir / "hierarchy" / "plant.yaml").read_text(encoding="utf-8"))
 
 
 @pytest.fixture
@@ -226,7 +232,10 @@ async def test_get_hierarchy_reads_plant_yaml(conf_dir: Path):  # noqa: ARG001
     tree = result.data["getHierarchy"]
     assert tree["enterprise"] == "OldCo"
     assert tree["sites"][0]["name"] == "Site1"
-    assert tree["sites"][0]["areas"][0]["lines"][0]["cells"] == ["V101", "V102"]
+    assert tree["sites"][0]["areas"][0]["lines"][0]["cells"] == [
+        {"name": "V101", "machines": []},
+        {"name": "V102", "machines": []},
+    ]
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -240,7 +249,7 @@ async def test_save_hierarchy_writes_yaml_and_reseeds_without_migrate(conf_dir: 
                     {
                         "name": "RawWater",
                         "kind": "production",
-                        "lines": [{"name": "Train1", "cells": ["V101", "V102", "V103"]}],
+                        "lines": [{"name": "Train1", "cells": _cells("V101", "V102", "V103")}],
                     }
                 ],
             }
@@ -259,10 +268,18 @@ async def test_save_hierarchy_writes_yaml_and_reseeds_without_migrate(conf_dir: 
 
     assert result.errors is None
     saved = result.data["saveHierarchy"]
-    assert saved["tree"]["sites"][0]["areas"][0]["lines"][0]["cells"] == ["V101", "V102", "V103"]
+    assert saved["tree"]["sites"][0]["areas"][0]["lines"][0]["cells"] == [
+        {"name": "V101", "machines": []},
+        {"name": "V102", "machines": []},
+        {"name": "V103", "machines": []},
+    ]
     assert saved["job"]["status"] == "idle"
     plant = _read_plant(conf_dir)
-    assert plant["sites"][0]["areas"][0]["lines"][0]["cells"] == ["V101", "V102", "V103"]
+    assert plant["sites"][0]["areas"][0]["lines"][0]["cells"] == [
+        {"name": "V101", "machines": []},
+        {"name": "V102", "machines": []},
+        {"name": "V103", "machines": []},
+    ]
     settings = yaml.safe_load((conf_dir / "settings.yaml").read_text(encoding="utf-8"))
     assert settings["default"]["platform"]["organization_name"] == "OldCo"
     reseed.assert_awaited()
@@ -544,6 +561,48 @@ async def test_save_writes_running_before_reseed(conf_dir: Path):
 
     assert result.errors is None
     assert result.data["saveHierarchy"]["job"]["status"] == "done"
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_save_hierarchy_persists_authored_machines(conf_dir: Path):
+    tree = {
+        "enterprise": "OldCo",
+        "sites": [
+            {
+                "name": "Site1",
+                "areas": [
+                    {
+                        "name": "RawWater",
+                        "kind": "production",
+                        "lines": [
+                            {
+                                "name": "Train1",
+                                "cells": [{"name": "V101", "machines": ["Dryer"]}],
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+    with (
+        patch(REWRITE_HISTORIAN, new_callable=AsyncMock),
+        patch(REWRITE_GRAPH, new_callable=AsyncMock),
+        patch(RESEED, new_callable=AsyncMock) as reseed,
+    ):
+        result = await UNSGraphql.schema.execute(
+            SAVE_HIERARCHY,
+            variable_values={"tree": tree, "renames": []},
+            context_value=ADMIN,
+        )
+
+    assert result.errors is None
+    cells = result.data["saveHierarchy"]["tree"]["sites"][0]["areas"][0]["lines"][0]["cells"]
+    assert cells == [{"name": "V101", "machines": ["Dryer"]}]
+    assert _read_plant(conf_dir)["sites"][0]["areas"][0]["lines"][0]["cells"] == [
+        {"name": "V101", "machines": ["Dryer"]}
+    ]
+    reseed.assert_awaited()
 
 
 @pytest.mark.asyncio(loop_scope="function")

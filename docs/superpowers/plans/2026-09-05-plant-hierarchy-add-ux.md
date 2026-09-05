@@ -12,12 +12,12 @@
 
 ## Global Constraints
 
-- **`#/hierarchy` is the platform hierarchy.** Do not add a second tree writer on Connectivity or Condition Monitoring.
+- `#/hierarchy` **is the platform hierarchy.** Do not add a second tree writer on Connectivity or Condition Monitoring.
 - **Writes stay on** `getHierarchy` / `saveHierarchy`. No private frontend API (ADR-0005).
 - **No new container or image.** Hierarchy Management is not a separate service.
 - **Skip is editor-only.** A Machine under a Line still creates a default Cell. A Line under a Site still creates a default Area (`kind: production`).
 - **Catalog levels:** Enterprise, Site, Area, Line, Cell, Machine. Do not add Division, Product Line, Production Unit, or Work Cell as a separate label (Cell is the Work Cell).
-- **Machine is the leaf.** + New is disabled with `Machine is a leaf — nothing can be added under it.`
+- **Machine is the leaf.** + New is disabled with `Machine is a leaf — nothing can be added under it.` Do not add Module, Signal, Tag, PLC, or OPC Server under Machine. A PLC is a Machine. OPC / Modbus / MQTT servers stay in Connectivity; each subscribed tag attaches to an existing MACHINE Asset as a Metric.
 - **YAML read accepts string cells.** YAML write always emits `{ name, machines }`.
 - **Seed:** authored `machines` on a cell replace the PLC stamp on that cell; empty/omitted machines keep today’s PLC + SCADA/HMI stamp.
 - **Edits stay local until Save.** Adding a Machine does not subscribe OPC, publish MQTT, or open Condition Monitoring.
@@ -28,6 +28,8 @@
 - **No new npm dependency** for the menu. Use a button + `role="menu"` / `role="menuitem"`.
 
 ---
+
+
 
 ## File Structure
 
@@ -58,15 +60,19 @@ Do not touch `App.tsx`, `Sidebar.tsx`, Connectivity, Condition Monitoring, or Co
 
 ---
 
+
+
 ### Task 1: HierarchyCell in the model
 
 **Files:**
+
 - Modify: `09_uns_model/src/uns_model/hierarchy.py`
 - Modify: `09_uns_model/test/test_hierarchy.py`
 - Modify: `09_uns_model/test/test_hierarchy_io.py`
 - Modify: `09_uns_model/test/test_seed.py` — only the `HierarchyLine(..., ("V101",))` constructors that this compile break forces; seed behaviour is Task 2
 
 **Interfaces:**
+
 - Consumes: `validate_segment`, `join_segments`
 - Produces:
   - `HierarchyCell(name: str, machines: tuple[str, ...] = ())`
@@ -209,7 +215,6 @@ Expected: FAIL — `HierarchyCell` is not defined, or `cells` is still `tuple[st
 In `09_uns_model/src/uns_model/hierarchy.py`:
 
 1. Change the module docstring first sentence to `Enterprise > Site > Area > Line > Cell > Machine`.
-
 2. Add and replace the line/cell types:
 
 ```python
@@ -225,7 +230,7 @@ class HierarchyLine:
     cells: tuple[HierarchyCell, ...]
 ```
 
-3. Add coerce helpers and use them from `_coerce_lines`:
+1. Add coerce helpers and use them from `_coerce_lines`:
 
 ```python
 def _coerce_cell(raw: object) -> HierarchyCell:
@@ -250,7 +255,7 @@ def _coerce_cells(raw: object) -> tuple[HierarchyCell, ...]:
 
 In `_coerce_lines`, replace the `cells = tuple(body.get("cells", ()))` line with `cells = _coerce_cells(...)`.
 
-4. `tree_to_mapping` line objects:
+1. `tree_to_mapping` line objects:
 
 ```python
 "cells": [
@@ -259,7 +264,7 @@ In `_coerce_lines`, replace the `cells = tuple(body.get("cells", ()))` line with
 ]
 ```
 
-5. `validate_tree` — unique cell names stay; add unique machines per cell:
+1. `validate_tree` — unique cell names stay; add unique machines per cell:
 
 ```python
 for line in area.lines:
@@ -276,7 +281,7 @@ for line in area.lines:
         )
 ```
 
-6. `all_prefixes` — walk `cell.name` and each machine:
+1. `all_prefixes` — walk `cell.name` and each machine:
 
 ```python
 for cell in line.cells:
@@ -303,13 +308,17 @@ git commit -m "feat(hierarchy): persist machines under each work cell."
 
 ---
 
+
+
 ### Task 2: Seed authored machines
 
 **Files:**
+
 - Modify: `09_uns_model/src/uns_model/seed.py`
 - Modify: `09_uns_model/test/test_seed.py`
 
 **Interfaces:**
+
 - Consumes: `tree_to_mapping` (cells are objects), `_named`, `_machines`
 - Produces: `plan_from_simulator_config` / `plan_from_hierarchy_tree` create `…/Cell/Dryer` when the cell lists `machines: [Dryer]`, and do not stamp PLC equipment on that cell
 
@@ -427,14 +436,18 @@ git commit -m "feat(model): seed authored machines from the plant hierarchy."
 
 ---
 
+
+
 ### Task 3: GraphQL cell objects
 
 **Files:**
+
 - Modify: `07_uns_graphql/src/uns_graphql/type/hierarchy.py`
 - Modify: `07_uns_graphql/src/uns_graphql/input/hierarchy.py`
 - Modify: `07_uns_graphql/test/mutations/test_hierarchy.py`
 
 **Interfaces:**
+
 - Consumes: `HierarchyCell`, `HierarchyLine`
 - Produces:
   - `HierarchyCellType { name, machines }`
@@ -487,8 +500,8 @@ Apply the same `_cells(...)` shape to `TREE_NORD`, `TREE_TWO_RENAMED`, and every
 Update existing assertions that still compare `cells` to strings:
 
 - `test_get_hierarchy_reads_plant_yaml`: expect
-  `[{"name": "V101", "machines": []}, {"name": "V102", "machines": []}]`
-  (string YAML still loads).
+`[{"name": "V101", "machines": []}, {"name": "V102", "machines": []}]`
+(string YAML still loads).
 - `test_save_hierarchy_writes_yaml_and_reseeds_without_migrate`: `added` uses `_cells("V101", "V102", "V103")`; GraphQL result and `_read_plant` both expect objects with empty `machines`.
 
 Add:
@@ -608,15 +621,19 @@ git commit -m "feat(graphql): expose hierarchy cells as name plus machines."
 
 ---
 
+
+
 ### Task 4: Frontend hierarchy types
 
 **Files:**
+
 - Modify: `11_frontend/src/services/graphql/types.ts`
 - Modify: `11_frontend/src/services/graphql/queries.ts`
 - Modify: `11_frontend/src/components/hierarchy/HierarchyView.tsx`
 - Modify: `11_frontend/src/components/hierarchy/HierarchyView.test.tsx`
 
 **Interfaces:**
+
 - Consumes: GraphQL `HierarchyCellType`
 - Produces: `GraphqlHierarchyCell { name: string; machines: string[] }`; view clones, names, validates, adds, and removes cell objects; still Cell-leaf **Add child** until Task 8
 
@@ -721,13 +738,17 @@ git commit -m "feat(hierarchy): load and save cells as name plus machines."
 
 ---
 
+
+
 ### Task 5: Level catalog including Machine
 
 **Files:**
+
 - Create: `11_frontend/src/components/hierarchy/hierarchyLevels.ts`
 - Test: `11_frontend/src/components/hierarchy/hierarchyLevels.test.ts`
 
 **Interfaces:**
+
 - Produces:
   - `NodeLevel` = `'enterprise' | 'site' | 'area' | 'line' | 'cell' | 'machine'`
   - `LevelDef` = `{ id: NodeLevel; label: string; defaultName: string | null; icon: LucideIcon }`
@@ -905,14 +926,18 @@ git commit -m "feat(hierarchy): add Machine to the editor level catalog."
 
 ---
 
+
+
 ### Task 6: insertDescendant including Machine
 
 **Files:**
+
 - Create: `11_frontend/src/components/hierarchy/hierarchyTree.ts`
 - Test: `11_frontend/src/components/hierarchy/hierarchyTree.test.ts`
 - Modify: `11_frontend/src/components/hierarchy/HierarchyView.tsx` — delete local `NodeLevel`, `NodeRef`, `CHILD_LEVEL`, `CHILD_BASE_NAME`, `LEVEL_LABEL`, `cloneTree`, `uniqueChildName`, `addChild`; import from the new modules. **Add child** still calls `addChild`.
 
 **Interfaces:**
+
 - Produces: `NodeRef` with `machine`; `cloneTree`; `addChild` (Cell → Machine); `insertDescendant`
 
 - [ ] **Step 1: Write the failing test**
@@ -1063,14 +1088,18 @@ git commit -m "feat(hierarchy): insert skipped levels including Machine."
 
 ---
 
+
+
 ### Task 7: NewAssetMenu and AssetLevelIcon
 
 **Files:**
+
 - Create: `11_frontend/src/components/hierarchy/AssetLevelIcon.tsx`
 - Create: `11_frontend/src/components/hierarchy/NewAssetMenu.tsx`
 - Test: `11_frontend/src/components/hierarchy/NewAssetMenu.test.tsx`
 
 **Interfaces:**
+
 - Produces: `AssetLevelIcon({ level })`, `NewAssetMenu({ parentLevel, onPick })`
 
 - [ ] **Step 1: Write the failing test**
@@ -1141,13 +1170,17 @@ git commit -m "feat(hierarchy): add + New menu of remaining editor levels."
 
 ---
 
+
+
 ### Task 8: Wire HierarchyView (icons, + New, Machine rows)
 
 **Files:**
+
 - Modify: `11_frontend/src/components/hierarchy/HierarchyView.tsx`
 - Modify: `11_frontend/src/components/hierarchy/HierarchyView.test.tsx`
 
 **Interfaces:**
+
 - Consumes: `NewAssetMenu`, `AssetLevelIcon`, `insertDescendant`, `levelDef`
 - Produces: spec §§6–9, including Machine rows under each Cell
 
@@ -1296,23 +1329,27 @@ git commit -m "feat(hierarchy): create machines from + New and show them on the 
 
 ---
 
+
+
 ## Self-review (plan vs spec)
 
-| Spec requirement | Task |
-|---|---|
-| String cells still load | 1 |
-| YAML / GraphQL `{ name, machines }` | 1, 3, 4 |
-| Authored machines seed MACHINE Assets | 2 |
-| Empty cell keeps PLC stamp | 2 |
-| Prefixes include machines | 1 |
-| + New in tree header and detail pane | 7, 8 |
-| Remaining levels + Machine descriptions | 5, 7 |
-| Skip insert with default parents | 6, 8 |
-| Machine leaf disabled + `LEAF_TITLE` | 5, 7, 8 |
-| Icon + type name; Cog for Machine | 5, 7, 8 |
-| Save payload includes machines | 8 |
-| `settings_edit` unchanged | 8 (existing test) |
-| No Connectivity / CM tree chrome | Global constraints |
-| Platform reach = Asset Model after Save | 2, 3 |
+
+| Spec requirement                        | Task               |
+| --------------------------------------- | ------------------ |
+| String cells still load                 | 1                  |
+| YAML / GraphQL `{ name, machines }`     | 1, 3, 4            |
+| Authored machines seed MACHINE Assets   | 2                  |
+| Empty cell keeps PLC stamp              | 2                  |
+| Prefixes include machines               | 1                  |
+| + New in tree header and detail pane    | 7, 8               |
+| Remaining levels + Machine descriptions | 5, 7               |
+| Skip insert with default parents        | 6, 8               |
+| Machine leaf disabled + `LEAF_TITLE`    | 5, 7, 8            |
+| Icon + type name; Cog for Machine       | 5, 7, 8            |
+| Save payload includes machines          | 8                  |
+| `settings_edit` unchanged               | 8 (existing test)  |
+| No Connectivity / CM tree chrome        | Global constraints |
+| Platform reach = Asset Model after Save | 2, 3               |
+
 
 No TBD/TODO. `HierarchyCell` / `NodeLevel` / `insertDescendant` / `NewAssetMenu` names are the same in every task.

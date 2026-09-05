@@ -155,6 +155,11 @@ describe('ConditionMonitoringView catalog', () => {
     );
   });
 
+  it('exposes a resize handle on the plant tree pane', async () => {
+    await renderPage();
+    expect(screen.getByRole('separator', { name: /resize plant tree/i })).toBeTruthy();
+  });
+
   it('renders one card per subscribed tag and hides All signals until scoped', async () => {
     await renderPage();
     await waitFor(() => expect(screen.getByText('Fault')).toBeTruthy());
@@ -272,7 +277,7 @@ describe('ConditionMonitoringView historian and live tail', () => {
     await waitFor(() => expect(screen.getByText(/topic missing/i)).toBeTruthy());
     expect(screen.getByText('Fault')).toBeTruthy();
     expect(screen.getByText('Speed')).toBeTruthy();
-    expect(screen.getByText('42')).toBeTruthy();
+    expect(screen.getAllByText('42').length).toBeGreaterThan(0);
   });
 
   it('keeps in-window live samples after a historian refetch on range change', async () => {

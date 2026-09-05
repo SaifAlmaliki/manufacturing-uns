@@ -1,9 +1,8 @@
 """Tests for `hierarchy_io`: read/write `plant.yaml` and derive enterprise settings.
 
 No database, no real conf directory: every test copies a minimal snippet into a
-`tmp_path` and asserts on the round-trip. The shipped `conf/simulator/plant.yaml`
-uses a list-of-objects sites shape, so `save_plant_tree` must emit that shape to
-keep the file loadable by the simulator.
+`tmp_path` and asserts on the round-trip. The shipped `conf/hierarchy/plant.yaml`
+uses a list-of-objects sites shape, so `save_plant_tree` must emit that shape.
 """
 
 from __future__ import annotations
@@ -14,6 +13,7 @@ import yaml
 
 from uns_model.hierarchy import (
     HierarchyArea,
+    HierarchyCell,
     HierarchyLine,
     HierarchySite,
     HierarchyTree,
@@ -66,7 +66,36 @@ dynaconf_merge: true
 """
 
 
-def _write_plant(conf_dir: Path, text: str = MINIMAL_PLANT_YAML) -> Path:
+HIERARCHY_ONLY_YAML = """\
+enterprise: OldCo
+sites:
+  - name: Site1
+    areas:
+      - name: RawWater
+        kind: production
+        lines:
+          - name: Train1
+            cells: [V101, V102]
+"""
+
+SIMULATOR_PROFILE_YAML = """\
+plant: {}
+profiles:
+  wtp:
+    tier_scale: 1.0
+    sites: [Site1]
+    families: [wtp]
+"""
+
+
+def _write_plant(conf_dir: Path, text: str = HIERARCHY_ONLY_YAML) -> Path:
+    (conf_dir / "hierarchy").mkdir(parents=True, exist_ok=True)
+    path = conf_dir / "hierarchy" / "plant.yaml"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def _write_simulator_profile(conf_dir: Path, text: str = SIMULATOR_PROFILE_YAML) -> Path:
     (conf_dir / "simulator").mkdir(parents=True, exist_ok=True)
     path = conf_dir / "simulator" / "plant.yaml"
     path.write_text(text, encoding="utf-8")
@@ -89,7 +118,7 @@ def _sample_tree() -> HierarchyTree:
                     HierarchyArea(
                         name="RawWater",
                         kind="production",
-                        lines=(HierarchyLine(name="Train1", cells=("V101", "V102")),),
+                        lines=(HierarchyLine(name="Train1", cells=(HierarchyCell("V101", ("Dryer",)), HierarchyCell("V102"))),),
                     ),
                 ),
             ),
@@ -115,7 +144,7 @@ def test_load_plant_tree_reads_the_shipped_list_shape(tmp_path: Path):
                 HierarchyArea(
                     name="RawWater",
                     kind="production",
-                    lines=(HierarchyLine(name="Train1", cells=("V101", "V102")),),
+                    lines=(HierarchyLine(name="Train1", cells=(HierarchyCell("V101"), HierarchyCell("V102"))),),
                 ),
             ),
         ),
@@ -161,27 +190,38 @@ def test_save_writes_the_list_of_objects_sites_shape(tmp_path: Path):
 
     save_plant_tree(tmp_path, _sample_tree())
 
-    doc = yaml.safe_load((tmp_path / "simulator" / "plant.yaml").read_text(encoding="utf-8"))
+    doc = yaml.safe_load((tmp_path / "hierarchy" / "plant.yaml").read_text(encoding="utf-8"))
     assert isinstance(doc["sites"], list)
     assert doc["sites"][0]["name"] == "Nord"
     assert doc["sites"][0]["areas"][0]["name"] == "RawWater"
     assert doc["sites"][0]["areas"][0]["kind"] == "production"
     assert doc["sites"][0]["areas"][0]["lines"][0]["name"] == "Train1"
-    assert doc["sites"][0]["areas"][0]["lines"][0]["cells"] == ["V101", "V102"]
+    assert doc["sites"][0]["areas"][0]["lines"][0]["cells"] == [
+        {"name": "V101", "machines": ["Dryer"]},
+        {"name": "V102", "machines": []},
+    ]
+    assert "plant" not in doc
+    assert "profiles" not in doc
 
 
-def test_save_replaces_enterprise_and_sites_keeps_plant_and_profiles(tmp_path: Path):
+def test_save_keeps_simulator_profiles_out_of_the_hierarchy_file(tmp_path: Path):
     _write_plant(tmp_path)
+    _write_simulator_profile(tmp_path)
 
     save_plant_tree(tmp_path, _sample_tree())
 
-    doc = yaml.safe_load((tmp_path / "simulator" / "plant.yaml").read_text(encoding="utf-8"))
-    assert doc["enterprise"] == "Contoso"
-    assert doc["plant"] == {}
-    assert doc["profiles"]["wtp"]["tier_scale"] == 1.0
-    assert doc["profiles"]["wtp"]["families"] == ["wtp"]
-    # Site1 rename must not leave a dead profile filter.
-    assert doc["profiles"]["wtp"]["sites"] == ["Nord"]
+    hierarchy = yaml.safe_load((tmp_path / "hierarchy" / "plant.yaml").read_text(encoding="utf-8"))
+    assert hierarchy["enterprise"] == "Contoso"
+    assert "plant" not in hierarchy
+    assert "profiles" not in hierarchy
+
+    simulator = yaml.safe_load((tmp_path / "simulator" / "plant.yaml").read_text(encoding="utf-8"))
+    assert simulator["enterprise"] == "Contoso"
+    assert simulator["sites"][0]["name"] == "Nord"
+    assert simulator["plant"] == {}
+    assert simulator["profiles"]["wtp"]["tier_scale"] == 1.0
+    assert simulator["profiles"]["wtp"]["families"] == ["wtp"]
+    assert simulator["profiles"]["wtp"]["sites"] == ["Nord"]
 
 
 def test_save_defaults_empty_area_kind_to_production(tmp_path: Path):
@@ -192,14 +232,14 @@ def test_save_defaults_empty_area_kind_to_production(tmp_path: Path):
         sites=(
             HierarchySite(
                 name="S",
-                areas=(HierarchyArea(name="A", kind="", lines=(HierarchyLine("L", ("C",)),)),),
+                areas=(HierarchyArea(name="A", kind="", lines=(HierarchyLine("L", (HierarchyCell("C"),)),)),),
             ),
         ),
     )
 
     save_plant_tree(tmp_path, tree)
 
-    doc = yaml.safe_load((tmp_path / "simulator" / "plant.yaml").read_text(encoding="utf-8"))
+    doc = yaml.safe_load((tmp_path / "hierarchy" / "plant.yaml").read_text(encoding="utf-8"))
     assert doc["sites"][0]["areas"][0]["kind"] == "production"
 
 
@@ -208,17 +248,30 @@ def test_save_uses_an_atomic_write(tmp_path: Path):
 
     save_plant_tree(tmp_path, _sample_tree())
 
-    assert not (tmp_path / "simulator" / "plant.yaml.tmp").exists()
-    assert (tmp_path / "simulator" / "plant.yaml").exists()
+    assert not (tmp_path / "hierarchy" / "plant.yaml.tmp").exists()
+    assert (tmp_path / "hierarchy" / "plant.yaml").exists()
 
 
-def test_save_creates_the_simulator_dir_when_missing(tmp_path: Path):
+def test_save_creates_the_hierarchy_dir_when_missing(tmp_path: Path):
     tree = _sample_tree()
 
     save_plant_tree(tmp_path, tree)
 
-    assert (tmp_path / "simulator" / "plant.yaml").exists()
+    assert (tmp_path / "hierarchy" / "plant.yaml").exists()
+    assert not (tmp_path / "simulator" / "plant.yaml").exists()
     assert load_plant_tree(tmp_path) == tree
+
+
+def test_load_falls_back_to_simulator_plant_yaml(tmp_path: Path):
+    _write_simulator_profile(
+        tmp_path,
+        MINIMAL_PLANT_YAML,
+    )
+
+    tree = load_plant_tree(tmp_path)
+
+    assert tree.enterprise == "OldCo"
+    assert tree.sites[0].name == "Site1"
 
 
 # ---------------------------------------------------------------------------

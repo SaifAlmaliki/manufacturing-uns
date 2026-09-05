@@ -3,17 +3,27 @@
 from __future__ import annotations
 
 import strawberry
-from uns_model.hierarchy import HierarchyArea, HierarchyLine, HierarchySite, HierarchyTree
+from uns_model.hierarchy import HierarchyArea, HierarchyCell, HierarchyLine, HierarchySite, HierarchyTree
+
+
+@strawberry.type(description="A work cell (instance tag) and the machines under it.")
+class HierarchyCellType:
+    name: str
+    machines: list[str]
+
+    @classmethod
+    def from_cell(cls, cell: HierarchyCell) -> "HierarchyCellType":
+        return cls(name=cell.name, machines=list(cell.machines))
 
 
 @strawberry.type(description="A line and the cells (instance tags) under it.")
 class HierarchyLineType:
     name: str
-    cells: list[str]
+    cells: list[HierarchyCellType]
 
     @classmethod
     def from_line(cls, line: HierarchyLine) -> HierarchyLineType:
-        return cls(name=line.name, cells=list(line.cells))
+        return cls(name=line.name, cells=[HierarchyCellType.from_cell(cell) for cell in line.cells])
 
 
 @strawberry.type(description="An area in the ISA-95 tree.")

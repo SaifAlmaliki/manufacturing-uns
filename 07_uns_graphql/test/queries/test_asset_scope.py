@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from uns_model.hierarchy import HierarchyArea, HierarchyLine, HierarchySite, HierarchyTree
+from uns_model.hierarchy import HierarchyArea, HierarchyCell, HierarchyLine, HierarchySite, HierarchyTree
 
 from uns_graphql.auth.context import CONTEXT_KEY
 from uns_graphql.auth.scope import AccessScope, filter_by_path
@@ -147,12 +147,12 @@ async def test_get_hierarchy_hides_rawwater_from_filtration_operator():
                     HierarchyArea(
                         name="RawWater",
                         kind="production",
-                        lines=(HierarchyLine(name="Train1", cells=("V101",)),),
+                        lines=(HierarchyLine(name="Train1", cells=(HierarchyCell("V101"),)),),
                     ),
                     HierarchyArea(
                         name="Filtration",
                         kind="production",
-                        lines=(HierarchyLine(name="Train1", cells=("F101",)),),
+                        lines=(HierarchyLine(name="Train1", cells=(HierarchyCell("F101"),)),),
                     ),
                 ),
             ),

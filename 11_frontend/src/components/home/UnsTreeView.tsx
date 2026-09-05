@@ -108,7 +108,9 @@ export const UnsTreeView: React.FC = () => {
               <Folder className="size-3.5 shrink-0 text-muted-foreground" />
             )}
 
-            <span className="truncate">{node.name}</span>
+            <span className="truncate" title={node.name}>
+              {node.name}
+            </span>
           </div>
 
           <button
@@ -143,7 +145,7 @@ export const UnsTreeView: React.FC = () => {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Layers className="size-4 text-[#FF7A00]" />
-            <span className="text-sm font-semibold text-foreground">Namespace Tree</span>
+            <span className="text-sm font-semibold text-foreground">Plant tree</span>
           </div>
           <button
             onClick={() => refreshTree()}
@@ -167,7 +169,7 @@ export const UnsTreeView: React.FC = () => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-2">
+      <div className="min-w-0 flex-1 overflow-x-auto overflow-y-auto p-2">
         {rootNodes.length === 0 ? (
           <div className="flex flex-col items-center justify-center px-4 py-12 text-center">
             <AlertCircle className="mb-2 size-8 text-muted-foreground" />

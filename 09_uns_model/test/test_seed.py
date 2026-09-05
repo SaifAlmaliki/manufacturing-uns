@@ -10,10 +10,18 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from uns_model.hierarchy import HierarchyArea, HierarchyLine, HierarchySite, HierarchyTree, tree_to_mapping
+from uns_model.hierarchy import (
+    HierarchyArea,
+    HierarchyCell,
+    HierarchyLine,
+    HierarchySite,
+    HierarchyTree,
+    tree_to_mapping,
+)
 from uns_model.repositories import AssetSpec
 from uns_model.seed import (
     SIMULATOR_LEVELS,
+    _cell_entries,
     apply_plan,
     plan_from_hierarchy_tree,
     plan_from_simulator_config,
@@ -196,13 +204,41 @@ def test_a_missing_hierarchy_is_an_error_rather_than_an_empty_model():
         plan_from_simulator_config({"plc": []})
 
 
+@pytest.mark.parametrize(
+    "hierarchy",
+    [
+        {
+            "sites": [
+                {
+                    "name": "S",
+                    "areas": [{"name": "A", "lines": [{"name": "L", "cells": ["C1"]}]}],
+                }
+            ]
+        },
+        {
+            "enterprise": "",
+            "sites": [
+                {
+                    "name": "S",
+                    "areas": [{"name": "A", "lines": [{"name": "L", "cells": ["C1"]}]}],
+                }
+            ]
+        },
+    ],
+    ids=["missing", "empty"],
+)
+def test_nested_sites_without_enterprise_raise_value_error(hierarchy):
+    with pytest.raises(ValueError, match="simulator.hierarchy.enterprise is required"):
+        _cell_entries(hierarchy)
+
+
 def _two_cell_tree() -> HierarchyTree:
     return HierarchyTree(
         enterprise="E",
         sites=(
             HierarchySite(
                 "S",
-                (HierarchyArea("A", "production", (HierarchyLine("L", ("V101", "V102")),)),),
+                (HierarchyArea("A", "production", (HierarchyLine("L", (HierarchyCell("V101"), HierarchyCell("V102"))),)),),
             ),
         ),
     )
@@ -214,7 +250,7 @@ def _one_cell_tree() -> HierarchyTree:
         sites=(
             HierarchySite(
                 "S",
-                (HierarchyArea("A", "production", (HierarchyLine("L", ("V101",)),)),),
+                (HierarchyArea("A", "production", (HierarchyLine("L", (HierarchyCell("V101"),)),)),),
             ),
         ),
     )
@@ -227,8 +263,8 @@ def _two_area_tree() -> HierarchyTree:
             HierarchySite(
                 "Site",
                 (
-                    HierarchyArea("PressShop", "production", (HierarchyLine("L1", ("C1",)),)),
-                    HierarchyArea("RawWater", "production", (HierarchyLine("L1", ("C1",)),)),
+                    HierarchyArea("PressShop", "production", (HierarchyLine("L1", (HierarchyCell("C1"),)),)),
+                    HierarchyArea("RawWater", "production", (HierarchyLine("L1", (HierarchyCell("C1"),)),)),
                 ),
             ),
         ),
@@ -388,6 +424,40 @@ def test_plan_from_hierarchy_tree_without_extra_has_no_plc_machines():
     assert "E/S/A/L/V101/HMI" in plan.asset_paths
 
 
+def test_authored_machines_replace_the_plc_stamp_on_that_cell():
+    tree = HierarchyTree(
+        "E",
+        (
+            HierarchySite(
+                "S",
+                (
+                    HierarchyArea(
+                        "A",
+                        "production",
+                        (
+                            HierarchyLine(
+                                "L",
+                                (
+                                    HierarchyCell("V101", ("Dryer",)),
+                                    HierarchyCell("P101"),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    extra = {"plc": [{"equipment": "G1", "sensors": {"Temperature": {"unit": "°C"}}}]}
+    plan = plan_from_hierarchy_tree(tree, extra)
+    paths = plan.asset_paths
+    assert "E/S/A/L/V101/Dryer" in paths
+    assert "E/S/A/L/V101/G1" not in paths
+    assert "E/S/A/L/P101/G1" in paths
+    assert "E/S/A/L/V101/SCADA" in paths
+    assert "E/S/A/L/V101/HMI" in paths
+
+
 @pytest.mark.asyncio
 async def test_applying_a_smaller_tree_prunes_the_removed_cell():
     repository = RecordingRepository()
@@ -450,7 +520,7 @@ async def test_delete_asset_also_removes_descendants():
 
 
 def test_seed_dry_run_loads_plant_yaml_when_present(tmp_path, monkeypatch, capsys):
-    plant_dir = tmp_path / "simulator"
+    plant_dir = tmp_path / "hierarchy"
     plant_dir.mkdir()
     (plant_dir / "plant.yaml").write_text(
         yaml.safe_dump(tree_to_mapping(_two_cell_tree())),

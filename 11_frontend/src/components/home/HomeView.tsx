@@ -1,4 +1,5 @@
 import React from 'react';
+import { ResizableSidebar } from '../ui/resizable-sidebar';
 import { UnsTreeView } from './UnsTreeView';
 import { PayloadInspector } from './PayloadInspector';
 import { LiveMqttFeed } from './LiveMqttFeed';
@@ -7,20 +8,22 @@ export const HomeView: React.FC = () => {
   return (
     <div
       id="home-view-container"
-      className="flex-1 flex flex-col md:grid md:grid-cols-12 h-full w-full overflow-y-auto md:overflow-hidden bg-background"
+      className="flex h-full w-full flex-1 flex-col overflow-y-auto bg-background md:flex-row md:overflow-hidden"
     >
-      <section
+      <ResizableSidebar
         id="section-uns-tree"
+        storageKey="uns_console_home_tree_width"
+        defaultWidth={320}
         aria-label="UNS Hierarchy Tree"
-        className="h-[300px] md:h-full md:col-span-4 lg:col-span-3 overflow-hidden border-b md:border-b-0 md:border-r border-border shrink-0 bg-surface"
+        className="h-[300px] border-b border-border bg-surface md:h-full md:border-b-0 md:border-r"
       >
         <UnsTreeView />
-      </section>
+      </ResizableSidebar>
 
       <section
         id="section-payload-inspector"
         aria-label="Payload Inspector"
-        className="min-h-[340px] md:h-full md:col-span-4 lg:col-span-5 overflow-hidden border-b md:border-b-0 md:border-r border-border flex flex-col bg-surface"
+        className="flex min-h-[340px] min-w-0 flex-1 flex-col overflow-hidden border-b border-border bg-surface md:h-full md:border-b-0 md:border-r"
       >
         <PayloadInspector />
       </section>
@@ -28,7 +31,7 @@ export const HomeView: React.FC = () => {
       <section
         id="section-live-mqtt-feed"
         aria-label="Live MQTT Stream"
-        className="h-[300px] md:h-full md:col-span-4 lg:col-span-4 overflow-hidden shrink-0 bg-surface"
+        className="h-[300px] min-w-0 flex-1 overflow-hidden bg-surface md:h-full"
       >
         <LiveMqttFeed />
       </section>

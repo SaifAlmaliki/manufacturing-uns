@@ -1,13 +1,12 @@
-"""Read/write `conf/simulator/plant.yaml` and derive enterprise branding/mapper filters.
+"""Read/write `conf/hierarchy/plant.yaml` and derive enterprise branding/mapper filters.
 
-The shipped `plant.yaml` is the reviewable source of truth for the ISA-95 tree.
-The console writes it through GraphQL on a hierarchy save, then derives the
+The ISA-95 tree is platform configuration, not simulator configuration. The
+console writes it through GraphQL on a hierarchy save, then derives the
 branding and mapper topic filters in `conf/settings.yaml` from the enterprise
 name. This module owns the YAML I/O so the rest of `uns_model` stays free of
 file concerns.
 
-Sites are stored as a list of objects (`{name, areas: [...]}`) because that is
-the shape the WTP simulator and `tree_from_mapping` already consume.
+Sites are stored as a list of objects (`{name, areas: [...]}`).
 `tree_to_mapping` is the shared projection used here and by seed.
 """
 
@@ -27,8 +26,9 @@ from uns_model.hierarchy import (
     tree_to_mapping,
 )
 
-PLANT_SUBDIR = "simulator"
+PLANT_SUBDIR = "hierarchy"
 PLANT_FILENAME = "plant.yaml"
+SIMULATOR_SUBDIR = "simulator"
 SETTINGS_FILENAME = "settings.yaml"
 
 _TEST_UNS_FILTER = "test/uns/#"
@@ -40,44 +40,71 @@ _SPARKPLUG_PREFIX = "spBv1.0"
 # ---------------------------------------------------------------------------
 
 
+def _hierarchy_path(conf_dir: Path) -> Path:
+    return conf_dir / PLANT_SUBDIR / PLANT_FILENAME
+
+
+def _simulator_plant_path(conf_dir: Path) -> Path:
+    return conf_dir / SIMULATOR_SUBDIR / PLANT_FILENAME
+
+
 def load_plant_tree(conf_dir: Path) -> HierarchyTree:
-    """Load the ISA-95 tree from `conf_dir/simulator/plant.yaml`."""
-    path = conf_dir / PLANT_SUBDIR / PLANT_FILENAME
+    """Load the ISA-95 tree from `conf_dir/hierarchy/plant.yaml`.
+
+    Falls back to `conf_dir/simulator/plant.yaml` so an old checkout still loads.
+    """
+    path = _hierarchy_path(conf_dir)
+    if not path.is_file():
+        path = _simulator_plant_path(conf_dir)
     with path.open("r", encoding="utf-8") as fh:
         doc = yaml.safe_load(fh) or {}
     return tree_from_mapping(doc)
 
 
 def save_plant_tree(conf_dir: Path, tree: HierarchyTree) -> None:
-    """Persist `tree` to `conf_dir/simulator/plant.yaml`.
+    """Persist `tree` to `conf_dir/hierarchy/plant.yaml`.
 
-    Loads the existing document so `plant`, `profiles.wtp.tier_scale`, and
-    `profiles.wtp.families` survive a save that only changes the hierarchy.
-    `enterprise` and `sites` are replaced, and `profiles.wtp.sites` is reset to
-    the new site names so a Site1 rename does not leave a dead profile filter.
+    The hierarchy file holds only `enterprise` and `sites`. Simulator `plant` /
+    `profiles` stay in `conf/simulator/plant.yaml`; when that file exists, this
+    resets `profiles.wtp.sites` so a site rename does not leave a dead filter.
     The write is atomic: a `.tmp` file is replaced into place.
     """
-    path = conf_dir / PLANT_SUBDIR / PLANT_FILENAME
+    path = _hierarchy_path(conf_dir)
+    mapped = tree_to_mapping(tree)
+    doc: dict[str, Any] = {}
     if path.exists():
         with path.open("r", encoding="utf-8") as fh:
-            doc: dict[str, Any] = yaml.safe_load(fh) or {}
-    else:
-        doc = {}
+            loaded = yaml.safe_load(fh) or {}
+            if isinstance(loaded, dict):
+                doc = loaded
 
-    mapped = tree_to_mapping(tree)
     doc["enterprise"] = mapped["enterprise"]
     doc["sites"] = mapped["sites"]
+    doc.pop("plant", None)
+    doc.pop("profiles", None)
+    _atomic_write_yaml(path, doc)
+    _sync_simulator_profile_sites(conf_dir, tree)
 
+
+def _sync_simulator_profile_sites(conf_dir: Path, tree: HierarchyTree) -> None:
+    path = _simulator_plant_path(conf_dir)
+    if not path.is_file():
+        return
+    with path.open("r", encoding="utf-8") as fh:
+        loaded = yaml.safe_load(fh) or {}
+    if not isinstance(loaded, dict):
+        return
+    doc: dict[str, Any] = loaded
     profiles = doc.get("profiles")
-    if not isinstance(profiles, dict):
-        profiles = {}
-        doc["profiles"] = profiles
-    wtp = profiles.get("wtp")
-    if not isinstance(wtp, dict):
-        wtp = {}
-        profiles["wtp"] = wtp
-    wtp["sites"] = [site.name for site in tree.sites]
-
+    mapped = tree_to_mapping(tree)
+    # Old GraphQL images still read this path. Keep a copy of the tree here
+    # until every service loads conf/hierarchy/plant.yaml.
+    doc["enterprise"] = mapped["enterprise"]
+    doc["sites"] = mapped["sites"]
+    if isinstance(profiles, dict):
+        wtp = profiles.get("wtp")
+        if isinstance(wtp, dict):
+            wtp["sites"] = [site.name for site in tree.sites]
     _atomic_write_yaml(path, doc)
 
 
