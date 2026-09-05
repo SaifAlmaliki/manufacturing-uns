@@ -206,6 +206,94 @@
   background-size: 36px 36px;
 }
 
+/*
+ * Light-mode safety net for leftover night-shift utilities inside the console.
+ * Landing/hero stay untouched because they sit outside .console-shell.
+ */
+html:not(.dark) .console-shell :is(
+  .text-white,
+  .text-zinc-100,
+  .text-zinc-200,
+  .text-zinc-300,
+  .text-\[\#F8FAFC\],
+  .text-\[\#fafafa\],
+  .text-\[\#F6F3EE\]
+) {
+  color: var(--text-100);
+}
+
+html:not(.dark) .console-shell :is(
+  .text-zinc-400,
+  .text-zinc-500,
+  .text-zinc-600,
+  .text-\[\#94A3B8\],
+  .text-\[\#64748B\]
+) {
+  color: var(--text-300);
+}
+
+html:not(.dark) .console-shell :is(.hover\:text-white, .hover\:text-zinc-100, .hover\:text-zinc-200):hover {
+  color: var(--text-100);
+}
+
+html:not(.dark) .console-shell :is(
+  .bg-\[\#070709\],
+  .bg-\[\#0a0a0b\],
+  .bg-\[\#050505\],
+  .bg-\[\#0B0B0C\]
+) {
+  background-color: var(--bg-0);
+}
+
+html:not(.dark) .console-shell :is(
+  .bg-\[\#101014\],
+  .bg-\[\#111114\],
+  .bg-\[\#18181b\],
+  .bg-zinc-900,
+  .bg-zinc-900\/40,
+  .bg-zinc-900\/50,
+  .bg-zinc-900\/60,
+  .bg-zinc-950,
+  .bg-zinc-950\/80,
+  .bg-zinc-800,
+  .bg-zinc-800\/60,
+  .bg-zinc-800\/50
+) {
+  background-color: var(--surface);
+}
+
+html:not(.dark) .console-shell :is(
+  .hover\:bg-zinc-800,
+  .hover\:bg-zinc-800\/60,
+  .hover\:bg-zinc-800\/50
+):hover {
+  background-color: var(--surface-elevated);
+}
+
+html:not(.dark) .console-shell :is(
+  .border-zinc-800,
+  .border-zinc-800\/80,
+  .border-zinc-800\/60,
+  .border-zinc-700
+) {
+  border-color: var(--border-subtle);
+}
+
+html:not(.dark) .console-shell :is(
+  .bg-\[\#FF7A00\],
+  .bg-red-500,
+  .bg-purple-600,
+  .bg-purple-700
+).text-white,
+html:not(.dark) .console-shell :is(
+  .bg-\[\#FF7A00\],
+  .bg-red-500,
+  .bg-purple-600,
+  .bg-purple-700
+) .text-white {
+  color: #fff;
+}
+
 .instrument-overlay {
   position: fixed;
   inset: 0;
@@ -218,6 +306,12 @@
     radial-gradient(900px 420px at 12% -8%, rgb(255 122 0 / 0.16), transparent 55%),
     rgb(4 4 6 / 0.78);
   backdrop-filter: blur(10px);
+}
+
+html:not(.dark) .instrument-overlay {
+  background:
+    radial-gradient(900px 420px at 12% -8%, rgb(255 122 0 / 0.14), transparent 55%),
+    rgb(15 23 42 / 0.42);
 }
 
 .instrument-panel {
@@ -258,6 +352,11 @@
   font-weight: 500;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+html:not(.dark) .quality-lamp {
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-elevated);
 }
 
 .quality-lamp-dot {

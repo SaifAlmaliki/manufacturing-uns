@@ -2,28 +2,27 @@ import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { Search } from 'lucide-react';
 
-/** Night-shift instrument tokens for console pages */
+/** Shared console tokens — surfaces follow theme; orange brand stays fixed. */
 export const consoleTokens = {
-  page: 'bg-[#070709] text-zinc-100',
-  card: 'rounded-md border border-zinc-800/80 bg-[#101014]',
-  cardMuted: 'rounded-md border border-zinc-800/60 bg-zinc-900/40',
+  page: 'bg-background text-foreground',
+  card: 'rounded-md border border-border bg-surface',
+  cardMuted: 'rounded-md border border-border bg-muted/40',
   input:
-    'w-full rounded-md border border-zinc-800 bg-zinc-950/80 px-3 py-2.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-[#FF7A00]/50 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/30',
-  label: 'text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500',
+    'w-full rounded-md border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-[#FF7A00]/50 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/30',
+  label: 'text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground',
   tabActive: 'bg-[#FF7A00] text-[#140800]',
-  tabInactive: 'text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200',
+  tabInactive: 'text-muted-foreground hover:bg-muted hover:text-foreground',
   btnPrimary:
     'inline-flex items-center gap-1.5 rounded-md bg-[#FF7A00] px-4 py-2 text-sm font-semibold text-[#140800] transition-colors hover:bg-[#e66e00] disabled:opacity-50',
   btnSecondary:
-    'inline-flex items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-950 px-4 py-2 text-sm font-medium text-zinc-300 transition-colors hover:border-zinc-700 hover:text-white',
+    'inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted',
   btnGhost:
-    'inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-zinc-400 transition-colors hover:bg-zinc-800/60 hover:text-zinc-100',
+    'inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
   accent: '#FF7A00',
-  /** Dark inputs with orange text — simulator & technical panels */
   inputOrange:
-    'w-full rounded-md border border-zinc-800 bg-zinc-950/80 px-3 py-2.5 text-sm text-[#FF7A00] placeholder:text-zinc-600 focus:border-[#FF7A00]/50 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/30',
-  pane: 'flex flex-col h-full bg-[#101014] text-zinc-100',
-  paneHeader: 'shrink-0 border-b border-zinc-800 p-3',
+    'w-full rounded-md border border-border bg-background px-3 py-2.5 text-sm text-[#FF7A00] placeholder:text-muted-foreground focus:border-[#FF7A00]/50 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/30',
+  pane: 'flex flex-col h-full bg-surface text-foreground',
+  paneHeader: 'shrink-0 border-b border-border p-3',
 } as const;
 
 export function QualityLamp({ status }: { status: string }) {
@@ -120,15 +119,15 @@ export const PageStat: React.FC<PageStatProps> = ({
   value,
   icon,
   iconBg = 'bg-[#FF7A00]/15',
-  valueClassName = 'text-white',
+  valueClassName = 'text-foreground',
   compact = false,
 }) => {
   if (compact) {
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/50 px-2.5 py-1.5">
+      <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/50 px-2.5 py-1.5">
         <div className={`flex size-7 shrink-0 items-center justify-center rounded-md ${iconBg}`}>{icon}</div>
         <div className="min-w-0">
-          <div className="text-[10px] leading-none text-zinc-500">{label}</div>
+          <div className="text-[10px] leading-none text-muted-foreground">{label}</div>
           <div className={`text-sm font-semibold tabular-nums leading-tight ${valueClassName}`}>{value}</div>
         </div>
       </div>
@@ -138,7 +137,7 @@ export const PageStat: React.FC<PageStatProps> = ({
   return (
     <div className={`${consoleTokens.card} flex items-center justify-between p-4`}>
       <div>
-        <div className="text-xs text-zinc-500">{label}</div>
+        <div className="text-xs text-muted-foreground">{label}</div>
         <div className={`mt-1 text-xl font-semibold tabular-nums ${valueClassName}`}>{value}</div>
       </div>
       <div className={`flex size-10 items-center justify-center rounded-md ${iconBg}`}>{icon}</div>
@@ -169,14 +168,14 @@ function segmentTabClass(isActive: boolean) {
 }
 
 export const SegmentTabs: React.FC<SegmentTabsProps> = ({ tabs, active, onChange, className = '' }) => (
-  <div className={`flex flex-wrap gap-1 rounded-md border border-zinc-800 bg-zinc-900/60 p-1 ${className}`}>
+  <div className={`flex flex-wrap gap-1 rounded-md border border-border bg-muted/60 p-1 ${className}`}>
     {tabs.map((tab) => {
       const Icon = tab.icon;
       const badge =
         tab.badge !== undefined ? (
           <span
             className={`rounded-md px-1.5 py-0.5 text-[10px] font-semibold tabular-nums ${
-              tab.id === active ? 'bg-white/20 text-white' : 'bg-zinc-800 text-zinc-400'
+              tab.id === active ? 'bg-black/15 text-[#140800]' : 'bg-background text-muted-foreground'
             }`}
           >
             {tab.badge}
@@ -227,8 +226,8 @@ export const PageToolbar: React.FC<PageToolbarProps> = ({ title, description, ic
     <div className="flex items-start gap-3">
       {icon && <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-[#FF7A00]/15">{icon}</div>}
       <div>
-        <h2 className="text-base font-semibold text-white">{title}</h2>
-        {description && <p className="mt-0.5 text-sm text-zinc-500">{description}</p>}
+        <h2 className="text-base font-semibold text-foreground">{title}</h2>
+        {description && <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>}
       </div>
     </div>
     {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
@@ -306,7 +305,7 @@ export const FilterToolbar: React.FC<{
   className?: string;
 }> = ({ tabs, search, selects, trailing, className = '' }) => (
   <div
-    className={`flex flex-wrap items-center gap-1 rounded-md border border-zinc-800 bg-zinc-900/60 p-1 ${className}`}
+    className={`flex flex-wrap items-center gap-1 rounded-md border border-border bg-muted/60 p-1 ${className}`}
   >
     {tabs?.items.map((tab) => (
       <button
@@ -321,17 +320,17 @@ export const FilterToolbar: React.FC<{
       </button>
     ))}
     {(tabs?.items.length ?? 0) > 0 && (search || selects?.length || trailing) ? (
-      <div className="mx-0.5 hidden h-7 w-px shrink-0 bg-zinc-700 sm:block" aria-hidden />
+      <div className="mx-0.5 hidden h-7 w-px shrink-0 bg-border sm:block" aria-hidden />
     ) : null}
     {search ? (
       <div className="relative min-w-[140px] flex-1 px-0.5">
-        <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-zinc-500" />
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <input
           type="search"
           value={search.value}
           onChange={(e) => search.onChange(e.target.value)}
           placeholder={search.placeholder ?? 'Search…'}
-          className="w-full rounded-lg border-0 bg-zinc-800/60 py-1.5 pl-8 pr-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/40"
+          className="w-full rounded-lg border-0 bg-background py-1.5 pl-8 pr-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/40"
         />
       </div>
     ) : null}
@@ -341,7 +340,7 @@ export const FilterToolbar: React.FC<{
         value={select.value}
         onChange={(e) => select.onChange(e.target.value)}
         aria-label={select['aria-label']}
-        className="shrink-0 rounded-lg border-0 bg-zinc-800/60 px-2.5 py-1.5 text-sm text-zinc-300 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/40"
+        className="shrink-0 rounded-lg border-0 bg-background px-2.5 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/40"
       >
         {select.options.map((opt) => (
           <option key={opt.value} value={opt.value}>

@@ -11,26 +11,24 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | null>(null);
 
-// Reset key to ensure light mode is the immediate fresh default
-const STORAGE_KEY = 'uns_console_theme_v2_light';
+export const THEME_STORAGE_KEY = 'uns_console_theme_v3';
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [theme, setThemeState] = useState<ThemeMode>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
+      const saved = localStorage.getItem(THEME_STORAGE_KEY);
       if (saved === 'dark' || saved === 'light') {
         return saved;
       }
     } catch {
       // ignore
     }
-    // FlowBoard-inspired default: dark console theme
-    return 'dark';
+    return 'light';
   });
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, theme);
+      localStorage.setItem(THEME_STORAGE_KEY, theme);
     } catch {
       // ignore
     }
@@ -40,12 +38,14 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       root.classList.add('dark');
       root.classList.remove('light');
       root.setAttribute('data-theme', 'dark');
+      root.style.colorScheme = 'dark';
       document.body.style.backgroundColor = '#070709';
       document.body.style.color = '#fafafa';
     } else {
       root.classList.add('light');
       root.classList.remove('dark');
       root.setAttribute('data-theme', 'light');
+      root.style.colorScheme = 'light';
       document.body.style.backgroundColor = '#F8FAFC';
       document.body.style.color = '#0F172A';
     }

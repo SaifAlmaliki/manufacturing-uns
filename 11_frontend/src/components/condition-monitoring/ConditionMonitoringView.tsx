@@ -164,14 +164,14 @@ export const ConditionMonitoringView: React.FC = () => {
     body = null;
   } else if (subscribed.length === 0) {
     body = (
-      <p className="text-sm text-zinc-400">
+      <p className="text-sm text-muted-foreground">
         Subscribe tags in <Link to="/connectivity">Assets & Connectivity</Link>.
       </p>
     );
   } else if (search && visible.length === 0) {
-    body = <p className="text-sm text-zinc-400">No signals match this search.</p>;
+    body = <p className="text-sm text-muted-foreground">No signals match this search.</p>;
   } else if (scoped && visible.length === 0 && subscribed.length > 0 && !search) {
-    body = <p className="text-sm text-zinc-400">No subscribed signals in this zone.</p>;
+    body = <p className="text-sm text-muted-foreground">No subscribed signals in this zone.</p>;
   }
 
   return (
@@ -179,13 +179,13 @@ export const ConditionMonitoringView: React.FC = () => {
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <section
           aria-label="UNS Hierarchy Tree"
-          className="h-[300px] shrink-0 overflow-hidden border-b border-zinc-800 bg-[#111114] md:hidden"
+          className="h-[300px] shrink-0 overflow-hidden border-b border-border bg-surface md:hidden"
         >
           <UnsTreeView />
         </section>
         <section
           aria-label="UNS Hierarchy Tree"
-          className="hidden w-[280px] shrink-0 overflow-hidden border-r border-zinc-800 bg-[#111114] md:block"
+          className="hidden w-[280px] shrink-0 overflow-hidden border-r border-border bg-surface md:block"
         >
           <UnsTreeView />
         </section>
@@ -196,19 +196,19 @@ export const ConditionMonitoringView: React.FC = () => {
                 compact
                 label="In view"
                 value={kpis.inView}
-                icon={<Layers className="size-3.5 text-zinc-400" />}
+                icon={<Layers className="size-3.5 text-muted-foreground" />}
               />
               <PageStat
                 compact
                 label="Live"
                 value={kpis.live}
-                icon={<Activity className="size-3.5 text-zinc-400" />}
+                icon={<Activity className="size-3.5 text-muted-foreground" />}
               />
               <PageStat
                 compact
                 label="Faults on"
                 value={kpis.faultsOn}
-                icon={<AlertTriangle className="size-3.5 text-zinc-400" />}
+                icon={<AlertTriangle className="size-3.5 text-muted-foreground" />}
               />
               <button
                 type="button"
@@ -220,7 +220,7 @@ export const ConditionMonitoringView: React.FC = () => {
                   compact
                   label="Unacked"
                   value={kpis.unacked}
-                  icon={<Bell className="size-3.5 text-zinc-400" />}
+                  icon={<Bell className="size-3.5 text-muted-foreground" />}
                 />
               </button>
               <button
@@ -239,12 +239,12 @@ export const ConditionMonitoringView: React.FC = () => {
               </button>
             </CompactKpiRow>
             {loadError ? (
-              <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+              <div className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
                 {loadError}
               </div>
             ) : null}
             {historianError ? (
-              <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+              <div className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
                 {historianError}
               </div>
             ) : null}

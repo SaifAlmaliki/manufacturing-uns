@@ -81,7 +81,7 @@ export const UnsTreeView: React.FC = () => {
           className={`group flex cursor-pointer items-center justify-between rounded-lg px-2 py-1.5 text-sm transition-colors ${
             isSelected
               ? 'bg-[#FF7A00]/15 text-[#FF7A00]'
-              : 'text-zinc-300 hover:bg-zinc-800/60 hover:text-white'
+              : 'text-foreground hover:bg-muted hover:text-foreground'
           }`}
         >
           <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -92,7 +92,7 @@ export const UnsTreeView: React.FC = () => {
                   e.stopPropagation();
                   toggleNodeExpanded(node.topic);
                 }}
-                className="rounded p-0.5 text-zinc-500 hover:text-[#FF7A00]"
+                className="rounded p-0.5 text-muted-foreground hover:text-[#FF7A00]"
               >
                 {isExpanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
               </button>
@@ -105,7 +105,7 @@ export const UnsTreeView: React.FC = () => {
             ) : isExpanded ? (
               <FolderOpen className="size-3.5 shrink-0 text-[#FF7A00]" />
             ) : (
-              <Folder className="size-3.5 shrink-0 text-zinc-500" />
+              <Folder className="size-3.5 shrink-0 text-muted-foreground" />
             )}
 
             <span className="truncate">{node.name}</span>
@@ -117,7 +117,7 @@ export const UnsTreeView: React.FC = () => {
               if (bookmarked) removeBookmark(node.topic);
               else addBookmark(node.topic);
             }}
-            className="shrink-0 rounded p-0.5 text-zinc-600 opacity-0 transition-opacity group-hover:opacity-100 hover:text-[#FF7A00]"
+            className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-[#FF7A00]"
             title={bookmarked ? 'Remove bookmark' : 'Bookmark'}
           >
             {bookmarked ? (
@@ -129,7 +129,7 @@ export const UnsTreeView: React.FC = () => {
         </div>
 
         {isExpanded && node.children && node.children.length > 0 && (
-          <div className="ml-3 border-l border-zinc-800">
+          <div className="ml-3 border-l border-border">
             {node.children.map((child) => renderNode(child, level + 1))}
           </div>
         )}
@@ -143,12 +143,12 @@ export const UnsTreeView: React.FC = () => {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Layers className="size-4 text-[#FF7A00]" />
-            <span className="text-sm font-semibold text-white">Namespace Tree</span>
+            <span className="text-sm font-semibold text-foreground">Namespace Tree</span>
           </div>
           <button
             onClick={() => refreshTree()}
             disabled={treeLoading}
-            className="rounded-lg p-1.5 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-[#FF7A00]"
+            className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-[#FF7A00]"
             title="Refresh tree"
           >
             <RefreshCw className={`size-4 ${treeLoading ? 'animate-spin' : ''}`} />
@@ -156,7 +156,7 @@ export const UnsTreeView: React.FC = () => {
         </div>
 
         <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-500" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
             placeholder="Filter topics..."
@@ -170,16 +170,16 @@ export const UnsTreeView: React.FC = () => {
       <div className="flex-1 overflow-y-auto p-2">
         {rootNodes.length === 0 ? (
           <div className="flex flex-col items-center justify-center px-4 py-12 text-center">
-            <AlertCircle className="mb-2 size-8 text-zinc-600" />
-            <p className="text-sm text-zinc-400">No namespace nodes found</p>
-            <p className="mt-1 text-xs text-zinc-600">Connecting to GraphQL backend…</p>
+            <AlertCircle className="mb-2 size-8 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">No namespace nodes found</p>
+            <p className="mt-1 text-xs text-muted-foreground">Connecting to GraphQL backend…</p>
           </div>
         ) : (
           rootNodes.map((node) => renderNode(node))
         )}
       </div>
 
-      <div className="flex shrink-0 items-center justify-between border-t border-zinc-800 px-3 py-2 text-xs text-zinc-500">
+      <div className="flex shrink-0 items-center justify-between border-t border-border px-3 py-2 text-xs text-muted-foreground">
         <span>Stale: {settings.staleThresholdMinutes}m</span>
         <span className="tabular-nums">Roots: {rootNodes.length}</span>
       </div>

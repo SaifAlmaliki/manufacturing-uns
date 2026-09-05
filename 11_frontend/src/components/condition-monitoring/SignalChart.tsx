@@ -69,21 +69,16 @@ export const SignalChart: React.FC<{
     [drawn, fromMs, toMs],
   );
   if (drawn.length === 0) {
-    return <p className="py-6 text-center text-xs text-zinc-500">No historian points in range</p>;
+    return <p className="py-6 text-center text-xs text-muted-foreground">No historian points in range</p>;
   }
   const d = chartPath(drawn, WIDTH, HEIGHT, mode, fromMs, toMs);
   return (
     <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className="h-24 w-full" role="img" aria-label="Signal trend">
       <path d={d} fill="none" stroke="currentColor" strokeWidth="1.5" className="text-[#FF7A00]" />
       {pts.map((p, i) => (
-        <circle
-          key={`${p.sample.t}-${i}`}
-          cx={p.x}
-          cy={p.y}
-          r={6}
-          fill="transparent"
-          title={hoverTitle(p.sample.t, p.sample.v)}
-        />
+        <circle key={`${p.sample.t}-${i}`} cx={p.x} cy={p.y} r={6} fill="transparent">
+          <title>{hoverTitle(p.sample.t, p.sample.v)}</title>
+        </circle>
       ))}
     </svg>
   );

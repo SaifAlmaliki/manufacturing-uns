@@ -120,16 +120,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
           active
             ? 'bg-[#FF7A00] text-white'
             : locked
-              ? 'text-zinc-500 cursor-not-allowed'
-              : 'text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-100'
+              ? 'text-muted-foreground cursor-not-allowed'
+              : 'text-muted-foreground hover:bg-muted hover:text-foreground'
         } ${isCollapsed ? 'justify-center px-2.5' : ''}`}
         title={isCollapsed ? item.label : undefined}
       >
-        <Icon className={`size-[18px] shrink-0 ${active ? 'text-white' : locked ? 'text-zinc-600' : 'text-zinc-400 group-hover:text-zinc-200'}`} />
+        <Icon className={`size-[18px] shrink-0 ${active ? 'text-white' : locked ? 'text-muted-foreground/60' : 'text-muted-foreground group-hover:text-foreground'}`} />
         {!isCollapsed && (
           <>
             <span className="flex-1 truncate">{item.label}</span>
-            {locked && <Lock className="size-3.5 text-zinc-600" />}
+            {locked && <Lock className="size-3.5 text-muted-foreground/60" />}
             {showAlarmDot && !locked && (
               <span className="flex size-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-semibold text-white tabular-nums">
                 {myUnacknowledgedCount > 9 ? '9+' : myUnacknowledgedCount}
@@ -168,20 +168,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const sidebarContent = (
     <aside
       id="application-left-menu"
-      className={`flex h-full flex-col select-none border-r border-zinc-800/80 bg-[#101014] transition-all duration-200 ${
+      className={`flex h-full flex-col select-none border-r border-border bg-surface transition-all duration-200 ${
         isCollapsed ? 'w-[72px]' : 'w-[260px]'
       }`}
     >
       {/* Brand */}
-      <div className="flex h-16 shrink-0 items-center justify-between border-b border-zinc-800/80 px-4">
+      <div className="flex h-16 shrink-0 items-center justify-between border-b border-border px-4">
         <div className={`flex items-center gap-3 min-w-0 ${isCollapsed ? 'justify-center w-full' : ''}`}>
           <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-[#FF7A00]">
             <span className="font-heading text-lg font-bold text-[#140800]">U</span>
           </div>
           {!isCollapsed && (
             <div className="min-w-0 leading-tight">
-              <div className="font-heading truncate text-[15px] font-semibold tracking-tight text-white">UNS Console</div>
-              <div className="truncate text-xs text-zinc-500">
+              <div className="font-heading truncate text-[15px] font-semibold tracking-tight text-foreground">UNS Console</div>
+              <div className="truncate text-xs text-muted-foreground">
                 {settings.organization || 'Smart Manufacturing'}
               </div>
             </div>
@@ -190,7 +190,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {!isCollapsed && (
           <button
             onClick={onCloseMobile}
-            className="lg:hidden rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
+            className="lg:hidden rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
             aria-label="Close navigation"
           >
             <X className="size-4" />
@@ -202,15 +202,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {!isCollapsed && (
         <div className="shrink-0 px-3 pt-4 pb-2">
           <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-500" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <input
               type="search"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search menu..."
-              className="w-full rounded-md border border-zinc-800 bg-zinc-950/80 py-2.5 pl-9 pr-12 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-[#FF7A00]/50 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/30"
+              className="w-full rounded-md border border-border bg-background py-2.5 pl-9 pr-12 text-sm text-foreground placeholder:text-muted-foreground focus:border-[#FF7A00]/50 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/30"
             />
-            <kbd className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-500 sm:flex">
+            <kbd className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground sm:flex">
               <Command className="size-2.5" />K
             </kbd>
           </div>
@@ -221,7 +221,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-2 space-y-6">
         <div className="space-y-1">
           {!isCollapsed && (
-            <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-zinc-600">
+            <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
               Main Menu
             </div>
           )}
@@ -231,7 +231,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {filteredPlatform.length > 0 && (
           <div className="space-y-1">
             {!isCollapsed && (
-              <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-zinc-600">
+              <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
                 Platform
               </div>
             )}
@@ -250,27 +250,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
           }}
           title={platformStatusTitle}
           aria-label={platformStatusTitle}
-          className={`flex items-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-800/60 hover:text-zinc-200 ${
+          className={`flex items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${
             isCollapsed ? 'relative p-2.5' : 'w-full gap-2.5 px-3 py-2'
           }`}
         >
           <span className="relative shrink-0">
             <Activity className="size-[18px]" />
             <span
-              className={`absolute -right-0.5 -top-0.5 size-2 rounded-full ring-2 ring-[#111114] ${platformStatusDot}`}
+              className={`absolute -right-0.5 -top-0.5 size-2 rounded-full ring-2 ring-surface ${platformStatusDot}`}
             />
           </span>
           {!isCollapsed && (
-            <span className="truncate text-xs text-zinc-500">{platformStatusLabel}</span>
+            <span className="truncate text-xs text-muted-foreground">{platformStatusLabel}</span>
           )}
         </button>
       </div>
 
       {/* Collapse toggle (desktop) */}
-      <div className="hidden shrink-0 border-t border-zinc-800/80 lg:block">
+      <div className="hidden shrink-0 border-t border-border lg:block">
         <button
           onClick={onToggleCollapse}
-          className="flex w-full items-center justify-center gap-2 py-2.5 text-xs text-zinc-500 transition-colors hover:bg-zinc-800/50 hover:text-zinc-300"
+          className="flex w-full items-center justify-center gap-2 py-2.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           {isCollapsed ? <ChevronRight className="size-4" /> : <ChevronLeft className="size-4" />}
@@ -279,7 +279,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* User profile */}
-      <div className={`shrink-0 border-t border-zinc-800/80 p-3 ${isCollapsed ? 'flex justify-center' : ''}`}>
+      <div className={`shrink-0 border-t border-border p-3 ${isCollapsed ? 'flex justify-center' : ''}`}>
         <UserSessionMenu variant={isCollapsed ? 'compact' : 'sidebar'} />
       </div>
     </aside>

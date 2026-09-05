@@ -402,11 +402,11 @@ function TreeNodeButton({
       aria-current={active ? 'true' : undefined}
       onClick={() => onSelect(nodeRef)}
       className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors ${
-        active ? 'bg-[#FF7A00] text-white' : 'text-zinc-300 hover:bg-zinc-800/60 hover:text-white'
+        active ? 'bg-[#FF7A00] text-white' : 'text-foreground hover:bg-muted hover:text-foreground'
       }`}
       style={{ paddingLeft: `${8 + indent * 12}px` }}
     >
-      <span className={`text-[10px] uppercase tracking-wider ${active ? 'text-white/70' : 'text-zinc-600'}`}>
+      <span className={`text-[10px] uppercase tracking-wider ${active ? 'text-white/70' : 'text-muted-foreground'}`}>
         {LEVEL_LABEL[nodeRef.level][0]}
       </span>
       <span className="truncate font-medium">{name}</span>
@@ -589,13 +589,13 @@ export const HierarchyView: React.FC = () => {
               </BtnPrimary>
             }
           >
-            <PageStat compact label="Sites" value={counts?.sites ?? '—'} icon={<Factory className="size-3.5 text-zinc-400" />} />
-            <PageStat compact label="Areas" value={counts?.areas ?? '—'} icon={<GitBranch className="size-3.5 text-zinc-400" />} />
-            <PageStat compact label="Lines" value={counts?.lines ?? '—'} icon={<GitBranch className="size-3.5 text-zinc-400" />} />
-            <PageStat compact label="Cells" value={counts?.cells ?? '—'} icon={<GitBranch className="size-3.5 text-zinc-400" />} />
+            <PageStat compact label="Sites" value={counts?.sites ?? '—'} icon={<Factory className="size-3.5 text-muted-foreground" />} />
+            <PageStat compact label="Areas" value={counts?.areas ?? '—'} icon={<GitBranch className="size-3.5 text-muted-foreground" />} />
+            <PageStat compact label="Lines" value={counts?.lines ?? '—'} icon={<GitBranch className="size-3.5 text-muted-foreground" />} />
+            <PageStat compact label="Cells" value={counts?.cells ?? '—'} icon={<GitBranch className="size-3.5 text-muted-foreground" />} />
           </CompactKpiRow>
 
-          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+          <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
             {SIMULATOR_BANNER}
           </div>
 
@@ -603,10 +603,10 @@ export const HierarchyView: React.FC = () => {
             <div
               className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs ${
                 jobFailed
-                  ? 'border-rose-500/30 bg-rose-500/10 text-rose-200'
+                  ? 'border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200'
                   : job.status === 'done'
-                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
-                    : 'border-zinc-700 bg-zinc-900/60 text-zinc-300'
+                    ? 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200'
+                    : 'border-border bg-muted/60 text-foreground'
               }`}
             >
               <span>
@@ -627,19 +627,19 @@ export const HierarchyView: React.FC = () => {
           )}
 
           {saveError && (
-            <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+            <div className="rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
               {saveError}
             </div>
           )}
 
           {loadError && (
-            <ConsoleCard padding="md" className="text-sm text-zinc-400">
+            <ConsoleCard padding="md" className="text-sm text-muted-foreground">
               {loadError}
             </ConsoleCard>
           )}
 
           {!loadError && !tree && (
-            <ConsoleCard padding="md" className="text-sm text-zinc-400">
+            <ConsoleCard padding="md" className="text-sm text-muted-foreground">
               Loading plant hierarchy…
             </ConsoleCard>
           )}
@@ -647,7 +647,7 @@ export const HierarchyView: React.FC = () => {
           {tree && (
             <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,22rem)]">
               <ConsoleCard padding="none" className="min-h-[280px] overflow-hidden">
-                <div className="border-b border-zinc-800 px-3 py-2 text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+                <div className="border-b border-border px-3 py-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                   Plant tree
                 </div>
                 <div className="max-h-[calc(100vh-22rem)] space-y-0.5 overflow-y-auto p-2">
@@ -703,11 +703,11 @@ export const HierarchyView: React.FC = () => {
               <ConsoleCard padding="md" className="space-y-3">
                 {selected ? (
                   <>
-                    <div className="text-[10px] font-medium uppercase tracking-wider text-zinc-500">
+                    <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                       {LEVEL_LABEL[selected.level]}
                     </div>
                     <label className="block space-y-1.5">
-                      <span className="text-xs font-medium text-zinc-500">Name</span>
+                      <span className="text-xs font-medium text-muted-foreground">Name</span>
                       <ConsoleInput
                         value={draftName}
                         onChange={(e) => setDraftName(e.target.value)}
@@ -724,7 +724,7 @@ export const HierarchyView: React.FC = () => {
                       />
                     </label>
                     {fieldError && <p className="text-xs text-rose-400">{fieldError}</p>}
-                    <p className="font-mono text-[11px] text-zinc-500">{nodePrefix(tree, selected)}</p>
+                    <p className="font-mono text-[11px] text-muted-foreground">{nodePrefix(tree, selected)}</p>
                     <div className="flex flex-wrap gap-2 pt-1">
                       <BtnSecondary onClick={handleAddChild} disabled={!childLevel} title={childLevel ? `Add ${LEVEL_LABEL[childLevel].toLowerCase()}` : 'A cell is a leaf'}>
                         <Plus className="size-3.5" />
@@ -741,7 +741,7 @@ export const HierarchyView: React.FC = () => {
                     </div>
                   </>
                 ) : (
-                  <p className="text-sm text-zinc-500">Select a node in the tree.</p>
+                  <p className="text-sm text-muted-foreground">Select a node in the tree.</p>
                 )}
               </ConsoleCard>
             </div>
