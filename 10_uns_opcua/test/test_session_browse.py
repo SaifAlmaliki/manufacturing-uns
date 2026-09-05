@@ -28,7 +28,9 @@ async def test_discover_returns_browse_path_and_node_id(opcua_server):
         nodes = await discover_variables(client)
     level = next(n for n in nodes if n.browse_path.endswith("RawWater/T101/Level"))
     assert level.display_name == "Level"
-    assert "s=Level" in level.node_id or "Level" in level.node_id
+    assert level.browse_path.endswith("RawWater/T101/Level")
+    assert level.node_id
+    assert level.node_id.count(";") == 1
 
 
 async def test_read_reports_good_double(opcua_server):

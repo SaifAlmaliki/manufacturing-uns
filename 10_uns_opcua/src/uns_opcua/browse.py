@@ -41,11 +41,8 @@ async def _browse_node(node, browse_path: str) -> BrowseNode:
     browse_name = await node.read_browse_name()
     display_name = await node.read_display_name()
     node_class = await node.read_node_class()
-    node_id = node.nodeid.to_string()
-    if node_class == ua.NodeClass.Variable and browse_name.Name not in node_id:
-        node_id = f"{node_id};s={browse_name.Name}"
     return BrowseNode(
-        node_id=node_id,
+        node_id=node.nodeid.to_string(),
         browse_name=browse_name.Name,
         display_name=display_name.Text,
         browse_path=browse_path,
@@ -90,8 +87,7 @@ async def read_nodes(client: Client, node_ids: Sequence[str]) -> list[DataValueR
     """Read current values for the given node ids."""
     rows: list[DataValueRow] = []
     for node_id in node_ids:
-        resolved_id = node_id.split(";s=", 1)[0] if ";s=" in node_id else node_id
-        node = client.get_node(resolved_id)
+        node = client.get_node(node_id)
         data_value = await node.read_data_value()
         display_name = await node.read_display_name()
         browse_path = await _node_browse_path(node)
