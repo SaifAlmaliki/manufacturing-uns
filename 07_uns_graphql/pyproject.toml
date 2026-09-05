@@ -32,6 +32,7 @@ dependencies = [
     "logger~=1.4",
     "uns_config",
     "uns_model",
+    "uns_opcua",
     "dynaconf~=3.2",
     "strawberry-graphql[fastapi, cli]>=0.314.3",
     "uvicorn[standard]>=0.34,<0.53",
@@ -75,6 +76,7 @@ default-groups = [
 [tool.uv.sources]
 uns_config = { path = "../00_uns_config", editable = true }
 uns_model = { path = "../09_uns_model", editable = true }
+uns_opcua = { path = "../10_uns_opcua", editable = true }
 uns-mqtt = { path = "../02_mqtt-cluster", editable = true }
 
 [tool.hatch.build.targets.sdist]

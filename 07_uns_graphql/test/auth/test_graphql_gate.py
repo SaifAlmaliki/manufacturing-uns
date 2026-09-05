@@ -28,6 +28,16 @@ OPERATIONS = [
      '{ oeeShiftResults(assetPath: "a", from: "2026-01-01T00:00:00Z", '
      'to: "2026-01-01T08:00:00Z") { shiftStart } }'),
     ("getHierarchy", "{ getHierarchy { enterprise } }"),
+    # Connectivity queries (Task 5): the catalog and the live OPC UA probes.
+    ("getConnectivityServers", "{ getConnectivityServers { id name endpoint } }"),
+    ("testOpcUaConnection",
+     '{ testOpcUaConnection(endpoint: "opc.tcp://x:4840") { ok error elapsedMs } }'),
+    ("browseOpcUa",
+     '{ browseOpcUa(endpoint: "opc.tcp://x:4840", nodeId: "i=84") { nodeId browseName } }'),
+    ("discoverOpcUaVariables",
+     '{ discoverOpcUaVariables(endpoint: "opc.tcp://x:4840") { nodeId browseName } }'),
+    ("readOpcUaNodes",
+     '{ readOpcUaNodes(endpoint: "opc.tcp://x:4840", nodeIds: ["i=2258"]) { nodeId value } }'),
     # All mutations, per finding 3. A gate that covers all but the newest field is not a gate.
     ("saveAlertRule", 'mutation { saveAlertRule(rule: {id: "r", name: "n", severity: '
                       'CRITICAL, category: TEMPERATURE, topic: "a/b", metricField: "value", '
@@ -43,6 +53,18 @@ OPERATIONS = [
      'mutation { saveHierarchy(tree: {enterprise: "E", sites: []}, renames: []) '
      '{ tree { enterprise } job { status } } }'),
     ("retryHierarchyMigrate", "mutation { retryHierarchyMigrate { status } }"),
+    # Connectivity catalog writes (Task 5): five writes, engineer + admin.
+    ("saveConnectivityServer",
+     'mutation { saveConnectivityServer(server: {id: "s1", name: "PLC1", '
+     'protocol: OPC_UA, endpoint: "opc.tcp://x:4840"}) { id name } }'),
+    ("deleteConnectivityServer", 'mutation { deleteConnectivityServer(id: "s1") }'),
+    ("subscribeOpcUaVariables",
+     'mutation { subscribeOpcUaVariables(serverId: "s1") { nodeId subscribed } }'),
+    ("updateConnectivityTagTopic",
+     'mutation { updateConnectivityTagTopic(serverId: "s1", nodeId: "i=1", '
+     'mqttTopic: "a/b") { nodeId mqttTopic } }'),
+    ("unsubscribeConnectivityTag",
+     'mutation { unsubscribeConnectivityTag(serverId: "s1", nodeId: "i=1") }'),
 ]
 
 

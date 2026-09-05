@@ -57,6 +57,10 @@ COPY ./02_mqtt-cluster/src /02_mqtt-cluster/src
 COPY ./09_uns_model/pyproject.toml ./09_uns_model/uv.lock ./09_uns_model/README.md ./09_uns_model/alembic.ini /09_uns_model/
 COPY ./09_uns_model/migrations /09_uns_model/migrations
 COPY ./09_uns_model/src /09_uns_model/src
+# The OPC UA bridge (10_uns_opcua): the GraphQL service reuses its anonymous session
+# and browse helpers (Task 5) to probe servers and discover tags from the console.
+COPY ./10_uns_opcua/pyproject.toml ./10_uns_opcua/uv.lock ./10_uns_opcua/README.md /10_uns_opcua/
+COPY ./10_uns_opcua/src /10_uns_opcua/src
 COPY ./${UNS_MODULE}/src ./src/
 COPY ./conf/settings.yaml /app/conf/settings.yaml
 

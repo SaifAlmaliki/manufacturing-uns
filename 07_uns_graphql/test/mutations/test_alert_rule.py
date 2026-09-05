@@ -322,7 +322,9 @@ def test_only_alert_rules_are_writable():
     """
     Process data is written by publishing to the broker. Hierarchy writes YAML then
     reseeds; downtime assignment is the one plant-data correction. Access Groups are
-    admin-only plant-scope writes. An extra mutation must be a decision, not an accident.
+    admin-only plant-scope writes. Connectivity catalog writes (Task 5) are the
+    engineer + admin curation of OPC UA servers and their tags. An extra mutation must
+    be a decision, not an accident.
     """
     mutation = UNSGraphql.schema.get_type_by_name("Mutation")
     names = {field.name for field in mutation.fields}
@@ -339,6 +341,11 @@ def test_only_alert_rules_are_writable():
         "save_access_group",
         "delete_access_group",
         "set_access_group_members",
+        "save_connectivity_server",
+        "delete_connectivity_server",
+        "subscribe_opc_ua_variables",
+        "update_connectivity_tag_topic",
+        "unsubscribe_connectivity_tag",
     }
 
 

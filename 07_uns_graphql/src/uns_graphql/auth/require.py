@@ -41,6 +41,13 @@ MUTATION_ROLES: dict[str, frozenset[str]] = {
     "saveAccessGroup": frozenset({"admin"}),
     "deleteAccessGroup": frozenset({"admin"}),
     "setAccessGroupMembers": frozenset({"admin"}),
+    # Connectivity catalog writes (Task 5): authoring a server and curating its
+    # tags is engineering work, so the five writes are engineer + admin.
+    "saveConnectivityServer": frozenset({"engineer", "admin"}),
+    "deleteConnectivityServer": frozenset({"engineer", "admin"}),
+    "subscribeOpcUaVariables": frozenset({"engineer", "admin"}),
+    "updateConnectivityTagTopic": frozenset({"engineer", "admin"}),
+    "unsubscribeConnectivityTag": frozenset({"engineer", "admin"}),
 }
 
 

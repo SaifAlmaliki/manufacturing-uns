@@ -33,6 +33,13 @@ EXPECTED = {
     "saveAccessGroup": {"admin"},
     "deleteAccessGroup": {"admin"},
     "setAccessGroupMembers": {"admin"},
+    # Connectivity catalog writes: authoring a server and curating its tags is
+    # engineering work, so the five writes are engineer + admin (Task 5 brief).
+    "saveConnectivityServer": {"engineer", "admin"},
+    "deleteConnectivityServer": {"engineer", "admin"},
+    "subscribeOpcUaVariables": {"engineer", "admin"},
+    "updateConnectivityTagTopic": {"engineer", "admin"},
+    "unsubscribeConnectivityTag": {"engineer", "admin"},
 }
 
 
