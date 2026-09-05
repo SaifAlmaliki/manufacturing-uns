@@ -21,58 +21,11 @@ import {
   PageShell,
   PageStat,
 } from '../ui/console-ui';
-
-type NodeLevel = 'enterprise' | 'site' | 'area' | 'line' | 'cell';
-
-type NodeRef =
-  | { level: 'enterprise' }
-  | { level: 'site'; site: number }
-  | { level: 'area'; site: number; area: number }
-  | { level: 'line'; site: number; area: number; line: number }
-  | { level: 'cell'; site: number; area: number; line: number; cell: number };
-
-const CHILD_LEVEL: Record<NodeLevel, NodeLevel | null> = {
-  enterprise: 'site',
-  site: 'area',
-  area: 'line',
-  line: 'cell',
-  cell: null,
-};
-
-const CHILD_BASE_NAME: Record<Exclude<NodeLevel, 'enterprise'>, string> = {
-  site: 'Site',
-  area: 'Area',
-  line: 'Line',
-  cell: 'Cell',
-};
-
-const LEVEL_LABEL: Record<NodeLevel, string> = {
-  enterprise: 'Enterprise',
-  site: 'Site',
-  area: 'Area',
-  line: 'Line',
-  cell: 'Cell',
-};
+import { LEAF_TITLE, levelDef, remainingChildren } from './hierarchyLevels';
+import { type NodeRef, addChild, cloneTree } from './hierarchyTree';
 
 const SIMULATOR_BANNER =
   'The simulator still publishes the shipped WTP paths. Renamed nodes will not match live simulator topics until the publisher is retargeted. The old graph branch reappears while anything still publishes the old prefix; the graph rename is durable only after the publisher is retargeted.';
-
-function cloneTree(tree: GraphqlHierarchyTree): GraphqlHierarchyTree {
-  return {
-    enterprise: tree.enterprise,
-    sites: tree.sites.map((site) => ({
-      name: site.name,
-      areas: site.areas.map((area) => ({
-        name: area.name,
-        kind: area.kind,
-        lines: area.lines.map((line) => ({
-          name: line.name,
-          cells: line.cells.map((cell) => ({ name: cell.name, machines: [...cell.machines] })),
-        })),
-      })),
-    })),
-  };
-}
 
 function nodeName(tree: GraphqlHierarchyTree, ref: NodeRef): string {
   switch (ref.level) {
@@ -86,6 +39,8 @@ function nodeName(tree: GraphqlHierarchyTree, ref: NodeRef): string {
       return tree.sites[ref.site].areas[ref.area].lines[ref.line].name;
     case 'cell':
       return tree.sites[ref.site].areas[ref.area].lines[ref.line].cells[ref.cell].name;
+    case 'machine':
+      return tree.sites[ref.site].areas[ref.area].lines[ref.line].cells[ref.cell].machines[ref.machine];
   }
 }
 
@@ -99,7 +54,9 @@ function nodePrefix(tree: GraphqlHierarchyTree, ref: NodeRef): string {
   const line = tree.sites[ref.site].areas[ref.area].lines[ref.line].name;
   if (ref.level === 'line') return joinSegments(enterprise, site, area, line);
   const cell = tree.sites[ref.site].areas[ref.area].lines[ref.line].cells[ref.cell].name;
-  return joinSegments(enterprise, site, area, line, cell);
+  if (ref.level === 'cell') return joinSegments(enterprise, site, area, line, cell);
+  const machine = tree.sites[ref.site].areas[ref.area].lines[ref.line].cells[ref.cell].machines[ref.machine];
+  return joinSegments(enterprise, site, area, line, cell, machine);
 }
 
 function siblingNames(tree: GraphqlHierarchyTree, ref: NodeRef): string[] {
@@ -120,14 +77,11 @@ function siblingNames(tree: GraphqlHierarchyTree, ref: NodeRef): string[] {
       const cells = tree.sites[ref.site].areas[ref.area].lines[ref.line].cells;
       return cells.filter((_, i) => i !== ref.cell).map((c) => c.name);
     }
+    case 'machine': {
+      const machines = tree.sites[ref.site].areas[ref.area].lines[ref.line].cells[ref.cell].machines;
+      return machines.filter((_, i) => i !== ref.machine);
+    }
   }
-}
-
-function uniqueChildName(existing: string[], base: string): string {
-  if (!existing.includes(base)) return base;
-  let n = 2;
-  while (existing.includes(`${base}${n}`)) n += 1;
-  return `${base}${n}`;
 }
 
 function applyName(tree: GraphqlHierarchyTree, ref: NodeRef, name: string): GraphqlHierarchyTree {
@@ -148,57 +102,11 @@ function applyName(tree: GraphqlHierarchyTree, ref: NodeRef, name: string): Grap
     case 'cell':
       next.sites[ref.site].areas[ref.area].lines[ref.line].cells[ref.cell].name = name;
       break;
+    case 'machine':
+      next.sites[ref.site].areas[ref.area].lines[ref.line].cells[ref.cell].machines[ref.machine] = name;
+      break;
   }
   return next;
-}
-
-function addChild(
-  tree: GraphqlHierarchyTree,
-  ref: NodeRef,
-): { tree: GraphqlHierarchyTree; child: NodeRef } | null {
-  const nextLevel = CHILD_LEVEL[ref.level];
-  if (!nextLevel) return null;
-  const next = cloneTree(tree);
-  const base = CHILD_BASE_NAME[nextLevel];
-  switch (ref.level) {
-    case 'enterprise': {
-      const name = uniqueChildName(next.sites.map((s) => s.name), base);
-      next.sites.push({ name, areas: [] });
-      return { tree: next, child: { level: 'site', site: next.sites.length - 1 } };
-    }
-    case 'site': {
-      const areas = next.sites[ref.site].areas;
-      const name = uniqueChildName(areas.map((a) => a.name), base);
-      areas.push({ name, kind: 'production', lines: [] });
-      return { tree: next, child: { level: 'area', site: ref.site, area: areas.length - 1 } };
-    }
-    case 'area': {
-      const lines = next.sites[ref.site].areas[ref.area].lines;
-      const name = uniqueChildName(lines.map((l) => l.name), base);
-      lines.push({ name, cells: [] });
-      return {
-        tree: next,
-        child: { level: 'line', site: ref.site, area: ref.area, line: lines.length - 1 },
-      };
-    }
-    case 'line': {
-      const cells = next.sites[ref.site].areas[ref.area].lines[ref.line].cells;
-      const name = uniqueChildName(cells.map((c) => c.name), base);
-      cells.push({ name, machines: [] });
-      return {
-        tree: next,
-        child: {
-          level: 'cell',
-          site: ref.site,
-          area: ref.area,
-          line: ref.line,
-          cell: cells.length - 1,
-        },
-      };
-    }
-    case 'cell':
-      return null;
-  }
 }
 
 function parentRef(ref: NodeRef): NodeRef | null {
@@ -213,6 +121,14 @@ function parentRef(ref: NodeRef): NodeRef | null {
       return { level: 'area', site: ref.site, area: ref.area };
     case 'cell':
       return { level: 'line', site: ref.site, area: ref.area, line: ref.line };
+    case 'machine':
+      return {
+        level: 'cell',
+        site: ref.site,
+        area: ref.area,
+        line: ref.line,
+        cell: ref.cell,
+      };
   }
 }
 
@@ -231,6 +147,12 @@ function removeNode(tree: GraphqlHierarchyTree, ref: NodeRef): GraphqlHierarchyT
       break;
     case 'cell':
       next.sites[ref.site].areas[ref.area].lines[ref.line].cells.splice(ref.cell, 1);
+      break;
+    case 'machine':
+      next.sites[ref.site].areas[ref.area].lines[ref.line].cells[ref.cell].machines.splice(
+        ref.machine,
+        1,
+      );
       break;
   }
   return next;
@@ -389,7 +311,9 @@ function refsEqual(a: NodeRef | null, b: NodeRef | null): boolean {
   if (a.level === 'area' || b.level === 'area') return true;
   if (a.line !== b.line) return false;
   if (a.level === 'line' || b.level === 'line') return true;
-  return a.cell === b.cell;
+  if (a.cell !== b.cell) return false;
+  if (a.level === 'cell' || b.level === 'cell') return true;
+  return a.machine === b.machine;
 }
 
 function TreeNodeButton({
@@ -414,11 +338,13 @@ function TreeNodeButton({
           ? 2
           : nodeRef.level === 'line'
             ? 3
-            : 4;
+            : nodeRef.level === 'cell'
+              ? 4
+              : 5;
   return (
     <button
       type="button"
-      aria-label={`${LEVEL_LABEL[nodeRef.level]} ${name}`}
+      aria-label={`${levelDef(nodeRef.level).label} ${name}`}
       aria-current={active ? 'true' : undefined}
       onClick={() => onSelect(nodeRef)}
       className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors ${
@@ -427,7 +353,7 @@ function TreeNodeButton({
       style={{ paddingLeft: `${8 + indent * 12}px` }}
     >
       <span className={`text-[10px] uppercase tracking-wider ${active ? 'text-white/70' : 'text-muted-foreground'}`}>
-        {LEVEL_LABEL[nodeRef.level][0]}
+        {levelDef(nodeRef.level).label[0]}
       </span>
       <span className="truncate font-medium">{name}</span>
     </button>
@@ -585,7 +511,7 @@ export const HierarchyView: React.FC = () => {
   };
 
   const counts = useMemo(() => (tree ? treeCounts(tree) : null), [tree]);
-  const childLevel = selected ? CHILD_LEVEL[selected.level] : null;
+  const childLevel = selected ? remainingChildren(selected.level)[0] ?? null : null;
   const jobFailed = job?.status === 'failed';
   const draftDirty = Boolean(tree && selected && draftName.trim() !== nodeName(tree, selected));
   const canSave = Boolean(tree) && !saving && (dirty || draftDirty);
@@ -725,7 +651,7 @@ export const HierarchyView: React.FC = () => {
                 {selected ? (
                   <>
                     <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                      {LEVEL_LABEL[selected.level]}
+                      {levelDef(selected.level).label}
                     </div>
                     <label className="block space-y-1.5">
                       <span className="text-xs font-medium text-muted-foreground">Name</span>
@@ -747,7 +673,7 @@ export const HierarchyView: React.FC = () => {
                     {fieldError && <p className="text-xs text-rose-400">{fieldError}</p>}
                     <p className="font-mono text-[11px] text-muted-foreground">{nodePrefix(tree, selected)}</p>
                     <div className="flex flex-wrap gap-2 pt-1">
-                      <BtnSecondary onClick={handleAddChild} disabled={!childLevel} title={childLevel ? `Add ${LEVEL_LABEL[childLevel].toLowerCase()}` : 'A cell is a leaf'}>
+                      <BtnSecondary onClick={handleAddChild} disabled={!childLevel} title={childLevel ? `Add ${levelDef(childLevel).label.toLowerCase()}` : LEAF_TITLE}>
                         <Plus className="size-3.5" />
                         Add child
                       </BtnSecondary>

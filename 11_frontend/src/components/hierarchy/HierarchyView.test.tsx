@@ -148,6 +148,9 @@ describe('the plant hierarchy editor', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Site Site' })).toBeTruthy());
 
     fireEvent.click(screen.getByRole('button', { name: 'Cell V101' }));
+    expect(screen.getByRole('button', { name: 'Add child' })).toHaveAttribute('title', 'Add machine');
+    fireEvent.click(screen.getByRole('button', { name: 'Add child' }));
+    await waitFor(() => expect(screen.getByText('Machine')).toBeTruthy());
     expect(screen.getByRole('button', { name: 'Add child' })).toBeDisabled();
   });
 
