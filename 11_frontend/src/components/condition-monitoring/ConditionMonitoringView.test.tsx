@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import type { UnsNode } from '../../types/uns';
@@ -69,25 +69,41 @@ beforeEach(() => {
   subscribeMqttMessages.mockReturnValue(() => undefined);
 });
 
-function renderPage() {
-  return render(
+const VISIBLE_MQTT_TOPICS = [
+  'Server/OpcPlc/Distribution/P201/Fault',
+  'Server/OpcPlc/Distribution/P202/Speed',
+];
+
+async function renderPage() {
+  const view = render(
     <MemoryRouter>
       <ConditionMonitoringView />
     </MemoryRouter>,
   );
+  // Drain the empty-topics Promise.all([]) historian tick (and catalog microtasks).
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  return view;
 }
 
 describe('ConditionMonitoringView catalog', () => {
+  beforeEach(() => {
+    // Catalog assertions unmount before historian would settle; hang so no setState after unmount.
+    getHistoricEvents.mockReturnValue(new Promise(() => {}));
+  });
+
   it('shows AccessRestricted when uns_tree is denied', async () => {
     auth.hasPermission = (_feature: string): boolean => false;
-    renderPage();
+    await renderPage();
     await waitFor(() => expect(screen.getByText(/permission required/i)).toBeTruthy());
     expect(getConnectivityServers).not.toHaveBeenCalled();
   });
 
   it('shows a catalog error without the empty-subscribe copy', async () => {
     getConnectivityServers.mockRejectedValue(new Error('column missing'));
-    renderPage();
+    await renderPage();
     await waitFor(() => expect(screen.getByText(/column missing/i)).toBeTruthy());
     expect(screen.queryByText(/subscribe tags in assets/i)).toBeNull();
   });
@@ -104,7 +120,7 @@ describe('ConditionMonitoringView catalog', () => {
         tags: [],
       },
     ]);
-    renderPage();
+    await renderPage();
     await waitFor(() =>
       expect(
         screen.getByText(
@@ -121,7 +137,7 @@ describe('ConditionMonitoringView catalog', () => {
   });
 
   it('renders one card per subscribed tag and hides All signals until scoped', async () => {
-    renderPage();
+    await renderPage();
     await waitFor(() => expect(screen.getByText('Fault')).toBeTruthy());
     expect(screen.getByText('Speed')).toBeTruthy();
     expect(screen.queryByText('Ignored')).toBeNull();
@@ -136,7 +152,7 @@ describe('ConditionMonitoringView catalog', () => {
       isLeaf: true,
       children: [],
     };
-    renderPage();
+    await renderPage();
     await waitFor(() => expect(screen.getByText('Fault')).toBeTruthy());
     expect(screen.queryByText('Speed')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /all signals/i }));
@@ -152,7 +168,7 @@ describe('ConditionMonitoringView catalog', () => {
       isLeaf: true,
       children: [],
     };
-    renderPage();
+    await renderPage();
     await waitFor(() =>
       expect(screen.getByText('No subscribed signals in this zone.')).toBeTruthy(),
     );
@@ -161,11 +177,14 @@ describe('ConditionMonitoringView catalog', () => {
   });
 
   it('shows search empty copy when nothing matches', async () => {
-    renderPage();
+    await renderPage();
     await waitFor(() => expect(screen.getByText('Fault')).toBeTruthy());
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'zzz' } });
     expect(screen.getByText('No signals match this search.')).toBeTruthy();
     expect(screen.queryByText('Fault')).toBeNull();
+    await act(async () => {
+      await Promise.resolve();
+    });
   });
 });
 
@@ -191,12 +210,9 @@ describe('ConditionMonitoringView historian and live tail', () => {
       onMsg = cb;
       return () => undefined;
     });
-    renderPage();
+    await renderPage();
     await waitFor(() => expect(getHistoricEvents).toHaveBeenCalled());
-    expect(getHistoricEvents.mock.calls.map((c) => c[0]).sort()).toEqual([
-      'Server/OpcPlc/Distribution/P201/Fault',
-      'Server/OpcPlc/Distribution/P202/Speed',
-    ]);
+    expect(getHistoricEvents.mock.calls.map((c) => c[0]).sort()).toEqual(VISIBLE_MQTT_TOPICS);
     expect(getHistoricEvents.mock.calls.every((c) => c.length === 3)).toBe(true);
     expect(getHistoricEvents.mock.calls[0][1]).toEqual(expect.any(String));
     expect(getHistoricEvents.mock.calls[0][2]).toEqual(expect.any(String));
@@ -206,11 +222,13 @@ describe('ConditionMonitoringView historian and live tail', () => {
         getHistoricEvents.mock.results.filter((r) => r.type === 'return').length,
       ).toBeGreaterThan(0),
     );
-    onMsg?.({
-      id: 'm1',
-      topic: 'Server/OpcPlc/Distribution/P201/Fault',
-      payload: { value: true },
-      timestamp: liveTs,
+    act(() => {
+      onMsg?.({
+        id: 'm1',
+        topic: 'Server/OpcPlc/Distribution/P201/Fault',
+        payload: { value: true },
+        timestamp: liveTs,
+      });
     });
     fireEvent.click(screen.getAllByRole('button', { name: /^table$/i })[0]);
     await waitFor(() => expect(screen.getByText(/0 → 1/)).toBeTruthy());
@@ -218,8 +236,31 @@ describe('ConditionMonitoringView historian and live tail', () => {
 
   it('shows a historian banner when getHistoricEvents throws and keeps cards', async () => {
     getHistoricEvents.mockRejectedValue(new Error('historian down'));
-    renderPage();
+    await renderPage();
     await waitFor(() => expect(screen.getByText(/historian down/i)).toBeTruthy());
     expect(screen.getByText('Fault')).toBeTruthy();
+  });
+
+  it('subscribes to the two visible mqttTopics (sorted)', async () => {
+    await renderPage();
+    await waitFor(() => expect(subscribeMqttMessages).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(getHistoricEvents.mock.results.every((r) => r.type !== 'incomplete')).toBe(true),
+    );
+    const topics = subscribeMqttMessages.mock.calls[0][0] as string[];
+    expect([...topics].sort()).toEqual(VISIBLE_MQTT_TOPICS);
+  });
+
+  it('calls the MQTT unsubscribe on unmount', async () => {
+    const unsubscribe = vi.fn();
+    subscribeMqttMessages.mockReturnValue(unsubscribe);
+    const { unmount } = await renderPage();
+    await waitFor(() => expect(subscribeMqttMessages).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(getHistoricEvents.mock.results.every((r) => r.type !== 'incomplete')).toBe(true),
+    );
+    unsubscribe.mockClear();
+    unmount();
+    expect(unsubscribe).toHaveBeenCalled();
   });
 });
