@@ -202,6 +202,7 @@ async def test_subscribe_opc_ua_variables_discovers_and_folds_into_catalog():
     ]
     open_client.assert_awaited_once_with(ENDPOINT)
     discover.assert_awaited_once()
+    assert discover.await_args.args[1] is None
     tags: list[ConnectivityTagSpec] = repository.replace_subscribed_tags.await_args.args[1]
     assert [tag.node_id for tag in tags] == ["ns=2;s=Temperature", "ns=2;s=Pressure"]
     assert all(tag.subscribed for tag in tags)
@@ -220,6 +221,34 @@ async def test_subscribe_opc_ua_variables_fails_when_no_such_server():
 
     assert result.errors
     assert "missing" in result.errors[0].message
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_subscribe_opc_ua_variables_forwards_node_id():
+    repository = AsyncMock()
+    repository.list_servers.return_value = [_server()]
+    repository.replace_subscribed_tags.return_value = [
+        _tag(node_id="ns=3;s=WTP_T101_Level", mqtt_topic="RawWater/T101/Level"),
+    ]
+    discovered = [_browse_node("ns=3;s=WTP_T101_Level", "Level")]
+
+    with (
+        patch(REPOSITORY, return_value=repository),
+        patch("uns_graphql.mutations.connectivity.open_client", new=AsyncMock()),
+        patch(
+            "uns_graphql.mutations.connectivity.opcua_browse.discover_variables",
+            new=AsyncMock(return_value=discovered),
+        ) as discover,
+    ):
+        result = await UNSGraphql.schema.execute(
+            'mutation { subscribeOpcUaVariables(serverId: "s1", '
+            'nodeId: "ns=3;s=WaterTreatmentPlant") { nodeId } }',
+            context_value=ADMIN,
+        )
+
+    assert result.errors is None
+    discover.assert_awaited_once()
+    assert discover.await_args.args[1] == "ns=3;s=WaterTreatmentPlant"
 
 
 # --------------------------------------------------------------- update / unsubscribe
@@ -460,6 +489,32 @@ async def test_discover_opc_ua_variables_returns_variable_nodes():
         {"nodeId": "ns=2;s=Temperature", "browseName": "Temperature"}
     ]
     discover.assert_awaited_once()
+    assert discover.await_args.args[1] is None
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_discover_opc_ua_variables_forwards_node_id():
+    rows = [_browse_node("ns=3;s=WTP_T101_Level", "Level")]
+
+    with (
+        patch("uns_graphql.queries.connectivity.open_client", new=AsyncMock()),
+        patch(
+            "uns_graphql.queries.connectivity.opcua_browse.discover_variables",
+            new=AsyncMock(return_value=rows),
+        ) as discover,
+    ):
+        result = await UNSGraphql.schema.execute(
+            '{ discoverOpcUaVariables(endpoint: "opc.tcp://plc1:4840", '
+            'nodeId: "ns=3;s=WaterTreatmentPlant") { nodeId browseName } }',
+            context_value=ADMIN,
+        )
+
+    assert result.errors is None
+    assert result.data["discoverOpcUaVariables"] == [
+        {"nodeId": "ns=3;s=WTP_T101_Level", "browseName": "Level"}
+    ]
+    discover.assert_awaited_once()
+    assert discover.await_args.args[1] == "ns=3;s=WaterTreatmentPlant"
 
 
 @pytest.mark.asyncio(loop_scope="function")

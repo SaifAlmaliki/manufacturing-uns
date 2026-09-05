@@ -5,8 +5,10 @@ const getConnectivityServers = vi.hoisted(() => vi.fn());
 const saveConnectivityServer = vi.hoisted(() => vi.fn());
 const deleteConnectivityServer = vi.hoisted(() => vi.fn());
 const testOpcUaConnection = vi.hoisted(() => vi.fn());
+const browseOpcUa = vi.hoisted(() => vi.fn());
 const discoverOpcUaVariables = vi.hoisted(() => vi.fn());
 const subscribeOpcUaVariables = vi.hoisted(() => vi.fn());
+const readOpcUaNodes = vi.hoisted(() => vi.fn());
 const updateConnectivityTagTopic = vi.hoisted(() => vi.fn());
 const unsubscribeConnectivityTag = vi.hoisted(() => vi.fn());
 const subscribeOpcUaDataChanges = vi.hoisted(() => vi.fn());
@@ -17,8 +19,10 @@ vi.mock('../../services/graphql/client', () => ({
     saveConnectivityServer,
     deleteConnectivityServer,
     testOpcUaConnection,
+    browseOpcUa,
     discoverOpcUaVariables,
     subscribeOpcUaVariables,
+    readOpcUaNodes,
     updateConnectivityTagTopic,
     unsubscribeConnectivityTag,
     subscribeOpcUaDataChanges,
@@ -55,16 +59,57 @@ beforeEach(() => {
   saveConnectivityServer.mockResolvedValue(SERVER);
   deleteConnectivityServer.mockResolvedValue(true);
   testOpcUaConnection.mockResolvedValue({ ok: true, error: null, elapsedMs: 12 });
-  discoverOpcUaVariables.mockResolvedValue([
-    {
-      nodeId: 'ns=3;s=WTP_T101_Level',
-      browseName: 'Level',
-      displayName: 'Level',
-      browsePath: 'RawWater/T101/Level',
-      nodeClass: 'Variable',
-      hasChildren: false,
-    },
-  ]);
+  browseOpcUa.mockImplementation(async (_endpoint: string, nodeId?: string | null) => {
+    if (!nodeId) {
+      return [
+        {
+          nodeId: 'ns=3;s=WaterTreatmentPlant',
+          browseName: 'WaterTreatmentPlant',
+          displayName: 'WaterTreatmentPlant',
+          browsePath: 'WaterTreatmentPlant',
+          nodeClass: 'Object',
+          hasChildren: true,
+        },
+        {
+          nodeId: 'ns=3;s=Fast',
+          browseName: 'Fast',
+          displayName: 'Fast',
+          browsePath: 'Fast',
+          nodeClass: 'Object',
+          hasChildren: true,
+        },
+      ];
+    }
+    if (nodeId === 'ns=3;s=WaterTreatmentPlant') {
+      return [
+        {
+          nodeId: 'ns=3;s=RawWater',
+          browseName: 'RawWater',
+          displayName: 'RawWater',
+          browsePath: 'WaterTreatmentPlant/RawWater',
+          nodeClass: 'Object',
+          hasChildren: true,
+        },
+      ];
+    }
+    return [];
+  });
+  discoverOpcUaVariables.mockImplementation(async (_endpoint: string, nodeId?: string | null) => {
+    if (nodeId === 'ns=3;s=WaterTreatmentPlant') {
+      return [
+        {
+          nodeId: 'ns=3;s=WTP_T101_Level',
+          browseName: 'Level',
+          displayName: 'Level',
+          browsePath: 'RawWater/T101/Level',
+          nodeClass: 'Variable',
+          hasChildren: false,
+        },
+      ];
+    }
+    return [];
+  });
+  readOpcUaNodes.mockResolvedValue([]);
   subscribeOpcUaVariables.mockResolvedValue([
     {
       serverId: 's1',
@@ -155,17 +200,33 @@ describe('the OPC UA server table', () => {
   });
 });
 
+async function openDrawerAndSelectWtp() {
+  render(<ConnectivityView />);
+  await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
+  fireEvent.click(screen.getByRole('button', { name: /browse data/i }));
+  await waitFor(() => expect(browseOpcUa).toHaveBeenCalledWith('opc.tcp://desktop-h4hdql2:50000/'));
+  expect(discoverOpcUaVariables).not.toHaveBeenCalled();
+  expect(screen.getByText('WaterTreatmentPlant')).toBeTruthy();
+  expect(screen.getByText('Fast')).toBeTruthy();
+  fireEvent.click(screen.getByText('WaterTreatmentPlant'));
+  await waitFor(() =>
+    expect(discoverOpcUaVariables).toHaveBeenCalledWith(
+      'opc.tcp://desktop-h4hdql2:50000/',
+      'ns=3;s=WaterTreatmentPlant',
+    ),
+  );
+}
+
 describe('the Browse data drawer', () => {
-  it('discovers variables, subscribes, and edits a topic', async () => {
-    render(<ConnectivityView />);
-    await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
-
-    fireEvent.click(screen.getByRole('button', { name: /browse data/i }));
-    await waitFor(() => expect(discoverOpcUaVariables).toHaveBeenCalledWith('opc.tcp://desktop-h4hdql2:50000/'));
+  it('browses the address space, then discovers only the selected folder', async () => {
+    await openDrawerAndSelectWtp();
     expect(screen.getByText('RawWater/T101/Level')).toBeTruthy();
+    expect(screen.getByText('RawWater')).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: /subscribe/i }));
-    await waitFor(() => expect(subscribeOpcUaVariables).toHaveBeenCalledWith('s1'));
+    fireEvent.click(screen.getByRole('button', { name: /subscribe folder/i }));
+    await waitFor(() =>
+      expect(subscribeOpcUaVariables).toHaveBeenCalledWith('s1', 'ns=3;s=WaterTreatmentPlant'),
+    );
 
     const topicInput = screen.getByDisplayValue('RawWater/T101/Level');
     fireEvent.change(topicInput, { target: { value: 'Plant/T101/Level' } });
@@ -176,12 +237,8 @@ describe('the Browse data drawer', () => {
   });
 
   it('unsubscribes a tag from the drawer', async () => {
-    render(<ConnectivityView />);
-    await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
-
-    fireEvent.click(screen.getByRole('button', { name: /browse data/i }));
-    await waitFor(() => expect(discoverOpcUaVariables).toHaveBeenCalled());
-    fireEvent.click(screen.getByRole('button', { name: /subscribe/i }));
+    await openDrawerAndSelectWtp();
+    fireEvent.click(screen.getByRole('button', { name: /subscribe folder/i }));
     await waitFor(() => expect(subscribeOpcUaVariables).toHaveBeenCalled());
 
     fireEvent.click(screen.getByRole('button', { name: /unsubscribe/i }));

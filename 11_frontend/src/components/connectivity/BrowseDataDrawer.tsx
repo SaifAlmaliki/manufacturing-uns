@@ -1,12 +1,12 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { X, RefreshCw } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, ChevronRight, Folder, FolderOpen, RefreshCw, X } from 'lucide-react';
 import type {
   GraphqlConnectivityServer,
   GraphqlOpcUaBrowseNode,
   GraphqlOpcUaDataValue,
 } from '../../services/graphql/types';
 import { unsGraphQLClient } from '../../services/graphql/client';
-import { BtnGhost, BtnPrimary, ConsoleCard, consoleTokens } from '../ui/console-ui';
+import { BtnGhost, BtnPrimary } from '../ui/console-ui';
 
 interface BrowseDataDrawerProps {
   server: GraphqlConnectivityServer;
@@ -27,6 +27,15 @@ interface RowState {
   status: string;
 }
 
+function uniqueDiscovered(nodes: GraphqlOpcUaBrowseNode[]): GraphqlOpcUaBrowseNode[] {
+  const seen = new Set<string>();
+  return nodes.filter((node) => {
+    if (seen.has(node.nodeId)) return false;
+    seen.add(node.nodeId);
+    return true;
+  });
+}
+
 function mergeRows(
   discovered: GraphqlOpcUaBrowseNode[],
   tags: GraphqlConnectivityServer['tags'],
@@ -36,7 +45,7 @@ function mergeRows(
   for (const v of values) byNodeId.set(v.nodeId, v);
   const tagByNodeId = new Map<string, (typeof tags)[number]>();
   for (const t of tags) tagByNodeId.set(t.nodeId, t);
-  return discovered.map((node) => {
+  return uniqueDiscovered(discovered).map((node) => {
     const tag = tagByNodeId.get(node.nodeId);
     const value = byNodeId.get(node.nodeId);
     return {
@@ -54,23 +63,171 @@ function mergeRows(
   });
 }
 
+interface AddressSpaceTreeProps {
+  endpoint: string;
+  selectedId: string | null;
+  onSelect: (node: GraphqlOpcUaBrowseNode) => void;
+  onError: (message: string) => void;
+}
+
+const AddressSpaceTree: React.FC<AddressSpaceTreeProps> = ({
+  endpoint,
+  selectedId,
+  onSelect,
+  onError,
+}) => {
+  const [roots, setRoots] = useState<GraphqlOpcUaBrowseNode[]>([]);
+  const [childrenById, setChildrenById] = useState<Record<string, GraphqlOpcUaBrowseNode[]>>({});
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [loadingRoot, setLoadingRoot] = useState(true);
+  const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingRoot(true);
+    void (async () => {
+      try {
+        const nodes = await unsGraphQLClient.browseOpcUa(endpoint);
+        if (!cancelled) setRoots(nodes);
+      } catch (err) {
+        if (!cancelled) onError(err instanceof Error ? err.message : 'Browse failed');
+      } finally {
+        if (!cancelled) setLoadingRoot(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [endpoint, onError]);
+
+  const loadChildren = useCallback(
+    async (nodeId: string) => {
+      if (childrenById[nodeId] !== undefined) return;
+      setLoadingIds((prev) => new Set(prev).add(nodeId));
+      try {
+        const kids = await unsGraphQLClient.browseOpcUa(endpoint, nodeId);
+        setChildrenById((prev) => ({ ...prev, [nodeId]: kids }));
+      } catch (err) {
+        onError(err instanceof Error ? err.message : 'Browse failed');
+      } finally {
+        setLoadingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(nodeId);
+          return next;
+        });
+      }
+    },
+    [childrenById, endpoint, onError],
+  );
+
+  const toggle = (node: GraphqlOpcUaBrowseNode) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(node.nodeId)) {
+        next.delete(node.nodeId);
+        return next;
+      }
+      next.add(node.nodeId);
+      return next;
+    });
+    if (!expanded.has(node.nodeId) && node.hasChildren) {
+      void loadChildren(node.nodeId);
+    }
+  };
+
+  const renderNode = (node: GraphqlOpcUaBrowseNode, level: number) => {
+    const isExpanded = expanded.has(node.nodeId);
+    const isSelected = selectedId === node.nodeId;
+    const kids = childrenById[node.nodeId];
+    return (
+      <div key={node.nodeId} className="select-none">
+        <div
+          style={{ paddingLeft: `${level * 14 + 8}px` }}
+          className={`flex items-center gap-1 rounded-lg px-1.5 py-1 text-sm ${
+            isSelected
+              ? 'bg-[#FF7A00]/15 text-[#FF7A00]'
+              : 'text-zinc-300 hover:bg-zinc-800/60 hover:text-white'
+          }`}
+        >
+          {node.hasChildren ? (
+            <button
+              type="button"
+              aria-label={isExpanded ? `Collapse ${node.displayName}` : `Expand ${node.displayName}`}
+              onClick={() => toggle(node)}
+              className="rounded p-0.5 text-zinc-500 hover:text-[#FF7A00]"
+            >
+              {isExpanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+            </button>
+          ) : (
+            <span className="w-4" />
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              onSelect(node);
+              if (node.hasChildren && !expanded.has(node.nodeId)) toggle(node);
+            }}
+            className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          >
+            {isExpanded ? (
+              <FolderOpen className="size-3.5 shrink-0 text-[#FF7A00]" />
+            ) : (
+              <Folder className="size-3.5 shrink-0 text-zinc-500" />
+            )}
+            <span className="truncate">{node.displayName || node.browseName}</span>
+          </button>
+        </div>
+        {isExpanded && (
+          <div className="ml-3 border-l border-zinc-800">
+            {loadingIds.has(node.nodeId) && (
+              <div className="px-3 py-1 text-[11px] text-zinc-500">Loading…</div>
+            )}
+            {kids?.map((child) => renderNode(child, level + 1))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  if (loadingRoot) {
+    return <div className="p-4 text-xs text-zinc-500">Loading address space…</div>;
+  }
+  if (roots.length === 0) {
+    return <div className="p-4 text-xs text-zinc-500">No nodes under Objects.</div>;
+  }
+  return <div className="p-1">{roots.map((node) => renderNode(node, 0))}</div>;
+};
+
 export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onClose, onSubscribed }) => {
+  const [selected, setSelected] = useState<GraphqlOpcUaBrowseNode | null>(null);
   const [discovered, setDiscovered] = useState<GraphqlOpcUaBrowseNode[]>([]);
   const [rows, setRows] = useState<RowState[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [subscribing, setSubscribing] = useState(false);
   const [busyNodeId, setBusyNodeId] = useState<string | null>(null);
   const [draftTopics, setDraftTopics] = useState<Record<string, string>>({});
   const unsubRef = useRef<(() => void) | null>(null);
 
+  const handleTreeError = useCallback((message: string) => {
+    setError(message);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
+    if (!selected) {
+      setDiscovered([]);
+      setRows([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     void (async () => {
       try {
-        const nodes = await unsGraphQLClient.discoverOpcUaVariables(server.endpoint);
+        const nodes = uniqueDiscovered(
+          await unsGraphQLClient.discoverOpcUaVariables(server.endpoint, selected.nodeId),
+        );
         if (cancelled) return;
         setDiscovered(nodes);
         const initial = mergeRows(nodes, server.tags, []);
@@ -87,6 +244,9 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
             .then((values) => {
               if (cancelled) return;
               setRows(mergeRows(nodes, server.tags, values));
+            })
+            .catch(() => {
+              // Value reads can fail on demo nodes after the list is already on screen.
             });
         }
       } catch (err) {
@@ -102,15 +262,16 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
         unsubRef.current = null;
       }
     };
-  }, [server.endpoint, server.tags]);
+  }, [server.endpoint, server.tags, selected]);
 
   const nodeIds = useMemo(() => discovered.map((n) => n.nodeId), [discovered]);
 
   const handleSubscribe = async () => {
+    if (!selected) return;
     setSubscribing(true);
     setError(null);
     try {
-      const tags = await unsGraphQLClient.subscribeOpcUaVariables(server.id);
+      const tags = await unsGraphQLClient.subscribeOpcUaVariables(server.id, selected.nodeId);
       const tagMap = new Map(tags.map((t) => [t.nodeId, t]));
       setRows((prev) =>
         prev.map((r) => {
@@ -203,7 +364,7 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
 
   return (
     <aside
-      className="fixed inset-y-0 right-0 z-40 flex w-full max-w-5xl flex-col border-l border-zinc-800 bg-[#111114] shadow-2xl"
+      className="fixed inset-y-0 right-0 z-40 flex w-full max-w-6xl flex-col border-l border-zinc-800 bg-[#111114] shadow-2xl"
       role="dialog"
       aria-label="Browse OPC UA data"
     >
@@ -211,16 +372,20 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
         <div className="min-w-0">
           <div className="text-[10px] uppercase tracking-wider text-zinc-500">Browse data</div>
           <div className="truncate text-sm font-semibold text-white">{server.name}</div>
-          <div className="truncate font-mono text-[11px] text-zinc-500">{server.endpoint}</div>
+          <div className="truncate font-mono text-[11px] text-zinc-500">
+            {selected
+              ? `${server.endpoint} · ${selected.browsePath || selected.displayName}`
+              : server.endpoint}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <BtnPrimary
             onClick={() => void handleSubscribe()}
-            disabled={subscribing || loading || discovered.length === 0}
+            disabled={subscribing || loading || !selected || discovered.length === 0}
             className="px-3 py-1.5 text-xs"
           >
             <RefreshCw className="size-3.5" />
-            {subscribing ? 'Subscribing…' : 'Subscribe'}
+            {subscribing ? 'Subscribing…' : selected ? 'Subscribe folder' : 'Subscribe'}
           </BtnPrimary>
           <BtnGhost onClick={onClose} aria-label="Close" className="px-2 py-1.5">
             <X className="size-4" />
@@ -234,85 +399,107 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-auto">
-        {loading ? (
-          <div className="p-8 text-center text-sm text-zinc-500">Browsing OPC UA variables…</div>
-        ) : rows.length === 0 ? (
-          <div className="p-8 text-center text-sm text-zinc-500">
-            No variables discovered under Objects on this endpoint.
+      <div className="flex min-h-0 flex-1">
+        <div className="flex w-72 shrink-0 flex-col border-r border-zinc-800">
+          <div className="shrink-0 border-b border-zinc-800 px-3 py-2 text-[10px] uppercase tracking-wider text-zinc-500">
+            Address space
           </div>
-        ) : (
-          <table className="w-full min-w-[1100px] border-collapse text-left text-xs">
-            <thead className="sticky top-0 bg-zinc-900/95 text-[10px] uppercase text-zinc-500">
-              <tr>
-                <th className="px-3 py-2 font-medium">NodeId</th>
-                <th className="px-3 py-2 font-medium">Browse path</th>
-                <th className="px-3 py-2 font-medium">MQTT topic</th>
-                <th className="px-3 py-2 font-medium">Display name</th>
-                <th className="px-3 py-2 font-medium">Value</th>
-                <th className="px-3 py-2 font-medium">Data type</th>
-                <th className="px-3 py-2 font-medium">Source time</th>
-                <th className="px-3 py-2 font-medium">Server time</th>
-                <th className="px-3 py-2 font-medium">Status</th>
-                <th className="px-3 py-2 text-right font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-800/80">
-              {rows.map((row) => (
-                <tr key={row.nodeId} className="hover:bg-zinc-800/30">
-                  <td className="px-3 py-2 font-mono text-[11px] text-zinc-300">{row.nodeId}</td>
-                  <td className="px-3 py-2 font-mono text-[11px] text-zinc-400">{row.browsePath}</td>
-                  <td className="px-3 py-2">
-                    <input
-                      type="text"
-                      value={draftTopics[row.nodeId] ?? row.mqttTopic}
-                      onChange={(e) =>
-                        setDraftTopics((prev) => ({ ...prev, [row.nodeId]: e.target.value }))
-                      }
-                      onBlur={() => void handleTopicBlur(row.nodeId)}
-                      disabled={busyNodeId === row.nodeId}
-                      className={`w-full rounded-md border border-zinc-800 bg-zinc-900/80 px-2 py-1 font-mono text-[11px] text-[#FF7A00] focus:border-[#FF7A00]/50 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/30 disabled:opacity-50`}
-                    />
-                  </td>
-                  <td className="px-3 py-2 text-zinc-300">{row.displayName}</td>
-                  <td className="px-3 py-2 font-mono text-zinc-200">
-                    {row.value === null || row.value === undefined ? '—' : String(row.value)}
-                  </td>
-                  <td className="px-3 py-2 text-zinc-400">{row.dataType ?? '—'}</td>
-                  <td className="px-3 py-2 text-zinc-500">{row.sourceTimestamp ?? '—'}</td>
-                  <td className="px-3 py-2 text-zinc-500">{row.serverTimestamp ?? '—'}</td>
-                  <td className="px-3 py-2">
-                    <span
-                      className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                        row.status === 'Good'
-                          ? 'bg-emerald-500/15 text-emerald-300'
-                          : row.status === 'Bad'
-                            ? 'bg-rose-500/15 text-rose-300'
-                            : 'bg-zinc-700/40 text-zinc-300'
-                      }`}
-                    >
-                      {row.status}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {row.subscribed ? (
-                      <button
-                        type="button"
-                        onClick={() => void handleUnsubscribe(row.nodeId)}
-                        disabled={busyNodeId === row.nodeId}
-                        className="rounded-md border border-zinc-700 px-2 py-1 text-[10px] text-zinc-300 hover:border-rose-500/50 hover:text-rose-300 disabled:opacity-50"
-                      >
-                        Unsubscribe
-                      </button>
-                    ) : (
-                      <span className="text-[10px] text-zinc-600">not subscribed</span>
-                    )}
-                  </td>
+          <div className="min-h-0 flex-1 overflow-auto">
+            <AddressSpaceTree
+              endpoint={server.endpoint}
+              selectedId={selected?.nodeId ?? null}
+              onSelect={setSelected}
+              onError={handleTreeError}
+            />
+          </div>
+        </div>
+
+        <div className="min-h-0 min-w-0 flex-1 overflow-auto">
+          {!selected ? (
+            <div className="p-8 text-center text-sm text-zinc-500">
+              Select a folder to list its variables — same as dragging a section in UA Expert.
+            </div>
+          ) : loading ? (
+            <div className="p-8 text-center text-sm text-zinc-500">
+              Discovering variables under {selected.displayName || selected.browseName}…
+            </div>
+          ) : rows.length === 0 ? (
+            <div className="p-8 text-center text-sm text-zinc-500">
+              No variables under this node.
+            </div>
+          ) : (
+            <table className="w-full min-w-[1100px] border-collapse text-left text-xs">
+              <thead className="sticky top-0 bg-zinc-900/95 text-[10px] uppercase text-zinc-500">
+                <tr>
+                  <th className="px-3 py-2 font-medium">NodeId</th>
+                  <th className="px-3 py-2 font-medium">Browse path</th>
+                  <th className="px-3 py-2 font-medium">MQTT topic</th>
+                  <th className="px-3 py-2 font-medium">Display name</th>
+                  <th className="px-3 py-2 font-medium">Value</th>
+                  <th className="px-3 py-2 font-medium">Data type</th>
+                  <th className="px-3 py-2 font-medium">Source time</th>
+                  <th className="px-3 py-2 font-medium">Server time</th>
+                  <th className="px-3 py-2 font-medium">Status</th>
+                  <th className="px-3 py-2 text-right font-medium">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+              </thead>
+              <tbody className="divide-y divide-zinc-800/80">
+                {rows.map((row) => (
+                  <tr key={row.nodeId} className="hover:bg-zinc-800/30">
+                    <td className="px-3 py-2 font-mono text-[11px] text-zinc-300">{row.nodeId}</td>
+                    <td className="px-3 py-2 font-mono text-[11px] text-zinc-400">{row.browsePath}</td>
+                    <td className="px-3 py-2">
+                      <input
+                        type="text"
+                        value={draftTopics[row.nodeId] ?? row.mqttTopic}
+                        onChange={(e) =>
+                          setDraftTopics((prev) => ({ ...prev, [row.nodeId]: e.target.value }))
+                        }
+                        onBlur={() => void handleTopicBlur(row.nodeId)}
+                        disabled={busyNodeId === row.nodeId}
+                        className="w-full rounded-md border border-zinc-800 bg-zinc-900/80 px-2 py-1 font-mono text-[11px] text-[#FF7A00] focus:border-[#FF7A00]/50 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/30 disabled:opacity-50"
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-zinc-300">{row.displayName}</td>
+                    <td className="px-3 py-2 font-mono text-zinc-200">
+                      {row.value === null || row.value === undefined ? '—' : String(row.value)}
+                    </td>
+                    <td className="px-3 py-2 text-zinc-400">{row.dataType ?? '—'}</td>
+                    <td className="px-3 py-2 text-zinc-500">{row.sourceTimestamp ?? '—'}</td>
+                    <td className="px-3 py-2 text-zinc-500">{row.serverTimestamp ?? '—'}</td>
+                    <td className="px-3 py-2">
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                          row.status === 'Good'
+                            ? 'bg-emerald-500/15 text-emerald-300'
+                            : row.status === 'Bad'
+                              ? 'bg-rose-500/15 text-rose-300'
+                              : 'bg-zinc-700/40 text-zinc-300'
+                        }`}
+                      >
+                        {row.status}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {row.subscribed ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleUnsubscribe(row.nodeId)}
+                          disabled={busyNodeId === row.nodeId}
+                          className="rounded-md border border-zinc-700 px-2 py-1 text-[10px] text-zinc-300 hover:border-rose-500/50 hover:text-rose-300 disabled:opacity-50"
+                        >
+                          Unsubscribe
+                        </button>
+                      ) : (
+                        <span className="text-[10px] text-zinc-600">not subscribed</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
     </aside>
   );

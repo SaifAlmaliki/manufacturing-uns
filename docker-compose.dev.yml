@@ -10,6 +10,16 @@ services:
   asset_model_setup:
     command: ["--skip-oee-import"]
 
+  # This PC's NetBIOS name is not in Docker DNS. Map it to the host so Test/Browse
+  # can use the same opc.tcp://desktop-h4hdql2:50000/ URL as UA Expert.
+  graphql_server:
+    extra_hosts:
+      - "desktop-h4hdql2:host-gateway"
+
+  opcua_client:
+    extra_hosts:
+      - "desktop-h4hdql2:host-gateway"
+
   uns_simulator:
     ports:
       - "8099:8099"

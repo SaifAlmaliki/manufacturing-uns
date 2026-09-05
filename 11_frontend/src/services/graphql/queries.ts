@@ -535,9 +535,22 @@ export const TEST_OPCUA_CONNECTION_QUERY = `
   }
 `
 
+export const BROWSE_OPCUA_QUERY = `
+  query BrowseOpcUa($endpoint: String!, $nodeId: String) {
+    browseOpcUa(endpoint: $endpoint, nodeId: $nodeId) {
+      nodeId
+      browseName
+      displayName
+      browsePath
+      nodeClass
+      hasChildren
+    }
+  }
+`
+
 export const DISCOVER_OPCUA_VARIABLES_QUERY = `
-  query DiscoverOpcUaVariables($endpoint: String!) {
-    discoverOpcUaVariables(endpoint: $endpoint) {
+  query DiscoverOpcUaVariables($endpoint: String!, $nodeId: String) {
+    discoverOpcUaVariables(endpoint: $endpoint, nodeId: $nodeId) {
       nodeId
       browseName
       displayName
@@ -549,8 +562,8 @@ export const DISCOVER_OPCUA_VARIABLES_QUERY = `
 `
 
 export const SUBSCRIBE_OPCUA_VARIABLES_MUTATION = `
-  mutation SubscribeOpcUaVariables($serverId: String!) {
-    subscribeOpcUaVariables(serverId: $serverId) {
+  mutation SubscribeOpcUaVariables($serverId: String!, $nodeId: String) {
+    subscribeOpcUaVariables(serverId: $serverId, nodeId: $nodeId) {
       ${CONNECTIVITY_TAG_FIELDS}
     }
   }

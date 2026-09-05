@@ -85,16 +85,18 @@ class Query:
         return [OpcUaBrowseNodeType.from_browse(row) for row in rows]
 
     @strawberry.field(
-        description="Recursively discover every Variable node under Objects on the endpoint."
+        description="Recursively discover every Variable under nodeId, or under Objects."
     )
     async def discover_opc_ua_variables(
         self,
         info: strawberry.Info,
         endpoint: str,
+        node_id: str | None = strawberry.UNSET,
     ) -> list[OpcUaBrowseNodeType]:
         require_role(info, OPC_PROBE_ROLES)
+        start = node_id if node_id is not strawberry.UNSET else None
         async with await open_client(endpoint) as client:
-            rows = await opcua_browse.discover_variables(client)
+            rows = await opcua_browse.discover_variables(client, start)
         return [OpcUaBrowseNodeType.from_browse(row) for row in rows]
 
     @strawberry.field(description="Read the current value of one or more OPC UA nodes by NodeId.")

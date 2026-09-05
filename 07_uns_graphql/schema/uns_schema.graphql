@@ -480,9 +480,9 @@ type Mutation {
   deleteConnectivityServer(id: String!): Boolean!
 
   """
-  Discover every Variable on the server's endpoint and fold the result into the catalog. An engineer's edited mqttTopic survives; nodes missing from this discovery stay subscribed until unsubscribeConnectivityTag removes them deliberately.
+  Discover Variables under nodeId (or the whole Objects tree) and fold them into the catalog. An engineer's edited mqttTopic survives; nodes missing from this discovery stay subscribed until unsubscribeConnectivityTag removes them.
   """
-  subscribeOpcUaVariables(serverId: String!): [ConnectivityTagType!]!
+  subscribeOpcUaVariables(serverId: String!, nodeId: String): [ConnectivityTagType!]!
 
   """Set the MQTT topic an engineer wants this node republished under."""
   updateConnectivityTagTopic(serverId: String!, nodeId: String!, mqttTopic: String!): ConnectivityTagType!
@@ -703,9 +703,9 @@ type Query {
   browseOpcUa(endpoint: String!, nodeId: String): [OpcUaBrowseNodeType!]!
 
   """
-  Recursively discover every Variable node under Objects on the endpoint.
+  Recursively discover every Variable under nodeId, or under Objects.
   """
-  discoverOpcUaVariables(endpoint: String!): [OpcUaBrowseNodeType!]!
+  discoverOpcUaVariables(endpoint: String!, nodeId: String): [OpcUaBrowseNodeType!]!
 
   """Read the current value of one or more OPC UA nodes by NodeId."""
   readOpcUaNodes(endpoint: String!, nodeIds: [String!]!): [OpcUaDataValueType!]!

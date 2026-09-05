@@ -75,19 +75,23 @@ class Mutation:
         return deleted
 
     @strawberry.mutation(
-        description="Discover every Variable on the server's endpoint and fold the result into the catalog. "
-        "An engineer's edited mqttTopic survives; nodes missing from this discovery stay subscribed until "
-        "unsubscribeConnectivityTag removes them deliberately."
+        description="Discover Variables under nodeId (or the whole Objects tree) and fold "
+        "them into the catalog. An engineer's edited mqttTopic survives; nodes missing "
+        "from this discovery stay subscribed until unsubscribeConnectivityTag removes them."
     )
     async def subscribe_opc_ua_variables(
-        self, info: strawberry.Info, server_id: str
+        self,
+        info: strawberry.Info,
+        server_id: str,
+        node_id: str | None = strawberry.UNSET,
     ) -> list[ConnectivityTagType]:
         require(info, "subscribeOpcUaVariables")
         endpoint = await _server_endpoint(server_id)
         if endpoint is None:
             raise ValueError(f"No Connectivity server with id {server_id!r}")
+        start = node_id if node_id is not strawberry.UNSET else None
         async with await open_client(endpoint) as client:
-            discovered = await opcua_browse.discover_variables(client)
+            discovered = await opcua_browse.discover_variables(client, start)
         tags = [
             ConnectivityTagSpec(
                 node_id=row.node_id,

@@ -53,6 +53,7 @@ import {
   SUBSCRIBE_MQTT_MESSAGES,
   SUBSCRIBE_OPCUA_DATA_CHANGES,
   SUBSCRIBE_OPCUA_VARIABLES_MUTATION,
+  BROWSE_OPCUA_QUERY,
   DELETE_ACCESS_GROUP_MUTATION,
   DELETE_CONNECTIVITY_SERVER_MUTATION,
   DISCOVER_OPCUA_VARIABLES_QUERY,
@@ -730,10 +731,27 @@ export class UnsGraphQLClient {
     return res.data.testOpcUaConnection
   }
 
-  public async discoverOpcUaVariables(endpoint: string): Promise<GraphqlOpcUaBrowseNode[]> {
+  public async browseOpcUa(
+    endpoint: string,
+    nodeId?: string | null,
+  ): Promise<GraphqlOpcUaBrowseNode[]> {
+    const res = await this.executeQuery<{ browseOpcUa: GraphqlOpcUaBrowseNode[] }>(
+      BROWSE_OPCUA_QUERY,
+      { endpoint, nodeId: nodeId ?? null },
+    )
+    if (res.error) {
+      throw new Error(res.error)
+    }
+    return res.data?.browseOpcUa ?? []
+  }
+
+  public async discoverOpcUaVariables(
+    endpoint: string,
+    nodeId?: string | null,
+  ): Promise<GraphqlOpcUaBrowseNode[]> {
     const res = await this.executeQuery<{ discoverOpcUaVariables: GraphqlOpcUaBrowseNode[] }>(
       DISCOVER_OPCUA_VARIABLES_QUERY,
-      { endpoint },
+      { endpoint, nodeId: nodeId ?? null },
     )
     if (res.error) {
       throw new Error(res.error)
@@ -743,10 +761,11 @@ export class UnsGraphQLClient {
 
   public async subscribeOpcUaVariables(
     serverId: string,
+    nodeId?: string | null,
   ): Promise<{ nodeId: string; browsePath: string; displayName: string; mqttTopic: string; subscribed: boolean }[]> {
     const res = await this.executeQuery<{ subscribeOpcUaVariables: unknown[] }>(
       SUBSCRIBE_OPCUA_VARIABLES_MUTATION,
-      { serverId },
+      { serverId, nodeId: nodeId ?? null },
     )
     if (res.error || !res.data?.subscribeOpcUaVariables) {
       throw new Error(res.error || 'Subscribe failed')
