@@ -100,3 +100,14 @@ def test_find_conflicts_scopes_node_ids_per_server():
         )
     )
     assert find_conflicts([*plc01, *plc02]) == []
+
+
+def test_mqtt_topic_overrides_derive_topic():
+    tag = TagConfig(
+        node_id="ns=3;s=WTP_T101_Level",
+        asset="ignored",
+        metric_path="ignored",
+        mqtt_topic="RawWater/T101/Level",
+    )
+    bindings = build_bindings(_server(tag))
+    assert bindings[0].topic == "RawWater/T101/Level"

@@ -53,7 +53,7 @@ def build_bindings(server: ServerConfig) -> tuple[TagBinding, ...]:
     return tuple(
         TagBinding(
             node_id=tag.node_id,
-            topic=derive_topic(tag.asset, tag.metric_path),
+            topic=tag.mqtt_topic.strip("/") if tag.mqtt_topic else derive_topic(tag.asset, tag.metric_path),
             asset=tag.asset,
             metric_path=tag.metric_path,
             unit=tag.unit,
