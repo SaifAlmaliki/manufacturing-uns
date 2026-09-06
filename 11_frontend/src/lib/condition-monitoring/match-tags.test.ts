@@ -55,6 +55,15 @@ describe('tagMatchesNode', () => {
       ),
     ).toBe(false);
   });
+
+  it('matches by assigned Asset path prefix', () => {
+    const assigned = tag({
+      assetPath: 'AcmeWater/Site1/Furnace',
+      mqttTopic: 'Server/OpcPlc/Temperature',
+    });
+    expect(tagMatchesNode(assigned, node('AcmeWater/Site1/Furnace'))).toBe(true);
+    expect(tagMatchesNode(assigned, node('AcmeWater/Site1'))).toBe(true);
+  });
 });
 
 describe('tagInScope', () => {

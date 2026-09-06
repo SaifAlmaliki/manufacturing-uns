@@ -73,4 +73,17 @@ describe('SignalCard', () => {
     render(<SignalCard tag={TAG} samples={samples} latest={{ ...samples[1], quality: null }} />);
     expect(screen.getByText('—')).toBeTruthy();
   });
+
+  it('shows unit of measure and asset name next to the value', () => {
+    render(
+      <SignalCard
+        tag={{ ...TAG, unitOfMeasure: '°C', assetDisplayName: 'Furnace', dataType: 'Double' }}
+        samples={[{ t: 1, v: 1234, quality: 'GOOD', boolean: false }]}
+        latest={{ t: 1, v: 1234, quality: 'GOOD', boolean: false }}
+      />,
+    );
+    expect(screen.getAllByText(/1234/).length).toBeGreaterThan(0);
+    expect(screen.getByText('°C')).toBeTruthy();
+    expect(screen.getByText('Furnace')).toBeTruthy();
+  });
 });

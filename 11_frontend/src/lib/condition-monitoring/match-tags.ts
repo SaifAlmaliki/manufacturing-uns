@@ -7,8 +7,19 @@ export function pathSegments(topic: string): string[] {
 
 export function tagMatchesNode(tag: GraphqlConnectivityTag, node: UnsNode): boolean {
   const topic = tag.mqttTopic;
-  if (topic === node.topic || topic.startsWith(`${node.topic}/`)) {
-    return true;
+  if (topic === node.topic || topic.startsWith(`${node.topic}/`)) return true;
+  const assetPath = tag.assetPath;
+  if (assetPath) {
+    if (
+      assetPath === node.topic
+      || assetPath.startsWith(`${node.topic}/`)
+      || node.topic.startsWith(`${assetPath}/`)
+    ) {
+      return true;
+    }
+    const assetLeaf = pathSegments(assetPath).at(-1);
+    const nodeLeaf = pathSegments(node.topic).at(-1);
+    if (assetLeaf && assetLeaf === nodeLeaf) return true;
   }
   const leaf = pathSegments(node.topic).at(-1);
   if (!leaf) return false;

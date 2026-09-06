@@ -24,8 +24,16 @@ export const SignalCard: React.FC<{
   toMs?: number;
 }> = ({ tag, samples, latest, fromMs, toMs }) => {
   const [mode, setMode] = useState<'graph' | 'table'>('graph');
-  const isBoolean = samples.some((s) => s.boolean) || latest?.boolean === true;
-  const typeHint = latest == null ? null : isBoolean ? 'BOOLEAN' : 'DOUBLE';
+  const inferredBoolean = samples.some((s) => s.boolean) || latest?.boolean === true;
+  const isBoolean =
+    tag.dataType === 'Boolean'
+      ? true
+      : tag.dataType === 'Double' || tag.dataType === 'Integer'
+        ? false
+        : inferredBoolean;
+  const typeHint =
+    tag.dataType || latest == null ? null : isBoolean ? 'BOOLEAN' : 'DOUBLE';
+  const unit = tag.unitOfMeasure;
   const transitions = useMemo(() => booleanTransitions(samples), [samples]);
   const rows = useMemo(() => numericTableRows(samples), [samples]);
 
@@ -34,11 +42,17 @@ export const SignalCard: React.FC<{
       <div className="flex shrink-0 items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-foreground">{tag.displayName}</p>
+          {tag.assetDisplayName ? (
+            <p className="truncate text-[11px] text-muted-foreground">{tag.assetDisplayName}</p>
+          ) : null}
           <p className="break-all font-mono text-[11px] text-muted-foreground">{tag.mqttTopic}</p>
         </div>
         <div className="text-right">
           <p className="text-sm tabular-nums text-emerald-400">
             {latest ? String(latest.v) : '—'}
+            {unit ? (
+              <span className="ml-1 text-[10px] font-normal text-muted-foreground">{unit}</span>
+            ) : null}
             {typeHint ? (
               <span className="ml-1 text-[10px] font-normal text-muted-foreground">{typeHint}</span>
             ) : null}
