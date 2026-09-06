@@ -345,8 +345,8 @@ export class UnsGraphQLClient {
    * Model, then what was published.
    *
    * When a plant.yaml exists, the tree stops at what was authored or published.
-   * The simulator's hardcoded ProcessValue / Setpoint / Status / Alarm / EVENT
-   * folders are not plant structure and must not appear under a Cell or Machine.
+   * Hardcoded ProcessValue / Setpoint / Status / Alarm / EVENT folders are not
+   * plant structure and must not appear under a Cell or Machine.
    */
   public async getUnsNodeChildren(parentTopic: string): Promise<UnsNode[]> {
     const tree = await this.getHierarchy()

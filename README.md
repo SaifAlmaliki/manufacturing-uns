@@ -70,7 +70,7 @@ decisions that would otherwise be surprising are recorded in **[docs/adr](./docs
 
 ## **Local Docker Compose stack**
 
-[`docker-compose.yml`](./docker-compose.yml) starts a **local, non-production** UNS: MQTT, databases, mappers, GraphQL, the console UI, and the device simulator. Do not use this compose file for production.
+[`docker-compose.yml`](./docker-compose.yml) starts a **local, non-production** UNS: MQTT, databases, mappers, GraphQL, and the console UI. Do not use this compose file for production.
 
 In Docker Desktop the project is `manufacturing-uns`. Container names look like `manufacturing-uns-<service>-1`.
 
@@ -84,21 +84,20 @@ uv sync
 npm install --prefix 11_frontend
 ```
 
-Compose cannot read YAML secrets by itself. The `uns_compose` wrapper loads `conf/.secrets.yaml` and then runs `docker compose`. The `npm run stack` / `sim` / `down` scripts use that wrapper with [`docker-compose.dev.yml`](./docker-compose.dev.yml).
+Compose cannot read YAML secrets by itself. The `uns_compose` wrapper loads `conf/.secrets.yaml` and then runs `docker compose`. The `npm run stack` / `down` scripts use that wrapper with [`docker-compose.dev.yml`](./docker-compose.dev.yml).
 
-### Option 1: Frontend development (three terminals)
+### Option 1: Frontend development (two terminals)
 
-Use this when you are working on the console UI with hot reload. Open **three terminals** at the repository root and run, **in order**:
+Use this when you are working on the console UI with hot reload. Open **two terminals** at the repository root and run, **in order**:
 
 | Terminal | Command | What it starts |
 | --- | --- | --- |
 | 1 | `npm run stack` | Backend and databases in Docker (MQTT, Neo4j, Timescale, mappers, GraphQL, Grafana proxy on **8088**). Wait until it finishes. |
-| 2 | `npm run sim` | Device simulator in Docker, **foreground** — logs stay in this window. Leave it running. |
-| 3 | `npm run ui` | Vite dev server with hot reload at **http://localhost:5173**. |
+| 2 | `npm run ui` | Vite dev server with hot reload at **http://localhost:5173**. |
 
-The dev compose file keeps the simulator out of `stack` and publishes port **8099** only when you run `sim`, so Vite can proxy `/simulator` correctly.
+Plant signals come from external publishers (OPC UA, Modbus, or any connector) on the MQTT broker.
 
-Stop the simulator and UI with Ctrl+C in terminals 2 and 3, then tear down the stack:
+Stop the UI with Ctrl+C in terminal 2, then tear down the stack:
 
 ```bash
 npm run down
@@ -106,7 +105,7 @@ npm run down
 
 ### Option 2: Full stack in Docker (one command)
 
-Use this for a quick demo or when you do not need Vite hot reload. **One command** starts all three layers — backend, simulator, and the production-built console UI:
+Use this for a quick demo or when you do not need Vite hot reload. **One command** starts the backend and the production-built console UI:
 
 ```bash
 uv run uns_compose up -d --build
@@ -115,33 +114,15 @@ uv run uns_compose up -d --build
 | Layer | Where it runs | URL |
 | --- | --- | --- |
 | Backend (DB, MQTT, mappers, GraphQL) | Docker | GraphQL: **http://localhost:8000/graphql** |
-| Simulator | Docker (`uns_simulator`) | Control API inside the compose network; MQTT on **1883** |
 | Console UI | Docker (`uns_frontend`) | **http://localhost:8088** (Grafana at `/grafana`) |
 
-That command is the same on Windows, macOS, and Linux. The simulator publishes into the Compose MQTT broker (`uns_mqtt_broker`) automatically.
-
-Start or stop **only** the simulator when the rest of the stack is already up:
-
-```bash
-uv run uns_compose up -d uns_simulator
-uv run uns_compose stop uns_simulator
-uv run uns_compose start uns_simulator
-uv run uns_compose logs -f uns_simulator
-```
-
-To run the simulator on the host instead of in Docker (optional; uses the **repository-root** `.venv` from [Setting up the development environment](#setting-up-the-development-environment)):
-
-```bash
-uv run uns_simulator
-```
-
-Point it at the published MQTT port (`localhost:1883`) while the stack from Option 1 or 2 is running.
+That command is the same on Windows, macOS, and Linux. Connect plant publishers to the Compose MQTT broker (`uns_mqtt_broker`) on **1883**.
 
 ### What each container does
 
 | Docker Desktop name | Role |
 | --- | --- |
-| `uns_mqtt_broker` | MQTT backbone (HiveMQ Edge). Devices, the simulator, mapper clients, and Edge protocol adapters (S7, EtherNet/IP, OPC UA) publish/subscribe here. Host ports: `1883` (MQTT), `18080` (Edge console). |
+| `uns_mqtt_broker` | MQTT backbone (HiveMQ Edge). Devices, mapper clients, and Edge protocol adapters (S7, EtherNet/IP, OPC UA) publish/subscribe here. Host ports: `1883` (MQTT), `18080` (Edge console). |
 | `uns_neo4j_db` | Graph database that stores the current ISA-95 namespace as a tree of nodes. Host ports: `7474` (browser), `7687` (Bolt). |
 | `uns_timescale_db` | Time-series historian (TimescaleDB / Postgres) that keeps a history of MQTT events. Host port: `5432`. |
 | `tsdb_setup_script` | One-shot job that creates the historian database, user, tables (`unifiednamespace` + `uns_metrics`), continuous aggregates, and the compression / retention policies. It **exits after success** — a gray/stopped icon is normal, not a failure. |
@@ -152,14 +133,13 @@ Point it at the published MQTT port (`localhost:1883`) while the stack from Opti
 | `opcua_client` | OPC UA edge connector. Polls the console connectivity catalog every 5s, subscribes to engineer-configured nodes, and publishes them into the UNS via MQTT (with disk-backed store-and-forward). Metrics on `9093`, unpublished. `extra_hosts` lets it reach OPC servers on the host. |
 | `spb_mapper_client` | Sparkplug B translator: listens on Sparkplug topics, decodes protobuf, republishes JSON on the ISA-95 UNS topics. |
 | `kafka_mapper_client` | MQTT-to-Kafka bridge: copies UNS MQTT messages onto Kafka topics. |
-| `uns_simulator` | Synthetic PLC / HMI / SCADA publisher used for local demos. Not for production. |
 | `oee_client` | Computes shift OEE from the historised `uns_metrics` rows and publishes each result to `<line>/KPI/ShiftOee`. Reads the historian, writes the `oee` schema, never writes to a control system (ADR-0008). Metrics on `9095`, unpublished. |
 | `graphql_server` | GraphQL API over MQTT (live), Neo4j (current tree), TimescaleDB (history), Postgres `model` / `console` (Asset Model and Alert Rules), and Kafka. Host port: **`8000`** (`http://localhost:8000/graphql`). |
 | `uns_frontend` | Web console for the namespace tree, payload inspector, live feed, search, historian, and Grafana. Host port: **`8088`** (`http://localhost:8088`). Grafana is proxied at `/grafana` (System Operations in the console). The browser calls GraphQL on port `8000`. |
 | `uns_prometheus` | Scrapes the `/metrics` endpoints exposed by the mapper clients. Host port: `9090`. |
 | `uns_grafana` | Dashboards for Process Visualization (plant measurements from `uns_metrics_1m_enriched`), OEE (shift results and downtime from the `oee` schema), and Platform Observability (platform health). Not published on the host: open them from the console at `http://localhost:8088` → System Operations, or `http://localhost:8088/grafana/`. Signs in against the Keycloak `uns` realm — see [Known Limitations](#known-limitations--workarounds) and [ADR 0009](./docs/adr/0009-oidc-authentication-for-console-and-graphql.md). |
 
-Typical flow: **simulator or plant devices → MQTT → mapper clients → Neo4j / Timescale / Kafka → GraphQL → UI**,
+Typical flow: **plant devices → MQTT → mapper clients → Neo4j / Timescale / Kafka → GraphQL → UI**,
 with **mapper clients → Prometheus → Grafana** alongside it for platform health.
 
 ### Docker images
@@ -180,7 +160,6 @@ Images built from this repo (`manufacturing-uns-<service>`):
 - `uns_frontend` — web console for the namespace tree, live feed, historian, and Grafana.
 - `asset_model_setup` — one-shot job that creates `model` / `console` schemas and imports the plant hierarchy.
 - `oee_client` — computes shift OEE from historised metrics and publishes `<line>/KPI/ShiftOee`.
-- `uns_simulator` — synthetic PLC / HMI / SCADA publisher for local demos.
 - `spb_mapper_client` — Sparkplug B translator: protobuf in, ISA-95 JSON out.
 - `graphdb_client` — MQTT subscriber that writes the live namespace into Neo4j.
 - `historian_client` — MQTT subscriber that writes events into TimescaleDB.
@@ -331,7 +310,6 @@ Since I did not have the enterprise version of the MQTT brokers, I decided to de
 - The authored Asset Model in Postgres, which contextualizes and enriches everything the historian stores [09_uns_model](./09_uns_model/README.md)
 - The shift OEE engine, which turns that history into Availability x Performance x Quality per line [12_uns_oee](./12_uns_oee/README.md)
 - The read-only OPC UA edge connector that publishes PLC/SCADA tags into the UNS [10_uns_opcua](./10_uns_opcua/README.md)
-- A simulator for test purposes [99_simulator](./99_simulator/README.md)
 
 I choose to write the client in Python even thought Python is not as performant as Go, C or Rust primarily because
 
@@ -383,9 +361,8 @@ Two constraints are worth knowing before you extend this:
   (`historian_client:9091`, `graphdb_client:9092`) instead of relying on exporters alone.
   Exporters also cannot see failures that a mapper swallows internally.
 - **There is no Neo4j data source for Grafana** in the plugin catalog. The Unified Namespace tree
-  stays in the React console; Grafana is not where you browse the namespace. Of the three plugins
-  in the abandoned `99_simulator/notes` sketch, only `grafana-mqtt-datasource` exists — which is
-  why that sketch never started.
+  stays in the React console; Grafana is not where you browse the namespace. The catalog MQTT
+  plugin (`grafana-mqtt-datasource`) exists, but the namespace tree is still owned by the console.
 
 ### **OEE**
 
@@ -441,9 +418,8 @@ The current project contains the following microservices
 1. [10_uns_opcua](./10_uns_opcua/README.md): Read-only OPC UA edge connector that subscribes to PLC/SCADA nodes and publishes them into the Unified Namespace with disk-backed store-and-forward
 1. [11_frontend](./11_frontend/README.md): React console that talks only to GraphQL — Asset Model–first tree, payload inspector with read-time enrichment, live feed, search, and historian
 1. [12_uns_oee](./12_uns_oee/README.md): Python project that computes OEE for closed shifts from historised UNS data, stores the result and its downtime breakdown in the `oee` schema, and publishes it back to MQTT
-1. [99_simulator](./99_simulator/README.md): Python project for simulating data creation to the UNS. _*NOT TO BE USED IN PRODUCTION*_
 
-Python packages are a **uv workspace**. Create **one** virtualenv at this repository root. Do not run `uv venv` inside a module folder (`03_uns_graphdb/.venv`, `99_simulator/.venv`, and so on): those duplicate the workspace env and make the editor pick the wrong interpreter.
+Python packages are a **uv workspace**. Create **one** virtualenv at this repository root. Do not run `uv venv` inside a module folder (`03_uns_graphdb/.venv`, and so on): those duplicate the workspace env and make the editor pick the wrong interpreter.
 
 This has been tested on **Unix(bash)**, **Windows(powershell)** and **Mac(zsh)**
 
@@ -464,7 +440,6 @@ uv run uns_spb_mapper
 uv run uns_kafka_mapper
 uv run uns_graphql_app
 uv run uns_opcua
-uv run uns_simulator
 uv run uns_model_setup
 ```
 
@@ -490,7 +465,6 @@ uv run pytest  ./06_uns_kafka
 uv run pytest  ./07_uns_graphql
 uv run pytest  ./09_uns_model
 uv run pytest  ./12_uns_oee
-uv run pytest  ./99_simulator
 ```
 
 ```python
@@ -503,7 +477,6 @@ uv run pytest -m "not integrationtest" ./06_uns_kafka
 uv run pytest -m "not integrationtest" ./07_uns_graphql
 uv run pytest -m "not integrationtest" ./09_uns_model
 uv run pytest -m "not integrationtest" ./12_uns_oee
-# 99_simulator has no integration tests hence the normal call will suffice
 ```
 
 ## Known Limitations / workarounds

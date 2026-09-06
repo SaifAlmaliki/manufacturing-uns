@@ -14,8 +14,6 @@ export type PlatformSettings = {
   graphqlProxyTarget: string
   frontendDevPort: number
   frontendComposePort: number
-  simulatorApiPort: number
-  simulatorProxyTarget: string
   grafanaProxyTarget: string
   authRealm: string
   authBaseUrl: string
@@ -42,9 +40,6 @@ export function platformSettingsFromConfig(
   const platform = (defaults.platform ?? {}) as Record<string, unknown>
   const applications = (defaults.applications ?? {}) as Record<string, Record<string, unknown>>
   const frontend = applications.frontend ?? {}
-  const simulator = applications.simulator ?? {}
-  const simulatorHost = String(urls.simulator_host ?? 'localhost')
-  const simulatorApiPort = Number(simulator.api_port ?? 8099)
 
   const graphqlHost = String(urls.graphql_host ?? 'localhost')
   const graphqlPort = Number(urls.graphql_port ?? 8000)
@@ -65,8 +60,6 @@ export function platformSettingsFromConfig(
     graphqlProxyTarget: `http://${graphqlHost}:${graphqlPort}`,
     frontendDevPort: Number(frontend.dev_port ?? 5173),
     frontendComposePort: Number(frontend.compose_port ?? 8088),
-    simulatorApiPort,
-    simulatorProxyTarget: `http://${simulatorHost}:${simulatorApiPort}`,
     grafanaProxyTarget: String(urls.grafana_proxy_target ?? 'http://localhost:3000'),
     authRealm,
     authBaseUrl,

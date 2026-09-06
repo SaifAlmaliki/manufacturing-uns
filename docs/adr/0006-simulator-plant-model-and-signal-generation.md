@@ -1,6 +1,10 @@
 ---
-status: accepted
+status: superseded
 ---
+
+> **Superseded (2026-09-06):** the in-repo MQTT simulator (`99_simulator`) and its
+> console page were removed. Plant signals come from external publishers
+> (OPC UA, Modbus, or any connector). This ADR is kept as history.
 
 # Simulator plant model and signal generation
 

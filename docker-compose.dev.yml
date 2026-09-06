@@ -1,8 +1,4 @@
-# Local three-terminal dev (npm run stack / sim / ui).
-#
-# `npm run stack` scales the simulator to 0 so the backend starts without it.
-# `npm run sim` starts only uns_simulator (foreground). Port 8099 is published here
-# for Vite on :5173; the main compose file keeps it unpublished by default.
+# Local two-terminal dev (npm run stack / ui).
 
 services:
   # Plant seed is AcmeWater WTP; conf/oee/*.yaml still names the old Covestro line.
@@ -19,10 +15,6 @@ services:
   opcua_client:
     extra_hosts:
       - "desktop-h4hdql2:host-gateway"
-
-  uns_simulator:
-    ports:
-      - "8099:8099"
 
   uns_frontend:
     depends_on: !reset

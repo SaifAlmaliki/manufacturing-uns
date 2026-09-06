@@ -10,8 +10,7 @@ then read back through a single query surface.
 The single MQTT topic tree that every producer publishes into and every consumer
 reads from. Depth is not fixed: the first five levels are named
 `<enterprise>/<facility>/<area>/<line>/<device>` by convention, and publishers go
-deeper — the simulator publishes eight levels, ending in a parameter group and a
-sensor name.
+deeper — typically a parameter group and a sensor name.
 _Avoid_: UNS tree, namespace, topic hierarchy
 
 **UNS Node**:

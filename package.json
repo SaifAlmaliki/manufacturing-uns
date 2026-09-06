@@ -1,10 +1,9 @@
 {
   "name": "manufacturing-uns",
   "private": true,
-  "description": "Local dev — three terminals from repo root: npm run stack, npm run sim, npm run ui",
+  "description": "Local dev — two terminals from repo root: npm run stack, npm run ui",
   "scripts": {
-    "stack": "uv run uns_compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build --scale uns_simulator=0",
-    "sim": "uv run uns_compose -f docker-compose.yml -f docker-compose.dev.yml up uns_simulator",
+    "stack": "uv run uns_compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build",
     "ui": "npm run dev --prefix 11_frontend",
     "down": "uv run uns_compose -f docker-compose.yml -f docker-compose.dev.yml down"
   }

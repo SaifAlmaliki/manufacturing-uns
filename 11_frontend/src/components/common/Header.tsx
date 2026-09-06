@@ -45,9 +45,6 @@ function getPageHeading(
   if (path.startsWith('/system')) {
     return { title: 'System Health' };
   }
-  if (path.startsWith('/simulator')) {
-    return { title: 'Simulator' };
-  }
   if (path.startsWith('/users')) {
     return { title: 'Users' };
   }

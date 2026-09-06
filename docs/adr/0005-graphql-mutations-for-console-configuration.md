@@ -94,13 +94,10 @@ only after the publisher is retargeted.
 
 ## Addendum (2026-09-06)
 
-The ISA-95 tree moved from `conf/simulator/plant.yaml` to `conf/hierarchy/plant.yaml`.
-Simulator `plant` / `profiles` stay under `conf/simulator/`. The internal simulator
-may read the hierarchy file; it does not own it.
+The ISA-95 tree lives in `conf/settings.yaml` under `default.hierarchy`. That is
+the file production already mounts and images already copy. Publishers — OPC UA,
+Modbus, or any other connector — are signals on that tree, not a second plant.
+`saveHierarchy` writes that block and derives branding and mapper filters in the
+same file. Separate `plant.yaml` files are a load fallback for old checkouts only.
 
-## Addendum (2026-09-06, settings.yaml)
-
-The ISA-95 tree lives in `conf/settings.yaml` under `simulator.hierarchy`. That is
-the file production already mounts and images already copy. `saveHierarchy` writes
-that block and derives branding and mapper filters in the same file. Separate
-`plant.yaml` files are a load fallback for old checkouts only.
+The in-repo MQTT simulator and `#/simulator` console page were removed.

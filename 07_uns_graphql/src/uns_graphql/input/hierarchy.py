@@ -56,7 +56,7 @@ class HierarchySiteInput:
     areas: list[HierarchyAreaInput]
 
 
-@strawberry.input(description="The ISA-95 tree to persist in settings.yaml simulator.hierarchy.")
+@strawberry.input(description="The ISA-95 tree to persist in settings.yaml default.hierarchy.")
 class HierarchyTreeInput:
     enterprise: str
     sites: list[HierarchySiteInput]

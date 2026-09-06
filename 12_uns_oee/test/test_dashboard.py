@@ -146,9 +146,6 @@ SYSTEM_HEALTH = REPO_ROOT / "11_frontend" / "src" / "components" / "system" / "S
 GRAFANA_EMBED = REPO_ROOT / "11_frontend" / "src" / "components" / "common" / "GrafanaEmbed.tsx"
 EXPLORE_VIEW = REPO_ROOT / "11_frontend" / "src" / "components" / "explore" / "ExploreView.tsx"
 PAYLOAD_INSPECTOR = REPO_ROOT / "11_frontend" / "src" / "components" / "home" / "PayloadInspector.tsx"
-SIMULATOR_DIAGNOSTICS = (
-    REPO_ROOT / "11_frontend" / "src" / "components" / "simulator" / "SimulatorDiagnosticsPanel.tsx"
-)
 PROCESS_DASHBOARD = DASHBOARD_DIR / "process-visualization.json"
 PLATFORM_DASHBOARD = DASHBOARD_DIR / "platform-observability.json"
 DASHBOARD_UIDS = (
@@ -199,9 +196,9 @@ def test_every_sql_panel_is_bounded_by_the_dashboard_time_range():
                 assert "$__timeFilter" in query, f"{path.name} panel {panel.get('title')!r} is unbounded"
 
 
-def test_process_visualization_shows_the_plant_the_simulator_publishes():
+def test_process_visualization_shows_the_plant_metrics():
     """
-    One Temperature timeseries is not Process Visualization. The simulator publishes
+    One Temperature timeseries is not Process Visualization. The plant publishes
     production, power, pressure and temperature; the dashboard has to name those series
     or the System and Historian embeds look empty next to a busy broker.
     """
@@ -216,7 +213,7 @@ def test_process_visualization_shows_the_plant_the_simulator_publishes():
     assert "uns_metrics_1m_enriched" in sql
     assert "ShiftOee" not in sql
     assert "'Oee'" not in sql
-    assert any(panel.get("title") == "All simulator process values" for panel in _panels(body))
+    assert any(panel.get("title") == "All process values" for panel in _panels(body))
     for title in ("Production", "PackML state", "Vibration", "Safety", "Quality", "Process pressure"):
         assert title in titles, f"process dashboard is missing {title!r}"
     quality = next(panel for panel in _panels(body) if panel.get("title") == "Quality")
@@ -246,12 +243,8 @@ def test_platform_observability_covers_the_scraped_jobs():
         "uns_historian_messages_received_total",
         "uns_historian_persist_duration_seconds",
         "uns_historian_persist_failure_total",
-        "uns_simulator_messages_published",
-        "uns_simulator_devices_connected",
-        "uns_simulator_signal_value",
         "uns_oee_db_up",
         "uns_oee_unpublished_results",
-        "uns_simulator_publish_failures",
         "uns_opcua_publish_errors",
         "uns_opcua_spool_lag",
         "uns_oee_compute_failures",
@@ -271,5 +264,3 @@ def test_console_charts_go_through_grafana_not_a_hand_rolled_svg():
     assert "HistorianTrendChart" not in explore
     inspector = PAYLOAD_INSPECTOR.read_text(encoding="utf-8")
     assert "GrafanaEmbed" in inspector
-    diagnostics = SIMULATOR_DIAGNOSTICS.read_text(encoding="utf-8")
-    assert "GrafanaEmbed" in diagnostics

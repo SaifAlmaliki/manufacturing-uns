@@ -109,19 +109,14 @@ def seed(argv: list[str] | None = None) -> int:
     """Import the configured plant description into the Asset Model."""
     parser = argparse.ArgumentParser(
         prog="uns_model_seed",
-        description="Import conf/settings.yaml `simulator.*` into the Asset Model.",
-    )
-    parser.add_argument(
-        "--from-simulator-config",
-        action="store_true",
-        help="Source the hierarchy and sensors from simulator.* (currently the only source)",
+        description="Import the plant hierarchy from conf/settings.yaml into the Asset Model.",
     )
     parser.add_argument("--dry-run", action="store_true", help="Print what would be written and exit")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
     _configure_logging(args.verbose)
 
-    settings = get_settings("simulator")
+    settings = get_settings("default")
     extra = {
         "plc": settings.get("plc"),
         "equipment": settings.get("equipment"),
@@ -235,7 +230,7 @@ def main(argv: list[str] | None = None) -> int:
         return status
     if args.skip_seed:
         LOGGER.info("Skipping the seed as asked; the Asset Model schema is up to date")
-    elif (code := seed(["--from-simulator-config", *forwarded])) != 0:
+    elif (code := seed(forwarded)) != 0:
         return code
     if not args.skip_oee_import:
         # Absent conf/oee/ is not an error: a deployment that does not report OEE has

@@ -25,12 +25,6 @@ export default defineConfig(() => {
           changeOrigin: true,
           ws: true,
         },
-        // The simulator's control API. No `ws: true`: the console polls it over HTTP and
-        // gets its live feed from MQTT through /graphql.
-        '/simulator': {
-          target: platform.simulatorProxyTarget,
-          changeOrigin: true,
-        },
         '/grafana': {
           target: platform.grafanaProxyTarget,
           changeOrigin: true,

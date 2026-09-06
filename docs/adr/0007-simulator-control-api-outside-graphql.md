@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded
 ---
 
 # The simulator's control API sits outside GraphQL
@@ -8,7 +8,10 @@ Date: 2026-09-01
 
 ## Status
 
-Accepted
+Superseded (2026-09-06). The simulator and `#/simulator` console page were
+removed. This ADR is kept as history.
+
+Accepted (original)
 
 ## Context
 

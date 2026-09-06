@@ -47,7 +47,6 @@ jobs:
             "./06_uns_kafka",
             "./07_uns_graphql",
             "./09_uns_model",
-            "./99_simulator",
           ]
     steps:
       - uses: actions/checkout@v7

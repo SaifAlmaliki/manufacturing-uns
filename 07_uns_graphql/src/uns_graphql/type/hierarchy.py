@@ -51,7 +51,7 @@ class HierarchySiteType:
         return cls(name=site.name, areas=[HierarchyAreaType.from_area(area) for area in site.areas])
 
 
-@strawberry.type(description="The ISA-95 tree stored in settings.yaml simulator.hierarchy.")
+@strawberry.type(description="The ISA-95 tree stored in settings.yaml default.hierarchy.")
 class HierarchyTreeType:
     enterprise: str
     sites: list[HierarchySiteType]

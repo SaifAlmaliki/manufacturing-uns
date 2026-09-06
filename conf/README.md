@@ -2,7 +2,7 @@
 
 All UNS modules read from this folder. Configure once per deployment; every service picks up the same instance name, URLs, and connection settings.
 
-Do not add per-module `conf/settings.yaml` copies. Module-specific values (MQTT topics, Kafka client IDs, simulator payloads) belong under Dynaconf environments in this file.
+Do not add per-module `conf/settings.yaml` copies. Module-specific values (MQTT topics, Kafka client IDs) belong under Dynaconf environments in this file.
 
 ## Setup
 
@@ -15,7 +15,7 @@ The frontend (`11_frontend`) reads `settings.yaml` automatically for GraphQL URL
 
 ## Per-module overrides
 
-[`settings.yaml`](./settings.yaml) uses [Dynaconf environments](https://www.dynaconf.com/configuration/#environment-variables). Shared values live under `default`; module-specific overrides are under `graphql`, `graphdb`, `historian`, `kafka_mapper`, `sparkplugb`, and `simulator`.
+[`settings.yaml`](./settings.yaml) uses [Dynaconf environments](https://www.dynaconf.com/configuration/#environment-variables). Shared values live under `default`; module-specific overrides are under `graphql`, `graphdb`, `historian`, `kafka_mapper`, and `sparkplugb`.
 
 ## Docker
 

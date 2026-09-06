@@ -123,7 +123,7 @@ class HistorianHandler:
         Convert an MQTT epoch timestamp to a timezone-aware UTC datetime.
 
         Accepts seconds or milliseconds. Values below 1e12 are treated as seconds
-        because some publishers (including the simulator) send seconds.
+        because some publishers send seconds.
         """
         if timestamp is None:
             return datetime.now(UTC)

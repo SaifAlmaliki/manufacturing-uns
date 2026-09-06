@@ -65,7 +65,7 @@ Browser
 ```
 
 `13_uns_mes` is a FastAPI service. The console proxies `/mes` in Vite and in nginx the
-same way it proxies `/simulator`. Port **8100** inside the compose network; do not publish
+same way it proxies `/graphql`. Port **8100** inside the compose network; do not publish
 it on the host by default. Prometheus metrics on **9096**.
 
 `98_sap_mock` is a compose-only image. It is not in a production-style profile. MES reaches

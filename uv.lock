@@ -1531,7 +1531,6 @@ dependencies = [
     { name = "uns-mqtt" },
     { name = "uns-oee" },
     { name = "uns-opcua" },
-    { name = "uns-simulator" },
     { name = "uns-spb-mapper" },
 ]
 
@@ -1557,7 +1556,6 @@ requires-dist = [
     { name = "uns-mqtt", editable = "02_mqtt-cluster" },
     { name = "uns-oee", editable = "12_uns_oee" },
     { name = "uns-opcua", editable = "10_uns_opcua" },
-    { name = "uns-simulator", editable = "99_simulator" },
     { name = "uns-spb-mapper", editable = "05_sparkplugb" },
 ]
 
@@ -1867,42 +1865,6 @@ test = [
     { name = "pytest-cov", specifier = ">=7.1.0,<8" },
     { name = "pytest-timeout", specifier = ">=2.4.0,<3" },
     { name = "pytest-xdist", specifier = ">=3.8.0,<4" },
-]
-
-[[package]]
-name = "uns-simulator"
-version = "0.9.38"
-source = { editable = "99_simulator" }
-dependencies = [
-    { name = "aiomqtt" },
-    { name = "dynaconf" },
-    { name = "fastapi" },
-    { name = "prometheus-client" },
-    { name = "pyyaml" },
-    { name = "uns-config" },
-    { name = "uvicorn", extra = ["standard"] },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "aiomqtt", specifier = ">=2.5.1,<3" },
-    { name = "dynaconf", specifier = "~=3.2" },
-    { name = "fastapi", specifier = ">=0.115,<1" },
-    { name = "prometheus-client", specifier = ">=0.21.0,<1" },
-    { name = "pyyaml", specifier = "~=6.0" },
-    { name = "uns-config", editable = "00_uns_config" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.34,<0.53" },
-]
-
-[package.metadata.requires-dev]
-test = [
-    { name = "httpx", specifier = ">=0.28,<1" },
-    { name = "pytest", specifier = ">=9.0.3,<10" },
-    { name = "pytest-asyncio", specifier = ">=1.3.0,<1.5" },
-    { name = "pytest-cov", specifier = ">=6.0.0,<8" },
-    { name = "pytest-timeout", specifier = ">=2.4.0,<3" },
-    { name = "pytest-xdist", specifier = ">=3.6.1,<4" },
-    { name = "safety", specifier = ">=3.7.0,<4" },
 ]
 
 [[package]]

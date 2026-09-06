@@ -6,9 +6,8 @@
  * where its answer becomes a UnsNode: one node per Asset down the branch, then — below
  * the deepest Asset — one node per topic segment the Metric Definitions declare.
  *
- * That replaces guessing. The segments below a machine used to come from a hardcoded
- * list of names the simulator happened to publish, which was wrong for every plant
- * that is not the simulator.
+ * That replaces guessing. The segments below a machine used to come from a
+ * hardcoded list of demo payload folders, which was wrong for every other plant.
  */
 
 import type { UnsNode } from '../../types/uns'

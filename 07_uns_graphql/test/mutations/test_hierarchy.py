@@ -200,7 +200,7 @@ def _write_conf(conf_dir: Path, plant: str = PLANT_YAML) -> None:
 
 
 def _job_path(conf_dir: Path) -> Path:
-    return conf_dir / "simulator" / "hierarchy_job.yaml"
+    return conf_dir / "hierarchy" / "hierarchy_job.yaml"
 
 
 def _write_job(conf_dir: Path, **fields: object) -> None:
@@ -215,7 +215,10 @@ def _read_job(conf_dir: Path) -> dict:
 
 def _read_plant(conf_dir: Path) -> dict:
     settings = yaml.safe_load((conf_dir / "settings.yaml").read_text(encoding="utf-8")) or {}
-    hierarchy = (settings.get("simulator") or {}).get("hierarchy")
+    default = settings.get("default") or {}
+    hierarchy = default.get("hierarchy") if isinstance(default, dict) else None
+    if not (isinstance(hierarchy, dict) and hierarchy.get("enterprise") is not None):
+        hierarchy = (settings.get("simulator") or {}).get("hierarchy")
     if isinstance(hierarchy, dict) and hierarchy.get("enterprise") is not None:
         return hierarchy
     return yaml.safe_load((conf_dir / "hierarchy" / "plant.yaml").read_text(encoding="utf-8"))

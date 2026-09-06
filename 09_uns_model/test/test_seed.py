@@ -228,7 +228,7 @@ def test_a_missing_hierarchy_is_an_error_rather_than_an_empty_model():
     ids=["missing", "empty"],
 )
 def test_nested_sites_without_enterprise_raise_value_error(hierarchy):
-    with pytest.raises(ValueError, match="simulator.hierarchy.enterprise is required"):
+    with pytest.raises(ValueError, match="hierarchy.enterprise is required"):
         _cell_entries(hierarchy)
 
 
@@ -521,8 +521,10 @@ async def test_delete_asset_also_removes_descendants():
 
 def test_seed_dry_run_loads_settings_hierarchy_when_present(tmp_path, monkeypatch, capsys):
     settings = {
-        "default": {"platform": {"organization_name": "E"}},
-        "simulator": {"hierarchy": tree_to_mapping(_two_cell_tree())},
+        "default": {
+            "platform": {"organization_name": "E"},
+            "hierarchy": tree_to_mapping(_two_cell_tree()),
+        },
     }
     (tmp_path / "settings.yaml").write_text(yaml.safe_dump(settings), encoding="utf-8")
     monkeypatch.setattr("uns_model.cli.resolve_conf_dir", lambda: tmp_path)

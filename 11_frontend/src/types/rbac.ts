@@ -11,8 +11,6 @@ export type FeatureKey =
   | 'streams'
   | 'alarms'
   | 'system_ops'
-  | 'simulator_ops'
-  | 'simulator_control'
   | 'user_management'
   | 'export_csv'
   | 'settings_edit'
@@ -64,18 +62,6 @@ export const SYSTEM_FEATURES: FeatureDefinition[] = [
     label: 'System Health & Ops',
     description: 'Grafana dashboards for platform health, process visualization, and OEE',
     category: 'Core Navigation',
-  },
-  {
-    key: 'simulator_ops',
-    label: 'Simulator Console',
-    description: 'View simulator run state, plant state, device inventory, and diagnostics',
-    category: 'Core Navigation',
-  },
-  {
-    key: 'simulator_control',
-    label: 'Simulator Control',
-    description: 'Start, pause and stop the simulator, switch profiles, and change publish rates',
-    category: 'System & Admin',
   },
   {
     key: 'user_management',
@@ -141,8 +127,6 @@ export const ROLE_CONFIGS: Record<UserRole, RoleConfig> = {
       sparkplug: true,
       streams: true,
       system_ops: true,
-      simulator_ops: true,
-      simulator_control: true,
       user_management: true,
       export_csv: true,
       settings_edit: true,
@@ -165,8 +149,6 @@ export const ROLE_CONFIGS: Record<UserRole, RoleConfig> = {
       sparkplug: true,
       streams: true,
       system_ops: true,
-      simulator_ops: true,
-      simulator_control: true,
       user_management: false,
       export_csv: true,
       settings_edit: false,
@@ -189,8 +171,6 @@ export const ROLE_CONFIGS: Record<UserRole, RoleConfig> = {
       sparkplug: true,
       streams: false,
       system_ops: false,
-      simulator_ops: true,
-      simulator_control: false,
       user_management: false,
       export_csv: false,
       settings_edit: false,
@@ -213,8 +193,6 @@ export const ROLE_CONFIGS: Record<UserRole, RoleConfig> = {
       sparkplug: false,
       streams: true,
       system_ops: false,
-      simulator_ops: true,
-      simulator_control: false,
       user_management: false,
       export_csv: true,
       settings_edit: false,
@@ -237,8 +215,6 @@ export const ROLE_CONFIGS: Record<UserRole, RoleConfig> = {
       sparkplug: false,
       streams: false,
       system_ops: false,
-      simulator_ops: false,
-      simulator_control: false,
       user_management: false,
       export_csv: false,
       settings_edit: false,

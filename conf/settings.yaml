@@ -9,6 +9,80 @@ default:
     organization_name: "DemoWTP"
     display_name: "DemoWTP UNS"
 
+  # ISA-95 plant tree. Single source for seed, GraphQL, and the console.
+  # Publishers (OPC UA, Modbus, or any connector) are signals on this tree, not
+  # a second plant. saveHierarchy writes this block.
+  hierarchy:
+    enterprise: DemoWTP
+    sites:
+    - name: Site10
+      areas:
+      - name: RawWater
+        kind: production
+        lines:
+        - name: Train10
+          cells:
+          - name: V101
+            machines: []
+          - name: P101
+            machines: []
+          - name: P102
+            machines: []
+          - name: P103
+            machines: []
+          - name: T101
+            machines: []
+          - name: FT101
+            machines: []
+          - name: PT101
+            machines: []
+      - name: Treatment
+        kind: production
+        lines:
+        - name: Train1
+          cells:
+          - name: B101
+            machines: []
+          - name: DP101
+            machines: []
+          - name: AIT101
+            machines: []
+      - name: Filtration
+        kind: production
+        lines:
+        - name: Train1
+          cells:
+          - name: F101
+            machines: []
+          - name: V201
+            machines: []
+          - name: V202
+            machines: []
+      - name: Storage
+        kind: production
+        lines:
+        - name: Train1
+          cells:
+          - name: T201
+            machines: []
+      - name: Distribution
+        kind: production
+        lines:
+        - name: Train1
+          cells:
+          - name: P201111
+            machines: []
+          - name: P202
+            machines:
+            - Machine3060
+          - name: FT201
+            machines:
+            - flowmeterX12
+          - name: PT201
+            machines: []
+          - name: V301
+            machines: []
+
   applications:
     graphql:
       name: "uns_graphql_server"
@@ -25,19 +99,11 @@ default:
       name: "uns_kafka_mapper"
     sparkplugb_mapper:
       name: "uns_spb_mapper"
-    simulator:
-      name: "uns_simulator"
-      # The simulator's own control API (99_simulator/src/uns_simulator/api.py).
-      # Not part of the GraphQL surface: it commands a process, it does not query the
-      # Unified Namespace. See docs/adr/0007-simulator-control-api-outside-graphql.md.
-      api_port: 8099
 
   urls:
     graphql_host: "localhost"
     graphql_port: 8000
     graphql_path: "/graphql"
-    simulator_host: "localhost"
-    simulator_port: 8099
     # Vite dev proxies /grafana here. Compose keeps Grafana's 3000 unpublished; nginx on 8088 does.
     grafana_proxy_target: "http://localhost:8088"
     cors_origins:
@@ -118,10 +184,6 @@ default:
     # so a stock checkout does not try to reach a PLC that is not there.
     servers: []
 
-  simulator:
-    # Prometheus scrapes this. 9091 is the historian's and 9092 the graph database's.
-    metrics_port: 9093
-
   kafka:
     bootstrap_servers: "localhost:9092"
 
@@ -165,116 +227,12 @@ sparkplugb:
   mqtt:
     topics: ["spBv1.0/uns_group/#"]
 
-simulator:
-  mqtt:
-    client_id: "uns_simulator_client"
-  # ISA-95 plant tree. Single source for seed, GraphQL, and the console.
-  # saveHierarchy writes this block. Do not keep a second copy in plant.yaml.
-  hierarchy:
-    enterprise: DemoWTP
-    sites:
-    - name: Site10
-      areas:
-      - name: RawWater
-        kind: production
-        lines:
-        - name: Train10
-          cells:
-          - name: V101
-            machines: []
-          - name: P101
-            machines: []
-          - name: P102
-            machines: []
-          - name: P103
-            machines: []
-          - name: T101
-            machines: []
-          - name: FT101
-            machines: []
-          - name: PT101
-            machines: []
-      - name: Treatment
-        kind: production
-        lines:
-        - name: Train1
-          cells:
-          - name: B101
-            machines: []
-          - name: DP101
-            machines: []
-          - name: AIT101
-            machines: []
-      - name: Filtration
-        kind: production
-        lines:
-        - name: Train1
-          cells:
-          - name: F101
-            machines: []
-          - name: V201
-            machines: []
-          - name: V202
-            machines: []
-      - name: Storage
-        kind: production
-        lines:
-        - name: Train1
-          cells:
-          - name: T201
-            machines: []
-      - name: Distribution
-        kind: production
-        lines:
-        - name: Train1
-          cells:
-          - name: P201111
-            machines: []
-          - name: P202
-            machines:
-            - Machine3060
-          - name: FT201
-            machines:
-            - flowmeterX12
-          - name: PT201
-            machines: []
-          - name: V301
-            machines: []
-
-  # The legacy `plc:` list moved to conf/simulator/production.yaml as templates `001` and
-  # `002`, unchanged. `simulator.py` still reads this key, so a deployment carrying its own
-  # settings.yaml with `plc:` keeps working - but declaring it here as well as in
-  # production.yaml would put two publishers on every G1 and FillingMachine topic.
-  simulation:
-    # Spec 9: `wtp` is the shipped default because the graphdb mapper MERGEs once per topic
-    # level on every message. The five-area WTP train is the whole plant.
-    profile: "wtp"
-    # A fixed seed makes two runs of one profile comparable. Change it to get a different
-    # plant with the same shape.
-    seed: 20260831
-    # Superseded by `tiers` below, which is why it still reads 5.0: spec 12 requires
-    # `interval` to be honoured as the `process` tier when no `tiers` block exists, and a
-    # deployment that deletes `tiers` should land back on today's behaviour, not on a default.
-    interval: 5.0
-    duration: 5  # minutes; 0 = run until stopped (Compose sets this to 0)
-    # Seconds per cadence tier, before the profile's `tier_scale` multiplies them. `event` is
-    # 0.0 meaning "publish on change", and scaling zero keeps it zero - a slow profile must
-    # not turn an alarm topic into a slow periodic one.
-    tiers:
-      fast: 1.0
-      process: 5.0
-      energy: 15.0
-      status: 30.0
-      meter: 900.0
-      lab: 1800.0
-      event: 0.0
-
 oee:
   mqtt:
     client_id: "uns_oee_client"
   oee:
-    # Prometheus scrapes this. 9091 historian, 9092 graph database, 9093 simulator,
-    # 9094 reserved for the OPC UA edge connector.
+    # Prometheus scrapes this. 9091 historian, 9092 graph database,
+    # 9093 OPC UA edge connector.
     metrics_port: 9095
     # Seconds between scheduler passes. A shift boundary is only ever seen on a pass,
     # so this bounds how late the first revision of a result can be.

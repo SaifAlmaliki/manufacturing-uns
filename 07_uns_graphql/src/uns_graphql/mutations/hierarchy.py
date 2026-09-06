@@ -1,6 +1,6 @@
 """Write the plant hierarchy to YAML, reseed the Asset Model, and migrate prefixes.
 
-`settings.yaml` `simulator.hierarchy` stays the reviewable source of truth
+`settings.yaml` `default.hierarchy` stays the reviewable source of truth
 (ADR-0005 addendum). This mutation is how the console writes it. A failed
 migrate does not roll the file back: the admin retries migrate only.
 """
@@ -68,7 +68,7 @@ def _conf_dir() -> Path:
 
 
 def _job_path(conf_dir: Path) -> Path:
-    return conf_dir / "simulator" / JOB_FILENAME
+    return conf_dir / "hierarchy" / JOB_FILENAME
 
 
 def _now() -> datetime:
@@ -236,7 +236,7 @@ async def _rewrite_graph(old_prefix: str, new_prefix: str) -> int:
 
 
 async def _reseed(tree: HierarchyTree) -> None:
-    settings = get_settings("simulator")
+    settings = get_settings("default")
     extra = {
         "plc": settings.get("plc"),
         "equipment": settings.get("equipment"),
@@ -326,7 +326,7 @@ def _filter_hierarchy(scope: AccessScope, tree: HierarchyTree) -> HierarchyTree:
 
 @strawberry.type(description="Read the plant hierarchy stored in settings.yaml")
 class Query:
-    @strawberry.field(description="The ISA-95 tree from conf/settings.yaml simulator.hierarchy.")
+    @strawberry.field(description="The ISA-95 tree from conf/settings.yaml default.hierarchy.")
     async def get_hierarchy(self, info: strawberry.Info) -> HierarchyTreeType:
         tree = load_plant_tree(_conf_dir())
         scope = await scope_from_info(info)
@@ -338,7 +338,7 @@ class Mutation:
     """Role each field needs is in auth/require.py, not in these resolvers."""
 
     @strawberry.mutation(
-        description="Replace settings.yaml simulator.hierarchy with the submitted tree, derive branding, reseed "
+        description="Replace settings.yaml default.hierarchy with the submitted tree, derive branding, reseed "
         "the Asset Model, and migrate renamed prefixes. Prefix migrate runs inline in this "
         "GraphQL request until historian and graph rewrites finish; the caller observes "
         "done or failed, not running. A running job file is for crash recovery and Retry, "

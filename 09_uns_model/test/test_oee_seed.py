@@ -1,14 +1,17 @@
 """Tests for the conf/oee/*.yaml importer.
 
-`plan_from_oee_config` is a pure function of a mapping, so these need no database and no
-files - which is the point of splitting planning from applying.
+`plan_from_oee_config` is a pure function of a mapping, so planning tests need no
+database. The shipped-conf check reads the real plant and OEE files so setup cannot
+name an Asset that seed will not create.
 """
 
 from datetime import UTC, datetime, time
 
 import pytest
 from sqlalchemy.dialects import postgresql
+from uns_config import resolve_conf_dir
 
+from uns_model.hierarchy_io import load_plant_tree
 from uns_model.oee_master_data import (
     ProductSpec,
     ShiftPatternSpec,
@@ -23,7 +26,8 @@ from uns_model.oee_master_data import (
     product_upsert,
     shift_pattern_upsert,
 )
-from uns_model.oee_seed import apply_plan, plan_from_oee_config
+from uns_model.oee_seed import apply_plan, plan_from_oee_config, read_oee_conf
+from uns_model.seed import plan_from_hierarchy_tree
 
 CONFIG = {
     "products": {"products": [{"code": "R-100-STD", "name": "Resin 100 standard"}]},
@@ -306,3 +310,20 @@ async def test_a_shifts_only_plan_does_not_reconcile_units_or_products():
     assert "reconcile_products" not in repository.calls
     assert "reconcile_ideal_cycle_times" not in repository.calls
     assert "reconcile_state_reason_rules" not in repository.calls
+
+
+def test_shipped_oee_assets_exist_in_the_shipped_plant():
+    """`uns_model_setup` seeds, then imports OEE. A unit that names a missing Asset
+    crashes the Asset Model CI job — seed writes DemoWTP, leftover Covestro paths fail.
+    """
+    plant = plan_from_hierarchy_tree(load_plant_tree(resolve_conf_dir()))
+    oee = plan_from_oee_config(read_oee_conf())
+    required = {
+        *(spec.asset_path for spec in oee.units),
+        *(spec.asset_path for spec in oee.patterns if spec.asset_path),
+        *(spec.asset_path for spec in oee.exceptions if spec.asset_path),
+        *(spec.asset_path for spec in oee.cycle_times),
+        *(spec.asset_path for spec in oee.state_reason_rules if spec.asset_path),
+    }
+    missing = sorted(path for path in required if path not in plant.asset_paths)
+    assert missing == [], f"OEE YAML names Assets that seed will not create: {missing}"

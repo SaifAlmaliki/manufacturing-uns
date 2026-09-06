@@ -36,7 +36,7 @@ model.metric_definition             public.uns_metrics
         public.uns_metrics_enriched, public.uns_metrics_1m_enriched
 ```
 
-An Asset's path is a topic *prefix*. The simulator publishes
+An Asset's path is a topic *prefix*. A typical plant topic looks like
 
 ```
 ManufacturingCo/PlantA/Production/Line1/Cell1/MixerTank/ProcessValue/Temperature
@@ -132,7 +132,7 @@ uv run uns_model_setup                          # migrate, then seed: what the c
 uv run uns_model_setup --skip-seed              # schema only
 uv run uns_model_migrate                        # or: uv run alembic upgrade head
 uv run uns_model_migrate --sql                  # print the DDL instead of running it
-uv run uns_model_seed --from-simulator-config   # import conf/settings.yaml hierarchy
+uv run uns_model_seed                           # import conf/settings.yaml hierarchy
 uv run uns_model_seed --dry-run                 # print what a seed would write
 ```
 

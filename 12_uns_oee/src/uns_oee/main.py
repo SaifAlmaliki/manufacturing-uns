@@ -34,8 +34,7 @@ def utc_now() -> datetime:
 
 
 def configure_asyncio_for_mqtt() -> None:
-    """Windows needs the selector loop for the MQTT client, exactly as the simulator does
-    (`99_simulator/src/uns_simulator/main.py`). Harmless everywhere else."""
+    """Windows needs the selector loop for the MQTT client. Harmless everywhere else."""
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 

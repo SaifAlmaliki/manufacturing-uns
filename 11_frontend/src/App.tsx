@@ -1,7 +1,6 @@
 /**
  * Unified Namespace (UNS) Console Main Application Component
- * Communicates with 07_uns_graphql for all platform data, and — only on the /simulator
- * route — directly with 99_simulator's control API. See docs/adr/0007.
+ * Communicates with 07_uns_graphql for all platform data.
  * Modern Multi-Route Architecture:
  * - Public Landing Page (/) with generated industrial hero image & feature highlights
  * - Public Login Portal (/login) — one button that redirects to the Keycloak realm
@@ -27,7 +26,6 @@ import { AlarmRulesTab } from './components/alarms/AlarmRulesTab';
 import { RoleAlertMatrix } from './components/alarms/RoleAlertMatrix';
 import { AlarmAuditLog } from './components/alarms/AlarmAuditLog';
 import { SystemHealthView } from './components/system/SystemHealthView';
-import { SimulatorView } from './components/simulator/SimulatorView';
 import { UserManagementView } from './components/users/UserManagementView';
 import { HierarchyView } from './components/hierarchy/HierarchyView';
 import { ConnectivityView } from './components/connectivity/ConnectivityView';
@@ -85,9 +83,6 @@ export default function App() {
                   <Route path="/sparkplug" element={<SparkplugView />} />
                   <Route path="/streams" element={<KafkaStreamsView />} />
                   <Route path="/system" element={<SystemHealthView />} />
-                  {/* HashRouter, so this is #/simulator — the HTTP path stays / and does
-                      not collide with the /simulator proxy that reaches the control API. */}
-                  <Route path="/simulator" element={<SimulatorView />} />
                   <Route path="/users" element={<UserManagementView />} />
                   <Route path="/hierarchy" element={<HierarchyView />} />
                   <Route path="/connectivity" element={<ConnectivityView />} />

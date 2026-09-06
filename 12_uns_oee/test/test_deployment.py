@@ -5,7 +5,7 @@ None of this fails loudly when it drifts: a wrong scrape target produces an empt
 not an error, and a missing `depends_on` produces a container that crash-loops for a
 minute and then works. Both are the kind of thing that gets found in a demo.
 
-Reads the real deployment files, in the spirit of `99_simulator/test/test_self_telemetry.py`.
+Reads the real deployment files.
 """
 
 from pathlib import Path
@@ -47,9 +47,8 @@ def test_the_scrape_target_is_the_port_the_engine_binds(compose: dict, prometheu
 
 
 def test_the_metrics_port_is_not_shared_with_another_service(prometheus: dict):
-    """Each scrape target is unique. Port numbers may repeat across hosts (opcua and the
-    simulator both bind 9093 inside the compose network); colliding on the same host:port
-    is what would empty a panel.
+    """Each scrape target is unique. Port numbers may repeat across hosts; colliding
+    on the same host:port is what would empty a panel.
     """
     targets = [job["static_configs"][0]["targets"][0] for job in prometheus["scrape_configs"]]
     assert len(targets) == len(set(targets)), f"two Prometheus jobs scrape the same target: {targets}"

@@ -1,9 +1,11 @@
 """Read/write the ISA-95 tree in `conf/settings.yaml` and derive branding/mapper filters.
 
-The plant lives in `simulator.hierarchy` of the same settings file every
-deployment already mounts. `saveHierarchy` writes that block, then derives
-branding and mapper topic filters from the enterprise name. Separate
-`plant.yaml` files are a load fallback for old checkouts only.
+The plant lives in `default.hierarchy` of the same settings file every
+deployment already mounts. That tree is the plant — OPC UA, Modbus, or
+any other publisher is just a source of signals on it.
+`saveHierarchy` writes that block, then derives branding and mapper topic
+filters from the enterprise name. Separate `plant.yaml` files and a legacy
+`simulator.hierarchy` key are load fallbacks for old checkouts only.
 
 Sites are stored as a list of objects (`{name, areas: [...]}`).
 `tree_to_mapping` is the shared projection used here and by seed.
@@ -51,24 +53,33 @@ def _settings_path(conf_dir: Path) -> Path:
     return conf_dir / SETTINGS_FILENAME
 
 
+def _hierarchy_mapping(block: Any) -> dict[str, Any] | None:
+    if isinstance(block, dict) and block.get("enterprise") is not None:
+        return block
+    return None
+
+
 def _hierarchy_from_settings_doc(doc: Any) -> dict[str, Any] | None:
-    """Return `simulator.hierarchy` when it names an enterprise."""
+    """Return `default.hierarchy`, then legacy `simulator.hierarchy`."""
     if not isinstance(doc, dict):
         return None
+    default = doc.get("default")
+    if isinstance(default, dict):
+        hierarchy = _hierarchy_mapping(default.get("hierarchy"))
+        if hierarchy is not None:
+            return hierarchy
     simulator = doc.get("simulator")
-    if not isinstance(simulator, dict):
-        return None
-    hierarchy = simulator.get("hierarchy")
-    if isinstance(hierarchy, dict) and hierarchy.get("enterprise") is not None:
-        return hierarchy
+    if isinstance(simulator, dict):
+        return _hierarchy_mapping(simulator.get("hierarchy"))
     return None
 
 
 def load_plant_tree(conf_dir: Path) -> HierarchyTree:
-    """Load the ISA-95 tree from `conf_dir/settings.yaml` `simulator.hierarchy`.
+    """Load the ISA-95 tree from `conf_dir/settings.yaml` `default.hierarchy`.
 
-    Falls back to `hierarchy/plant.yaml` then `simulator/plant.yaml` so an old
-    checkout or a settings-only test fixture still loads.
+    Falls back to `simulator.hierarchy`, then `hierarchy/plant.yaml`, then
+    `simulator/plant.yaml` so an old checkout or a settings-only test fixture
+    still loads.
     """
     settings_path = _settings_path(conf_dir)
     if settings_path.is_file():
@@ -87,12 +98,12 @@ def load_plant_tree(conf_dir: Path) -> HierarchyTree:
 
 
 def save_plant_tree(conf_dir: Path, tree: HierarchyTree) -> None:
-    """Persist `tree` to `conf_dir/settings.yaml` `simulator.hierarchy`.
+    """Persist `tree` to `conf_dir/settings.yaml` `default.hierarchy`.
 
-    That is the same file production already ships. When settings.yaml is
-    missing, write `hierarchy/plant.yaml` so a bare conf dir still round-trips.
-    If `conf/simulator/plant.yaml` exists, only `profiles.wtp.sites` is updated
-    so a site rename does not leave a dead filter. The write is atomic.
+    That is the same file production already ships. A leftover
+    `simulator.hierarchy` is removed so the tree is not written twice. When
+    settings.yaml is missing, write `hierarchy/plant.yaml` so a bare conf dir
+    still round-trips. The write is atomic.
     """
     mapped = tree_to_mapping(tree)
     settings_path = _settings_path(conf_dir)
@@ -102,36 +113,20 @@ def save_plant_tree(conf_dir: Path, tree: HierarchyTree) -> None:
         doc = yaml_rt.load(text) or {}
         if not isinstance(doc, dict):
             raise ValueError("settings.yaml must parse to a mapping at the top level")
+        default = doc.get("default")
+        if not isinstance(default, dict):
+            default = {}
+            doc["default"] = default
+        default["hierarchy"] = mapped
         simulator = doc.get("simulator")
-        if not isinstance(simulator, dict):
-            simulator = {}
-            doc["simulator"] = simulator
-        simulator["hierarchy"] = mapped
+        if isinstance(simulator, dict) and "hierarchy" in simulator:
+            del simulator["hierarchy"]
         stream = StringIO()
         yaml_rt.dump(doc, stream)
         _atomic_write_text(settings_path, stream.getvalue())
     else:
         path = _hierarchy_path(conf_dir)
         _atomic_write_yaml(path, mapped)
-    _sync_simulator_profile_sites(conf_dir, tree)
-
-
-def _sync_simulator_profile_sites(conf_dir: Path, tree: HierarchyTree) -> None:
-    path = _simulator_plant_path(conf_dir)
-    if not path.is_file():
-        return
-    with path.open("r", encoding="utf-8") as fh:
-        loaded = yaml.safe_load(fh) or {}
-    if not isinstance(loaded, dict):
-        return
-    profiles = loaded.get("profiles")
-    if isinstance(profiles, dict):
-        wtp = profiles.get("wtp")
-        if isinstance(wtp, dict):
-            wtp["sites"] = [site.name for site in tree.sites]
-    loaded.pop("enterprise", None)
-    loaded.pop("sites", None)
-    _atomic_write_yaml(path, loaded)
 
 
 # ---------------------------------------------------------------------------

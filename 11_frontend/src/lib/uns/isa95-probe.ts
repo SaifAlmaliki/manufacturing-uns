@@ -1,7 +1,7 @@
 /**
  * Guessed ISA-95 topic segments, for a platform with an empty Asset Model.
  *
- * These are the segments 99_simulator happens to publish. They are a last resort:
+ * These are guessed payload-folder names. They are a last resort:
  * `lib/uns/map-assets.ts` derives the same part of the tree from authored Metric
  * Definitions, which is right for any plant rather than for one demo. Still here
  * because an install with nothing modelled would otherwise show a tree that stops at

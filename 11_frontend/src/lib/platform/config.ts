@@ -9,8 +9,6 @@ export type PlatformSettings = {
   graphqlProxyTarget: string
   frontendDevPort: number
   frontendComposePort: number
-  simulatorApiPort: number
-  simulatorProxyTarget: string
   grafanaProxyTarget: string
   authRealm: string
   authBaseUrl: string

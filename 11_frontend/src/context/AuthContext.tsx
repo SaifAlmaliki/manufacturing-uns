@@ -42,7 +42,6 @@ const TAB_FEATURES: Record<string, { feature: FeatureKey; name: string }> = {
   streams: { feature: 'streams', name: 'Streams' },
   alarms: { feature: 'alarms', name: 'Alarms' },
   system: { feature: 'system_ops', name: 'Health' },
-  simulator: { feature: 'simulator_ops', name: 'Simulator' },
   users: { feature: 'user_management', name: 'Users' },
   hierarchy: { feature: 'settings_edit', name: 'Plant hierarchy' },
   connectivity: { feature: 'connectivity', name: 'Assets & Connectivity' },

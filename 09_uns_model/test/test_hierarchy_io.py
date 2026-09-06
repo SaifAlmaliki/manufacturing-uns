@@ -2,7 +2,7 @@
 
 No database, no real conf directory: every test copies a minimal snippet into a
 `tmp_path` and asserts on the round-trip. The tree lives in
-`simulator.hierarchy`; `plant.yaml` is only a load fallback.
+`default.hierarchy`; `plant.yaml` is only a load fallback.
 """
 
 from __future__ import annotations
@@ -71,7 +71,6 @@ default:
     instance_name: "Instance01"
     organization_name: "OldCo"
     display_name: "OldCo UNS"
-simulator:
   hierarchy:
     enterprise: OldCo
     sites:
@@ -198,6 +197,57 @@ sites:
     assert tree.sites[0].name == "Site1"
 
 
+def test_load_plant_tree_falls_back_to_legacy_simulator_hierarchy(tmp_path: Path):
+    _write_settings(
+        tmp_path,
+        """\
+default:
+  platform:
+    organization_name: OldCo
+simulator:
+  hierarchy:
+    enterprise: LegacyCo
+    sites:
+      - name: Site1
+        areas:
+          - name: RawWater
+            kind: production
+            lines:
+              - name: Train1
+                cells: [V101]
+""",
+    )
+
+    tree = load_plant_tree(tmp_path)
+
+    assert tree.enterprise == "LegacyCo"
+    assert tree.sites[0].name == "Site1"
+
+
+def test_save_moves_legacy_simulator_hierarchy_to_default(tmp_path: Path):
+    _write_settings(
+        tmp_path,
+        """\
+default:
+  platform:
+    organization_name: OldCo
+simulator:
+  hierarchy:
+    enterprise: LegacyCo
+    sites: []
+  mqtt:
+    client_id: uns_simulator_client
+""",
+    )
+
+    save_plant_tree(tmp_path, _sample_tree())
+
+    doc = yaml.safe_load((tmp_path / "settings.yaml").read_text(encoding="utf-8"))
+    assert doc["default"]["hierarchy"]["enterprise"] == "Contoso"
+    assert "hierarchy" not in doc["simulator"]
+    assert doc["simulator"]["mqtt"]["client_id"] == "uns_simulator_client"
+
+
 def test_load_plant_tree_falls_back_to_plant_yaml(tmp_path: Path):
     _write_plant(tmp_path)
 
@@ -247,7 +297,7 @@ def test_save_writes_the_list_of_objects_sites_shape_into_settings(tmp_path: Pat
     save_plant_tree(tmp_path, _sample_tree())
 
     doc = yaml.safe_load((tmp_path / "settings.yaml").read_text(encoding="utf-8"))
-    hierarchy = doc["simulator"]["hierarchy"]
+    hierarchy = doc["default"]["hierarchy"]
     assert isinstance(hierarchy["sites"], list)
     assert hierarchy["sites"][0]["name"] == "Nord"
     assert hierarchy["sites"][0]["areas"][0]["name"] == "RawWater"
@@ -259,27 +309,6 @@ def test_save_writes_the_list_of_objects_sites_shape_into_settings(tmp_path: Pat
     ]
     assert "plant" not in hierarchy
     assert "profiles" not in hierarchy
-
-
-def test_save_keeps_simulator_profiles_out_of_settings_hierarchy(tmp_path: Path):
-    _write_settings(tmp_path, MINIMAL_SETTINGS_WITH_HIERARCHY)
-    _write_simulator_profile(tmp_path)
-
-    save_plant_tree(tmp_path, _sample_tree())
-
-    settings = yaml.safe_load((tmp_path / "settings.yaml").read_text(encoding="utf-8"))
-    hierarchy = settings["simulator"]["hierarchy"]
-    assert hierarchy["enterprise"] == "Contoso"
-    assert "plant" not in hierarchy
-    assert "profiles" not in hierarchy
-
-    simulator = yaml.safe_load((tmp_path / "simulator" / "plant.yaml").read_text(encoding="utf-8"))
-    assert "enterprise" not in simulator
-    assert "sites" not in simulator
-    assert simulator["plant"] == {}
-    assert simulator["profiles"]["wtp"]["tier_scale"] == 1.0
-    assert simulator["profiles"]["wtp"]["families"] == ["wtp"]
-    assert simulator["profiles"]["wtp"]["sites"] == ["Nord"]
 
 
 def test_save_defaults_empty_area_kind_to_production(tmp_path: Path):
@@ -298,7 +327,7 @@ def test_save_defaults_empty_area_kind_to_production(tmp_path: Path):
     save_plant_tree(tmp_path, tree)
 
     doc = yaml.safe_load((tmp_path / "settings.yaml").read_text(encoding="utf-8"))
-    assert doc["simulator"]["hierarchy"]["sites"][0]["areas"][0]["kind"] == "production"
+    assert doc["default"]["hierarchy"]["sites"][0]["areas"][0]["kind"] == "production"
 
 
 def test_save_uses_an_atomic_write(tmp_path: Path):
@@ -430,4 +459,5 @@ def test_apply_enterprise_to_settings_round_trips_the_shipped_file():
     assert doc["graphdb"]["mqtt"]["topics"] == ["test/uns/#", "Contoso/#", "spBv1.0/uns_group/#"]
     assert doc["historian"]["mqtt"]["topics"] == ["test/uns/#", "Contoso/#", "spBv1.0/#"]
     assert doc["kafka_mapper"]["mqtt"]["topics"] == ["test/uns/#", "Contoso/#"]
-    assert "docs/adr/0007-simulator-control-api-outside-graphql.md" in text
+    assert "dynaconf_merge: true" in text
+    assert "ISA-95 plant tree" in text

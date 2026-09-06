@@ -35,21 +35,20 @@ from uns_model.topic_path import SEPARATOR
 
 LOGGER = logging.getLogger(__name__)
 
-# The levels the simulator's topic tree actually uses. PRODUCTION_UNIT is absent
-# on purpose: this plant publishes Work Cells directly under a Line, which is why
-# an Asset carries its own level instead of the tree having fixed depth.
+# The levels this plant's topic tree uses. PRODUCTION_UNIT is absent on purpose:
+# Work Cells sit directly under a Line, which is why an Asset carries its own
+# level instead of the tree having fixed depth.
 SIMULATOR_LEVELS = ("ENTERPRISE", "SITE", "AREA", "LINE", "WORK_CELL")
 MACHINE_LEVEL = "MACHINE"
 
-# Payload leaves published for every sensor reading (see 99_simulator devices.py).
-# Only `value` carries a Unit of Measure.
+# Payload leaves published for every sensor reading. Only `value` carries a Unit
+# of Measure.
 MEASURED_LEAF = "value"
 PROCESS_VALUE = "ProcessValue"
 
-# The simulator also runs one SCADA per Site and one HMI per Line, publishing under
-# the first Work Cell of each (99_simulator/src/uns_simulator/simulator.py). They are
-# not in the config, but modelling them keeps their topics from binding a level too
-# high and showing up as Work Cell data.
+# One SCADA per Site and one HMI per Line are modelled under the first Work Cell
+# of each. They are not in the authored tree, but modelling them keeps their
+# topics from binding a level too high and showing up as Work Cell data.
 SITE_MACHINE = "SCADA"
 LINE_MACHINE = "HMI"
 
@@ -125,23 +124,20 @@ def _named(node: Any) -> str:
 
 def _cells(hierarchy: Mapping[str, Any]) -> list[tuple[str, str, str, str, str]]:
     """
-    Expand the nested hierarchy into one (enterprise, site, area, line, cell) tuple
-    per Work Cell.
-
-    Mirrors `uns_simulator.models.expand_hierarchy_paths`, which is what decides
-    the topics that will actually be published. The duplication is deliberate:
-    the Asset Model must not import the simulator.
+    Expand the nested hierarchy into one (enterprise, site, area, line, cell)
+    path per Work Cell. The Asset Model owns this expansion so seed does not
+    depend on any publisher.
     """
     enterprise = hierarchy.get("enterprise")
     if not enterprise:
-        raise ValueError("simulator.hierarchy.enterprise is required")
+        raise ValueError("hierarchy.enterprise is required")
 
     sites = hierarchy.get("sites")
     if not sites:
         # Legacy flat shape.
         flat = tuple(str(hierarchy.get(key) or "") for key in ("site", "area", "line", "cell"))
         if not all(flat):
-            raise ValueError("simulator.hierarchy needs either 'sites' or site/area/line/cell")
+            raise ValueError("hierarchy needs either 'sites' or site/area/line/cell")
         return [(str(enterprise), *flat)]  # type: ignore[return-value]
 
     cells: list[tuple[str, str, str, str, str]] = []
@@ -154,7 +150,7 @@ def _cells(hierarchy: Mapping[str, Any]) -> list[tuple[str, str, str, str, str]]
                 for cell in _as_mapping(line).get("cells") or []:
                     cells.append((str(enterprise), site_name, area_name, line_name, _named(cell)))
     if not cells:
-        raise ValueError("simulator.hierarchy.sites did not produce any Work Cells")
+        raise ValueError("hierarchy.sites did not produce any Work Cells")
     return cells
 
 
@@ -164,7 +160,7 @@ def _cell_entries(
     """One row per Work Cell: path segments plus authored machine names."""
     enterprise = hierarchy.get("enterprise")
     if not enterprise:
-        raise ValueError("simulator.hierarchy.enterprise is required")
+        raise ValueError("hierarchy.enterprise is required")
 
     rows: list[tuple[str, str, str, str, str, tuple[str, ...]]] = []
     for site in hierarchy.get("sites") or []:
@@ -206,7 +202,7 @@ def _machines(simulator: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
         template = _as_mapping(template)
         name = template.get("equipment") or template.get("name")
         if not name:
-            LOGGER.warning("Skipping a simulator.plc entry with no equipment name: %s", template)
+            LOGGER.warning("Skipping a plc entry with no equipment name: %s", template)
             continue
         machines[str(name)] = _as_mapping(template.get("sensors") or {})
 
@@ -232,13 +228,13 @@ def plan_from_hierarchy_tree(tree: HierarchyTree, extra: Mapping[str, Any] | Non
 
 def plan_from_simulator_config(simulator: Mapping[str, Any]) -> SeedPlan:
     """
-    Read `simulator.hierarchy` / `simulator.plc` and return the Asset Model they imply.
+    Read `hierarchy` / `plc` mappings and return the Asset Model they imply.
 
     Pure. Nothing here touches a database or the network.
     """
     hierarchy = simulator.get("hierarchy")
     if hierarchy is None:
-        raise ValueError("simulator.hierarchy is required to seed the Asset Model")
+        raise ValueError("hierarchy is required to seed the Asset Model")
 
     machines = _machines(simulator)
     enterprise = str(_as_mapping(hierarchy).get("enterprise") or "") or None
