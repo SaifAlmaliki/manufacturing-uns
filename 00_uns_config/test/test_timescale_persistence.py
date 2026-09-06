@@ -39,3 +39,6 @@ def test_tsdb_setup_reruns_against_an_existing_volume():
     assert "IF NOT EXISTS" in script
     assert "if_not_exists" in script
     assert "CREATE DATABASE" in script
+    # Linux bash treats a CRLF checkout as `set -o pipefail\r` and exits 2.
+    assert b"\r" not in _BOOTSTRAP.read_bytes()
+    assert "sed" in joined

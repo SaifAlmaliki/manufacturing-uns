@@ -117,7 +117,9 @@ services:
     depends_on:
       uns_timescale_db:
         condition: service_healthy
-    command: ["/bin/bash", "/sql/00_bootstrap.sh"]
+    # Bind-mounted from the host. Strip CR so a Windows checkout cannot turn
+    # `set -o pipefail` into `pipefail\r` (bash: invalid option name).
+    command: ["/bin/bash", "-c", "sed 's/\\r$//' /sql/00_bootstrap.sh | bash"]
 
   # Creates the `model` and `console` schemas and the enrichment views, then imports
   # the configured plant hierarchy as Assets. Runs after tsdb_setup_script because the
