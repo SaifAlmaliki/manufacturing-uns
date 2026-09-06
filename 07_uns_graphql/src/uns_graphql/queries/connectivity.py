@@ -23,6 +23,8 @@ from uns_graphql.type.connectivity import (
     ConnectivityTestResultType,
     OpcUaBrowseNodeType,
     OpcUaDataValueType,
+    SubscribedSignalType,
+    UnitOfMeasureType,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -110,6 +112,32 @@ class Query:
         async with await open_client(endpoint) as client:
             rows = await opcua_browse.read_nodes(client, node_ids)
         return [OpcUaDataValueType.from_row(row) for row in rows]
+
+    @strawberry.field(description="The Unit of Measure catalog, including engineer-added Other… symbols.")
+    async def units_of_measure(self, info: strawberry.Info) -> list[UnitOfMeasureType]:
+        require_role(info, OPC_PROBE_ROLES)
+        rows = await _repository().list_units_of_measure()
+        return [UnitOfMeasureType(symbol=row.symbol, name=row.name) for row in rows]
+
+    @strawberry.field(description="The signal label catalog, ordered by name.")
+    async def signal_labels(self, info: strawberry.Info) -> list[str]:
+        require_role(info, OPC_PROBE_ROLES)
+        rows = await _repository().list_signal_labels()
+        return [row.name for row in rows]
+
+    @strawberry.field(
+        description="Every subscribed catalog tag across Connectivity servers. "
+        "Tags the engineer has unsubscribed are omitted."
+    )
+    async def get_subscribed_signals(self, info: strawberry.Info) -> list[SubscribedSignalType]:
+        require_role(info, OPC_PROBE_ROLES)
+        signals: list[SubscribedSignalType] = []
+        for server in await _repository().list_servers():
+            for tag in await _repository().list_subscribed_tags(server.id):
+                if not tag.subscribed:
+                    continue
+                signals.append(SubscribedSignalType.from_tag(tag, server_name=server.name))
+        return signals
 
     @classmethod
     async def on_shutdown(cls):

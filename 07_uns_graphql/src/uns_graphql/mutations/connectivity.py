@@ -13,6 +13,7 @@ server's endpoint and folds the result into the catalog via
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import strawberry
 from uns_model.connectivity import (
@@ -25,14 +26,43 @@ from uns_opcua import browse as opcua_browse
 from uns_opcua.session import open_client
 
 from uns_graphql.auth.require import require
-from uns_graphql.input.connectivity import ConnectivityServerInput
-from uns_graphql.type.connectivity import ConnectivityServerType, ConnectivityTagType
+from uns_graphql.input.connectivity import ConnectivityServerInput, ConnectivityTagUpdateInput
+from uns_graphql.type.connectivity import ConnectivityServerType, ConnectivityTagType, UnitOfMeasureType
 
 LOGGER = logging.getLogger(__name__)
 
 
 def _repository() -> ConnectivityRepository:
     return ConnectivityRepository(Database.shared("graphql"))
+
+
+def _as_int(value: int | str | None) -> int | None:
+    """Int64 parses to str; the repository wants an int. Same conversion as AlertRuleInput."""
+    return None if value is None else int(value)
+
+
+def _tag_update_fields(patch: ConnectivityTagUpdateInput) -> dict[str, Any]:
+    """Only keys the caller set, so omitted patch fields are not written as null."""
+    fields: dict[str, Any] = {}
+    for name in (
+        "display_name",
+        "mqtt_topic",
+        "asset_id",
+        "unit_of_measure",
+        "semantic_class",
+        "data_type",
+        "labels",
+    ):
+        value = getattr(patch, name)
+        if value is strawberry.UNSET:
+            continue
+        if name == "asset_id":
+            fields[name] = _as_int(value)
+        elif name in {"semantic_class", "data_type"}:
+            fields[name] = value.value if value is not None else None
+        else:
+            fields[name] = value
+    return fields
 
 
 async def _server_endpoint(server_id: str) -> str | None:
@@ -140,6 +170,42 @@ class Mutation:
             return False
         LOGGER.info("Unsubscribed %s on %s", node_id, server_id)
         return True
+
+    @strawberry.mutation(
+        description="Insert a Unit of Measure. Duplicate symbols return the existing row."
+    )
+    async def save_unit_of_measure(
+        self, info: strawberry.Info, symbol: str, name: str | None = None
+    ) -> UnitOfMeasureType:
+        require(info, "saveUnitOfMeasure")
+        saved = await _repository().save_unit_of_measure(symbol, name)
+        return UnitOfMeasureType(symbol=saved.symbol, name=saved.name)
+
+    @strawberry.mutation(
+        description="Insert a signal label. Duplicate names return the existing row."
+    )
+    async def save_signal_label(self, info: strawberry.Info, name: str) -> str:
+        require(info, "saveSignalLabel")
+        saved = await _repository().save_signal_label(name)
+        return saved.name
+
+    @strawberry.mutation(
+        description="Partial-update one Connectivity tag's engineer-authored context and return it as stored."
+    )
+    async def update_connectivity_tag(
+        self,
+        info: strawberry.Info,
+        server_id: str,
+        node_id: str,
+        patch: ConnectivityTagUpdateInput,
+    ) -> ConnectivityTagType:
+        require(info, "updateConnectivityTag")
+        tag = await _repository().update_tag(server_id, node_id, **_tag_update_fields(patch))
+        if tag is None:
+            raise ValueError(
+                f"No Connectivity tag for server {server_id!r} node {node_id!r}"
+            )
+        return ConnectivityTagType.from_tag(tag)
 
     @classmethod
     async def on_shutdown(cls):

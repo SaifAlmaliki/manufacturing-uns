@@ -48,6 +48,9 @@ MUTATION_ROLES: dict[str, frozenset[str]] = {
     "subscribeOpcUaVariables": frozenset({"engineer", "admin"}),
     "updateConnectivityTagTopic": frozenset({"engineer", "admin"}),
     "unsubscribeConnectivityTag": frozenset({"engineer", "admin"}),
+    "saveUnitOfMeasure": frozenset({"engineer", "admin"}),
+    "saveSignalLabel": frozenset({"engineer", "admin"}),
+    "updateConnectivityTag": frozenset({"engineer", "admin"}),
 }
 
 

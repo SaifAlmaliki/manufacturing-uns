@@ -14,6 +14,8 @@ from uns_graphql.type.connectivity import (
     ConnectivityProtocol,
     ConnectivitySecurityMode,
     ConnectivitySecurityPolicy,
+    SignalDataType,
+    SignalSemanticClass,
 )
 
 
@@ -31,3 +33,14 @@ class ConnectivityServerInput:
     certificate: str = ""
     private_key: str = ""
     server_certificate: str = ""
+
+
+@strawberry.input(description="Partial update of one Connectivity tag's engineer-authored context.")
+class ConnectivityTagUpdateInput:
+    display_name: str | None = strawberry.UNSET
+    mqtt_topic: str | None = strawberry.UNSET
+    asset_id: int | None = strawberry.UNSET
+    unit_of_measure: str | None = strawberry.UNSET
+    semantic_class: SignalSemanticClass | None = strawberry.UNSET
+    data_type: SignalDataType | None = strawberry.UNSET
+    labels: list[str] | None = strawberry.UNSET

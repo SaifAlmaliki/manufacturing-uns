@@ -42,6 +42,9 @@ EXPECTED = {
     "subscribeOpcUaVariables": {"engineer", "admin"},
     "updateConnectivityTagTopic": {"engineer", "admin"},
     "unsubscribeConnectivityTag": {"engineer", "admin"},
+    "saveUnitOfMeasure": {"engineer", "admin"},
+    "saveSignalLabel": {"engineer", "admin"},
+    "updateConnectivityTag": {"engineer", "admin"},
 }
 
 

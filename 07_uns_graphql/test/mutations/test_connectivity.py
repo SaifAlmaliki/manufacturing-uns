@@ -6,6 +6,7 @@ the bridge helpers return, and who may call them.
 """
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -295,6 +296,123 @@ async def test_subscribe_opc_ua_variables_forwards_node_id():
     assert result.errors is None
     discover.assert_awaited_once()
     assert discover.await_args.args[1] == "ns=3;s=WaterTreatmentPlant"
+
+
+# --------------------------------------------------------------- catalogs / tag context
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_save_unit_of_measure_persists_other_symbol():
+    repository = AsyncMock()
+    repository.save_unit_of_measure.return_value = SimpleNamespace(symbol="NTU", name="turbidity")
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            'mutation { saveUnitOfMeasure(symbol: "NTU", name: "turbidity") { symbol name } }',
+            context_value=ADMIN,
+        )
+    assert result.errors is None
+    assert result.data["saveUnitOfMeasure"] == {"symbol": "NTU", "name": "turbidity"}
+    repository.save_unit_of_measure.assert_awaited_once_with("NTU", "turbidity")
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_update_connectivity_tag_passes_unit_and_asset():
+    repository = AsyncMock()
+    stored = _tag()
+    stored.unit_of_measure = "°C"
+    stored.asset_id = 42
+    stored.labels = ["Cycle"]
+    repository.update_tag.return_value = stored
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            """
+            mutation ($patch: ConnectivityTagUpdateInput!) {
+              updateConnectivityTag(serverId: "s1", nodeId: "ns=2;s=Temperature", patch: $patch) {
+                unitOfMeasure labels
+              }
+            }
+            """,
+            variable_values={"patch": {"unitOfMeasure": "°C", "assetId": 42, "labels": ["Cycle"]}},
+            context_value=ADMIN,
+        )
+    assert result.errors is None
+    assert result.data["updateConnectivityTag"]["unitOfMeasure"] == "°C"
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_save_signal_label_returns_the_stored_name():
+    repository = AsyncMock()
+    repository.save_signal_label.return_value = SimpleNamespace(name="Cycle")
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            'mutation { saveSignalLabel(name: "Cycle") }',
+            context_value=ADMIN,
+        )
+    assert result.errors is None
+    assert result.data["saveSignalLabel"] == "Cycle"
+    repository.save_signal_label.assert_awaited_once_with("Cycle")
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_units_of_measure_returns_the_catalog():
+    repository = AsyncMock()
+    repository.list_units_of_measure.return_value = [
+        SimpleNamespace(symbol="°C", name="degree Celsius"),
+        SimpleNamespace(symbol="NTU", name="turbidity"),
+    ]
+    with patch(QUERY_REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            "{ unitsOfMeasure { symbol name } }",
+            context_value=ADMIN,
+        )
+    assert result.errors is None
+    assert result.data["unitsOfMeasure"] == [
+        {"symbol": "°C", "name": "degree Celsius"},
+        {"symbol": "NTU", "name": "turbidity"},
+    ]
+    repository.list_units_of_measure.assert_awaited_once()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_signal_labels_returns_catalog_names():
+    repository = AsyncMock()
+    repository.list_signal_labels.return_value = [
+        SimpleNamespace(name="Cycle"),
+        SimpleNamespace(name="Quality"),
+    ]
+    with patch(QUERY_REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            "{ signalLabels }",
+            context_value=ADMIN,
+        )
+    assert result.errors is None
+    assert result.data["signalLabels"] == ["Cycle", "Quality"]
+    repository.list_signal_labels.assert_awaited_once()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_get_subscribed_signals_skips_unsubscribed_tags():
+    repository = AsyncMock()
+    repository.list_servers.return_value = [_server(name="PLC1")]
+    repository.list_subscribed_tags.return_value = [
+        _tag(node_id="ns=2;s=Temperature", subscribed=True),
+        _tag(node_id="ns=2;s=Pressure", subscribed=False),
+    ]
+    with patch(QUERY_REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            "{ getSubscribedSignals { nodeId serverId serverName subscribed } }",
+            context_value=ADMIN,
+        )
+    assert result.errors is None
+    assert result.data["getSubscribedSignals"] == [
+        {
+            "nodeId": "ns=2;s=Temperature",
+            "serverId": "s1",
+            "serverName": "PLC1",
+            "subscribed": True,
+        }
+    ]
+    repository.list_subscribed_tags.assert_awaited_once_with("s1")
 
 
 # --------------------------------------------------------------- update / unsubscribe

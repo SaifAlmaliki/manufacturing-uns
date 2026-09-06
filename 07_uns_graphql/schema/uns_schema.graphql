@@ -268,6 +268,24 @@ type ConnectivityTagType {
   subscribed: Boolean!
   createdAt: DateTime
   updatedAt: DateTime
+  assetId: Int64
+  assetPath: String
+  assetDisplayName: String
+  unitOfMeasure: String
+  semanticClass: SignalSemanticClass
+  dataType: SignalDataType
+  labels: [String!]!
+}
+
+"""Partial update of one Connectivity tag's engineer-authored context."""
+input ConnectivityTagUpdateInput {
+  displayName: String
+  mqttTopic: String
+  assetId: Int64
+  unitOfMeasure: String
+  semanticClass: SignalSemanticClass
+  dataType: SignalDataType
+  labels: [String!]
 }
 
 """The outcome of a connection probe against one OPC UA endpoint."""
@@ -541,6 +559,17 @@ type Mutation {
   Stop subscribing to a node. A deliberate act, never done by omission. False when there was no such tag.
   """
   unsubscribeConnectivityTag(serverId: String!, nodeId: String!): Boolean!
+
+  """Insert a Unit of Measure. Duplicate symbols return the existing row."""
+  saveUnitOfMeasure(symbol: String!, name: String = null): UnitOfMeasureType!
+
+  """Insert a signal label. Duplicate names return the existing row."""
+  saveSignalLabel(name: String!): String!
+
+  """
+  Partial-update one Connectivity tag's engineer-authored context and return it as stored.
+  """
+  updateConnectivityTag(serverId: String!, nodeId: String!, patch: ConnectivityTagUpdateInput!): ConnectivityTagType!
 }
 
 """One product's counts and rated cycle time within a shift."""
@@ -757,6 +786,17 @@ type Query {
 
   """Read the current value of one or more OPC UA nodes by NodeId."""
   readOpcUaNodes(endpoint: String!, nodeIds: [String!]!): [OpcUaDataValueType!]!
+
+  """The Unit of Measure catalog, including engineer-added Other… symbols."""
+  unitsOfMeasure: [UnitOfMeasureType!]!
+
+  """The signal label catalog, ordered by name."""
+  signalLabels: [String!]!
+
+  """
+  Every subscribed catalog tag across Connectivity servers. Tags the engineer has unsubscribed are omitted.
+  """
+  getSubscribedSignals: [SubscribedSignalType!]!
 }
 
 """Whether a stop was classified by the engine or corrected by a person."""
@@ -856,9 +896,46 @@ type SPBTemplateParameter {
   value: SPBPrimitive!
 }
 
+"""The scalar type Condition Monitoring should chart for a tag."""
+enum SignalDataType {
+  Double
+  Boolean
+  Integer
+  String
+}
+
+"""What kind of plant signal a subscribed tag represents."""
+enum SignalSemanticClass {
+  MeasuredValue
+  EnergyConsumption
+  CounterOK
+  CounterNOK
+  State
+}
+
 type StreamingMessage {
   topic: String!
   payload: JSONPayload!
+}
+
+"""A subscribed catalog tag, named by the server it belongs to."""
+type SubscribedSignalType {
+  serverId: String!
+  nodeId: String!
+  browsePath: String!
+  displayName: String!
+  mqttTopic: String!
+  subscribed: Boolean!
+  createdAt: DateTime
+  updatedAt: DateTime
+  assetId: Int64
+  assetPath: String
+  assetDisplayName: String
+  unitOfMeasure: String
+  semanticClass: SignalSemanticClass
+  dataType: SignalDataType
+  labels: [String!]!
+  serverName: String!
 }
 
 """Subscribe to UNS Events or Streams"""
@@ -909,4 +986,10 @@ type UNSNode {
   payload: JSONPayload!
   created: DateTime!
   lastUpdated: DateTime!
+}
+
+"""A Unit of Measure the console can attach to a subscribed tag."""
+type UnitOfMeasureType {
+  symbol: String!
+  name: String
 }

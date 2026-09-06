@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime
 from enum import Enum
+from typing import TypeVar
 
 import strawberry
 from strawberry.scalars import JSON
@@ -20,6 +21,8 @@ from uns_model.tables import ConnectivityServer, ConnectivityTag
 # a second protocol is a schema change a reviewer sees, not a string a typo can
 # slip past a CHECK constraint unnoticed.
 _OPC_UA_PROTOCOL = "opc_ua"
+
+_E = TypeVar("_E", bound=Enum)
 
 
 @strawberry.enum(description="A connectivity protocol the console can author a server for.")
@@ -102,6 +105,35 @@ class ConnectivityTestResultType:
     elapsed_ms: float
 
 
+@strawberry.enum(description="What kind of plant signal a subscribed tag represents.")
+class SignalSemanticClass(Enum):
+    MeasuredValue = "MeasuredValue"
+    EnergyConsumption = "EnergyConsumption"
+    CounterOK = "CounterOK"
+    CounterNOK = "CounterNOK"
+    State = "State"
+
+
+@strawberry.enum(description="The scalar type Condition Monitoring should chart for a tag.")
+class SignalDataType(Enum):
+    Double = "Double"
+    Boolean = "Boolean"
+    Integer = "Integer"
+    String = "String"
+
+
+def _optional_enum(enum_cls: type[_E], value: str | None) -> _E | None:
+    if value is None or value == "":
+        return None
+    return enum_cls(value)
+
+
+@strawberry.type(description="A Unit of Measure the console can attach to a subscribed tag.")
+class UnitOfMeasureType:
+    symbol: str
+    name: str | None = None
+
+
 @strawberry.type(description="One OPC UA node the console subscribes to.")
 class ConnectivityTagType:
     server_id: str
@@ -112,9 +144,17 @@ class ConnectivityTagType:
     subscribed: bool
     created_at: datetime.datetime | None = None
     updated_at: datetime.datetime | None = None
+    asset_id: int | None = None
+    asset_path: str | None = None
+    asset_display_name: str | None = None
+    unit_of_measure: str | None = None
+    semantic_class: SignalSemanticClass | None = None
+    data_type: SignalDataType | None = None
+    labels: list[str] = strawberry.field(default_factory=list)
 
     @classmethod
     def from_tag(cls, tag: ConnectivityTag) -> "ConnectivityTagType":
+        asset = getattr(tag, "asset", None)
         return cls(
             server_id=tag.server_id,
             node_id=tag.node_id,
@@ -124,6 +164,40 @@ class ConnectivityTagType:
             subscribed=tag.subscribed,
             created_at=tag.created_at,
             updated_at=tag.updated_at,
+            asset_id=getattr(tag, "asset_id", None),
+            asset_path=getattr(asset, "path", None) if asset is not None else None,
+            asset_display_name=getattr(asset, "display_name", None) if asset is not None else None,
+            unit_of_measure=getattr(tag, "unit_of_measure", None),
+            semantic_class=_optional_enum(SignalSemanticClass, getattr(tag, "semantic_class", None)),
+            data_type=_optional_enum(SignalDataType, getattr(tag, "data_type", None)),
+            labels=list(getattr(tag, "labels", None) or []),
+        )
+
+
+@strawberry.type(description="A subscribed catalog tag, named by the server it belongs to.")
+class SubscribedSignalType(ConnectivityTagType):
+    server_name: str
+
+    @classmethod
+    def from_tag(cls, tag: ConnectivityTag, *, server_name: str) -> "SubscribedSignalType":
+        base = ConnectivityTagType.from_tag(tag)
+        return cls(
+            server_id=base.server_id,
+            node_id=base.node_id,
+            browse_path=base.browse_path,
+            display_name=base.display_name,
+            mqtt_topic=base.mqtt_topic,
+            subscribed=base.subscribed,
+            created_at=base.created_at,
+            updated_at=base.updated_at,
+            asset_id=base.asset_id,
+            asset_path=base.asset_path,
+            asset_display_name=base.asset_display_name,
+            unit_of_measure=base.unit_of_measure,
+            semantic_class=base.semantic_class,
+            data_type=base.data_type,
+            labels=base.labels,
+            server_name=server_name,
         )
 
 
