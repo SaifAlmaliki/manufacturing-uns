@@ -65,6 +65,7 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
   const [assets, setAssets] = useState<AccessAssetDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [signalsLoadFailed, setSignalsLoadFailed] = useState(false);
   const [search, setSearch] = useState('');
   const [serverId, setServerId] = useState('');
   const [assetFilter, setAssetFilter] = useState('');
@@ -80,25 +81,64 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
+    setSignalsLoadFailed(false);
     try {
-      const [signals, unitRows, labelRows, assetRows] = await Promise.all([
-        unsGraphQLClient.getSubscribedSignals(),
-        unsGraphQLClient.unitsOfMeasure().catch(() => [] as GraphqlUnitOfMeasure[]),
-        unsGraphQLClient.signalLabels().catch(() => [] as string[]),
-        unsGraphQLClient.getAssets().catch(() => [] as AccessAssetDto[]),
-      ]);
+      const signals = await unsGraphQLClient.getSubscribedSignals();
       setRows(signals);
-      setUnits(unitRows);
-      setLabels(labelRows);
-      setAssets(assetRows);
     } catch (err) {
+      setSignalsLoadFailed(true);
       setLoadError(
         err instanceof Error
           ? `Connectivity catalog could not be loaded. ${err.message}`
           : 'Connectivity catalog could not be loaded. GraphQL returned an error — not an empty plant.',
       );
       setRows([]);
+      setLoading(false);
+      return;
     }
+
+    const [unitResult, labelResult, assetResult] = await Promise.allSettled([
+      unsGraphQLClient.unitsOfMeasure(),
+      unsGraphQLClient.signalLabels(),
+      unsGraphQLClient.getAssets(),
+    ]);
+
+    const catalogErrors: string[] = [];
+    if (unitResult.status === 'fulfilled') {
+      setUnits(unitResult.value);
+    } else {
+      setUnits([]);
+      catalogErrors.push(
+        unitResult.reason instanceof Error
+          ? unitResult.reason.message
+          : 'units of measure could not be loaded',
+      );
+    }
+    if (labelResult.status === 'fulfilled') {
+      setLabels(labelResult.value);
+    } else {
+      setLabels([]);
+      catalogErrors.push(
+        labelResult.reason instanceof Error
+          ? labelResult.reason.message
+          : 'signal labels could not be loaded',
+      );
+    }
+    if (assetResult.status === 'fulfilled') {
+      setAssets(assetResult.value);
+    } else {
+      setAssets([]);
+      catalogErrors.push(
+        assetResult.reason instanceof Error
+          ? assetResult.reason.message
+          : 'assets could not be loaded',
+      );
+    }
+
+    if (catalogErrors.length > 0) {
+      setLoadError(`Connectivity catalog could not be loaded. ${catalogErrors.join('; ')}`);
+    }
+
     setLoading(false);
   }, []);
 
@@ -415,7 +455,7 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
         <ConsoleCard padding="md" className="text-sm text-muted-foreground">
           Loading subscribed signals…
         </ConsoleCard>
-      ) : loadError ? null : filtered.length === 0 ? (
+      ) : signalsLoadFailed ? null : filtered.length === 0 ? (
         <ConsoleCard padding="md" className="text-sm text-muted-foreground">
           {rows.length === 0 ? EMPTY_COPY : 'No signals match this search.'}
         </ConsoleCard>

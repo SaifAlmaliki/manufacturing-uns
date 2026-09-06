@@ -106,6 +106,13 @@ describe('SignalsTab', () => {
     ).toBeNull();
   });
 
+  it('shows a rose load-error banner when a catalog call fails but still renders the table', async () => {
+    unitsOfMeasure.mockRejectedValue(new Error('units catalog unreachable'));
+    render(<SignalsTab />);
+    await waitFor(() => expect(screen.getByText(/units catalog unreachable/i)).toBeTruthy());
+    expect(screen.getByText('Level')).toBeTruthy();
+  });
+
   it('opens the context panel and saves name and topic', async () => {
     render(<SignalsTab />);
     await waitFor(() => expect(screen.getByText('Level')).toBeTruthy());
