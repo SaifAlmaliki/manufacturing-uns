@@ -26,6 +26,28 @@ which need a migrated Postgres database.
 from __future__ import annotations
 
 from uns_model.connectivity import ConnectivityTagSpec, merge_discovered
+from uns_model.tables import (
+    SEEDED_UNITS_OF_MEASURE,
+    SIGNAL_DATA_TYPES,
+    SIGNAL_SEMANTIC_CLASSES,
+)
+
+
+def test_seeded_units_include_celsius_and_kwh():
+    assert "°C" in SEEDED_UNITS_OF_MEASURE
+    assert "kWh" in SEEDED_UNITS_OF_MEASURE
+    assert len(SEEDED_UNITS_OF_MEASURE) == len(set(SEEDED_UNITS_OF_MEASURE))
+
+
+def test_semantic_classes_and_data_types_are_the_spec_vocabularies():
+    assert SIGNAL_SEMANTIC_CLASSES == (
+        "MeasuredValue",
+        "EnergyConsumption",
+        "CounterOK",
+        "CounterNOK",
+        "State",
+    )
+    assert SIGNAL_DATA_TYPES == ("Double", "Boolean", "Integer", "String")
 
 
 def test_merge_keeps_edited_topic():

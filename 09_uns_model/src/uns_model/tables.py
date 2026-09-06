@@ -46,7 +46,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from uns_model.model_config import CONSOLE_SCHEMA, MODEL_SCHEMA
@@ -464,6 +464,54 @@ CONNECTIVITY_SECURITY_POLICIES: tuple[str, ...] = (
 
 CONNECTIVITY_SECURITY_MODES: tuple[str, ...] = ("None", "Sign", "SignAndEncrypt")
 
+SEEDED_UNITS_OF_MEASURE: tuple[str, ...] = (
+    "°C",
+    "K",
+    "bar",
+    "Pa",
+    "kPa",
+    "%",
+    "kWh",
+    "kW",
+    "L/min",
+    "m³",
+    "Hz",
+    "rpm",
+    "A",
+    "V",
+)
+SIGNAL_SEMANTIC_CLASSES: tuple[str, ...] = (
+    "MeasuredValue",
+    "EnergyConsumption",
+    "CounterOK",
+    "CounterNOK",
+    "State",
+)
+SIGNAL_DATA_TYPES: tuple[str, ...] = ("Double", "Boolean", "Integer", "String")
+
+
+class UnitOfMeasure(Base):
+    __tablename__ = "units_of_measure"
+    __table_args__ = {"schema": CONSOLE_SCHEMA}
+
+    symbol: Mapped[str] = mapped_column(Text, primary_key=True)
+    name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"UnitOfMeasure(symbol={self.symbol!r})"
+
+
+class SignalLabel(Base):
+    __tablename__ = "signal_labels"
+    __table_args__ = {"schema": CONSOLE_SCHEMA}
+
+    name: Mapped[str] = mapped_column(Text, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"SignalLabel(name={self.name!r})"
+
 
 class ConnectivityServer(Base):
     """
@@ -553,6 +601,14 @@ class ConnectivityTag(Base):
 
     __tablename__ = "connectivity_tags"
     __table_args__ = (
+        CheckConstraint(
+            _one_of("semantic_class", SIGNAL_SEMANTIC_CLASSES, nullable=True),
+            name="connectivity_tags_semantic_class_check",
+        ),
+        CheckConstraint(
+            _one_of("data_type", SIGNAL_DATA_TYPES, nullable=True),
+            name="connectivity_tags_data_type_check",
+        ),
         Index("idx_connectivity_tags_server", "server_id"),
         Index(
             "idx_connectivity_tags_subscribed",
@@ -574,6 +630,16 @@ class ConnectivityTag(Base):
     display_name: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
     mqtt_topic: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
     subscribed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+
+    asset_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey(f"{MODEL_SCHEMA}.asset.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    unit_of_measure: Mapped[str | None] = mapped_column(Text, nullable=True)
+    semantic_class: Mapped[str | None] = mapped_column(Text, nullable=True)
+    data_type: Mapped[str | None] = mapped_column(Text, nullable=True)
+    labels: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, server_default=text("'{}'"))
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
