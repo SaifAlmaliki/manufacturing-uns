@@ -470,6 +470,24 @@ export const GET_ASSETS_QUERY = `
  * Assets & Connectivity (ADR-0008). Servers and tags live in `console.connectivity_*`;
  * the console only edits them through GraphQL, and `opcua_client` polls the catalog.
  */
+const CONNECTIVITY_TAG_FIELDS = `
+  serverId
+  nodeId
+  browsePath
+  displayName
+  mqttTopic
+  subscribed
+  createdAt
+  updatedAt
+  assetId
+  assetPath
+  assetDisplayName
+  unitOfMeasure
+  semanticClass
+  dataType
+  labels
+`
+
 const CONNECTIVITY_SERVER_FIELDS = `
   id
   name
@@ -489,33 +507,8 @@ const CONNECTIVITY_SERVER_FIELDS = `
   createdAt
   updatedAt
   tags {
-    serverId
-    nodeId
-    browsePath
-    displayName
-    mqttTopic
-    subscribed
-    createdAt
-    updatedAt
+    ${CONNECTIVITY_TAG_FIELDS}
   }
-`
-
-const CONNECTIVITY_TAG_FIELDS = `
-  serverId
-  nodeId
-  browsePath
-  displayName
-  mqttTopic
-  subscribed
-  createdAt
-  updatedAt
-  assetId
-  assetPath
-  assetDisplayName
-  unitOfMeasure
-  semanticClass
-  dataType
-  labels
 `
 
 export const GET_CONNECTIVITY_SERVERS_QUERY = `
