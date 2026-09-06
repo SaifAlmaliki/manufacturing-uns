@@ -38,6 +38,7 @@ export const UserSessionMenu: React.FC<UserSessionMenuProps> = ({ variant = 'hea
   }, []);
 
   const isSidebarStyle = variant === 'sidebar' || variant === 'compact';
+  const isHeader = variant === 'header';
 
   if (!currentUser) {
     return null;
@@ -46,32 +47,39 @@ export const UserSessionMenu: React.FC<UserSessionMenuProps> = ({ variant = 'hea
   const roleConfig = ROLE_CONFIGS[currentUser.role] || ROLE_CONFIGS.viewer;
 
   return (
-    <div className={`relative ${variant === 'compact' ? 'w-full flex justify-center' : 'w-full'}`} ref={menuRef}>
+    <div
+      className={`relative ${
+        variant === 'compact' ? 'flex w-full justify-center' : isHeader ? 'w-auto max-w-[12rem]' : 'w-full'
+      }`}
+      ref={menuRef}
+    >
       <button
         id="user-session-trigger"
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex w-full items-center gap-3 rounded-xl transition-colors cursor-pointer select-none ${
+        className={`flex items-center rounded-xl transition-colors cursor-pointer select-none ${
           isSidebarStyle
-            ? 'p-2 hover:bg-muted'
-            : 'gap-2 px-2.5 py-1 rounded-md bg-surface border border-border hover:bg-muted'
+            ? 'w-full gap-3 p-2 hover:bg-muted'
+            : 'w-auto max-w-full gap-2 rounded-md border border-border bg-surface px-2.5 py-1 hover:bg-muted'
         }`}
-        title="Account menu"
-        aria-label="Account menu"
+        title={currentUser.name}
+        aria-label={`${currentUser.name}, account menu`}
         aria-expanded={isOpen}
       >
         <div
           className={`flex shrink-0 items-center justify-center rounded-full font-semibold text-zinc-950 ${
             currentUser.avatarColor || 'bg-[#FF7A00]'
-          } ${variant === 'compact' ? 'size-9 text-sm' : 'size-9 text-sm'}`}
+          } ${isHeader ? 'size-7 text-xs' : 'size-9 text-sm'}`}
         >
           {currentUser.name.charAt(0).toUpperCase()}
         </div>
 
         {variant !== 'compact' && (
           <>
-            <div className="min-w-0 flex-1 text-left">
+            <div className={`min-w-0 text-left ${isHeader ? '' : 'flex-1'}`}>
               <div className="truncate text-sm font-medium text-foreground">{currentUser.name}</div>
-              <div className="truncate text-xs text-muted-foreground">{currentUser.email}</div>
+              {variant === 'sidebar' && (
+                <div className="truncate text-xs text-muted-foreground">{currentUser.email}</div>
+              )}
             </div>
             <ChevronDown className={`size-4 shrink-0 text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`} />
           </>

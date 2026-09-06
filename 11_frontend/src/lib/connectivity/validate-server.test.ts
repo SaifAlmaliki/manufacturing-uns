@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { validateConnectivityServer, type ConnectivityServerDraft } from './validate-server'
+import {
+  AUTH_MODE_TO_GQL,
+  SECURITY_MODE_TO_GQL,
+  SECURITY_POLICY_TO_GQL,
+  validateConnectivityServer,
+  type ConnectivityServerDraft,
+} from './validate-server'
 
 function draft(overrides: Partial<ConnectivityServerDraft> = {}): ConnectivityServerDraft {
   return {
@@ -58,5 +64,18 @@ describe('validateConnectivityServer', () => {
         draft({ securityPolicy: 'Basic256Sha256', securityMode: 'SignAndEncrypt' }),
       ),
     ).toMatch(/certificate/i)
+  })
+})
+
+describe('GraphQL vocabulary maps', () => {
+  it('covers every catalog auth mode and security value', () => {
+    expect(Object.keys(AUTH_MODE_TO_GQL)).toEqual(['anonymous', 'username', 'x509'])
+    expect(Object.keys(SECURITY_POLICY_TO_GQL)).toEqual([
+      'None',
+      'Basic256Sha256',
+      'Aes128Sha256RsaOaep',
+      'Aes256Sha256RsaPss',
+    ])
+    expect(Object.keys(SECURITY_MODE_TO_GQL)).toEqual(['None', 'Sign', 'SignAndEncrypt'])
   })
 })

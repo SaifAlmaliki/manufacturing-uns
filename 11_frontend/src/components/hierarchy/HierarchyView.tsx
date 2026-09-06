@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Cog, Factory, GitBranch, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Cog, Factory, GitBranch, Trash2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useUNS } from '../../context/UNSContext';
 import { joinSegments, validateSegment } from '../../lib/uns/topics';
@@ -34,7 +34,15 @@ import { ResizableSidebar } from '../ui/resizable-sidebar';
 import { AssetLevelIcon } from './AssetLevelIcon';
 import { NewAssetMenu } from './NewAssetMenu';
 import { levelDef, type NodeLevel } from './hierarchyLevels';
-import { type NodeRef, cloneTree, insertDescendant } from './hierarchyTree';
+import {
+  type NodeRef,
+  ancestorKeys,
+  childRefs,
+  cloneTree,
+  expandableKeys,
+  insertDescendant,
+  nodeKey,
+} from './hierarchyTree';
 
 function nodeName(tree: GraphqlHierarchyTree, ref: NodeRef): string {
   switch (ref.level) {
@@ -366,15 +374,22 @@ function TreeNodeButton({
   tree,
   nodeRef,
   selected,
+  expanded,
   onSelect,
+  onToggle,
 }: {
   tree: GraphqlHierarchyTree;
   nodeRef: NodeRef;
   selected: NodeRef | null;
+  expanded: Set<string>;
   onSelect: (ref: NodeRef) => void;
+  onToggle: (ref: NodeRef) => void;
 }) {
   const name = nodeName(tree, nodeRef);
   const active = refsEqual(selected, nodeRef);
+  const children = childRefs(tree, nodeRef);
+  const hasChildren = children.length > 0;
+  const isExpanded = expanded.has(nodeKey(nodeRef));
   const indent =
     nodeRef.level === 'enterprise'
       ? 0
@@ -387,31 +402,64 @@ function TreeNodeButton({
             : nodeRef.level === 'cell'
               ? 4
               : 5;
+  const levelLabel = levelDef(nodeRef.level).label;
   return (
-    <button
-      type="button"
-      aria-label={`${levelDef(nodeRef.level).label} ${name}`}
-      aria-current={active ? 'true' : undefined}
-      onClick={() => onSelect(nodeRef)}
-      className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors ${
-        active ? 'bg-[#FF7A00] text-white' : 'text-foreground hover:bg-muted hover:text-foreground'
-      }`}
-      style={{ paddingLeft: `${8 + indent * 12}px` }}
-    >
-      <AssetLevelIcon
-        level={nodeRef.level}
-        className={`size-3.5 shrink-0 ${active ? 'text-white' : 'text-muted-foreground'}`}
-      />
-      <span className={`shrink-0 text-[10px] tracking-wider ${active ? 'text-white/70' : 'text-muted-foreground'}`}>
-        {levelDef(nodeRef.level).label}
-      </span>
-      <span aria-hidden="true" className={active ? 'text-white/50' : 'text-muted-foreground'}>
-        ·
-      </span>
-      <span className="truncate font-medium" title={name}>
-        {name}
-      </span>
-    </button>
+    <div>
+      <div
+        className={`flex w-full items-center rounded-lg transition-colors ${
+          active ? 'bg-[#FF7A00] text-white' : 'text-foreground hover:bg-muted hover:text-foreground'
+        }`}
+        style={{ paddingLeft: `${8 + indent * 12}px` }}
+      >
+        {hasChildren ? (
+          <button
+            type="button"
+            aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${levelLabel} ${name}`}
+            aria-expanded={isExpanded}
+            onClick={() => onToggle(nodeRef)}
+            className={`rounded p-0.5 ${active ? 'text-white hover:text-white/80' : 'text-muted-foreground hover:text-[#FF7A00]'}`}
+          >
+            {isExpanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+          </button>
+        ) : (
+          <span className="inline-block w-[18px] shrink-0" aria-hidden="true" />
+        )}
+        <button
+          type="button"
+          aria-label={`${levelLabel} ${name}`}
+          aria-current={active ? 'true' : undefined}
+          onClick={() => onSelect(nodeRef)}
+          className="flex min-w-0 flex-1 items-center gap-2 px-1 py-1.5 text-left text-sm"
+        >
+          <AssetLevelIcon
+            level={nodeRef.level}
+            className={`size-3.5 shrink-0 ${active ? 'text-white' : 'text-muted-foreground'}`}
+          />
+          <span className={`shrink-0 text-[10px] tracking-wider ${active ? 'text-white/70' : 'text-muted-foreground'}`}>
+            {levelLabel}
+          </span>
+          <span aria-hidden="true" className={active ? 'text-white/50' : 'text-muted-foreground'}>
+            ·
+          </span>
+          <span className="truncate font-medium" title={name}>
+            {name}
+          </span>
+        </button>
+      </div>
+      {hasChildren &&
+        isExpanded &&
+        children.map((child) => (
+          <TreeNodeButton
+            key={nodeKey(child)}
+            tree={tree}
+            nodeRef={child}
+            selected={selected}
+            expanded={expanded}
+            onSelect={onSelect}
+            onToggle={onToggle}
+          />
+        ))}
+    </div>
   );
 }
 
@@ -433,6 +481,7 @@ export const HierarchyView: React.FC = () => {
   const [job, setJob] = useState<GraphqlHierarchyMigrateJob | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!canEdit) return;
@@ -449,6 +498,7 @@ export const HierarchyView: React.FC = () => {
       setSelected({ level: 'enterprise' });
       setDraftName(next.enterprise);
       setLoadError(null);
+      setExpanded(new Set(expandableKeys(next)));
     });
     return () => {
       cancelled = true;
@@ -489,7 +539,29 @@ export const HierarchyView: React.FC = () => {
     return { tree: nextTree, renames: nextRenames };
   }, [tree, selected, draftName, renames, baseline]);
 
+  const toggleExpanded = (ref: NodeRef) => {
+    const key = nodeKey(ref);
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const expandAncestors = (ref: NodeRef) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      for (const key of ancestorKeys(ref)) next.add(key);
+      return next;
+    });
+  };
+
   const selectNode = (ref: NodeRef) => {
+    if (!tree) return;
+    if (childRefs(tree, ref).length > 0 && !expanded.has(nodeKey(ref))) {
+      setExpanded((prev) => new Set(prev).add(nodeKey(ref)));
+    }
     if (selected && !refsEqual(selected, ref)) {
       const committed = applyDraft();
       if (!committed) return;
@@ -498,7 +570,6 @@ export const HierarchyView: React.FC = () => {
       setFieldError(null);
       return;
     }
-    if (!tree) return;
     setSelected(ref);
     setDraftName(nodeName(tree, ref));
     setFieldError(null);
@@ -515,6 +586,7 @@ export const HierarchyView: React.FC = () => {
     setDraftName(nodeName(result.tree, result.child));
     setDirty(true);
     setFieldError(null);
+    expandAncestors(result.child);
   };
 
   const handleRemove = () => {
@@ -669,69 +741,14 @@ export const HierarchyView: React.FC = () => {
                   <NewAssetMenu parentLevel={menuParent} onPick={handleAdd} />
                 </div>
                 <div className="max-h-[calc(100vh-22rem)] space-y-0.5 overflow-x-auto overflow-y-auto p-2">
-                  <TreeNodeButton tree={tree} nodeRef={{ level: 'enterprise' }} selected={selected} onSelect={selectNode} />
-                  {tree.sites.map((site, siteIdx) => (
-                    <React.Fragment key={`site-${siteIdx}`}>
-                      <TreeNodeButton
-                        tree={tree}
-                        nodeRef={{ level: 'site', site: siteIdx }}
-                        selected={selected}
-                        onSelect={selectNode}
-                      />
-                      {site.areas.map((area, areaIdx) => (
-                        <React.Fragment key={`area-${siteIdx}-${areaIdx}`}>
-                          <TreeNodeButton
-                            tree={tree}
-                            nodeRef={{ level: 'area', site: siteIdx, area: areaIdx }}
-                            selected={selected}
-                            onSelect={selectNode}
-                          />
-                          {area.lines.map((line, lineIdx) => (
-                            <React.Fragment key={`line-${siteIdx}-${areaIdx}-${lineIdx}`}>
-                              <TreeNodeButton
-                                tree={tree}
-                                nodeRef={{ level: 'line', site: siteIdx, area: areaIdx, line: lineIdx }}
-                                selected={selected}
-                                onSelect={selectNode}
-                              />
-                              {line.cells.map((cell, cellIdx) => (
-                                <React.Fragment key={`cell-${siteIdx}-${areaIdx}-${lineIdx}-${cellIdx}-${cell.name}`}>
-                                  <TreeNodeButton
-                                    tree={tree}
-                                    nodeRef={{
-                                      level: 'cell',
-                                      site: siteIdx,
-                                      area: areaIdx,
-                                      line: lineIdx,
-                                      cell: cellIdx,
-                                    }}
-                                    selected={selected}
-                                    onSelect={selectNode}
-                                  />
-                                  {cell.machines.map((machine, machineIdx) => (
-                                    <TreeNodeButton
-                                      key={`machine-${siteIdx}-${areaIdx}-${lineIdx}-${cellIdx}-${machineIdx}-${machine}`}
-                                      tree={tree}
-                                      nodeRef={{
-                                        level: 'machine',
-                                        site: siteIdx,
-                                        area: areaIdx,
-                                        line: lineIdx,
-                                        cell: cellIdx,
-                                        machine: machineIdx,
-                                      }}
-                                      selected={selected}
-                                      onSelect={selectNode}
-                                    />
-                                  ))}
-                                </React.Fragment>
-                              ))}
-                            </React.Fragment>
-                          ))}
-                        </React.Fragment>
-                      ))}
-                    </React.Fragment>
-                  ))}
+                  <TreeNodeButton
+                    tree={tree}
+                    nodeRef={{ level: 'enterprise' }}
+                    selected={selected}
+                    expanded={expanded}
+                    onSelect={selectNode}
+                    onToggle={toggleExpanded}
+                  />
                 </div>
               </ConsoleCard>
               </ResizableSidebar>

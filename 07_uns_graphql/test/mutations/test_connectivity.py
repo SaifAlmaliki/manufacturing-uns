@@ -145,6 +145,52 @@ async def test_save_connectivity_server_returns_the_server_as_stored():
 
 
 @pytest.mark.asyncio(loop_scope="function")
+async def test_save_connectivity_server_persists_credentials_without_echoing_the_password():
+    """Username/password belong in Postgres, not in the payload the console reads back."""
+    repository = AsyncMock()
+    stored = _server()
+    stored.auth_mode = "username"
+    stored.username = "eng"
+    stored.password = "s3cret"
+    repository.save_server.return_value = stored
+
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            """
+            mutation Save($server: ConnectivityServerInput!) {
+                saveConnectivityServer(server: $server) {
+                    id authMode username hasPassword
+                }
+            }
+            """,
+            variable_values={
+                "server": {
+                    "id": "s1",
+                    "name": "PLC1",
+                    "protocol": "OPC_UA",
+                    "endpoint": ENDPOINT,
+                    "authMode": "USERNAME",
+                    "username": "eng",
+                    "password": "s3cret",
+                }
+            },
+            context_value=ADMIN,
+        )
+
+    assert result.errors is None
+    assert result.data["saveConnectivityServer"] == {
+        "id": "s1",
+        "authMode": "USERNAME",
+        "username": "eng",
+        "hasPassword": True,
+    }
+    spec: ConnectivityServerSpec = repository.save_server.await_args.args[0]
+    assert spec.auth_mode == "username"
+    assert spec.username == "eng"
+    assert spec.password == "s3cret"
+
+
+@pytest.mark.asyncio(loop_scope="function")
 @pytest.mark.parametrize("deleted", [True, False])
 async def test_delete_connectivity_server_reports_whether_there_was_anything_to_delete(
     deleted: bool,

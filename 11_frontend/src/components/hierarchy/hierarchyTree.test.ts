@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { GraphqlHierarchyTree } from '../../services/graphql/types';
-import { insertDescendant } from './hierarchyTree';
+import {
+  ancestorKeys,
+  childRefs,
+  expandableKeys,
+  insertDescendant,
+  nodeKey,
+} from './hierarchyTree';
 
 const TREE: GraphqlHierarchyTree = {
   enterprise: 'AcmeWater',
@@ -76,5 +82,40 @@ describe('insertDescendant', () => {
         'cell',
       ),
     ).toBeNull();
+  });
+});
+
+describe('collapse keys', () => {
+  it('names each node so expand state survives a rename', () => {
+    expect(nodeKey({ level: 'enterprise' })).toBe('enterprise');
+    expect(nodeKey({ level: 'site', site: 0 })).toBe('site:0');
+    expect(nodeKey({ level: 'cell', site: 0, area: 0, line: 0, cell: 0 })).toBe('cell:0:0:0:0');
+  });
+
+  it('lists only the direct children of a node', () => {
+    expect(childRefs(TREE, { level: 'enterprise' })).toEqual([{ level: 'site', site: 0 }]);
+    expect(childRefs(TREE, { level: 'line', site: 0, area: 0, line: 0 })).toEqual([
+      { level: 'cell', site: 0, area: 0, line: 0, cell: 0 },
+    ]);
+    expect(childRefs(TREE, { level: 'cell', site: 0, area: 0, line: 0, cell: 0 })).toEqual([]);
+  });
+
+  it('starts every parent with children expanded', () => {
+    expect(expandableKeys(TREE)).toEqual([
+      'enterprise',
+      'site:0',
+      'area:0:0',
+      'line:0:0:0',
+    ]);
+  });
+
+  it('returns the ancestors that must stay open to show a child', () => {
+    expect(ancestorKeys({ level: 'cell', site: 0, area: 0, line: 0, cell: 0 })).toEqual([
+      'line:0:0:0',
+      'area:0:0',
+      'site:0',
+      'enterprise',
+    ]);
+    expect(ancestorKeys({ level: 'enterprise' })).toEqual([]);
   });
 });

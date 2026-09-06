@@ -6,16 +6,16 @@
 default:
   platform:
     instance_name: "Instance01"
-    organization_name: "DemoWTP"
-    display_name: "DemoWTP UNS"
+    organization_name: "HalabjaWTP"
+    display_name: "HalabjaWTP UNS"
 
   # ISA-95 plant tree. Single source for seed, GraphQL, and the console.
   # Publishers (OPC UA, Modbus, or any connector) are signals on this tree, not
   # a second plant. saveHierarchy writes this block.
   hierarchy:
-    enterprise: DemoWTP
+    enterprise: HalabjaWTP
     sites:
-    - name: Site10
+    - name: Halabja
       areas:
       - name: RawWater
         kind: production
@@ -82,7 +82,6 @@ default:
             machines: []
           - name: V301
             machines: []
-
   applications:
     graphql:
       name: "uns_graphql_server"
@@ -200,11 +199,11 @@ graphql:
 
 graphdb:
   mqtt:
-    topics: [test/uns/#, DemoWTP/#, spBv1.0/uns_group/#]
+    topics: [test/uns/#, HalabjaWTP/#, spBv1.0/uns_group/#]
 
 historian:
   mqtt:
-    topics: [test/uns/#, DemoWTP/#, spBv1.0/#]
+    topics: [test/uns/#, HalabjaWTP/#, spBv1.0/#]
 
 opcua:
   opcua:
@@ -214,7 +213,7 @@ opcua:
 
 kafka_mapper:
   mqtt:
-    topics: [test/uns/#, DemoWTP/#]
+    topics: [test/uns/#, HalabjaWTP/#]
   kafka:
     config:
       client.id: "uns_kafka_client"

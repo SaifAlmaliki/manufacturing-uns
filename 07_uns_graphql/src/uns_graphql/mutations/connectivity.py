@@ -59,6 +59,14 @@ class Mutation:
                 name=server.name,
                 protocol=server.protocol.value,
                 endpoint=server.endpoint,
+                auth_mode=server.auth_mode.value,
+                security_policy=server.security_policy.value,
+                security_mode=server.security_mode.value,
+                username=server.username,
+                password=server.password,
+                certificate=server.certificate,
+                private_key=server.private_key,
+                server_certificate=server.server_certificate,
             )
         )
         LOGGER.info("Connectivity server %s saved as %s", saved.id, saved.name)

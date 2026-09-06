@@ -27,6 +27,28 @@ class ConnectivityProtocol(Enum):
     OPC_UA = _OPC_UA_PROTOCOL
 
 
+@strawberry.enum(description="How the console authenticates to an OPC UA server.")
+class ConnectivityAuthMode(Enum):
+    ANONYMOUS = "anonymous"
+    USERNAME = "username"
+    X509 = "x509"
+
+
+@strawberry.enum(description="OPC UA channel security policy.")
+class ConnectivitySecurityPolicy(Enum):
+    NONE = "None"
+    BASIC256_SHA256 = "Basic256Sha256"
+    AES128_SHA256_RSA_OAEP = "Aes128Sha256RsaOaep"
+    AES256_SHA256_RSA_PSS = "Aes256Sha256RsaPss"
+
+
+@strawberry.enum(description="OPC UA channel security mode.")
+class ConnectivitySecurityMode(Enum):
+    NONE = "None"
+    SIGN = "Sign"
+    SIGN_AND_ENCRYPT = "SignAndEncrypt"
+
+
 @strawberry.type(description="An OPC UA node the console browsed or discovered.")
 class OpcUaBrowseNodeType:
     node_id: str
@@ -111,6 +133,14 @@ class ConnectivityServerType:
     name: str
     protocol: ConnectivityProtocol
     endpoint: str
+    auth_mode: ConnectivityAuthMode
+    username: str
+    has_password: bool
+    security_policy: ConnectivitySecurityPolicy
+    security_mode: ConnectivitySecurityMode
+    certificate: str
+    has_private_key: bool
+    server_certificate: str
     last_status: str
     last_error: str
     last_tested_at: datetime.datetime | None = None
@@ -125,6 +155,16 @@ class ConnectivityServerType:
             name=server.name,
             protocol=ConnectivityProtocol(server.protocol),
             endpoint=server.endpoint,
+            auth_mode=ConnectivityAuthMode(getattr(server, "auth_mode", None) or "anonymous"),
+            username=getattr(server, "username", None) or "",
+            has_password=bool(getattr(server, "password", None)),
+            security_policy=ConnectivitySecurityPolicy(
+                getattr(server, "security_policy", None) or "None"
+            ),
+            security_mode=ConnectivitySecurityMode(getattr(server, "security_mode", None) or "None"),
+            certificate=getattr(server, "certificate", None) or "",
+            has_private_key=bool(getattr(server, "private_key", None)),
+            server_certificate=getattr(server, "server_certificate", None) or "",
             last_status=server.last_status,
             last_error=server.last_error,
             last_tested_at=server.last_tested_at,

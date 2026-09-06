@@ -9,7 +9,12 @@ from __future__ import annotations
 
 import strawberry
 
-from uns_graphql.type.connectivity import ConnectivityProtocol
+from uns_graphql.type.connectivity import (
+    ConnectivityAuthMode,
+    ConnectivityProtocol,
+    ConnectivitySecurityMode,
+    ConnectivitySecurityPolicy,
+)
 
 
 @strawberry.input(description="A Connectivity server to create or replace. The id is supplied by the console.")
@@ -18,3 +23,11 @@ class ConnectivityServerInput:
     name: str
     protocol: ConnectivityProtocol
     endpoint: str
+    auth_mode: ConnectivityAuthMode = ConnectivityAuthMode.ANONYMOUS
+    security_policy: ConnectivitySecurityPolicy = ConnectivitySecurityPolicy.NONE
+    security_mode: ConnectivitySecurityMode = ConnectivitySecurityMode.NONE
+    username: str = ""
+    password: str = ""
+    certificate: str = ""
+    private_key: str = ""
+    server_certificate: str = ""

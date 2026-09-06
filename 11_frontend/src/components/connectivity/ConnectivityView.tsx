@@ -38,8 +38,11 @@ import {
   statusLabel,
 } from '../../lib/connectivity/map-servers';
 import {
+  AUTH_MODE_TO_GQL,
   CONNECTIVITY_SECURITY_MODES,
   CONNECTIVITY_SECURITY_POLICIES,
+  SECURITY_MODE_TO_GQL,
+  SECURITY_POLICY_TO_GQL,
   validateConnectivityServer,
   type ConnectivityAuthMode,
   type ConnectivitySecurityMode,
@@ -143,6 +146,14 @@ export const ConnectivityView: React.FC = () => {
         name: draftName.trim(),
         protocol: 'OPC_UA' as GraphqlConnectivityProtocol,
         endpoint: draftEndpoint.trim(),
+        authMode: AUTH_MODE_TO_GQL[draftAuthMode],
+        securityPolicy: SECURITY_POLICY_TO_GQL[draftSecurityPolicy],
+        securityMode: SECURITY_MODE_TO_GQL[draftSecurityMode],
+        username: draftUsername.trim(),
+        password: draftPassword,
+        certificate: draftCertificate.trim(),
+        privateKey: draftPrivateKey.trim(),
+        serverCertificate: draftServerCertificate.trim(),
       };
       const saved = await unsGraphQLClient.saveConnectivityServer(input);
       setServers((prev) => [...prev, saved]);

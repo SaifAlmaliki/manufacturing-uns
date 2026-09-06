@@ -16,6 +16,26 @@ export type ConnectivityAuthMode = (typeof CONNECTIVITY_AUTH_MODES)[number]
 export type ConnectivitySecurityPolicy = (typeof CONNECTIVITY_SECURITY_POLICIES)[number]
 export type ConnectivitySecurityMode = (typeof CONNECTIVITY_SECURITY_MODES)[number]
 
+/** GraphQL enum names for `ConnectivityServerInput`. Values stay in Postgres as the catalog strings. */
+export const AUTH_MODE_TO_GQL = {
+  anonymous: 'ANONYMOUS',
+  username: 'USERNAME',
+  x509: 'X509',
+} as const
+
+export const SECURITY_POLICY_TO_GQL = {
+  None: 'NONE',
+  Basic256Sha256: 'BASIC256_SHA256',
+  Aes128Sha256RsaOaep: 'AES128_SHA256_RSA_OAEP',
+  Aes256Sha256RsaPss: 'AES256_SHA256_RSA_PSS',
+} as const
+
+export const SECURITY_MODE_TO_GQL = {
+  None: 'NONE',
+  Sign: 'SIGN',
+  SignAndEncrypt: 'SIGN_AND_ENCRYPT',
+} as const
+
 export type ConnectivityServerDraft = {
   protocol: string
   name: string

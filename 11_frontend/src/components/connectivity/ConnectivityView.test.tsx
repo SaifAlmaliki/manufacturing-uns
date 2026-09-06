@@ -1,4 +1,5 @@
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getConnectivityServers = vi.hoisted(() => vi.fn());
@@ -209,6 +210,32 @@ describe('the OPC UA server table', () => {
     await waitFor(() => expect(screen.getAllByText('Connected').length).toBeGreaterThan(0));
   });
 
+  it('saves username credentials with the server so they survive a stack restart', async () => {
+    render(<ConnectivityView />);
+    await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: /add server/i }));
+    fireEvent.change(await screen.findByLabelText('Name'), { target: { value: 'wtp' } });
+    fireEvent.change(screen.getByLabelText('Endpoint'), {
+      target: { value: 'opc.tcp://desktop-h4hdql2:50000/' },
+    });
+    fireEvent.click(screen.getByLabelText('Username/Password'));
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'eng' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 's3cret' } });
+    fireEvent.click(screen.getByRole('button', { name: /^add$/i }));
+
+    await waitFor(() => expect(saveConnectivityServer).toHaveBeenCalled());
+    expect(saveConnectivityServer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'wtp',
+        endpoint: 'opc.tcp://desktop-h4hdql2:50000/',
+        authMode: 'USERNAME',
+        username: 'eng',
+        password: 's3cret',
+      }),
+    );
+  });
+
   it('does not add a server when username is chosen without a password', async () => {
     render(<ConnectivityView />);
     await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
@@ -291,6 +318,55 @@ describe('the Browse data drawer', () => {
     fireEvent.blur(topicInput);
     await waitFor(() =>
       expect(updateConnectivityTagTopic).toHaveBeenCalledWith('s1', 'ns=3;s=WTP_T101_Level', 'Plant/T101/Level'),
+    );
+  });
+
+  it('keeps a topic edit as a local draft until the signal is subscribed', async () => {
+    await openDrawerAndSelectWtp();
+    fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
+    const topicInput = screen.getByDisplayValue('RawWater/T101/Level');
+    fireEvent.change(topicInput, { target: { value: 'Plant/T101/Level' } });
+    fireEvent.blur(topicInput);
+
+    expect(updateConnectivityTagTopic).not.toHaveBeenCalled();
+    expect(subscribeOpcUaVariables).not.toHaveBeenCalled();
+  });
+
+  it('subscribes the folder on the first click while a topic editor is focused', async () => {
+    updateConnectivityTagTopic.mockRejectedValue(
+      new Error("No Connectivity tag for server 's1' node 'ns=3;s=WTP_T101_Level'"),
+    );
+    const user = userEvent.setup();
+    await openDrawerAndSelectWtp();
+    await user.click(screen.getByRole('button', { name: /^edit$/i }));
+    fireEvent.change(screen.getByDisplayValue('RawWater/T101/Level'), {
+      target: { value: 'Plant/T101/Level' },
+    });
+    await user.click(screen.getByRole('button', { name: /subscribe folder/i }));
+
+    await waitFor(() =>
+      expect(subscribeOpcUaVariables).toHaveBeenCalledWith('s1', 'ns=3;s=WaterTreatmentPlant'),
+    );
+  });
+
+  it('applies draft MQTT topics when Subscribe folder runs', async () => {
+    await openDrawerAndSelectWtp();
+    fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
+    const topicInput = screen.getByDisplayValue('RawWater/T101/Level');
+    fireEvent.change(topicInput, { target: { value: 'Plant/T101/Level' } });
+    fireEvent.blur(topicInput);
+    expect(updateConnectivityTagTopic).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /subscribe folder/i }));
+    await waitFor(() =>
+      expect(subscribeOpcUaVariables).toHaveBeenCalledWith('s1', 'ns=3;s=WaterTreatmentPlant'),
+    );
+    await waitFor(() =>
+      expect(updateConnectivityTagTopic).toHaveBeenCalledWith(
+        's1',
+        'ns=3;s=WTP_T101_Level',
+        'Plant/T101/Level',
+      ),
     );
   });
 

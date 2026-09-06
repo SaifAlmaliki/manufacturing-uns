@@ -336,13 +336,39 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
 
   const nodeIds = useMemo(() => discovered.map((n) => n.nodeId), [discovered]);
 
+  const persistDraftTopics = async (
+    tags: { nodeId: string; mqttTopic: string; subscribed: boolean }[],
+  ) => {
+    const tagMap = new Map(tags.map((t) => [t.nodeId, t]));
+    const drafts = Object.entries(draftTopics)
+      .map(([nodeId, topic]) => {
+        const trimmed = topic.trim();
+        const published = tagMap.get(nodeId)?.mqttTopic;
+        if (!trimmed || !published || trimmed === published) return null;
+        return { nodeId, mqttTopic: trimmed };
+      })
+      .filter((row): row is { nodeId: string; mqttTopic: string } => row !== null);
+    if (drafts.length === 0) return tagMap;
+    const persisted = await Promise.all(
+      drafts.map((draft) =>
+        unsGraphQLClient.updateConnectivityTagTopic(server.id, draft.nodeId, draft.mqttTopic),
+      ),
+    );
+    for (const updated of persisted) {
+      const existing = tagMap.get(updated.nodeId);
+      if (existing) tagMap.set(updated.nodeId, { ...existing, mqttTopic: updated.mqttTopic, subscribed: true });
+    }
+    return tagMap;
+  };
+
   const handleSubscribe = async () => {
     if (!selected) return;
     setSubscribing(true);
+    setEditingTopicId(null);
     setError(null);
     try {
       const tags = await unsGraphQLClient.subscribeOpcUaVariables(server.id, selected.nodeId);
-      const tagMap = new Map(tags.map((t) => [t.nodeId, t]));
+      const tagMap = await persistDraftTopics(tags);
       setRows((prev) =>
         prev.map((r) => {
           const tag = tagMap.get(r.nodeId);
@@ -378,14 +404,17 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
         );
       }
       emitServerTags(
-        tags.map((t) => ({
-          serverId: server.id,
-          nodeId: t.nodeId,
-          browsePath: t.browsePath,
-          displayName: t.displayName,
-          mqttTopic: t.mqttTopic,
-          subscribed: t.subscribed,
-        })),
+        tags.map((t) => {
+          const latest = tagMap.get(t.nodeId) ?? t;
+          return {
+            serverId: server.id,
+            nodeId: t.nodeId,
+            browsePath: t.browsePath,
+            displayName: t.displayName,
+            mqttTopic: latest.mqttTopic,
+            subscribed: latest.subscribed,
+          };
+        }),
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Subscribe failed');
@@ -398,6 +427,9 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
     const next = draftTopics[nodeId] ?? '';
     const current = rows.find((r) => r.nodeId === nodeId)?.mqttTopic ?? '';
     if (next.trim() === current.trim() || !next.trim()) return;
+    // A topic row is only a catalog tag after subscribe. Persist drafts locally until then
+    // so Edit → Subscribe folder does not 404 and steal the first click.
+    if (!rows.find((r) => r.nodeId === nodeId)?.subscribed) return;
     setBusyNodeId(nodeId);
     try {
       const updated = await unsGraphQLClient.updateConnectivityTagTopic(
@@ -516,6 +548,7 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
             <span className="font-mono text-[11px] tabular-nums text-foreground">{rows.length}</span>
           </div>
           <Button
+            onMouseDown={(event) => event.preventDefault()}
             onClick={() => void handleSubscribe()}
             disabled={subscribing || loading || !selected || discovered.length === 0}
             size="sm"

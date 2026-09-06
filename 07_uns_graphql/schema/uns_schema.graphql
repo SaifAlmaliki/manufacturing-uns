@@ -191,9 +191,31 @@ type BytesPayload {
   data: Base64!
 }
 
+"""How the console authenticates to an OPC UA server."""
+enum ConnectivityAuthMode {
+  ANONYMOUS
+  USERNAME
+  X509
+}
+
 """A connectivity protocol the console can author a server for."""
 enum ConnectivityProtocol {
   OPC_UA
+}
+
+"""OPC UA channel security mode."""
+enum ConnectivitySecurityMode {
+  NONE
+  SIGN
+  SIGN_AND_ENCRYPT
+}
+
+"""OPC UA channel security policy."""
+enum ConnectivitySecurityPolicy {
+  NONE
+  BASIC256_SHA256
+  AES128_SHA256_RSA_OAEP
+  AES256_SHA256_RSA_PSS
 }
 
 """
@@ -204,6 +226,14 @@ input ConnectivityServerInput {
   name: String!
   protocol: ConnectivityProtocol!
   endpoint: String!
+  authMode: ConnectivityAuthMode! = ANONYMOUS
+  securityPolicy: ConnectivitySecurityPolicy! = NONE
+  securityMode: ConnectivitySecurityMode! = NONE
+  username: String! = ""
+  password: String! = ""
+  certificate: String! = ""
+  privateKey: String! = ""
+  serverCertificate: String! = ""
 }
 
 """An OPC UA server the console dials, with its subscribed tags."""
@@ -212,6 +242,14 @@ type ConnectivityServerType {
   name: String!
   protocol: ConnectivityProtocol!
   endpoint: String!
+  authMode: ConnectivityAuthMode!
+  username: String!
+  hasPassword: Boolean!
+  securityPolicy: ConnectivitySecurityPolicy!
+  securityMode: ConnectivitySecurityMode!
+  certificate: String!
+  hasPrivateKey: Boolean!
+  serverCertificate: String!
   lastStatus: String!
   lastError: String!
   lastTestedAt: DateTime

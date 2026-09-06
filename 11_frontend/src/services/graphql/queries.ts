@@ -475,6 +475,14 @@ const CONNECTIVITY_SERVER_FIELDS = `
   name
   protocol
   endpoint
+  authMode
+  username
+  hasPassword
+  securityPolicy
+  securityMode
+  certificate
+  hasPrivateKey
+  serverCertificate
   lastStatus
   lastError
   lastTestedAt

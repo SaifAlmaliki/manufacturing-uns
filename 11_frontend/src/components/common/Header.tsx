@@ -12,6 +12,7 @@ import { useUNS } from '../../context/UNSContext';
 import { useAlarms } from '../../context/AlarmContext';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { UserSessionMenu } from './UserSessionMenu';
 
 interface HeaderProps {
   onOpenBookmarks: () => void;
@@ -179,6 +180,8 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           )}
         </button>
+
+        <UserSessionMenu variant="header" />
       </div>
     </header>
   );

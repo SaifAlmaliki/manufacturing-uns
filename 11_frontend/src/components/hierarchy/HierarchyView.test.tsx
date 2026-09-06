@@ -277,6 +277,73 @@ describe('the plant hierarchy editor', () => {
     );
   });
 
+  it('collapses and expands a parent the way the condition-monitoring tree does', async () => {
+    render(<HierarchyView />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cell V101' })).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse Site Site1' }));
+    expect(screen.queryByRole('button', { name: 'Area RawWater' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Cell V101' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Site Site1' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Expand Site Site1' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Site Site1' }));
+    expect(screen.getByRole('button', { name: 'Area RawWater' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Cell V101' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Collapse Site Site1' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+  });
+
+  it('keeps the current selection when only the chevron is clicked', async () => {
+    render(<HierarchyView />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cell V101' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Cell V101' }));
+    expect(screen.getByLabelText('Name')).toHaveValue('V101');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse Line Train1' }));
+    expect(screen.getByLabelText('Name')).toHaveValue('V101');
+    expect(screen.queryByRole('button', { name: 'Cell V101' })).toBeNull();
+  });
+
+  it('does not offer a chevron on a leaf Machine', async () => {
+    getHierarchy.mockResolvedValue({
+      ...TREE,
+      sites: [
+        {
+          name: 'Site1',
+          areas: [
+            {
+              name: 'RawWater',
+              kind: 'production',
+              lines: [{ name: 'Train1', cells: [{ name: 'V101', machines: ['Dryer'] }] }],
+            },
+          ],
+        },
+      ],
+    });
+    render(<HierarchyView />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Machine Dryer' })).toBeTruthy());
+    expect(screen.queryByRole('button', { name: /Collapse Machine Dryer/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Expand Machine Dryer/ })).toBeNull();
+  });
+
+  it('opens collapsed ancestors when a child is added under them', async () => {
+    render(<HierarchyView />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Line Train1' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Line Train1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse Line Train1' }));
+    expect(screen.queryByRole('button', { name: 'Cell V101' })).toBeNull();
+    fireEvent.click(screen.getAllByRole('button', { name: 'New' })[1]);
+    fireEvent.click(screen.getByRole('menuitem', { name: /^Cell/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Cell Cell' })).toBeTruthy());
+    expect(screen.getByRole('button', { name: 'Cell V101' })).toBeTruthy();
+  });
+
   it('shows the Machine type word on a Machine row, not M', async () => {
     getHierarchy.mockResolvedValue({
       ...TREE,

@@ -126,3 +126,111 @@ export function insertDescendant(
   }
   return { tree: currentTree, child: currentRef };
 }
+
+export function nodeKey(ref: NodeRef): string {
+  switch (ref.level) {
+    case 'enterprise':
+      return 'enterprise';
+    case 'site':
+      return `site:${ref.site}`;
+    case 'area':
+      return `area:${ref.site}:${ref.area}`;
+    case 'line':
+      return `line:${ref.site}:${ref.area}:${ref.line}`;
+    case 'cell':
+      return `cell:${ref.site}:${ref.area}:${ref.line}:${ref.cell}`;
+    case 'machine':
+      return `machine:${ref.site}:${ref.area}:${ref.line}:${ref.cell}:${ref.machine}`;
+  }
+}
+
+export function childRefs(tree: GraphqlHierarchyTree, ref: NodeRef): NodeRef[] {
+  switch (ref.level) {
+    case 'enterprise':
+      return tree.sites.map((_, site) => ({ level: 'site' as const, site }));
+    case 'site':
+      return tree.sites[ref.site].areas.map((_, area) => ({
+        level: 'area' as const,
+        site: ref.site,
+        area,
+      }));
+    case 'area':
+      return tree.sites[ref.site].areas[ref.area].lines.map((_, line) => ({
+        level: 'line' as const,
+        site: ref.site,
+        area: ref.area,
+        line,
+      }));
+    case 'line':
+      return tree.sites[ref.site].areas[ref.area].lines[ref.line].cells.map((_, cell) => ({
+        level: 'cell' as const,
+        site: ref.site,
+        area: ref.area,
+        line: ref.line,
+        cell,
+      }));
+    case 'cell':
+      return tree.sites[ref.site].areas[ref.area].lines[ref.line].cells[ref.cell].machines.map(
+        (_, machine) => ({
+          level: 'machine' as const,
+          site: ref.site,
+          area: ref.area,
+          line: ref.line,
+          cell: ref.cell,
+          machine,
+        }),
+      );
+    case 'machine':
+      return [];
+  }
+}
+
+export function expandableKeys(tree: GraphqlHierarchyTree): string[] {
+  const keys: string[] = [];
+  const walk = (ref: NodeRef) => {
+    const children = childRefs(tree, ref);
+    if (children.length === 0) return;
+    keys.push(nodeKey(ref));
+    children.forEach(walk);
+  };
+  walk({ level: 'enterprise' });
+  return keys;
+}
+
+export function ancestorKeys(ref: NodeRef): string[] {
+  switch (ref.level) {
+    case 'enterprise':
+      return [];
+    case 'site':
+      return [nodeKey({ level: 'enterprise' })];
+    case 'area':
+      return [nodeKey({ level: 'site', site: ref.site }), nodeKey({ level: 'enterprise' })];
+    case 'line':
+      return [
+        nodeKey({ level: 'area', site: ref.site, area: ref.area }),
+        nodeKey({ level: 'site', site: ref.site }),
+        nodeKey({ level: 'enterprise' }),
+      ];
+    case 'cell':
+      return [
+        nodeKey({ level: 'line', site: ref.site, area: ref.area, line: ref.line }),
+        nodeKey({ level: 'area', site: ref.site, area: ref.area }),
+        nodeKey({ level: 'site', site: ref.site }),
+        nodeKey({ level: 'enterprise' }),
+      ];
+    case 'machine':
+      return [
+        nodeKey({
+          level: 'cell',
+          site: ref.site,
+          area: ref.area,
+          line: ref.line,
+          cell: ref.cell,
+        }),
+        nodeKey({ level: 'line', site: ref.site, area: ref.area, line: ref.line }),
+        nodeKey({ level: 'area', site: ref.site, area: ref.area }),
+        nodeKey({ level: 'site', site: ref.site }),
+        nodeKey({ level: 'enterprise' }),
+      ];
+  }
+}

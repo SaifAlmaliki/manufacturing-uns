@@ -1,7 +1,7 @@
 status: done
-old_prefix: DemoWTP/Site10/Distribution/Train1/P202/Machine3050
-new_prefix: DemoWTP/Site10/Distribution/Train1/P202/Machine3060
+old_prefix: HalabjaWTP/Site10
+new_prefix: HalabjaWTP/Halabja
 rewritten: 0
 error: null
-started_at: '2026-09-05T23:09:17.191744+00:00'
+started_at: '2026-09-06T10:27:58.648030+00:00'
 pending: []

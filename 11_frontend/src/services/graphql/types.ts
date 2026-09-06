@@ -228,6 +228,13 @@ export type GraphqlPrefixRenameInput = {
 
 /** `ConnectivityProtocol` enum on the server. Only OPC_UA is in this slice. */
 export type GraphqlConnectivityProtocol = 'OPC_UA'
+export type GraphqlConnectivityAuthMode = 'ANONYMOUS' | 'USERNAME' | 'X509'
+export type GraphqlConnectivitySecurityPolicy =
+  | 'NONE'
+  | 'BASIC256_SHA256'
+  | 'AES128_SHA256_RSA_OAEP'
+  | 'AES256_SHA256_RSA_PSS'
+export type GraphqlConnectivitySecurityMode = 'NONE' | 'SIGN' | 'SIGN_AND_ENCRYPT'
 
 /** `ConnectivityServerType`: an OPC UA server the console dials, with its subscribed tags. */
 export type GraphqlConnectivityTag = {
@@ -246,6 +253,14 @@ export type GraphqlConnectivityServer = {
   name: string
   protocol: GraphqlConnectivityProtocol
   endpoint: string
+  authMode?: GraphqlConnectivityAuthMode
+  username?: string
+  hasPassword?: boolean
+  securityPolicy?: GraphqlConnectivitySecurityPolicy
+  securityMode?: GraphqlConnectivitySecurityMode
+  certificate?: string
+  hasPrivateKey?: boolean
+  serverCertificate?: string
   lastStatus: string
   lastError: string
   lastTestedAt?: string | null
@@ -254,12 +269,20 @@ export type GraphqlConnectivityServer = {
   tags: GraphqlConnectivityTag[]
 }
 
-/** `ConnectivityServerInput`: the id is supplied by the console. */
+/** `ConnectivityServerInput`: the id is supplied by the console. Password is write-only. */
 export type GraphqlConnectivityServerInput = {
   id: string
   name: string
   protocol: GraphqlConnectivityProtocol
   endpoint: string
+  authMode?: GraphqlConnectivityAuthMode
+  securityPolicy?: GraphqlConnectivitySecurityPolicy
+  securityMode?: GraphqlConnectivitySecurityMode
+  username?: string
+  password?: string
+  certificate?: string
+  privateKey?: string
+  serverCertificate?: string
 }
 
 /** `ConnectivityTestResultType`: the outcome of a probe against one OPC UA endpoint. */
