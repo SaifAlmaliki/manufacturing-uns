@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, Zap, FolderTree } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
+import { Pencil, Plus, Trash2, Zap, FolderTree } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { unsGraphQLClient } from '../../services/graphql/client';
 import type {
@@ -29,8 +30,11 @@ import {
   PageShell,
 } from '../ui/console-ui';
 import {
+  CONNECTIVITY_SERVERS_PATH,
+  CONNECTIVITY_SIGNALS_PATH,
   PROTOCOL_TABS,
   type ConnectivityTabId,
+  connectivityTabFromPath,
   filterServers,
   formatLastTestedAt,
   isProtocolInSlice,
@@ -58,13 +62,15 @@ function newServerId(): string {
 export const ConnectivityView: React.FC = () => {
   const { hasPermission } = useAuth();
   const canMutate = hasPermission('connectivity');
+  const location = useLocation();
+  const pageTab = connectivityTabFromPath(location.pathname);
 
-  const [pageTab, setPageTab] = useState<'servers' | 'signals'>('servers');
   const [search, setSearch] = useState('');
   const [servers, setServers] = useState<GraphqlConnectivityServer[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [draftProtocol, setDraftProtocol] = useState<ConnectivityTabId>('opc_ua');
   const [draftName, setDraftName] = useState('');
   const [draftEndpoint, setDraftEndpoint] = useState('opc.tcp://');
@@ -108,6 +114,7 @@ export const ConnectivityView: React.FC = () => {
   const filtered = useMemo(() => filterServers(servers, search), [servers, search]);
 
   const resetDraft = () => {
+    setEditingId(null);
     setDraftProtocol('opc_ua');
     setDraftName('');
     setDraftEndpoint('opc.tcp://');
@@ -120,6 +127,14 @@ export const ConnectivityView: React.FC = () => {
     setDraftPrivateKey('');
     setDraftServerCertificate('');
     setSaveError(null);
+  };
+
+  const openEdit = (server: GraphqlConnectivityServer) => {
+    resetDraft();
+    setEditingId(server.id);
+    setDraftName(server.name);
+    setDraftEndpoint(server.endpoint);
+    setAddOpen(true);
   };
 
   const handleAdd = async () => {
@@ -144,7 +159,7 @@ export const ConnectivityView: React.FC = () => {
     setSaveError(null);
     try {
       const input: GraphqlConnectivityServerInput = {
-        id: newServerId(),
+        id: editingId ?? newServerId(),
         name: draftName.trim(),
         protocol: 'OPC_UA' as GraphqlConnectivityProtocol,
         endpoint: draftEndpoint.trim(),
@@ -158,10 +173,16 @@ export const ConnectivityView: React.FC = () => {
         serverCertificate: draftServerCertificate.trim(),
       };
       const saved = await unsGraphQLClient.saveConnectivityServer(input);
-      setServers((prev) => [...prev, saved]);
+      setServers((prev) => {
+        const exists = prev.some((s) => s.id === saved.id);
+        return exists
+          ? prev.map((s) => (s.id === saved.id ? { ...s, ...saved } : s))
+          : [...prev, saved];
+      });
+      const wasEdit = Boolean(editingId);
       setAddOpen(false);
       resetDraft();
-      await applyConnectionTest(saved);
+      if (!wasEdit) await applyConnectionTest(saved);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Server was not added');
     } finally {
@@ -235,11 +256,10 @@ export const ConnectivityView: React.FC = () => {
 
   const pageTabs = {
     items: [
-      { id: 'servers', label: 'Servers' },
-      { id: 'signals', label: 'Signals' },
+      { id: 'servers', label: 'Servers', href: CONNECTIVITY_SERVERS_PATH },
+      { id: 'signals', label: 'Signals', href: CONNECTIVITY_SIGNALS_PATH },
     ],
     active: pageTab,
-    onChange: (id: string) => setPageTab(id as 'servers' | 'signals'),
   };
 
   return (
@@ -344,6 +364,14 @@ export const ConnectivityView: React.FC = () => {
                             <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center justify-end gap-1">
                                 <BtnGhost
+                                  onClick={() => openEdit(server)}
+                                  className="px-2 py-1 text-[11px]"
+                                  aria-label="Edit"
+                                >
+                                  <Pencil className="size-3.5" />
+                                  Edit
+                                </BtnGhost>
+                                <BtnGhost
                                   onClick={() => void handleTest(server)}
                                   disabled={testingId === server.id}
                                   className="px-2 py-1 text-[11px]"
@@ -391,15 +419,17 @@ export const ConnectivityView: React.FC = () => {
         }}
       >
         <DialogContent
-          aria-label="Add OPC UA server"
+          aria-label={editingId ? 'Edit OPC UA server' : 'Add OPC UA server'}
           showCloseButton={false}
           className="instrument-panel instrument-grain !overflow-y-auto max-h-[min(90dvh,52rem)] gap-4 overflow-x-hidden border-[#FF7A00]/20 sm:max-w-lg"
         >
           <DialogHeader>
             <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-[#FF7A00]">
-              New connection
+              {editingId ? 'Existing connection' : 'New connection'}
             </p>
-            <DialogTitle className="font-heading text-lg">Add OPC UA server</DialogTitle>
+            <DialogTitle className="font-heading text-lg">
+              {editingId ? 'Edit OPC UA server' : 'Add OPC UA server'}
+            </DialogTitle>
             <DialogDescription>
               OPC UA is what this slice serves. Other protocols stay listed for later.
             </DialogDescription>
@@ -595,8 +625,12 @@ export const ConnectivityView: React.FC = () => {
             >
               Cancel
             </Button>
-            <Button onClick={() => void handleAdd()} disabled={saving} aria-label="Add">
-              {saving ? 'Adding…' : 'Add'}
+            <Button
+              onClick={() => void handleAdd()}
+              disabled={saving}
+              aria-label={editingId ? 'Save' : 'Add'}
+            >
+              {saving ? (editingId ? 'Saving…' : 'Adding…') : editingId ? 'Save' : 'Add'}
             </Button>
           </DialogFooter>
         </DialogContent>

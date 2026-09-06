@@ -38,3 +38,33 @@ describe('condition monitoring routes', () => {
     expect(src).toMatch(/title: 'Condition Monitoring'/);
   });
 });
+
+describe('streams route removed', () => {
+  it('does not mount Kafka Streams', () => {
+    const src = readFileSync(resolve(__dirname, './App.tsx'), 'utf8');
+    expect(src).not.toMatch(/KafkaStreamsView/);
+    expect(src).toMatch(/path="\/streams" element=\{<Navigate to="\/dashboard"/);
+  });
+
+  it('drops Streams from the sidebar', () => {
+    const src = readFileSync(resolve(__dirname, './components/layout/Sidebar.tsx'), 'utf8');
+    expect(src).not.toMatch(/to: '\/streams'/);
+    expect(src).not.toMatch(/label: 'Streams'/);
+  });
+
+  it('drops the Kafka Streams page heading', () => {
+    const src = readFileSync(resolve(__dirname, './components/common/Header.tsx'), 'utf8');
+    expect(src).not.toMatch(/Kafka Streams/);
+    expect(src).not.toMatch(/path\.startsWith\('\/streams'\)/);
+  });
+});
+
+describe('connectivity routes', () => {
+  it('splits servers and signals onto their own paths', () => {
+    const src = readFileSync(resolve(__dirname, './App.tsx'), 'utf8');
+    expect(src).toMatch(/path="\/connectivity"/);
+    expect(src).toMatch(/Navigate to="(?:\/connectivity\/)?servers"/);
+    expect(src).toMatch(/path="(?:\/connectivity\/)?servers"/);
+    expect(src).toMatch(/path="(?:\/connectivity\/)?signals"/);
+  });
+});

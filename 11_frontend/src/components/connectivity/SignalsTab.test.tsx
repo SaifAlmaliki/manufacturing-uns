@@ -9,6 +9,9 @@ const updateConnectivityTag = vi.hoisted(() => vi.fn());
 const saveUnitOfMeasure = vi.hoisted(() => vi.fn());
 const unsubscribeConnectivityTag = vi.hoisted(() => vi.fn());
 const saveSignalLabel = vi.hoisted(() => vi.fn());
+const getConnectivityServers = vi.hoisted(() => vi.fn());
+const readOpcUaNodes = vi.hoisted(() => vi.fn());
+const subscribeOpcUaDataChanges = vi.hoisted(() => vi.fn());
 
 vi.mock('../../services/graphql/client', () => ({
   unsGraphQLClient: {
@@ -20,6 +23,9 @@ vi.mock('../../services/graphql/client', () => ({
     saveUnitOfMeasure,
     unsubscribeConnectivityTag,
     saveSignalLabel,
+    getConnectivityServers,
+    readOpcUaNodes,
+    subscribeOpcUaDataChanges,
   },
 }));
 
@@ -53,6 +59,19 @@ beforeEach(() => {
   saveUnitOfMeasure.mockResolvedValue({ symbol: 'NTU', name: null });
   unsubscribeConnectivityTag.mockResolvedValue(true);
   saveSignalLabel.mockResolvedValue('Custom');
+  getConnectivityServers.mockResolvedValue([
+    {
+      id: 's1',
+      name: 'opcplc',
+      protocol: 'opc_ua',
+      endpoint: 'opc.tcp://host.docker.internal:50000/',
+      lastStatus: 'connected',
+      lastError: '',
+      tags: [],
+    },
+  ]);
+  readOpcUaNodes.mockResolvedValue([]);
+  subscribeOpcUaDataChanges.mockReturnValue(() => undefined);
 });
 
 describe('SignalsTab', () => {
@@ -243,6 +262,74 @@ describe('SignalsTab', () => {
         labels: ['Custom'],
       }),
     );
+  });
+
+  it('shows assigned Asset, Unit of Measure, class, and data type on the row', async () => {
+    getSubscribedSignals.mockResolvedValue([
+      {
+        ...SIGNAL,
+        assetId: 9,
+        unitOfMeasure: '°C',
+        semanticClass: 'MeasuredValue',
+        dataType: 'Double',
+      },
+    ]);
+    render(<SignalsTab />);
+    await waitFor(() => expect(screen.getByText('Level')).toBeTruthy());
+
+    expect((screen.getByLabelText('Asset for Level') as HTMLSelectElement).value).toBe('9');
+    expect((screen.getByLabelText('Unit of Measure for Level') as HTMLSelectElement).value).toBe(
+      '°C',
+    );
+    expect((screen.getByLabelText('Class for Level') as HTMLSelectElement).value).toBe(
+      'MeasuredValue',
+    );
+    expect((screen.getByLabelText('Data type for Level') as HTMLSelectElement).value).toBe(
+      'Double',
+    );
+    expect(screen.getByRole('option', { name: '°C', selected: true })).toBeTruthy();
+  });
+
+  it('keeps an assigned Unit of Measure visible when it is missing from the catalog', async () => {
+    getSubscribedSignals.mockResolvedValue([{ ...SIGNAL, unitOfMeasure: 'NTU' }]);
+    unitsOfMeasure.mockResolvedValue([{ symbol: '°C', name: 'Celsius' }]);
+    render(<SignalsTab />);
+    await waitFor(() => expect(screen.getByLabelText('Unit of Measure for Level')).toBeTruthy());
+
+    expect((screen.getByLabelText('Unit of Measure for Level') as HTMLSelectElement).value).toBe(
+      'NTU',
+    );
+    expect(screen.getByRole('option', { name: 'NTU' })).toBeTruthy();
+  });
+
+  it('shows the MQTT topic and an edit control beside the name', async () => {
+    render(<SignalsTab />);
+    await waitFor(() => expect(screen.getByText('Level')).toBeTruthy());
+
+    expect(screen.getByText('Plant/T101/Level')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /edit level/i }));
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+  });
+
+  it('shows the live OPC UA value and health lamp', async () => {
+    readOpcUaNodes.mockResolvedValue([
+      {
+        nodeId: 'ns=3;s=T101',
+        displayName: 'Level',
+        browsePath: 'T101/Level',
+        value: 12.5,
+        dataType: 'Double',
+        sourceTimestamp: '2026-09-06T18:00:00.000Z',
+        serverTimestamp: null,
+        status: 'Good',
+      },
+    ]);
+    render(<SignalsTab />);
+    await waitFor(() => expect(screen.getByText('12.5')).toBeTruthy());
+    expect(screen.getByText('Good')).toBeTruthy();
+    expect(readOpcUaNodes).toHaveBeenCalledWith('opc.tcp://host.docker.internal:50000/', [
+      'ns=3;s=T101',
+    ]);
   });
 
   it('keeps the Other label field when saveSignalLabel fails', async () => {

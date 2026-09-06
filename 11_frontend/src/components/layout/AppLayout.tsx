@@ -30,7 +30,6 @@ export const AppLayout: React.FC = () => {
     if (path.startsWith('/alerts')) return 'alarms';
     if (path.startsWith('/historian')) return 'explore';
     if (path.startsWith('/sparkplug')) return 'sparkplug';
-    if (path.startsWith('/streams')) return 'streams';
     if (path.startsWith('/system')) return 'system';
     if (path.startsWith('/users')) return 'users';
     if (path.startsWith('/hierarchy')) return 'hierarchy';

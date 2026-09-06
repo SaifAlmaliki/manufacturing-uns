@@ -9,6 +9,9 @@ export const consoleTokens = {
   cardMuted: 'rounded-md border border-border bg-muted/40',
   input:
     'w-full rounded-md border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-[#FF7A00]/50 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/30',
+  /** Compact native select — no py-2.5, or the selected value clips inside h-7. */
+  select:
+    'h-7 w-full min-w-0 rounded-md border border-border bg-background px-1.5 py-0 text-[11px] leading-tight text-foreground focus:border-[#FF7A00]/50 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/30 disabled:cursor-not-allowed disabled:opacity-50',
   label: 'text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground',
   tabActive: 'bg-[#FF7A00] text-[#140800]',
   tabInactive: 'text-muted-foreground hover:bg-muted hover:text-foreground',
@@ -239,7 +242,7 @@ export const ConsoleInput: React.FC<React.InputHTMLAttributes<HTMLInputElement>>
 );
 
 export const ConsoleSelect: React.FC<React.SelectHTMLAttributes<HTMLSelectElement>> = ({ className = '', ...props }) => (
-  <select className={`${consoleTokens.input} ${className}`} {...props} />
+  <select className={`${consoleTokens.select} ${className}`} {...props} />
 );
 
 export const BtnPrimary: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement>> = ({
@@ -284,7 +287,7 @@ export const CompactKpiRow: React.FC<{
   </div>
 );
 
-export type FilterToolbarTab = { id: string; label: string };
+export type FilterToolbarTab = { id: string; label: string; href?: string };
 
 export type FilterToolbarSelect = {
   value: string;
@@ -298,7 +301,7 @@ export type FilterToolbarSelect = {
  * Do not wrap tabs and search in separate cards — they belong in this one bar.
  */
 export const FilterToolbar: React.FC<{
-  tabs?: { items: FilterToolbarTab[]; active: string; onChange: (id: string) => void };
+  tabs?: { items: FilterToolbarTab[]; active: string; onChange?: (id: string) => void };
   search?: { value: string; onChange: (value: string) => void; placeholder?: string };
   selects?: FilterToolbarSelect[];
   trailing?: React.ReactNode;
@@ -307,18 +310,28 @@ export const FilterToolbar: React.FC<{
   <div
     className={`flex flex-wrap items-center gap-1 rounded-md border border-border bg-muted/60 p-1 ${className}`}
   >
-    {tabs?.items.map((tab) => (
-      <button
-        key={tab.id}
-        type="button"
-        onClick={() => tabs.onChange(tab.id)}
-        className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-          tabs.active === tab.id ? consoleTokens.tabActive : consoleTokens.tabInactive
-        }`}
-      >
-        {tab.label}
-      </button>
-    ))}
+    {tabs?.items.map((tab) => {
+      const tabClass = `rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+        tabs.active === tab.id ? consoleTokens.tabActive : consoleTokens.tabInactive
+      }`;
+      if (tab.href) {
+        return (
+          <NavLink key={tab.id} to={tab.href} className={tabClass}>
+            {tab.label}
+          </NavLink>
+        );
+      }
+      return (
+        <button
+          key={tab.id}
+          type="button"
+          onClick={() => tabs.onChange?.(tab.id)}
+          className={tabClass}
+        >
+          {tab.label}
+        </button>
+      );
+    })}
     {(tabs?.items.length ?? 0) > 0 && (search || selects?.length || trailing) ? (
       <div className="mx-0.5 hidden h-7 w-px shrink-0 bg-border sm:block" aria-hidden />
     ) : null}

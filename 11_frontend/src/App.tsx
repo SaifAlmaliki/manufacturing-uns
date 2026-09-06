@@ -19,7 +19,6 @@ import { LoginView } from './components/auth/LoginView';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { ExploreView } from './components/explore/ExploreView';
 import { SparkplugView } from './components/sparkplug/SparkplugView';
-import { KafkaStreamsView } from './components/streams/KafkaStreamsView';
 import { AlarmManagementLayout } from './components/alarms/AlarmManagementLayout';
 import { AlarmActiveTab } from './components/alarms/AlarmActiveTab';
 import { AlarmRulesTab } from './components/alarms/AlarmRulesTab';
@@ -81,11 +80,15 @@ export default function App() {
                   </Route>
                   <Route path="/historian" element={<ExploreView />} />
                   <Route path="/sparkplug" element={<SparkplugView />} />
-                  <Route path="/streams" element={<KafkaStreamsView />} />
+                  <Route path="/streams" element={<Navigate to="/dashboard" replace />} />
                   <Route path="/system" element={<SystemHealthView />} />
                   <Route path="/users" element={<UserManagementView />} />
                   <Route path="/hierarchy" element={<HierarchyView />} />
-                  <Route path="/connectivity" element={<ConnectivityView />} />
+                  <Route path="/connectivity">
+                    <Route index element={<Navigate to="servers" replace />} />
+                    <Route path="servers" element={<ConnectivityView />} />
+                    <Route path="signals" element={<ConnectivityView />} />
+                  </Route>
                 </Route>
 
                 {/* Catch-all Wildcard: return to landing page */}

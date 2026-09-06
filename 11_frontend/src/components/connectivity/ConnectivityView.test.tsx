@@ -1,5 +1,6 @@
 import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getConnectivityServers = vi.hoisted(() => vi.fn());
@@ -51,6 +52,18 @@ const auth = vi.hoisted(() => ({
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => auth }));
 
 import { ConnectivityView } from './ConnectivityView';
+
+function renderView(path = '/connectivity/servers') {
+  return render(
+    <MemoryRouter initialEntries={[path]}>
+      <Routes>
+        <Route path="/connectivity/servers" element={<ConnectivityView />} />
+        <Route path="/connectivity/signals" element={<ConnectivityView />} />
+        <Route path="/connectivity" element={<ConnectivityView />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
 
 const SERVER = {
   id: 's1',
@@ -161,7 +174,7 @@ beforeEach(() => {
 describe('access', () => {
   it('shows AccessRestricted when connectivity is denied', async () => {
     auth.hasPermission = (_feature: string): boolean => false;
-    render(<ConnectivityView />);
+    renderView();
 
     await waitFor(() => expect(screen.getByText(/permission required/i)).toBeTruthy());
     expect(getConnectivityServers).not.toHaveBeenCalled();
@@ -170,14 +183,18 @@ describe('access', () => {
 
 describe('page tabs', () => {
   it('shows Servers and Signals tabs', async () => {
-    render(<ConnectivityView />);
-    await waitFor(() => expect(screen.getByRole('button', { name: /signals/i })).toBeTruthy());
-    expect(screen.getByRole('button', { name: /servers/i })).toBeTruthy();
+    renderView();
+    await waitFor(() => expect(screen.getByRole('link', { name: /signals/i })).toBeTruthy());
+    expect(screen.getByRole('link', { name: /servers/i })).toBeTruthy();
+    expect(screen.getByRole('link', { name: /signals/i })).toHaveAttribute(
+      'href',
+      '/connectivity/signals',
+    );
   });
 
   it('opens Signals and shows empty copy without throwing', async () => {
-    render(<ConnectivityView />);
-    fireEvent.click(await screen.findByRole('button', { name: /signals/i }));
+    renderView();
+    fireEvent.click(await screen.findByRole('link', { name: /signals/i }));
     await waitFor(() =>
       expect(
         screen.getByText(
@@ -187,8 +204,20 @@ describe('page tabs', () => {
     );
     expect(screen.getAllByRole('searchbox')).toHaveLength(1);
     expect(screen.getByPlaceholderText(/search name, topic, node/i)).toBeTruthy();
-    expect(screen.getByRole('button', { name: /^servers$/i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /^signals$/i })).toBeTruthy();
+    expect(screen.getByRole('link', { name: /^servers$/i })).toBeTruthy();
+    expect(screen.getByRole('link', { name: /^signals$/i })).toBeTruthy();
+  });
+
+  it('renders the Signals catalog on /connectivity/signals', async () => {
+    renderView('/connectivity/signals');
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          'Subscribe variables from Browse data on a server — then attach units here.',
+        ),
+      ).toBeTruthy(),
+    );
+    expect(screen.getByPlaceholderText(/search name, topic, node/i)).toBeTruthy();
   });
 });
 
@@ -197,7 +226,7 @@ describe('the OPC UA server table', () => {
     getConnectivityServers.mockRejectedValue(
       new Error('column connectivity_servers.auth_mode does not exist'),
     );
-    render(<ConnectivityView />);
+    renderView();
 
     await waitFor(() =>
       expect(
@@ -209,28 +238,52 @@ describe('the OPC UA server table', () => {
 
   it('shows the empty-plant copy when the catalog has no servers', async () => {
     getConnectivityServers.mockResolvedValue([]);
-    render(<ConnectivityView />);
+    renderView();
 
     await waitFor(() => expect(screen.getByText(/no opc ua servers yet/i)).toBeTruthy());
     expect(screen.queryByText(/could not be loaded/i)).toBeNull();
   });
 
   it('lists an OPC server and offers Browse data', async () => {
-    render(<ConnectivityView />);
+    renderView();
     await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
     expect(screen.getByRole('button', { name: /browse data/i })).toBeTruthy();
   });
 
   it('hides Add Server when the signed-in role cannot mutate connectivity', async () => {
     auth.hasPermission = (_feature: string): boolean => false;
-    render(<ConnectivityView />);
+    renderView();
 
     await waitFor(() => expect(screen.getByText(/permission required/i)).toBeTruthy());
     expect(screen.queryByRole('button', { name: /add server/i })).toBeNull();
   });
 
+  it('opens Edit and saves the same server id with a new endpoint', async () => {
+    renderView();
+    await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: /edit/i }));
+    const endpointInput = await screen.findByLabelText('Endpoint');
+    expect(endpointInput).toHaveValue('opc.tcp://desktop-h4hdql2:50000/');
+    expect(screen.getByLabelText('Name')).toHaveValue('opcplc');
+    fireEvent.change(endpointInput, { target: { value: 'opc.tcp://host.docker.internal:50000/' } });
+    fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => expect(saveConnectivityServer).toHaveBeenCalled());
+    expect(saveConnectivityServer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 's1',
+        name: 'opcplc',
+        endpoint: 'opc.tcp://host.docker.internal:50000/',
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByText('opc.tcp://host.docker.internal:50000/')).toBeTruthy(),
+    );
+  });
+
   it('opens the Add Server modal and saves the server', async () => {
-    render(<ConnectivityView />);
+    renderView();
     await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
 
     fireEvent.click(screen.getByRole('button', { name: /add server/i }));
@@ -253,7 +306,7 @@ describe('the OPC UA server table', () => {
   });
 
   it('saves username credentials with the server so they survive a stack restart', async () => {
-    render(<ConnectivityView />);
+    renderView();
     await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
 
     fireEvent.click(screen.getByRole('button', { name: /add server/i }));
@@ -279,7 +332,7 @@ describe('the OPC UA server table', () => {
   });
 
   it('does not add a server when username is chosen without a password', async () => {
-    render(<ConnectivityView />);
+    renderView();
     await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
 
     fireEvent.click(screen.getByRole('button', { name: /add server/i }));
@@ -296,7 +349,7 @@ describe('the OPC UA server table', () => {
   });
 
   it('tests a connection and reports the outcome', async () => {
-    render(<ConnectivityView />);
+    renderView();
     await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
 
     fireEvent.click(screen.getByRole('button', { name: /test/i }));
@@ -304,7 +357,7 @@ describe('the OPC UA server table', () => {
   });
 
   it('deletes a server after confirming', async () => {
-    render(<ConnectivityView />);
+    renderView();
     await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
 
     fireEvent.click(screen.getByRole('button', { name: /delete/i }));
@@ -313,7 +366,7 @@ describe('the OPC UA server table', () => {
   });
 
   it('keeps later protocols on the Add dropdown, not as empty page tabs', async () => {
-    render(<ConnectivityView />);
+    renderView();
     await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
 
     expect(screen.queryByRole('button', { name: /modbus tcp/i })).toBeNull();
@@ -327,7 +380,7 @@ describe('the OPC UA server table', () => {
 });
 
 async function openDrawerAndSelectWtp() {
-  render(<ConnectivityView />);
+  renderView();
   await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
   fireEvent.click(screen.getByRole('button', { name: /browse data/i }));
   await waitFor(() => expect(browseOpcUa).toHaveBeenCalledWith('opc.tcp://desktop-h4hdql2:50000/'));
@@ -422,7 +475,7 @@ describe('the Browse data drawer', () => {
   });
 
   it('opens the signal terminal when the server name is clicked', async () => {
-    render(<ConnectivityView />);
+    renderView();
     await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
 
     fireEvent.click(screen.getByRole('button', { name: /open opcplc/i }));
@@ -446,7 +499,7 @@ describe('the Browse data drawer', () => {
         ],
       },
     ]);
-    render(<ConnectivityView />);
+    renderView();
     await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
 
     fireEvent.click(screen.getByRole('button', { name: /open opcplc/i }));
@@ -462,7 +515,7 @@ describe('the Browse data drawer', () => {
   });
 
   it('uses the same light surfaces for sidebar, title, and live badge', async () => {
-    render(<ConnectivityView />);
+    renderView();
     await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: /open opcplc/i }));
     const dialog = await screen.findByRole('dialog', { name: /browse opc ua data/i });

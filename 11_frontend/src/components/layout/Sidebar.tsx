@@ -6,7 +6,6 @@ import {
   Bell,
   Search,
   Radio,
-  Workflow,
   Activity,
   Shield,
   Network,
@@ -21,7 +20,6 @@ import { useUNS } from '../../context/UNSContext';
 import { useAuth } from '../../context/AuthContext';
 import { useAlarms } from '../../context/AlarmContext';
 import { FeatureKey } from '../../types/rbac';
-import { UserSessionMenu } from '../common/UserSessionMenu';
 
 interface SidebarProps {
   isCollapsed: boolean;
@@ -45,7 +43,6 @@ const MAIN_MENU: NavItem[] = [
   { to: '/alerts', tabId: 'alarms', label: 'Alarms', icon: Bell, featureKey: 'alarms' },
   { to: '/historian', tabId: 'explore', label: 'Historian', icon: Search, featureKey: 'historian' },
   { to: '/sparkplug', tabId: 'sparkplug', label: 'Sparkplug B', icon: Radio, featureKey: 'sparkplug' },
-  { to: '/streams', tabId: 'streams', label: 'Streams', icon: Workflow, featureKey: 'streams' },
 ];
 
 const PLATFORM_MENU: NavItem[] = [
@@ -272,11 +269,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {isCollapsed ? <ChevronRight className="size-4" /> : <ChevronLeft className="size-4" />}
           {!isCollapsed && <span>Collapse</span>}
         </button>
-      </div>
-
-      {/* User profile */}
-      <div className={`shrink-0 border-t border-border p-3 ${isCollapsed ? 'flex justify-center' : ''}`}>
-        <UserSessionMenu variant={isCollapsed ? 'compact' : 'sidebar'} />
       </div>
     </aside>
   );

@@ -40,9 +40,6 @@ function getPageHeading(
   if (path.startsWith('/sparkplug')) {
     return { title: 'Sparkplug B', subtitle: 'Decode Sparkplug B edge node payloads.' };
   }
-  if (path.startsWith('/streams')) {
-    return { title: 'Kafka Streams', subtitle: 'Watch live Kafka event streams.' };
-  }
   if (path.startsWith('/system')) {
     return { title: 'System Health' };
   }

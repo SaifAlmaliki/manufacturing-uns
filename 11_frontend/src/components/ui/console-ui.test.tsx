@@ -17,4 +17,10 @@ describe('consoleTokens', () => {
     expect(consoleTokens.btnPrimary).toContain('text-[#140800]');
     expect(consoleTokens.tabActive).toContain('bg-[#FF7A00]');
   });
+
+  it('keeps table selects compact so the selected value is not clipped', () => {
+    expect(consoleTokens.select).toContain('h-7');
+    expect(consoleTokens.select).toContain('text-foreground');
+    expect(consoleTokens.select).not.toContain('py-2.5');
+  });
 });

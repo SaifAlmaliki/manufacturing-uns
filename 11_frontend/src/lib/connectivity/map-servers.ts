@@ -18,6 +18,26 @@ export type ConnectivityTabId =
   | 'mqtt'
   | 'sql'
 
+export type ConnectivityPageTab = 'servers' | 'signals'
+
+export const CONNECTIVITY_PATH = '/connectivity'
+export const CONNECTIVITY_SERVERS_PATH = '/connectivity/servers'
+export const CONNECTIVITY_SIGNALS_PATH = '/connectivity/signals'
+
+/** Servers vs Signals from the hash path (`#/connectivity/signals`). */
+export function connectivityTabFromPath(pathname: string): ConnectivityPageTab {
+  const path = pathname.replace(/\/+$/, '') || '/'
+  if (path === CONNECTIVITY_SIGNALS_PATH || path.endsWith('/signals')) return 'signals'
+  return 'servers'
+}
+
+/** One OPC UA reading for the Signals strip — dash when the node has not spoken. */
+export function formatOpcUaValue(value: unknown): string {
+  if (value === null || value === undefined) return '—'
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
+}
+
 export const PROTOCOL_TABS: { id: ConnectivityTabId; label: string }[] = [
   { id: 'opc_ua', label: 'OPC UA' },
   { id: 'modbus_tcp', label: 'Modbus TCP' },

@@ -39,7 +39,6 @@ const TAB_FEATURES: Record<string, { feature: FeatureKey; name: string }> = {
   home: { feature: 'uns_tree', name: 'Plant' },
   explore: { feature: 'historian', name: 'Historian' },
   sparkplug: { feature: 'sparkplug', name: 'Sparkplug' },
-  streams: { feature: 'streams', name: 'Streams' },
   alarms: { feature: 'alarms', name: 'Alarms' },
   system: { feature: 'system_ops', name: 'Health' },
   users: { feature: 'user_management', name: 'Users' },

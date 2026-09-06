@@ -1,22 +1,29 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Pencil } from 'lucide-react';
 import { unsGraphQLClient } from '../../services/graphql/client';
 import type {
   AccessAssetDto,
+  GraphqlConnectivityServer,
   GraphqlConnectivityTagPatch,
+  GraphqlOpcUaDataValue,
   GraphqlSignalDataType,
   GraphqlSignalSemanticClass,
   GraphqlSubscribedSignal,
   GraphqlUnitOfMeasure,
 } from '../../services/graphql/types';
 import { filterSubscribedSignals } from '../../lib/connectivity/signal-filters';
+import { formatOpcUaValue } from '../../lib/connectivity/map-servers';
 import {
   BtnGhost,
   ConsoleCard,
   ConsoleSelect,
   FilterToolbar,
+  QualityLamp,
   type FilterToolbarSelect,
 } from '../ui/console-ui';
 import { SignalContextPanel } from './SignalContextPanel';
+
+type LiveReading = { value: unknown; status: string };
 
 const OTHER = '__other__';
 
@@ -52,6 +59,28 @@ function mergeLabel(catalog: string[], saved: string): string[] {
   return [...catalog, saved];
 }
 
+function unitsWithSelected(
+  units: GraphqlUnitOfMeasure[],
+  selected: string,
+): GraphqlUnitOfMeasure[] {
+  if (!selected || units.some((unit) => unit.symbol === selected)) return units;
+  return [...units, { symbol: selected, name: selected }];
+}
+
+function assetsWithSelected(assets: AccessAssetDto[], selectedId: string): AccessAssetDto[] {
+  if (!selectedId || assets.some((asset) => String(asset.id) === selectedId)) return assets;
+  const id = Number(selectedId);
+  return [
+    ...assets,
+    { id: Number.isFinite(id) ? id : 0, path: selectedId, segment: selectedId, level: 'AREA' },
+  ];
+}
+
+function withSelectedLiteral(catalog: string[], selected: string): string[] {
+  if (!selected || catalog.includes(selected)) return catalog;
+  return [...catalog, selected];
+}
+
 const EMPTY_COPY = 'Subscribe variables from Browse data on a server — then attach units here.';
 
 export type SignalsToolbar = {
@@ -83,6 +112,7 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
   const [otherKind, setOtherKind] = useState<'unit' | 'label'>('unit');
   const [otherSymbol, setOtherSymbol] = useState('');
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [liveByKey, setLiveByKey] = useState<Record<string, LiveReading>>({});
 
   const load = useCallback(async () => {
     setLoading(true);

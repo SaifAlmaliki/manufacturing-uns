@@ -8,7 +8,6 @@ export type FeatureKey =
   | 'uns_tree'
   | 'historian'
   | 'sparkplug'
-  | 'streams'
   | 'alarms'
   | 'system_ops'
   | 'user_management'
@@ -49,12 +48,6 @@ export const SYSTEM_FEATURES: FeatureDefinition[] = [
     key: 'sparkplug',
     label: 'Sparkplug B Decoder',
     description: 'View Edge Node health, birth/death certificates, and decoded metric metrics',
-    category: 'Core Navigation',
-  },
-  {
-    key: 'streams',
-    label: 'Kafka Streams Monitor',
-    description: 'Live real-time stream subscription to Kafka topics with ring-buffer inspector',
     category: 'Core Navigation',
   },
   {
@@ -125,7 +118,6 @@ export const ROLE_CONFIGS: Record<UserRole, RoleConfig> = {
       alarms: true,
       historian: true,
       sparkplug: true,
-      streams: true,
       system_ops: true,
       user_management: true,
       export_csv: true,
@@ -141,13 +133,12 @@ export const ROLE_CONFIGS: Record<UserRole, RoleConfig> = {
     badgeBg: 'bg-amber-50 dark:bg-[#FFC107]/10',
     badgeText: 'text-amber-700 dark:text-[#FFC107]',
     badgeBorder: 'border-amber-200 dark:border-[#FFC107]/30',
-    description: 'Full engineering access to telemetry, historian, Sparkplug B, Kafka streams, alarms, and CSV export.',
+    description: 'Full engineering access to telemetry, historian, Sparkplug B, alarms, and CSV export.',
     defaultPermissions: {
       uns_tree: true,
       alarms: true,
       historian: true,
       sparkplug: true,
-      streams: true,
       system_ops: true,
       user_management: false,
       export_csv: true,
@@ -169,7 +160,6 @@ export const ROLE_CONFIGS: Record<UserRole, RoleConfig> = {
       alarms: true,
       historian: false,
       sparkplug: true,
-      streams: false,
       system_ops: false,
       user_management: false,
       export_csv: false,
@@ -185,13 +175,12 @@ export const ROLE_CONFIGS: Record<UserRole, RoleConfig> = {
     badgeBg: 'bg-purple-50 dark:bg-purple-500/10',
     badgeText: 'text-purple-700 dark:text-purple-400',
     badgeBorder: 'border-purple-200 dark:border-purple-500/30',
-    description: 'Read-only access to historical event queries, alarm audit logs, Kafka event logs, and CSV exports.',
+    description: 'Read-only access to historical event queries, alarm audit logs, and CSV exports.',
     defaultPermissions: {
       uns_tree: true,
       alarms: true,
       historian: true,
       sparkplug: false,
-      streams: true,
       system_ops: false,
       user_management: false,
       export_csv: true,
@@ -213,7 +202,6 @@ export const ROLE_CONFIGS: Record<UserRole, RoleConfig> = {
       alarms: false,
       historian: false,
       sparkplug: false,
-      streams: false,
       system_ops: false,
       user_management: false,
       export_csv: false,
