@@ -1,6 +1,12 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { SignalCard } from './SignalCard';
+
+vi.mock('./SignalChart', () => ({
+  SignalChart: ({ mode }: { mode: string }) => (
+    <div data-testid="signal-chart" data-mode={mode} role="img" aria-label="Signal trend" />
+  ),
+}));
 import type { GraphqlConnectivityTag } from '../../services/graphql/types';
 import type { Sample } from '../../lib/condition-monitoring/series';
 
@@ -85,5 +91,34 @@ describe('SignalCard', () => {
     expect(screen.getAllByText(/1234/).length).toBeGreaterThan(0);
     expect(screen.getByText('°C')).toBeTruthy();
     expect(screen.getByText('Furnace')).toBeTruthy();
+    expect(screen.queryByText('DOUBLE')).toBeNull();
+  });
+
+  it('passes step chart mode when dataType is Boolean', () => {
+    render(
+      <SignalCard
+        tag={{ ...TAG, dataType: 'Boolean' }}
+        samples={samples}
+        latest={samples[1]}
+      />,
+    );
+    expect(screen.getByTestId('signal-chart').getAttribute('data-mode')).toBe('step');
+    expect(screen.queryByText('BOOLEAN')).toBeNull();
+  });
+
+  it('passes line chart mode when dataType is Double or Integer', () => {
+    const doubleSample: Sample[] = [{ t: 1, v: 1.35, quality: 'GOOD', boolean: false }];
+    const { rerender } = render(
+      <SignalCard tag={{ ...TAG, dataType: 'Double' }} samples={doubleSample} latest={doubleSample[0]} />,
+    );
+    expect(screen.getByTestId('signal-chart').getAttribute('data-mode')).toBe('line');
+    expect(screen.queryByText('DOUBLE')).toBeNull();
+
+    const intSample: Sample[] = [{ t: 1, v: 42, quality: 'GOOD', boolean: false }];
+    rerender(
+      <SignalCard tag={{ ...TAG, dataType: 'Integer' }} samples={intSample} latest={intSample[0]} />,
+    );
+    expect(screen.getByTestId('signal-chart').getAttribute('data-mode')).toBe('line');
+    expect(screen.queryByText('DOUBLE')).toBeNull();
   });
 });

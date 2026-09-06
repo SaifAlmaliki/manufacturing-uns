@@ -63,6 +63,8 @@ describe('tagMatchesNode', () => {
     });
     expect(tagMatchesNode(assigned, node('AcmeWater/Site1/Furnace'))).toBe(true);
     expect(tagMatchesNode(assigned, node('AcmeWater/Site1'))).toBe(true);
+    expect(tagMatchesNode(assigned, node('AcmeWater/Site1/Furnace/Heater'))).toBe(true);
+    expect(tagMatchesNode(assigned, node('OtherPlant/Furnace'))).toBe(true);
   });
 });
 
