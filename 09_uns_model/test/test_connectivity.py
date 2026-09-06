@@ -25,7 +25,21 @@ which need a migrated Postgres database.
 
 from __future__ import annotations
 
-from uns_model.connectivity import ConnectivityTagSpec, merge_discovered
+import inspect
+from contextlib import asynccontextmanager
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import pytest
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.sql.dml import Insert, Update
+
+from uns_model.connectivity import (
+    ConnectivityRepository,
+    ConnectivityTagSpec,
+    merge_discovered,
+    metric_key_for_tag,
+)
 from uns_model.tables import (
     SEEDED_UNITS_OF_MEASURE,
     SIGNAL_DATA_TYPES,
@@ -87,3 +101,261 @@ def test_merge_updates_display_and_browse_path_for_existing_nodes():
     assert merged[0].browse_path == "Path/A/Renamed"
     assert merged[0].display_name == "Tank Level"
     assert merged[0].mqtt_topic == "Plant/A"
+
+
+def test_metric_key_uses_topic_suffix_under_asset_path():
+    assert (
+        metric_key_for_tag(
+            asset_path="AcmeWater/Site1/Furnace",
+            mqtt_topic="AcmeWater/Site1/Furnace/Heater/Temp",
+            browse_path="Heater/Temp",
+            display_name="Temp",
+        )
+        == "Heater/Temp"
+    )
+
+
+def test_metric_key_falls_back_to_browse_path_when_topic_is_not_under_asset():
+    assert (
+        metric_key_for_tag(
+            asset_path="AcmeWater/Site1/Furnace",
+            mqtt_topic="Server/OpcPlc/Temperature",
+            browse_path="Objects/Temperature",
+            display_name="Temperature",
+        )
+        == "Objects/Temperature"
+    )
+
+
+def test_merge_does_not_need_context_fields_to_keep_identity():
+    existing = [ConnectivityTagSpec("ns=3;s=A", "Path/A", "A", "Plant/A", True)]
+    discovered = [ConnectivityTagSpec("ns=3;s=A", "Path/A/Renamed", "Tank", "Raw/A", True)]
+    merged = merge_discovered(existing, discovered)
+    assert merged[0].mqtt_topic == "Plant/A"
+
+
+def test_metric_key_uses_display_name_when_topic_equals_asset_path():
+    assert (
+        metric_key_for_tag(
+            asset_path="AcmeWater/Site1/Furnace",
+            mqtt_topic="AcmeWater/Site1/Furnace",
+            browse_path="Heater/Temp",
+            display_name="Temp",
+        )
+        == "Temp"
+    )
+
+
+def test_replace_subscribed_tags_on_conflict_omits_display_name_and_context():
+    source = inspect.getsource(ConnectivityRepository.replace_subscribed_tags)
+    conflict_block = source.split("on_conflict_set = {", 1)[1].split("}", 1)[0]
+    assert "browse_path" in conflict_block
+    assert "subscribed" in conflict_block
+    assert "updated_at" in conflict_block
+    for column in (
+        "display_name",
+        "mqtt_topic",
+        "asset_id",
+        "unit_of_measure",
+        "semantic_class",
+        "data_type",
+        "labels",
+    ):
+        assert column not in conflict_block, f"{column} must not be updated on rediscovery"
+
+
+class _ScalarResult:
+    def __init__(self, value: object) -> None:
+        self._value = value
+
+    def scalar_one_or_none(self) -> object:
+        return self._value
+
+    def scalar_one(self) -> object:
+        return self._value
+
+    def scalars(self) -> list[object]:
+        if self._value is None:
+            return []
+        if isinstance(self._value, list):
+            return self._value
+        return [self._value]
+
+
+class _FakeSession:
+    def __init__(self, *, tag: object | None = None, asset_path: str | None = None) -> None:
+        self.tag = tag
+        self.asset_path = asset_path
+        self.statements: list[object] = []
+        self.update_values: dict[str, object] | None = None
+
+    async def execute(self, stmt: object) -> _ScalarResult:
+        self.statements.append(stmt)
+        if isinstance(stmt, Update):
+            self.update_values = {
+                column.key: getattr(value, "value", value) for column, value in stmt._values.items()
+            }
+            return _ScalarResult(None)
+        if isinstance(stmt, Insert):
+            return _ScalarResult(None)
+        selected = [column.key for column in stmt.selected_columns]
+        if selected == ["path"] or (len(selected) == 1 and selected[0] == "path"):
+            return _ScalarResult(self.asset_path)
+        return _ScalarResult(self.tag)
+
+
+class _FakeDatabase:
+    def __init__(self, session: _FakeSession) -> None:
+        self._session = session
+
+    @asynccontextmanager
+    async def session(self):
+        yield self._session
+
+
+@pytest.mark.asyncio
+async def test_save_unit_of_measure_rejects_blank_symbol():
+    repo = ConnectivityRepository(database=None)  # type: ignore[arg-type]
+    with pytest.raises(ValueError):
+        await repo.save_unit_of_measure("")
+    with pytest.raises(ValueError):
+        await repo.save_unit_of_measure("   ")
+
+
+@pytest.mark.asyncio
+async def test_save_signal_label_rejects_blank_name():
+    repo = ConnectivityRepository(database=None)  # type: ignore[arg-type]
+    with pytest.raises(ValueError):
+        await repo.save_signal_label("")
+    with pytest.raises(ValueError):
+        await repo.save_signal_label("   ")
+
+
+@pytest.mark.asyncio
+async def test_save_unit_of_measure_trims_and_does_not_update_on_conflict():
+    stored = SimpleNamespace(symbol="NTU", name="turbidity")
+    session = _FakeSession(tag=stored)
+    repo = ConnectivityRepository(_FakeDatabase(session))
+    result = await repo.save_unit_of_measure("  NTU  ", "turbidity")
+    compiled = session.statements[0].compile(dialect=postgresql.dialect())
+    sql = str(compiled).upper()
+    assert "ON CONFLICT" in sql and "DO NOTHING" in sql
+    assert compiled.params["symbol"] == "NTU"
+    assert result is stored
+
+
+@pytest.mark.asyncio
+async def test_save_signal_label_trims_and_does_not_update_on_conflict():
+    stored = SimpleNamespace(name="Cycle")
+    session = _FakeSession(tag=stored)
+    repo = ConnectivityRepository(_FakeDatabase(session))
+    result = await repo.save_signal_label("  Cycle  ")
+    compiled = session.statements[0].compile(dialect=postgresql.dialect())
+    sql = str(compiled).upper()
+    assert "ON CONFLICT" in sql and "DO NOTHING" in sql
+    assert compiled.params["name"] == "Cycle"
+    assert result is stored
+
+
+@pytest.mark.asyncio
+async def test_list_units_of_measure_orders_by_symbol():
+    session = _FakeSession(tag=[])
+    repo = ConnectivityRepository(_FakeDatabase(session))
+    await repo.list_units_of_measure()
+    compiled = str(session.statements[0].compile(dialect=postgresql.dialect()))
+    assert "ORDER BY" in compiled.upper()
+    assert "symbol" in compiled
+
+
+@pytest.mark.asyncio
+async def test_list_signal_labels_orders_by_name():
+    session = _FakeSession(tag=[])
+    repo = ConnectivityRepository(_FakeDatabase(session))
+    await repo.list_signal_labels()
+    compiled = str(session.statements[0].compile(dialect=postgresql.dialect()))
+    assert "ORDER BY" in compiled.upper()
+    assert "name" in compiled
+
+
+@pytest.mark.asyncio
+async def test_update_tag_rejects_unknown_fields():
+    repo = ConnectivityRepository(database=None)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="subscribed"):
+        await repo.update_tag("s1", "ns=3;s=A", subscribed=False)
+
+
+@pytest.mark.asyncio
+async def test_update_tag_writes_only_fields_that_were_passed():
+    tag = SimpleNamespace(
+        server_id="s1",
+        node_id="ns=3;s=A",
+        browse_path="Heater/Temp",
+        display_name="Temp",
+        mqtt_topic="Plant/A",
+        asset_id=None,
+        unit_of_measure=None,
+    )
+    session = _FakeSession(tag=tag)
+    repo = ConnectivityRepository(_FakeDatabase(session))
+    await repo.update_tag("s1", "ns=3;s=A", mqtt_topic="Plant/T101/Level")
+    assert session.update_values is not None
+    assert set(session.update_values) == {"mqtt_topic", "updated_at"}
+    assert session.update_values["mqtt_topic"] == "Plant/T101/Level"
+
+
+@pytest.mark.asyncio
+async def test_update_tag_none_clears_unit_asset_class_and_type():
+    tag = SimpleNamespace(
+        server_id="s1",
+        node_id="ns=3;s=A",
+        browse_path="Heater/Temp",
+        display_name="Temp",
+        mqtt_topic="Plant/A",
+        asset_id=None,
+        unit_of_measure=None,
+    )
+    session = _FakeSession(tag=tag)
+    repo = ConnectivityRepository(_FakeDatabase(session))
+    await repo.update_tag(
+        "s1",
+        "ns=3;s=A",
+        asset_id=None,
+        unit_of_measure=None,
+        semantic_class=None,
+        data_type=None,
+    )
+    assert session.update_values is not None
+    assert session.update_values["asset_id"] is None
+    assert session.update_values["unit_of_measure"] is None
+    assert session.update_values["semantic_class"] is None
+    assert session.update_values["data_type"] is None
+
+
+@pytest.mark.asyncio
+async def test_update_tag_upserts_metric_when_asset_and_unit_are_set():
+    tag = SimpleNamespace(
+        server_id="s1",
+        node_id="ns=3;s=A",
+        browse_path="Heater/Temp",
+        display_name="Temp",
+        mqtt_topic="AcmeWater/Site1/Furnace/Heater/Temp",
+        asset_id=42,
+        unit_of_measure="°C",
+    )
+    session = _FakeSession(tag=tag, asset_path="AcmeWater/Site1/Furnace")
+    repo = ConnectivityRepository(_FakeDatabase(session))
+    captured: dict[str, object] = {}
+
+    async def fake_define_metric(self, metric_key, **kwargs):  # noqa: ARG001
+        captured["metric_key"] = metric_key
+        captured.update(kwargs)
+        return SimpleNamespace()
+
+    with patch("uns_model.connectivity.AssetModelRepository.define_metric", fake_define_metric):
+        result = await repo.update_tag("s1", "ns=3;s=A", display_name="Temp")
+
+    assert result is tag
+    assert captured["metric_key"] == "Heater/Temp"
+    assert captured["asset_path"] == "AcmeWater/Site1/Furnace"
+    assert captured["unit_of_measure"] == "°C"
+    assert captured["display_name"] == "Temp"

@@ -40,13 +40,17 @@ from sqlalchemy.dialects.postgresql import insert
 from uns_model.engine import Database
 import re
 
+from uns_model.repositories import AssetModelRepository
 from uns_model.tables import (
     CONNECTIVITY_AUTH_MODES,
     CONNECTIVITY_PROTOCOLS,
     CONNECTIVITY_SECURITY_MODES,
     CONNECTIVITY_SECURITY_POLICIES,
+    Asset,
     ConnectivityServer,
     ConnectivityTag,
+    SignalLabel,
+    UnitOfMeasure,
 )
 
 _ENDPOINT = re.compile(r"^opc\.tcp://[^\s/:]+:\d{1,5}(/.*)?$")
@@ -129,6 +133,17 @@ class ConnectivityTagSpec:
     def validate(self) -> None:
         if not self.node_id:
             raise ValueError("A Connectivity tag needs a node_id")
+
+
+def metric_key_for_tag(
+    *, asset_path: str, mqtt_topic: str, browse_path: str, display_name: str
+) -> str:
+    prefix = asset_path.rstrip("/") + "/"
+    if mqtt_topic.startswith(prefix):
+        return mqtt_topic[len(prefix):]
+    if mqtt_topic == asset_path:
+        return display_name or browse_path or mqtt_topic
+    return browse_path or display_name or mqtt_topic
 
 
 def _require_one_of(what: str, value: str, allowed: tuple[str, ...]) -> None:
@@ -238,9 +253,9 @@ class ConnectivityRepository:
         """
         Fold a freshly discovered set of tags into the catalog for one server.
 
-        Existing tags keep their `mqtt_topic` and their `subscribed` flag (the
-        latter only ever goes True here; missing nodes stay subscribed until
-        `unsubscribe_tag`). New tags are inserted with `subscribed=True`.
+        Existing tags keep their `mqtt_topic`, `display_name`, and context
+        columns; UPDATE only refreshes `browse_path`, `subscribed`, and
+        `updated_at`. New tags are inserted with `subscribed=True`.
         """
         existing_specs = [
             ConnectivityTagSpec(
@@ -263,12 +278,11 @@ class ConnectivityRepository:
                     "mqtt_topic": tag.mqtt_topic,
                     "subscribed": tag.subscribed,
                 }
-                # Only set mqtt_topic on INSERT, never on UPDATE: an engineer's
-                # edit must survive a re-discovery. The CHECK-free column is the
-                # one place a discovery must not clobber.
+                # INSERT may set mqtt_topic and display_name; UPDATE must not,
+                # and must not touch context columns. Engineer edits survive
+                # a re-discovery.
                 on_conflict_set = {
                     "browse_path": tag.browse_path,
-                    "display_name": tag.display_name,
                     "subscribed": tag.subscribed,
                     "updated_at": func.now(),
                 }
@@ -284,13 +298,43 @@ class ConnectivityRepository:
 
     async def update_tag_topic(self, server_id: str, node_id: str, mqtt_topic: str) -> ConnectivityTag | None:
         """Set the MQTT topic an engineer wants this node republished under."""
+        return await self.update_tag(server_id, node_id, mqtt_topic=mqtt_topic)
+
+    _TAG_UPDATE_FIELDS = frozenset(
+        {
+            "display_name",
+            "mqtt_topic",
+            "asset_id",
+            "unit_of_measure",
+            "semantic_class",
+            "data_type",
+            "labels",
+        }
+    )
+
+    async def update_tag(self, server_id: str, node_id: str, **fields: Any) -> ConnectivityTag | None:
+        """
+        Partial-update one catalog tag. Only keys the caller passed are written.
+
+        `None` for unit_of_measure, asset_id, semantic_class, or data_type clears
+        that column. After save, a tag with both an Asset and a Unit of Measure
+        upserts a Metric Definition so Enrichment stays aligned.
+        """
+        unknown = set(fields) - self._TAG_UPDATE_FIELDS
+        if unknown:
+            raise ValueError(f"update_tag does not accept {sorted(unknown)}")
+
+        values: dict[str, Any] = dict(fields)
+        values["updated_at"] = func.now()
+
+        define: dict[str, Any] | None = None
         async with self._database.session() as session:
             await session.execute(
                 update(ConnectivityTag)
                 .where(ConnectivityTag.server_id == server_id, ConnectivityTag.node_id == node_id)
-                .values(mqtt_topic=mqtt_topic, updated_at=func.now())
+                .values(**values)
             )
-            return (
+            row = (
                 await session.execute(
                     select(ConnectivityTag).where(
                         ConnectivityTag.server_id == server_id,
@@ -298,6 +342,60 @@ class ConnectivityRepository:
                     )
                 )
             ).scalar_one_or_none()
+            if row is None:
+                return None
+            if row.asset_id is not None and row.unit_of_measure is not None:
+                asset_path = (
+                    await session.execute(select(Asset.path).where(Asset.id == row.asset_id))
+                ).scalar_one()
+                define = {
+                    "metric_key": metric_key_for_tag(
+                        asset_path=asset_path,
+                        mqtt_topic=row.mqtt_topic,
+                        browse_path=row.browse_path,
+                        display_name=row.display_name,
+                    ),
+                    "asset_path": asset_path,
+                    "unit_of_measure": row.unit_of_measure,
+                    "display_name": row.display_name,
+                }
+
+        if define is not None:
+            await AssetModelRepository(self._database).define_metric(
+                define["metric_key"],
+                asset_path=define["asset_path"],
+                unit_of_measure=define["unit_of_measure"],
+                display_name=define["display_name"],
+            )
+        return row
+
+    async def save_unit_of_measure(self, symbol: str, name: str | None = None) -> UnitOfMeasure:
+        """Insert a Unit of Measure. Duplicate symbols return the existing row."""
+        symbol = symbol.strip()
+        if not symbol:
+            raise ValueError("A Unit of Measure needs a symbol")
+        if name is not None:
+            name = name.strip() or None
+        async with self._database.session() as session:
+            await session.execute(
+                insert(UnitOfMeasure)
+                .values(symbol=symbol, name=name)
+                .on_conflict_do_nothing(index_elements=[UnitOfMeasure.symbol])
+            )
+            return (
+                await session.execute(select(UnitOfMeasure).where(UnitOfMeasure.symbol == symbol))
+            ).scalar_one()
+
+    async def save_signal_label(self, name: str) -> SignalLabel:
+        """Insert a signal label. Duplicate names return the existing row."""
+        name = name.strip()
+        if not name:
+            raise ValueError("A signal label needs a name")
+        async with self._database.session() as session:
+            await session.execute(
+                insert(SignalLabel).values(name=name).on_conflict_do_nothing(index_elements=[SignalLabel.name])
+            )
+            return (await session.execute(select(SignalLabel).where(SignalLabel.name == name))).scalar_one()
 
     async def unsubscribe_tag(self, server_id: str, node_id: str) -> ConnectivityTag | None:
         """Stop subscribing to a node. A deliberate act, never done by omission."""
@@ -355,6 +453,16 @@ class ConnectivityRepository:
         async with self._database.session() as session:
             return list((await session.execute(statement)).scalars())
 
+    async def list_units_of_measure(self) -> list[UnitOfMeasure]:
+        """Unit of Measure catalog, ordered by symbol."""
+        async with self._database.session() as session:
+            return list((await session.execute(select(UnitOfMeasure).order_by(UnitOfMeasure.symbol))).scalars())
+
+    async def list_signal_labels(self) -> list[SignalLabel]:
+        """Signal label catalog, ordered by name."""
+        async with self._database.session() as session:
+            return list((await session.execute(select(SignalLabel).order_by(SignalLabel.name))).scalars())
+
     async def list_subscribed_tags(self, server_id: str) -> list[ConnectivityTag]:
         """Every tag for one server, in node_id order. Used by the bridge and by discovery."""
         statement = (
@@ -383,4 +491,5 @@ __all__ = [
     "ConnectivityServerSpec",
     "ConnectivityTagSpec",
     "merge_discovered",
+    "metric_key_for_tag",
 ]
