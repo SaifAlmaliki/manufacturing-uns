@@ -42,7 +42,11 @@ def _as_int(value: int | str | None) -> int | None:
 
 
 def _tag_update_fields(patch: ConnectivityTagUpdateInput) -> dict[str, Any]:
-    """Only keys the caller set, so omitted patch fields are not written as null."""
+    """Only keys the caller set, so omitted patch fields are not written as null.
+
+    `labels: null` becomes `[]` (column is NOT NULL). Null `display_name` /
+    `mqtt_topic` are ignored rather than written into NOT NULL columns.
+    """
     fields: dict[str, Any] = {}
     for name in (
         "display_name",
@@ -60,6 +64,10 @@ def _tag_update_fields(patch: ConnectivityTagUpdateInput) -> dict[str, Any]:
             fields[name] = _as_int(value)
         elif name in {"semantic_class", "data_type"}:
             fields[name] = value.value if value is not None else None
+        elif name == "labels":
+            fields[name] = [] if value is None else value
+        elif name in {"display_name", "mqtt_topic"} and value is None:
+            continue
         else:
             fields[name] = value
     return fields

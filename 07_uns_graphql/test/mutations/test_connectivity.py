@@ -451,6 +451,34 @@ async def test_get_subscribed_signals_returns_asset_path_and_display_name():
 
 
 @pytest.mark.asyncio(loop_scope="function")
+async def test_update_connectivity_tag_coerces_null_labels_and_drops_null_not_null_fields():
+    """labels is NOT NULL; display_name / mqtt_topic are NOT NULL. Null must not land in SQL."""
+    repository = AsyncMock()
+    stored = _tag()
+    stored.labels = []
+    repository.update_tag.return_value = stored
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            """
+            mutation ($patch: ConnectivityTagUpdateInput!) {
+              updateConnectivityTag(serverId: "s1", nodeId: "ns=2;s=Temperature", patch: $patch) {
+                nodeId labels
+              }
+            }
+            """,
+            variable_values={
+                "patch": {"labels": None, "displayName": None, "mqttTopic": None}
+            },
+            context_value=ADMIN,
+        )
+    assert result.errors is None
+    kwargs = repository.update_tag.await_args.kwargs
+    assert kwargs["labels"] == []
+    assert "display_name" not in kwargs
+    assert "mqtt_topic" not in kwargs
+
+
+@pytest.mark.asyncio(loop_scope="function")
 async def test_update_connectivity_tag_returns_asset_path_and_display_name():
     repository = AsyncMock()
     repository.update_tag.return_value = _tag_with_asset()
