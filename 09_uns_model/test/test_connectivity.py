@@ -25,8 +25,10 @@ which need a migrated Postgres database.
 
 from __future__ import annotations
 
+import importlib.util
 import inspect
 from contextlib import asynccontextmanager
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -52,6 +54,40 @@ def test_seeded_units_include_celsius_and_kwh():
     assert "°C" in SEEDED_UNITS_OF_MEASURE
     assert "kWh" in SEEDED_UNITS_OF_MEASURE
     assert len(SEEDED_UNITS_OF_MEASURE) == len(set(SEEDED_UNITS_OF_MEASURE))
+
+
+def test_0007_unit_seed_inserts_bind_params_through_the_engine():
+    """Alembic 1.19 `Operations.execute` is `(sqltext, *, execution_options=None)`.
+
+    Passing `{"s": symbol}` as a second positional argument raises
+    `TypeError: execute() takes 2 positional arguments but 3 were given`.
+    Seed inserts must go through `op.get_bind().execute(text(...), params)`.
+    """
+    path = Path(__file__).resolve().parents[1] / "migrations" / "versions" / "0007_signal_context.py"
+    spec = importlib.util.spec_from_file_location("rev_0007_signal_context", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    bind_params: list[object] = []
+
+    class _Bind:
+        def execute(self, statement, parameters=None, execution_options=None):  # noqa: ARG002
+            bind_params.append(parameters)
+            return None
+
+    class _AlembicOp:
+        def execute(self, sqltext, *, execution_options=None):  # noqa: ARG002
+            return None
+
+        def get_bind(self) -> _Bind:
+            return _Bind()
+
+    module.op = _AlembicOp()
+    module.upgrade()
+
+    seeded = [params["s"] for params in bind_params if isinstance(params, dict) and "s" in params]
+    assert seeded == list(module.SEEDED_UNITS)
 
 
 def test_semantic_classes_and_data_types_are_the_spec_vocabularies():

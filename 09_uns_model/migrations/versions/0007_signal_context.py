@@ -56,8 +56,10 @@ def upgrade() -> None:
         )
         """
     )
+    bind = op.get_bind()
     for symbol in SEEDED_UNITS:
-        op.execute(
+        # Alembic 1.19 Operations.execute does not take bind params; the engine does.
+        bind.execute(
             text(
                 "INSERT INTO console.units_of_measure (symbol) VALUES (:s) ON CONFLICT DO NOTHING"
             ),
