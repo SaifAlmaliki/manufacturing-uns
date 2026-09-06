@@ -509,6 +509,13 @@ const CONNECTIVITY_TAG_FIELDS = `
   subscribed
   createdAt
   updatedAt
+  assetId
+  assetPath
+  assetDisplayName
+  unitOfMeasure
+  semanticClass
+  dataType
+  labels
 `
 
 export const GET_CONNECTIVITY_SERVERS_QUERY = `
@@ -617,6 +624,57 @@ export const SUBSCRIBE_OPCUA_DATA_CHANGES = `
       sourceTimestamp
       serverTimestamp
       status
+    }
+  }
+`
+
+/**
+ * Signal context catalogs and subscribed tags (Task 3 schema). Field set matches
+ * `07_uns_graphql/test/mutations/test_connectivity.py`.
+ */
+export const UNITS_OF_MEASURE_QUERY = `
+  query UnitsOfMeasure {
+    unitsOfMeasure {
+      symbol
+      name
+    }
+  }
+`
+
+export const SAVE_UNIT_OF_MEASURE_MUTATION = `
+  mutation SaveUnitOfMeasure($symbol: String!, $name: String) {
+    saveUnitOfMeasure(symbol: $symbol, name: $name) {
+      symbol
+      name
+    }
+  }
+`
+
+export const SIGNAL_LABELS_QUERY = `
+  query SignalLabels {
+    signalLabels
+  }
+`
+
+export const SAVE_SIGNAL_LABEL_MUTATION = `
+  mutation SaveSignalLabel($name: String!) {
+    saveSignalLabel(name: $name)
+  }
+`
+
+export const GET_SUBSCRIBED_SIGNALS_QUERY = `
+  query GetSubscribedSignals {
+    getSubscribedSignals {
+      ${CONNECTIVITY_TAG_FIELDS}
+      serverName
+    }
+  }
+`
+
+export const UPDATE_CONNECTIVITY_TAG_MUTATION = `
+  mutation UpdateConnectivityTag($serverId: String!, $nodeId: String!, $patch: ConnectivityTagUpdateInput!) {
+    updateConnectivityTag(serverId: $serverId, nodeId: $nodeId, patch: $patch) {
+      ${CONNECTIVITY_TAG_FIELDS}
     }
   }
 `

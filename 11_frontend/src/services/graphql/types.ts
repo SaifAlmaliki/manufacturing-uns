@@ -236,6 +236,23 @@ export type GraphqlConnectivitySecurityPolicy =
   | 'AES256_SHA256_RSA_PSS'
 export type GraphqlConnectivitySecurityMode = 'NONE' | 'SIGN' | 'SIGN_AND_ENCRYPT'
 
+/** `SignalSemanticClass` enum on the server. */
+export type GraphqlSignalSemanticClass =
+  | 'MeasuredValue'
+  | 'EnergyConsumption'
+  | 'CounterOK'
+  | 'CounterNOK'
+  | 'State'
+
+/** `SignalDataType` enum on the server. */
+export type GraphqlSignalDataType = 'Double' | 'Boolean' | 'Integer' | 'String'
+
+/** `UnitOfMeasureType`: one row in the Unit of Measure catalog. */
+export type GraphqlUnitOfMeasure = {
+  symbol: string
+  name?: string | null
+}
+
 /** `ConnectivityServerType`: an OPC UA server the console dials, with its subscribed tags. */
 export type GraphqlConnectivityTag = {
   serverId: string
@@ -246,6 +263,29 @@ export type GraphqlConnectivityTag = {
   subscribed: boolean
   createdAt?: string | null
   updatedAt?: string | null
+  assetId?: number | null
+  assetPath?: string | null
+  assetDisplayName?: string | null
+  unitOfMeasure?: string | null
+  semanticClass?: GraphqlSignalSemanticClass | null
+  dataType?: GraphqlSignalDataType | null
+  labels?: string[]
+}
+
+/** `SubscribedSignalType`: a subscribed catalog tag, named by the server it belongs to. */
+export type GraphqlSubscribedSignal = GraphqlConnectivityTag & {
+  serverName: string
+}
+
+/** `ConnectivityTagUpdateInput`: partial update for engineer-authored signal context. */
+export type GraphqlConnectivityTagPatch = {
+  displayName?: string
+  mqttTopic?: string
+  assetId?: number | null
+  unitOfMeasure?: string | null
+  semanticClass?: GraphqlSignalSemanticClass | null
+  dataType?: GraphqlSignalDataType | null
+  labels?: string[]
 }
 
 export type GraphqlConnectivityServer = {

@@ -65,6 +65,12 @@ import {
   TEST_OPCUA_CONNECTION_QUERY,
   UNSUBSCRIBE_CONNECTIVITY_TAG_MUTATION,
   UPDATE_CONNECTIVITY_TAG_TOPIC_MUTATION,
+  GET_SUBSCRIBED_SIGNALS_QUERY,
+  SAVE_UNIT_OF_MEASURE_MUTATION,
+  SAVE_SIGNAL_LABEL_MUTATION,
+  SIGNAL_LABELS_QUERY,
+  UNITS_OF_MEASURE_QUERY,
+  UPDATE_CONNECTIVITY_TAG_MUTATION,
 } from './queries'
 import {
   alertRuleToGraphqlInput,
@@ -78,6 +84,8 @@ import type {
   GraphqlAssetNode,
   GraphqlConnectivityServer,
   GraphqlConnectivityServerInput,
+  GraphqlConnectivityTag,
+  GraphqlConnectivityTagPatch,
   GraphqlConnectivityTestResult,
   GraphqlHistoricalEvent,
   GraphqlHierarchyMigrateJob,
@@ -90,7 +98,9 @@ import type {
   GraphqlOpcUaDataValue,
   GraphqlPrefixRenameInput,
   GraphqlSpbNode,
+  GraphqlSubscribedSignal,
   GraphqlTopicContext,
+  GraphqlUnitOfMeasure,
   GraphqlUnsNode,
 } from './types'
 import { authClient } from '../../lib/auth/oidc'
@@ -127,6 +137,21 @@ function mapAccessGroup(group: AccessGroupDto): AccessGroupDto {
       segment: root.segment,
       level: root.level,
     })),
+  }
+}
+
+function mapConnectivityTag(tag: GraphqlConnectivityTag): GraphqlConnectivityTag {
+  return {
+    ...tag,
+    assetId: tag.assetId != null ? asInt(tag.assetId) : null,
+    labels: tag.labels ?? [],
+  }
+}
+
+function mapSubscribedSignal(signal: GraphqlSubscribedSignal): GraphqlSubscribedSignal {
+  return {
+    ...mapConnectivityTag(signal),
+    serverName: signal.serverName,
   }
 }
 
@@ -826,6 +851,84 @@ export class UnsGraphQLClient {
       throw new Error(res.error)
     }
     return res.data?.unsubscribeConnectivityTag === true
+  }
+
+  /** The Unit of Measure catalog, including engineer-added Other… symbols. */
+  public async unitsOfMeasure(): Promise<GraphqlUnitOfMeasure[]> {
+    const res = await this.executeQuery<{ unitsOfMeasure: GraphqlUnitOfMeasure[] }>(
+      UNITS_OF_MEASURE_QUERY,
+    )
+    if (res.error) {
+      throw new Error(res.error)
+    }
+    return res.data?.unitsOfMeasure ?? []
+  }
+
+  /** Insert a Unit of Measure. Duplicate symbols return the existing row. */
+  public async saveUnitOfMeasure(
+    symbol: string,
+    name?: string | null,
+  ): Promise<GraphqlUnitOfMeasure> {
+    const res = await this.executeQuery<{ saveUnitOfMeasure: GraphqlUnitOfMeasure }>(
+      SAVE_UNIT_OF_MEASURE_MUTATION,
+      { symbol, name: name ?? null },
+    )
+    if (res.error || !res.data?.saveUnitOfMeasure) {
+      throw new Error(res.error || 'Unit of Measure was not saved')
+    }
+    return res.data.saveUnitOfMeasure
+  }
+
+  /** The signal label catalog, ordered by name. */
+  public async signalLabels(): Promise<string[]> {
+    const res = await this.executeQuery<{ signalLabels: string[] }>(SIGNAL_LABELS_QUERY)
+    if (res.error) {
+      throw new Error(res.error)
+    }
+    return res.data?.signalLabels ?? []
+  }
+
+  /** Insert a signal label. Duplicate names return the existing row. */
+  public async saveSignalLabel(name: string): Promise<string> {
+    const res = await this.executeQuery<{ saveSignalLabel: string }>(SAVE_SIGNAL_LABEL_MUTATION, {
+      name,
+    })
+    if (res.error || res.data?.saveSignalLabel === undefined) {
+      throw new Error(res.error || 'Signal label was not saved')
+    }
+    return res.data.saveSignalLabel
+  }
+
+  /**
+   * Every subscribed catalog tag across Connectivity servers. Tags the engineer has
+   * unsubscribed are omitted.
+   */
+  public async getSubscribedSignals(): Promise<GraphqlSubscribedSignal[]> {
+    const res = await this.executeQuery<{ getSubscribedSignals: GraphqlSubscribedSignal[] }>(
+      GET_SUBSCRIBED_SIGNALS_QUERY,
+    )
+    if (res.error) {
+      throw new Error(res.error)
+    }
+    return (res.data?.getSubscribedSignals ?? []).map(mapSubscribedSignal)
+  }
+
+  /**
+   * Partial-update one Connectivity tag's engineer-authored context and return it as stored.
+   */
+  public async updateConnectivityTag(
+    serverId: string,
+    nodeId: string,
+    patch: GraphqlConnectivityTagPatch,
+  ): Promise<GraphqlConnectivityTag> {
+    const res = await this.executeQuery<{ updateConnectivityTag: GraphqlConnectivityTag }>(
+      UPDATE_CONNECTIVITY_TAG_MUTATION,
+      { serverId, nodeId, patch },
+    )
+    if (res.error || !res.data?.updateConnectivityTag) {
+      throw new Error(res.error || 'Connectivity tag was not updated')
+    }
+    return mapConnectivityTag(res.data.updateConnectivityTag)
   }
 
   /** One-shot read of current OPC UA node values; the drawer polls this before subscribing. */
