@@ -1,6 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { Search } from 'lucide-react';
+import { cn } from '../../lib/utils';
 
 /** Shared console tokens — surfaces follow theme; orange brand stays fixed. */
 export const consoleTokens = {
@@ -308,7 +309,10 @@ export const FilterToolbar: React.FC<{
   className?: string;
 }> = ({ tabs, search, selects, trailing, className = '' }) => (
   <div
-    className={`flex flex-wrap items-center gap-1 rounded-md border border-border bg-muted/60 p-1 ${className}`}
+    className={cn(
+      'flex flex-nowrap items-center gap-1 overflow-x-auto rounded-md border border-border bg-muted/60 p-1',
+      className,
+    )}
   >
     {tabs?.items.map((tab) => {
       const tabClass = `rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
@@ -336,14 +340,14 @@ export const FilterToolbar: React.FC<{
       <div className="mx-0.5 hidden h-7 w-px shrink-0 bg-border sm:block" aria-hidden />
     ) : null}
     {search ? (
-      <div className="relative min-w-[140px] flex-1 px-0.5">
-        <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+      <div className="relative min-w-[8rem] w-40 shrink px-0.5">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <input
           type="search"
           value={search.value}
           onChange={(e) => search.onChange(e.target.value)}
           placeholder={search.placeholder ?? 'Search…'}
-          className="w-full rounded-lg border-0 bg-background py-1.5 pl-8 pr-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/40"
+          className="w-full rounded-lg border-0 bg-background py-1.5 pl-7 pr-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/40"
         />
       </div>
     ) : null}
@@ -353,7 +357,7 @@ export const FilterToolbar: React.FC<{
         value={select.value}
         onChange={(e) => select.onChange(e.target.value)}
         aria-label={select['aria-label']}
-        className="shrink-0 rounded-lg border-0 bg-background px-2.5 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/40"
+        className="shrink-0 rounded-lg border-0 bg-background px-1.5 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/40"
       >
         {select.options.map((opt) => (
           <option key={opt.value} value={opt.value}>

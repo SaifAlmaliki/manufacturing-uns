@@ -314,7 +314,7 @@ async def test_a_shifts_only_plan_does_not_reconcile_units_or_products():
 
 def test_shipped_oee_assets_exist_in_the_shipped_plant():
     """`uns_model_setup` seeds, then imports OEE. A unit that names a missing Asset
-    crashes the Asset Model CI job — seed writes DemoWTP, leftover Covestro paths fail.
+    crashes the Asset Model CI job — seed writes HalabjaWTP, leftover Covestro paths fail.
     """
     plant = plan_from_hierarchy_tree(load_plant_tree(resolve_conf_dir()))
     oee = plan_from_oee_config(read_oee_conf())

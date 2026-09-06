@@ -5,6 +5,13 @@ export function pathSegments(topic: string): string[] {
   return topic.split('/').filter(Boolean);
 }
 
+/** Closed Asset select shows machine/cell — the last tree section — not the full path. */
+export function assetLeafLabel(path: string, segment?: string | null): string {
+  const authored = segment?.trim();
+  if (authored) return authored;
+  return pathSegments(path).at(-1) || path;
+}
+
 export function tagMatchesNode(tag: GraphqlConnectivityTag, node: UnsNode): boolean {
   const topic = tag.mqttTopic;
   if (topic === node.topic || topic.startsWith(`${node.topic}/`)) return true;

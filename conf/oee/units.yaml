@@ -4,12 +4,12 @@
 # The subject is the Line, because that is the number a plant manages. The metric keys are
 # paths relative to the Line's topic prefix, so they can name a descendant machine without
 # a second Asset row: state_metric_key below resolves to the historian metric
-# 'DemoWTP/Site10/Treatment/Train1/B101/Status/PackMlState'.
+# 'HalabjaWTP/Halabja/Treatment/Train1/B101/Status/PackMlState'.
 # Must name an Asset that `uns_model_seed` creates from settings.yaml `default.hierarchy`.
 
 units:
-  - asset: "DemoWTP/Site10/Treatment/Train1"
-    shift_pattern: "Site10 3-shift"
+  - asset: "HalabjaWTP/Halabja/Treatment/Train1"
+    shift_pattern: "Halabja 3-shift"
     state_metric_key: "B101/Status/PackMlState/value"
     good_count_metric_key: "B101/ProcessValue/GoodCount/value"
     reject_count_metric_key: "B101/ProcessValue/RejectCount/value"

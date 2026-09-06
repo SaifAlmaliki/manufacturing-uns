@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { GraphqlConnectivityTag } from '../../services/graphql/types';
 import type { UnsNode } from '../../types/uns';
 import {
+  assetLeafLabel,
   collectLoadedDescendants,
   filterTagsBySearch,
   tagInScope,
@@ -120,5 +121,16 @@ describe('filterTagsBySearch', () => {
     expect(filterTagsBySearch(tags, 'fault')).toHaveLength(1);
     expect(filterTagsBySearch(tags, 'P202')).toHaveLength(1);
     expect(filterTagsBySearch(tags, '')).toHaveLength(2);
+  });
+});
+
+describe('assetLeafLabel', () => {
+  it('prefers the authored segment so the closed select shows machine or cell', () => {
+    expect(assetLeafLabel('HalabjaWTP/Halabja/Filt', 'Filt')).toBe('Filt');
+  });
+
+  it('falls back to the last path section when segment is blank', () => {
+    expect(assetLeafLabel('HalabjaWTP/Halabja/Dist', '')).toBe('Dist');
+    expect(assetLeafLabel('HalabjaWTP/Halabja/Dist')).toBe('Dist');
   });
 });

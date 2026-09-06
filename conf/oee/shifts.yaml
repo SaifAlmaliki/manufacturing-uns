@@ -7,9 +7,9 @@
 # second row and no end-before-start special case.
 
 patterns:
-  - name: "Site10 3-shift"
+  - name: "Halabja 3-shift"
     timezone: "Europe/Berlin"
-    asset: "DemoWTP/Site10/Treatment/Train1"
+    asset: "HalabjaWTP/Halabja/Treatment/Train1"
     slots:
       # Monday (0) to Friday (4), three eight-hour shifts.
       - {days: [0, 1, 2, 3, 4], start: "06:00", duration_minutes: 480, label: "A"}
@@ -22,7 +22,7 @@ exceptions:
     ends_at: "2026-12-27T00:00:00+01:00"
     kind: "HOLIDAY"
     note: "Christmas shutdown"
-  - asset: "DemoWTP/Site10/Treatment/Train1"
+  - asset: "HalabjaWTP/Halabja/Treatment/Train1"
     starts_at: "2026-09-14T06:00:00+02:00"
     ends_at: "2026-09-14T14:00:00+02:00"
     kind: "PLANNED_DOWN"

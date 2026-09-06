@@ -1,5 +1,6 @@
+import { render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { consoleTokens } from './console-ui';
+import { consoleTokens, FilterToolbar } from './console-ui';
 
 describe('consoleTokens', () => {
   it('uses theme surfaces so light and dark share one palette', () => {
@@ -22,5 +23,25 @@ describe('consoleTokens', () => {
     expect(consoleTokens.select).toContain('h-7');
     expect(consoleTokens.select).toContain('text-foreground');
     expect(consoleTokens.select).not.toContain('py-2.5');
+  });
+});
+
+describe('FilterToolbar', () => {
+  it('stays on one row instead of wrapping selects onto a second line', () => {
+    const { container } = render(
+      <FilterToolbar
+        search={{ value: '', onChange: () => undefined, placeholder: 'Search…' }}
+        selects={[
+          { value: '', onChange: () => undefined, options: [{ value: '', label: 'All servers' }] },
+          { value: '', onChange: () => undefined, options: [{ value: '', label: 'All Assets' }] },
+          { value: '', onChange: () => undefined, options: [{ value: '', label: 'All signals' }] },
+          { value: '', onChange: () => undefined, options: [{ value: '', label: 'All classes' }] },
+          { value: '', onChange: () => undefined, options: [{ value: '', label: 'All labels' }] },
+        ]}
+      />,
+    );
+    const bar = container.firstElementChild as HTMLElement;
+    expect(bar.className).toMatch(/\bflex-nowrap\b/);
+    expect(bar.className).not.toMatch(/\bflex-wrap\b/);
   });
 });

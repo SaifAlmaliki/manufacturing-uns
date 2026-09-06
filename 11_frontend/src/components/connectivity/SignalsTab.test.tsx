@@ -302,6 +302,21 @@ describe('SignalsTab', () => {
     expect(screen.getByRole('option', { name: 'NTU' })).toBeTruthy();
   });
 
+  it('labels Asset options with the last tree section, not the full path', async () => {
+    render(<SignalsTab />);
+    await waitFor(() => expect(screen.getByLabelText('Asset for Level')).toBeTruthy());
+
+    expect(screen.getAllByRole('option', { name: 'Filtration' }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('option', { name: 'AcmeWater/Site1/Filtration' })).toBeNull();
+  });
+
+  it('wraps the MQTT topic instead of keeping it on one wide line', async () => {
+    render(<SignalsTab />);
+    const topic = await screen.findByText('Plant/T101/Level');
+    expect(topic.className).not.toMatch(/\btruncate\b/);
+    expect(topic.className).toMatch(/break-all|whitespace-normal/);
+  });
+
   it('shows the MQTT topic and an edit control beside the name', async () => {
     render(<SignalsTab />);
     await waitFor(() => expect(screen.getByText('Level')).toBeTruthy());

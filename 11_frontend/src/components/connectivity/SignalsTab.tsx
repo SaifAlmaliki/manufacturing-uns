@@ -13,6 +13,7 @@ import type {
 } from '../../services/graphql/types';
 import { filterSubscribedSignals } from '../../lib/connectivity/signal-filters';
 import { formatOpcUaValue } from '../../lib/connectivity/map-servers';
+import { assetLeafLabel } from '../../lib/condition-monitoring/match-tags';
 import {
   BtnGhost,
   ConsoleCard,
@@ -72,7 +73,12 @@ function assetsWithSelected(assets: AccessAssetDto[], selectedId: string): Acces
   const id = Number(selectedId);
   return [
     ...assets,
-    { id: Number.isFinite(id) ? id : 0, path: selectedId, segment: selectedId, level: 'AREA' },
+    {
+      id: Number.isFinite(id) ? id : 0,
+      path: selectedId,
+      segment: assetLeafLabel(selectedId),
+      level: 'AREA',
+    },
   ];
 }
 
@@ -428,7 +434,10 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
         'aria-label': 'Asset filter',
         options: [
           { value: '', label: 'All Assets' },
-          ...assets.map((asset) => ({ value: String(asset.id), label: asset.path })),
+          ...assets.map((asset) => ({
+            value: String(asset.id),
+            label: assetLeafLabel(asset.path, asset.segment),
+          })),
         ],
       },
       {
@@ -489,8 +498,8 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
             <option value="">Asset…</option>
             <option value="__clear__">Clear Asset</option>
             {assets.map((asset) => (
-              <option key={asset.id} value={String(asset.id)}>
-                {asset.path}
+              <option key={asset.id} value={String(asset.id)} title={asset.path}>
+                {assetLeafLabel(asset.path, asset.segment)}
               </option>
             ))}
           </ConsoleSelect>
@@ -652,12 +661,12 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
                         />
                       </td>
                       <td className="px-2 py-1">
-                        <div className="flex min-w-[12rem] max-w-[24rem] flex-col gap-0.5">
+                        <div className="w-[10.5rem] max-w-[10.5rem] flex-col gap-0.5">
                           <div className="flex items-center gap-1">
                             <button
                               type="button"
                               onClick={() => setOpenSignal(row)}
-                              className="font-heading text-left text-[13px] font-semibold text-foreground hover:text-[#FF7A00]"
+                              className="min-w-0 truncate font-heading text-left text-[13px] font-semibold text-foreground hover:text-[#FF7A00]"
                             >
                               {row.displayName}
                             </button>
@@ -672,7 +681,7 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
                             </button>
                           </div>
                           <span
-                            className="topic-cable truncate text-[10px] leading-tight"
+                            className="topic-cable whitespace-normal break-all text-[10px] leading-snug"
                             title={row.mqttTopic}
                           >
                             {row.mqttTopic || '—'}
@@ -689,7 +698,12 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
                       <td className="px-2 py-1">
                         <ConsoleSelect
                           aria-label={`Asset for ${row.displayName}`}
-                          className="max-w-[14rem]"
+                          className="w-[7.5rem] max-w-[7.5rem] text-right"
+                          title={
+                            assetsWithSelected(assets, assetId).find(
+                              (asset) => String(asset.id) === assetId,
+                            )?.path
+                          }
                           value={assetId}
                           onChange={(e) => {
                             const raw = e.target.value;
