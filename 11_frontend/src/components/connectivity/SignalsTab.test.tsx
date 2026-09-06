@@ -61,7 +61,7 @@ describe('SignalsTab', () => {
     await waitFor(() => expect(screen.getByText('Level')).toBeTruthy());
     expect(screen.getAllByText('opcplc').length).toBeGreaterThan(0);
 
-    fireEvent.change(screen.getByLabelText('Unit of Measure'), { target: { value: '°C' } });
+    fireEvent.change(screen.getByLabelText('Unit of Measure for Level'), { target: { value: '°C' } });
     await waitFor(() =>
       expect(updateConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101', {
         unitOfMeasure: '°C',
@@ -71,9 +71,11 @@ describe('SignalsTab', () => {
 
   it('persists Other unit and then it appears in the dropdown', async () => {
     render(<SignalsTab />);
-    await waitFor(() => expect(screen.getByLabelText('Unit of Measure')).toBeTruthy());
+    await waitFor(() => expect(screen.getByLabelText('Unit of Measure for Level')).toBeTruthy());
 
-    fireEvent.change(screen.getByLabelText('Unit of Measure'), { target: { value: '__other__' } });
+    fireEvent.change(screen.getByLabelText('Unit of Measure for Level'), {
+      target: { value: '__other__' },
+    });
     fireEvent.change(screen.getByLabelText('New Unit of Measure'), { target: { value: 'NTU' } });
     fireEvent.click(screen.getByRole('button', { name: /^confirm$/i }));
 
@@ -158,10 +160,45 @@ describe('SignalsTab', () => {
     render(<SignalsTab />);
     await waitFor(() => expect(screen.getByText('Level')).toBeTruthy());
 
-    fireEvent.change(screen.getByLabelText('Asset'), { target: { value: '9' } });
+    fireEvent.change(screen.getByLabelText('Asset for Level'), { target: { value: '9' } });
     await waitFor(() =>
       expect(updateConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101', { assetId: 9 }),
     );
     expect(updateConnectivityTag.mock.calls[0][2]).not.toHaveProperty('mqttTopic');
+  });
+
+  it('shows a rose banner when a table save fails', async () => {
+    updateConnectivityTag.mockRejectedValue(new Error('tag update failed'));
+    render(<SignalsTab />);
+    await waitFor(() => expect(screen.getByText('Level')).toBeTruthy());
+
+    fireEvent.change(screen.getByLabelText('Unit of Measure for Level'), { target: { value: '°C' } });
+    await waitFor(() => expect(screen.getByText(/tag update failed/i)).toBeTruthy());
+  });
+
+  it('keeps the Other field when saveUnitOfMeasure fails', async () => {
+    saveUnitOfMeasure.mockRejectedValue(new Error('unit catalog failed'));
+    render(<SignalsTab />);
+    await waitFor(() => expect(screen.getByLabelText('Unit of Measure for Level')).toBeTruthy());
+
+    fireEvent.change(screen.getByLabelText('Unit of Measure for Level'), {
+      target: { value: '__other__' },
+    });
+    fireEvent.change(screen.getByLabelText('New Unit of Measure'), { target: { value: 'NTU' } });
+    fireEvent.click(screen.getByRole('button', { name: /^confirm$/i }));
+
+    await waitFor(() => expect(screen.getByText(/unit catalog failed/i)).toBeTruthy());
+    expect((screen.getByLabelText('New Unit of Measure') as HTMLInputElement).value).toBe('NTU');
+  });
+
+  it('shows a rose banner when bulk apply fails', async () => {
+    updateConnectivityTag.mockRejectedValue(new Error('bulk patch failed'));
+    render(<SignalsTab />);
+    await waitFor(() => expect(screen.getByText('Level')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /select level/i }));
+    fireEvent.change(screen.getByLabelText('Apply Unit of Measure'), { target: { value: '°C' } });
+
+    await waitFor(() => expect(screen.getByText(/bulk patch failed/i)).toBeTruthy());
   });
 });

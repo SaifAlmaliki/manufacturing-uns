@@ -233,45 +233,51 @@ export const ConnectivityView: React.FC = () => {
     );
   }
 
+  const pageTabs = {
+    items: [
+      { id: 'servers', label: 'Servers' },
+      { id: 'signals', label: 'Signals' },
+    ],
+    active: pageTab,
+    onChange: (id: string) => setPageTab(id as 'servers' | 'signals'),
+  };
+
   return (
     <PageShell id="connectivity-view" scroll={false} className="flex flex-col font-mono">
       <div className="min-h-0 flex-1 overflow-y-auto">
         <PageContent fullWidth className="flex min-h-full flex-col gap-3 pb-4">
-          <FilterToolbar
-            tabs={{
-              items: [
-                { id: 'servers', label: 'Servers' },
-                { id: 'signals', label: 'Signals' },
-              ],
-              active: pageTab,
-              onChange: (id) => setPageTab(id as 'servers' | 'signals'),
-            }}
-            search={
-              pageTab === 'servers'
-                ? { value: search, onChange: setSearch, placeholder: 'Search name or endpoint…' }
-                : undefined
-            }
-            trailing={
-              pageTab === 'servers' && canMutate ? (
-                <BtnPrimary
-                  onClick={() => {
-                    resetDraft();
-                    setAddOpen(true);
-                  }}
-                  className="px-3 py-1.5 text-xs"
-                  aria-label="Add Server"
-                >
-                  <Plus className="size-3.5" />
-                  Add Server
-                </BtnPrimary>
-              ) : null
-            }
-          />
-
           {pageTab === 'signals' ? (
-            <SignalsTab />
+            <SignalsTab
+              renderToolbar={({ search: signalSearch, selects }) => (
+                <FilterToolbar
+                  tabs={pageTabs}
+                  search={signalSearch}
+                  selects={selects}
+                />
+              )}
+            />
           ) : (
             <>
+              <FilterToolbar
+                tabs={pageTabs}
+                search={{ value: search, onChange: setSearch, placeholder: 'Search name or endpoint…' }}
+                trailing={
+                  canMutate ? (
+                    <BtnPrimary
+                      onClick={() => {
+                        resetDraft();
+                        setAddOpen(true);
+                      }}
+                      className="px-3 py-1.5 text-xs"
+                      aria-label="Add Server"
+                    >
+                      <Plus className="size-3.5" />
+                      Add Server
+                    </BtnPrimary>
+                  ) : null
+                }
+              />
+
               {loadError && (
                 <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
                   {loadError}

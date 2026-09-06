@@ -13,6 +13,12 @@ const readOpcUaNodes = vi.hoisted(() => vi.fn());
 const updateConnectivityTagTopic = vi.hoisted(() => vi.fn());
 const unsubscribeConnectivityTag = vi.hoisted(() => vi.fn());
 const subscribeOpcUaDataChanges = vi.hoisted(() => vi.fn());
+const getSubscribedSignals = vi.hoisted(() => vi.fn());
+const unitsOfMeasure = vi.hoisted(() => vi.fn());
+const signalLabels = vi.hoisted(() => vi.fn());
+const getAssets = vi.hoisted(() => vi.fn());
+const updateConnectivityTag = vi.hoisted(() => vi.fn());
+const saveUnitOfMeasure = vi.hoisted(() => vi.fn());
 
 vi.mock('../../services/graphql/client', () => ({
   unsGraphQLClient: {
@@ -27,6 +33,12 @@ vi.mock('../../services/graphql/client', () => ({
     updateConnectivityTagTopic,
     unsubscribeConnectivityTag,
     subscribeOpcUaDataChanges,
+    getSubscribedSignals,
+    unitsOfMeasure,
+    signalLabels,
+    getAssets,
+    updateConnectivityTag,
+    saveUnitOfMeasure,
   },
 }));
 
@@ -138,6 +150,12 @@ beforeEach(() => {
   });
   unsubscribeConnectivityTag.mockResolvedValue(true);
   subscribeOpcUaDataChanges.mockReturnValue(() => () => undefined);
+  getSubscribedSignals.mockResolvedValue([]);
+  unitsOfMeasure.mockResolvedValue([]);
+  signalLabels.mockResolvedValue([]);
+  getAssets.mockResolvedValue([]);
+  updateConnectivityTag.mockResolvedValue({});
+  saveUnitOfMeasure.mockResolvedValue({ symbol: 'NTU', name: null });
 });
 
 describe('access', () => {
@@ -155,6 +173,22 @@ describe('page tabs', () => {
     render(<ConnectivityView />);
     await waitFor(() => expect(screen.getByRole('button', { name: /signals/i })).toBeTruthy());
     expect(screen.getByRole('button', { name: /servers/i })).toBeTruthy();
+  });
+
+  it('opens Signals and shows empty copy without throwing', async () => {
+    render(<ConnectivityView />);
+    fireEvent.click(await screen.findByRole('button', { name: /signals/i }));
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          'Subscribe variables from Browse data on a server — then attach units here.',
+        ),
+      ).toBeTruthy(),
+    );
+    expect(screen.getAllByRole('searchbox')).toHaveLength(1);
+    expect(screen.getByPlaceholderText(/search name, topic, node/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^servers$/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^signals$/i })).toBeTruthy();
   });
 });
 

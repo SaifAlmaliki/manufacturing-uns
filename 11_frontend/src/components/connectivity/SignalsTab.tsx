@@ -14,6 +14,7 @@ import {
   ConsoleCard,
   ConsoleSelect,
   FilterToolbar,
+  type FilterToolbarSelect,
 } from '../ui/console-ui';
 import { SignalContextPanel } from './SignalContextPanel';
 
@@ -48,7 +49,16 @@ function mergeUnit(
 
 const EMPTY_COPY = 'Subscribe variables from Browse data on a server — then attach units here.';
 
-export const SignalsTab: React.FC = () => {
+export type SignalsToolbar = {
+  search: { value: string; onChange: (value: string) => void; placeholder?: string };
+  selects: FilterToolbarSelect[];
+};
+
+type SignalsTabProps = {
+  renderToolbar?: (toolbar: SignalsToolbar) => React.ReactNode;
+};
+
+export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
   const [rows, setRows] = useState<GraphqlSubscribedSignal[]>([]);
   const [units, setUnits] = useState<GraphqlUnitOfMeasure[]>([]);
   const [labels, setLabels] = useState<string[]>([]);
@@ -65,6 +75,7 @@ export const SignalsTab: React.FC = () => {
   const [openSignal, setOpenSignal] = useState<GraphqlSubscribedSignal | null>(null);
   const [otherFor, setOtherFor] = useState<string | null>(null);
   const [otherSymbol, setOtherSymbol] = useState('');
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -119,41 +130,55 @@ export const SignalsTab: React.FC = () => {
     serverIdValue: string,
     nodeId: string,
     patch: GraphqlConnectivityTagPatch,
-  ) => {
-    const updated = await unsGraphQLClient.updateConnectivityTag(serverIdValue, nodeId, patch);
-    setRows((prev) =>
-      prev.map((row) =>
-        row.serverId === serverIdValue && row.nodeId === nodeId
-          ? { ...row, ...updated, serverName: row.serverName }
-          : row,
-      ),
-    );
+  ): Promise<boolean> => {
+    try {
+      const updated = await unsGraphQLClient.updateConnectivityTag(serverIdValue, nodeId, patch);
+      setRows((prev) =>
+        prev.map((row) =>
+          row.serverId === serverIdValue && row.nodeId === nodeId
+            ? { ...row, ...updated, serverName: row.serverName }
+            : row,
+        ),
+      );
+      setSaveError(null);
+      return true;
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Signal was not saved');
+      return false;
+    }
+  };
+
+  const applyBulk = async (patch: GraphqlConnectivityTagPatch): Promise<boolean> => {
+    const targets = [...selected].map(parseRowKey);
+    for (const target of targets) {
+      const ok = await applyPatch(target.serverId, target.nodeId, patch);
+      if (!ok) return false;
+    }
+    return true;
   };
 
   const persistOtherUnit = async (target: { serverId: string; nodeId: string } | 'bulk') => {
     const symbol = otherSymbol.trim();
     if (!symbol) return;
-    const saved = await unsGraphQLClient.saveUnitOfMeasure(symbol, undefined);
-    let catalog: GraphqlUnitOfMeasure[] = [];
     try {
-      catalog = await unsGraphQLClient.unitsOfMeasure();
-    } catch {
-      catalog = units;
-    }
-    setUnits(mergeUnit(catalog, saved));
-    setOtherFor(null);
-    setOtherSymbol('');
-    if (target === 'bulk') {
-      await applyBulk({ unitOfMeasure: saved.symbol });
-    } else {
-      await applyPatch(target.serverId, target.nodeId, { unitOfMeasure: saved.symbol });
-    }
-  };
-
-  const applyBulk = async (patch: GraphqlConnectivityTagPatch) => {
-    const targets = [...selected].map(parseRowKey);
-    for (const target of targets) {
-      await applyPatch(target.serverId, target.nodeId, patch);
+      const saved = await unsGraphQLClient.saveUnitOfMeasure(symbol, undefined);
+      let catalog: GraphqlUnitOfMeasure[] = [];
+      try {
+        catalog = await unsGraphQLClient.unitsOfMeasure();
+      } catch {
+        catalog = units;
+      }
+      setUnits(mergeUnit(catalog, saved));
+      const ok =
+        target === 'bulk'
+          ? await applyBulk({ unitOfMeasure: saved.symbol })
+          : await applyPatch(target.serverId, target.nodeId, { unitOfMeasure: saved.symbol });
+      if (!ok) return;
+      setOtherFor(null);
+      setOtherSymbol('');
+      setSaveError(null);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Unit of Measure was not saved');
     }
   };
 
@@ -202,55 +227,57 @@ export const SignalsTab: React.FC = () => {
     </div>
   );
 
+  const toolbar: SignalsToolbar = {
+    search: { value: search, onChange: setSearch, placeholder: 'Search name, topic, node…' },
+    selects: [
+      {
+        value: serverId,
+        onChange: setServerId,
+        'aria-label': 'Server',
+        options: [{ value: '', label: 'All servers' }, ...serverOptions],
+      },
+      {
+        value: assetFilter,
+        onChange: setAssetFilter,
+        'aria-label': 'Asset filter',
+        options: [
+          { value: '', label: 'All Assets' },
+          ...assets.map((asset) => ({ value: String(asset.id), label: asset.path })),
+        ],
+      },
+      {
+        value: missingUnit ? 'missing' : '',
+        onChange: (v) => setMissingUnit(v === 'missing'),
+        'aria-label': 'Missing Unit of Measure',
+        options: [
+          { value: '', label: 'All signals' },
+          { value: 'missing', label: 'Missing Unit of Measure' },
+        ],
+      },
+      {
+        value: semanticClass,
+        onChange: setSemanticClass,
+        'aria-label': 'Semantic class',
+        options: [
+          { value: '', label: 'All classes' },
+          ...SEMANTIC_CLASSES.map((cls) => ({ value: cls, label: cls })),
+        ],
+      },
+      {
+        value: labelFilter,
+        onChange: setLabelFilter,
+        'aria-label': 'Label',
+        options: [
+          { value: '', label: 'All labels' },
+          ...labels.map((name) => ({ value: name, label: name })),
+        ],
+      },
+    ],
+  };
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
-      <FilterToolbar
-        search={{ value: search, onChange: setSearch, placeholder: 'Search name, topic, node…' }}
-        selects={[
-          {
-            value: serverId,
-            onChange: setServerId,
-            'aria-label': 'Server',
-            options: [{ value: '', label: 'All servers' }, ...serverOptions],
-          },
-          {
-            value: assetFilter,
-            onChange: setAssetFilter,
-            'aria-label': 'Asset filter',
-            options: [
-              { value: '', label: 'All Assets' },
-              ...assets.map((asset) => ({ value: String(asset.id), label: asset.path })),
-            ],
-          },
-          {
-            value: missingUnit ? 'missing' : '',
-            onChange: (v) => setMissingUnit(v === 'missing'),
-            'aria-label': 'Missing Unit of Measure',
-            options: [
-              { value: '', label: 'All signals' },
-              { value: 'missing', label: 'Missing Unit of Measure' },
-            ],
-          },
-          {
-            value: semanticClass,
-            onChange: setSemanticClass,
-            'aria-label': 'Semantic class',
-            options: [
-              { value: '', label: 'All classes' },
-              ...SEMANTIC_CLASSES.map((cls) => ({ value: cls, label: cls })),
-            ],
-          },
-          {
-            value: labelFilter,
-            onChange: setLabelFilter,
-            'aria-label': 'Label',
-            options: [
-              { value: '', label: 'All labels' },
-              ...labels.map((name) => ({ value: name, label: name })),
-            ],
-          },
-        ]}
-      />
+      {renderToolbar ? renderToolbar(toolbar) : <FilterToolbar search={toolbar.search} selects={toolbar.selects} />}
 
       {selected.size > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-[#FF7A00]/25 bg-[#FF7A00]/8 px-2 py-1.5">
@@ -322,14 +349,17 @@ export const SignalsTab: React.FC = () => {
             onChange={(e) => {
               const name = e.target.value;
               if (!name) return;
-              const targets = [...selected].map(parseRowKey);
-              for (const target of targets) {
-                const row = rows.find(
-                  (r) => r.serverId === target.serverId && r.nodeId === target.nodeId,
-                );
-                const next = Array.from(new Set([...(row?.labels ?? []), name]));
-                void applyPatch(target.serverId, target.nodeId, { labels: next });
-              }
+              void (async () => {
+                const targets = [...selected].map(parseRowKey);
+                for (const target of targets) {
+                  const row = rows.find(
+                    (r) => r.serverId === target.serverId && r.nodeId === target.nodeId,
+                  );
+                  const next = Array.from(new Set([...(row?.labels ?? []), name]));
+                  const ok = await applyPatch(target.serverId, target.nodeId, { labels: next });
+                  if (!ok) return;
+                }
+              })();
             }}
           >
             <option value="">Label…</option>
@@ -366,6 +396,12 @@ export const SignalsTab: React.FC = () => {
           >
             Confirm
           </BtnGhost>
+        </div>
+      )}
+
+      {saveError && (
+        <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+          {saveError}
         </div>
       )}
 
@@ -443,7 +479,7 @@ export const SignalsTab: React.FC = () => {
                       <td className="px-3 py-1.5 text-muted-foreground">{row.serverName}</td>
                       <td className="px-3 py-1.5">
                         <ConsoleSelect
-                          aria-label="Asset"
+                          aria-label={`Asset for ${row.displayName}`}
                           className="h-7 max-w-[14rem] px-1.5 py-0.5 text-[11px]"
                           value={row.assetId != null ? String(row.assetId) : ''}
                           onChange={(e) => {
@@ -463,7 +499,7 @@ export const SignalsTab: React.FC = () => {
                       </td>
                       <td className="px-3 py-1.5">
                         {unitSelect(
-                          'Unit of Measure',
+                          `Unit of Measure for ${row.displayName}`,
                           row.unitOfMeasure ?? '',
                           (symbol) =>
                             void applyPatch(row.serverId, row.nodeId, { unitOfMeasure: symbol }),
@@ -472,7 +508,7 @@ export const SignalsTab: React.FC = () => {
                       </td>
                       <td className="px-3 py-1.5">
                         <ConsoleSelect
-                          aria-label="Class"
+                          aria-label={`Class for ${row.displayName}`}
                           className="h-7 px-1.5 py-0.5 text-[11px]"
                           value={row.semanticClass ?? ''}
                           onChange={(e) => {
@@ -493,7 +529,7 @@ export const SignalsTab: React.FC = () => {
                       </td>
                       <td className="px-3 py-1.5">
                         <ConsoleSelect
-                          aria-label="Data type"
+                          aria-label={`Data type for ${row.displayName}`}
                           className="h-7 px-1.5 py-0.5 text-[11px]"
                           value={row.dataType ?? ''}
                           onChange={(e) => {
