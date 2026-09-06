@@ -1,4 +1,4 @@
-# Local two-terminal dev (npm run stack / ui).
+# Local overlay for `npm run stack`.
 
 services:
   # Plant seed is AcmeWater WTP; conf/oee/*.yaml still names the old Covestro line.

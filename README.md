@@ -81,34 +81,16 @@ In Docker Desktop the project is `manufacturing-uns`. Container names look like 
 
 ```bash
 uv sync
-npm install --prefix 11_frontend
 ```
 
 Compose cannot read YAML secrets by itself. The `uns_compose` wrapper loads `conf/.secrets.yaml` and then runs `docker compose`. The `npm run stack` / `down` scripts use that wrapper with [`docker-compose.dev.yml`](./docker-compose.dev.yml).
 
-### Option 1: Frontend development (two terminals)
+### Start the stack
 
-Use this when you are working on the console UI with hot reload. Open **two terminals** at the repository root and run, **in order**:
-
-| Terminal | Command | What it starts |
-| --- | --- | --- |
-| 1 | `npm run stack` | Backend and databases in Docker (MQTT, Neo4j, Timescale, mappers, GraphQL, Grafana proxy on **8088**). Wait until it finishes. |
-| 2 | `npm run ui` | Vite dev server with hot reload at **http://localhost:5173**. |
-
-Plant signals come from external publishers (OPC UA, Modbus, or any connector) on the MQTT broker.
-
-Stop the UI with Ctrl+C in terminal 2, then tear down the stack:
+One command starts the backend and the console UI in Docker:
 
 ```bash
-npm run down
-```
-
-### Option 2: Full stack in Docker (one command)
-
-Use this for a quick demo or when you do not need Vite hot reload. **One command** starts the backend and the production-built console UI:
-
-```bash
-uv run uns_compose up -d --build
+npm run stack
 ```
 
 | Layer | Where it runs | URL |
@@ -116,7 +98,13 @@ uv run uns_compose up -d --build
 | Backend (DB, MQTT, mappers, GraphQL) | Docker | GraphQL: **http://localhost:8000/graphql** |
 | Console UI | Docker (`uns_frontend`) | **http://localhost:8088** (Grafana at `/grafana`) |
 
-That command is the same on Windows, macOS, and Linux. Connect plant publishers to the Compose MQTT broker (`uns_mqtt_broker`) on **1883**.
+Plant signals come from external publishers (OPC UA, Modbus, or any connector) on the MQTT broker (`uns_mqtt_broker`) on **1883**.
+
+Tear it down with:
+
+```bash
+npm run down
+```
 
 ### What each container does
 
