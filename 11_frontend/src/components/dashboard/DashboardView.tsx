@@ -10,7 +10,18 @@ import {
 } from 'lucide-react';
 import { useUNS } from '../../context/UNSContext';
 import { useAlarms } from '../../context/AlarmContext';
-import { MqttMessage } from '../../types/uns';
+import {
+  ACTIVITY_BUCKET_MS,
+  ACTIVITY_BUCKETS,
+  bucketMessageActivity,
+  formatAge,
+  formatEventValue,
+  formatTopicShort,
+  freshnessPct,
+  lastMessageAgeMs,
+  messagesInWindow,
+  selectRecentEvents,
+} from '../../lib/dashboard/activity';
 import {
   PageShell,
   PageContent,
@@ -21,36 +32,17 @@ import {
   BtnPrimary,
 } from '../ui/console-ui';
 
-function bucketMessagesByMinute(feed: MqttMessage[], buckets = 12): number[] {
-  const now = Date.now();
-  const counts = Array(buckets).fill(0);
-  for (const msg of feed) {
-    const age = now - new Date(msg.timestamp).getTime();
-    const bucketIndex = Math.floor(age / 60000);
-    if (bucketIndex >= 0 && bucketIndex < buckets) {
-      counts[buckets - 1 - bucketIndex] += 1;
-    }
-  }
-  return counts.reverse();
-}
-
-function formatTopicShort(topic: string): string {
-  const parts = topic.split('/');
-  return parts.length > 2 ? parts.slice(-2).join(' / ') : topic;
-}
-
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-}
-
 export const DashboardView: React.FC = () => {
   const navigate = useNavigate();
   const { allLoadedNodes, staleNodesCount, mqttFeed, health } = useUNS();
   const { totalUnacknowledgedCount, activeAlarms, rules, isPlatformLive } = useAlarms();
 
   const activeNodes = allLoadedNodes.length - staleNodesCount;
-  const messageBuckets = useMemo(() => bucketMessagesByMinute(mqttFeed), [mqttFeed]);
-  const messagesPerMin = messageBuckets[messageBuckets.length - 1] ?? 0;
+  const messageBuckets = useMemo(() => bucketMessageActivity(mqttFeed), [mqttFeed]);
+  const messagesPerMin = useMemo(() => messagesInWindow(mqttFeed), [mqttFeed]);
+  const recentMessages = useMemo(() => selectRecentEvents(mqttFeed, 6), [mqttFeed]);
+  const lastAge = lastMessageAgeMs(mqttFeed);
+  const feedFreshness = freshnessPct(lastAge);
 
   const alarmBySeverity = useMemo(() => {
     const counts = { CRITICAL: 0, HIGH: 0, WARNING: 0, INFO: 0 };
@@ -70,15 +62,12 @@ export const DashboardView: React.FC = () => {
     { label: 'Info', value: alarmBySeverity.INFO, color: '#71717a' },
   ];
 
-  const recentMessages = mqttFeed.slice(0, 6);
-
   const healthScore = health.status === 'LIVE' ? 100 : health.status === 'DEGRADED' ? 72 : 35;
-  const nodeHealthPct = allLoadedNodes.length > 0 ? Math.round((activeNodes / allLoadedNodes.length) * 100) : 100;
-  const alarmAckPct =
-    totalUnacknowledgedCount + activeAlarms.length > 0
-      ? Math.round(((activeAlarms.length - totalUnacknowledgedCount) / activeAlarms.length) * 100)
-      : 100;
-  const rulesActivePct = rules.length > 0 ? Math.round((rules.filter((r) => r.enabled).length / rules.length) * 100) : 0;
+  const nodeHealthPct =
+    allLoadedNodes.length > 0 ? Math.round((activeNodes / allLoadedNodes.length) * 100) : null;
+  const enabledRules = rules.filter((r) => r.enabled).length;
+  const alarmLoadPct =
+    totalUnacknowledgedCount > 0 ? Math.min(100, totalUnacknowledgedCount * 25) : null;
 
   const maxBucket = Math.max(...messageBuckets, 1);
 
@@ -139,28 +128,41 @@ export const DashboardView: React.FC = () => {
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
             <ConsoleCard padding="sm" className="lg:col-span-2">
               <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-white">Message Activity</h2>
+                <div>
+                  <h2 className="text-sm font-semibold text-white">Message Activity</h2>
+                  <p className="text-[10px] text-zinc-500">
+                    {messagesPerMin} process msgs · last 60s
+                  </p>
+                </div>
                 <span className="rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-0.5 text-[10px] text-zinc-400">
-                  Live · 12 min
+                  Live · 60s
                 </span>
               </div>
               <div className="flex h-36 items-end gap-1.5">
-                {messageBuckets.map((count, i) => (
-                  <div key={i} className="group flex flex-1 flex-col items-center gap-1.5">
-                    <div className="relative w-full">
-                      <div
-                        className="w-full rounded-t-md bg-[#FF7A00]/80 transition-all group-hover:bg-[#FF7A00]"
-                        style={{ height: `${Math.max(8, (count / maxBucket) * 120)}px` }}
-                      />
-                      {count > 0 && (
-                        <div className="pointer-events-none absolute -top-7 left-1/2 hidden -translate-x-1/2 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-200 group-hover:block">
-                          {count} msgs
-                        </div>
-                      )}
+                {messageBuckets.map((count, i) => {
+                  const ageSec = (ACTIVITY_BUCKETS - 1 - i) * (ACTIVITY_BUCKET_MS / 1000);
+                  const empty = count === 0;
+                  return (
+                    <div key={i} className="group flex flex-1 flex-col items-center gap-1.5">
+                      <div className="relative w-full">
+                        <div
+                          className={`w-full rounded-t-md transition-all ${
+                            empty ? 'bg-zinc-800' : 'bg-[#FF7A00]/80 group-hover:bg-[#FF7A00]'
+                          }`}
+                          style={{ height: empty ? '2px' : `${Math.max(12, (count / maxBucket) * 120)}px` }}
+                        />
+                        {!empty && (
+                          <div className="pointer-events-none absolute -top-7 left-1/2 hidden -translate-x-1/2 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-200 group-hover:block">
+                            {count} msgs
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-[10px] tabular-nums text-zinc-600">
+                        {ageSec === 0 ? 'now' : `-${ageSec}s`}
+                      </span>
                     </div>
-                    <span className="text-[10px] tabular-nums text-zinc-600">-{11 - i}m</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </ConsoleCard>
 
@@ -225,27 +227,34 @@ export const DashboardView: React.FC = () => {
                 <h2 className="text-sm font-semibold text-white">Recent Events</h2>
                 <button
                   type="button"
-                  onClick={() => navigate('/tree')}
+                  onClick={() => navigate('/historian')}
                   className="text-xs font-medium text-[#FF7A00] hover:text-[#ff9533]"
                 >
-                  View All
+                  Historian
                 </button>
               </div>
               <div className="space-y-2">
                 {recentMessages.length === 0 ? (
-                  <p className="py-6 text-center text-xs text-zinc-500">Waiting for MQTT messages…</p>
+                  <p className="py-6 text-center text-xs text-zinc-500">Waiting for process tags…</p>
                 ) : (
                   recentMessages.map((msg) => (
-                    <div key={msg.id} className="flex items-center gap-2.5 rounded-lg border border-zinc-800/60 bg-zinc-900/40 px-2.5 py-2">
+                    <div
+                      key={msg.topic}
+                      className="flex items-center gap-2.5 rounded-lg border border-zinc-800/60 bg-zinc-900/40 px-2.5 py-2"
+                    >
                       <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-[#FF7A00]/15">
                         <Radio className="size-3.5 text-[#FF7A00]" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-xs font-medium text-zinc-200">{formatTopicShort(msg.topic)}</div>
-                        <div className="text-[10px] text-zinc-500">{formatTime(msg.timestamp)}</div>
+                        <div className="truncate text-xs font-medium text-zinc-200">
+                          {formatTopicShort(msg.topic)}
+                        </div>
+                        <div className="text-[10px] text-zinc-500">
+                          {formatAge(Date.now() - Date.parse(msg.timestamp))}
+                        </div>
                       </div>
-                      <span className="shrink-0 rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400">
-                        Live
+                      <span className="shrink-0 font-mono text-xs tabular-nums text-zinc-200">
+                        {formatEventValue(msg.payload)}
                       </span>
                     </div>
                   ))
@@ -289,21 +298,47 @@ export const DashboardView: React.FC = () => {
               <h2 className="mb-3 text-sm font-semibold text-white">Operational Targets</h2>
               <div className="space-y-3">
                 {[
-                  { label: 'Node Freshness', pct: nodeHealthPct, detail: `${activeNodes} / ${allLoadedNodes.length} nodes` },
-                  { label: 'Alarm Acknowledgement', pct: alarmAckPct, detail: `${totalUnacknowledgedCount} unacknowledged` },
                   {
-                    label: 'Rules Active',
-                    pct: rulesActivePct,
-                    detail: `${rules.filter((r) => r.enabled).length} / ${rules.length} rules`,
+                    label: 'Feed freshness',
+                    value: formatAge(lastAge),
+                    pct: feedFreshness,
+                    detail: lastAge == null ? 'No process messages yet' : `${recentMessages.length} tags on this page`,
+                  },
+                  {
+                    label: 'Nodes reporting',
+                    value:
+                      allLoadedNodes.length === 0 ? '—' : `${activeNodes} live`,
+                    pct: nodeHealthPct,
+                    detail:
+                      allLoadedNodes.length === 0
+                        ? 'Tree not loaded'
+                        : `${staleNodesCount} stale · ${allLoadedNodes.length} loaded`,
+                  },
+                  {
+                    label: 'Alarm load',
+                    value:
+                      totalUnacknowledgedCount > 0
+                        ? `${totalUnacknowledgedCount} unacked`
+                        : 'Clear',
+                    pct: alarmLoadPct,
+                    detail:
+                      rules.length === 0
+                        ? 'No rules configured'
+                        : `${enabledRules} / ${rules.length} rules on`,
                   },
                 ].map((goal) => (
                   <div key={goal.label}>
                     <div className="mb-1 flex items-center justify-between text-xs">
                       <span className="text-zinc-400">{goal.label}</span>
-                      <span className="font-medium tabular-nums text-white">{goal.pct}%</span>
+                      <span className="font-medium tabular-nums text-white">{goal.value}</span>
                     </div>
                     <div className="h-1.5 overflow-hidden rounded-full bg-zinc-800">
-                      <div className="h-full rounded-full bg-[#FF7A00] transition-all" style={{ width: `${goal.pct}%` }} />
+                      <div
+                        className={`h-full rounded-full transition-all ${
+                          goal.pct == null ? 'bg-zinc-700' : 'bg-[#FF7A00]'
+                        }`}
+                        style={{ width: `${goal.pct ?? 0}%` }}
+                      />
                     </div>
                     <div className="mt-0.5 text-[10px] text-zinc-600">{goal.detail}</div>
                   </div>
