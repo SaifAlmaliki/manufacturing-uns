@@ -14,6 +14,7 @@ from enum import Enum
 from typing import TypeVar
 
 import strawberry
+from sqlalchemy import inspect as sa_inspect
 from strawberry.scalars import JSON
 from uns_model.tables import ConnectivityServer, ConnectivityTag
 
@@ -128,6 +129,23 @@ def _optional_enum(enum_cls: type[_E], value: str | None) -> _E | None:
     return enum_cls(value)
 
 
+def _loaded_asset(tag: object) -> object | None:
+    """Return `tag.asset` only when already present — never lazy-load.
+
+    `getattr(tag, "asset")` on a mapped `ConnectivityTag` always finds the
+    relationship and will emit a load. On a detached instance whose Asset was
+    not eager-loaded that raises `DetachedInstanceError`. Test doubles
+    (`SimpleNamespace`) are not mapped, so `inspect` returns None and we
+    read `.asset` as a normal attribute.
+    """
+    state = sa_inspect(tag, raiseerr=False)
+    if state is None:
+        return getattr(tag, "asset", None)
+    if "asset" in state.unloaded:
+        return None
+    return getattr(tag, "asset", None)
+
+
 @strawberry.type(description="A Unit of Measure the console can attach to a subscribed tag.")
 class UnitOfMeasureType:
     symbol: str
@@ -154,7 +172,7 @@ class ConnectivityTagType:
 
     @classmethod
     def from_tag(cls, tag: ConnectivityTag) -> "ConnectivityTagType":
-        asset = getattr(tag, "asset", None)
+        asset = _loaded_asset(tag)
         return cls(
             server_id=tag.server_id,
             node_id=tag.node_id,
