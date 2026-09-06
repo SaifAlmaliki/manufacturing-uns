@@ -182,6 +182,75 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
     void load();
   }, [load]);
 
+  const liveTargetKey = rows.map((row) => rowKey(row)).join('|');
+  const liveTargets = useMemo(
+    () => (liveTargetKey ? liveTargetKey.split('|').map(parseRowKey) : []),
+    [liveTargetKey],
+  );
+
+  useEffect(() => {
+    if (liveTargets.length === 0) {
+      setLiveByKey({});
+      return;
+    }
+    let cancelled = false;
+    const unsubs: Array<() => void> = [];
+
+    void (async () => {
+      let servers: GraphqlConnectivityServer[] = [];
+      try {
+        servers = await unsGraphQLClient.getConnectivityServers();
+      } catch {
+        return;
+      }
+      if (cancelled) return;
+
+      const endpointById = new Map(servers.map((server) => [server.id, server.endpoint]));
+      const groups = new Map<string, { serverId: string; endpoint: string; nodeIds: string[] }>();
+      for (const target of liveTargets) {
+        const endpoint = endpointById.get(target.serverId);
+        if (!endpoint) continue;
+        const group = groups.get(target.serverId) ?? {
+          serverId: target.serverId,
+          endpoint,
+          nodeIds: [],
+        };
+        group.nodeIds.push(target.nodeId);
+        groups.set(target.serverId, group);
+      }
+
+      const applyReading = (serverId: string, reading: GraphqlOpcUaDataValue) => {
+        setLiveByKey((prev) => ({
+          ...prev,
+          [rowKey({ serverId, nodeId: reading.nodeId })]: {
+            value: reading.value,
+            status: reading.status,
+          },
+        }));
+      };
+
+      for (const group of groups.values()) {
+        try {
+          const values = await unsGraphQLClient.readOpcUaNodes(group.endpoint, group.nodeIds);
+          if (cancelled) return;
+          for (const reading of values) applyReading(group.serverId, reading);
+        } catch {
+          // Live reads are optional — the catalog row still stands.
+        }
+        unsubs.push(
+          unsGraphQLClient.subscribeOpcUaDataChanges(group.endpoint, group.nodeIds, (reading) => {
+            applyReading(group.serverId, reading);
+          }),
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      for (const unsub of unsubs) unsub();
+    };
+  }, [liveTargets]);
+
   const filtered = useMemo(() => {
     const byCatalog = filterSubscribedSignals(rows, {
       search,
@@ -321,7 +390,7 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
     <div className="flex min-w-[7.5rem] items-center gap-1">
       <ConsoleSelect
         aria-label={ariaLabel}
-        className="h-7 px-1.5 py-0.5 text-[11px]"
+        className="min-w-[6.5rem]"
         value={otherFor === otherKey && otherKind === 'unit' ? OTHER : value}
         onChange={(e) => {
           const next = e.target.value;
@@ -334,7 +403,7 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
         }}
       >
         <option value="">—</option>
-        {units.map((unit) => (
+        {unitsWithSelected(units, value).map((unit) => (
           <option key={unit.symbol} value={unit.symbol}>
             {unit.symbol}
           </option>
@@ -409,7 +478,7 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
           )}
           <ConsoleSelect
             aria-label="Apply Asset"
-            className="h-7 max-w-[14rem] px-1.5 py-0.5 text-[11px]"
+            className="max-w-[14rem]"
             value=""
             onChange={(e) => {
               const raw = e.target.value;
@@ -427,7 +496,6 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
           </ConsoleSelect>
           <ConsoleSelect
             aria-label="Apply class"
-            className="h-7 px-1.5 py-0.5 text-[11px]"
             value=""
             onChange={(e) => {
               const raw = e.target.value;
@@ -445,7 +513,6 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
           </ConsoleSelect>
           <ConsoleSelect
             aria-label="Apply data type"
-            className="h-7 px-1.5 py-0.5 text-[11px]"
             value=""
             onChange={(e) => {
               const raw = e.target.value;
@@ -461,7 +528,7 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
           </ConsoleSelect>
           <ConsoleSelect
             aria-label="Apply label"
-            className="h-7 px-1.5 py-0.5 text-[11px]"
+            className="min-w-[6.5rem]"
             value={otherFor === 'bulk' && otherKind === 'label' ? OTHER : ''}
             onChange={(e) => {
               const name = e.target.value;
@@ -536,10 +603,10 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
       ) : (
         <ConsoleCard padding="none" className="overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1080px] border-collapse text-left text-sm">
+            <table className="w-full min-w-[1180px] border-collapse text-left text-sm">
               <thead className="border-b border-border bg-muted/50 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
                 <tr>
-                  <th className="w-8 px-3 py-2">
+                  <th className="w-8 px-2 py-1.5">
                     <input
                       type="checkbox"
                       aria-label="Select all"
@@ -558,22 +625,25 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
                       }}
                     />
                   </th>
-                  <th className="px-3 py-2">Display name</th>
-                  <th className="px-3 py-2">Server</th>
-                  <th className="px-3 py-2">Asset</th>
-                  <th className="px-3 py-2">Unit of Measure</th>
-                  <th className="px-3 py-2">Class</th>
-                  <th className="px-3 py-2">Data type</th>
-                  <th className="px-3 py-2">Labels</th>
-                  <th className="px-3 py-2">Subscribed</th>
+                  <th className="px-2 py-1.5">Signal</th>
+                  <th className="px-2 py-1.5">Value</th>
+                  <th className="px-2 py-1.5">Health</th>
+                  <th className="px-2 py-1.5">Server</th>
+                  <th className="px-2 py-1.5">Asset</th>
+                  <th className="px-2 py-1.5">Unit of Measure</th>
+                  <th className="px-2 py-1.5">Class</th>
+                  <th className="px-2 py-1.5">Data type</th>
+                  <th className="px-2 py-1.5">Labels</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border text-xs">
                 {filtered.map((row) => {
                   const key = rowKey(row);
+                  const live = liveByKey[key];
+                  const assetId = row.assetId != null ? String(row.assetId) : '';
                   return (
                     <tr key={key} className="hover:bg-muted/60">
-                      <td className="px-3 py-1.5">
+                      <td className="px-2 py-1">
                         <input
                           type="checkbox"
                           aria-label={`Select ${row.displayName}`}
@@ -581,21 +651,46 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
                           onChange={(e) => toggleSelected(key, e.target.checked)}
                         />
                       </td>
-                      <td className="px-3 py-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setOpenSignal(row)}
-                          className="font-heading text-left font-semibold text-foreground hover:text-[#FF7A00] hover:underline"
-                        >
-                          {row.displayName}
-                        </button>
+                      <td className="px-2 py-1">
+                        <div className="flex min-w-[12rem] max-w-[24rem] flex-col gap-0.5">
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setOpenSignal(row)}
+                              className="font-heading text-left text-[13px] font-semibold text-foreground hover:text-[#FF7A00]"
+                            >
+                              {row.displayName}
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={`Edit ${row.displayName}`}
+                              title="Edit name and topic"
+                              onClick={() => setOpenSignal(row)}
+                              className="inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-[#FF7A00]/15 hover:text-[#FF7A00]"
+                            >
+                              <Pencil className="size-3" />
+                            </button>
+                          </div>
+                          <span
+                            className="topic-cable truncate text-[10px] leading-tight"
+                            title={row.mqttTopic}
+                          >
+                            {row.mqttTopic || '—'}
+                          </span>
+                        </div>
                       </td>
-                      <td className="px-3 py-1.5 text-muted-foreground">{row.serverName}</td>
-                      <td className="px-3 py-1.5">
+                      <td className="whitespace-nowrap px-2 py-1 font-mono text-[12px] font-semibold tabular-nums text-[#FF7A00]">
+                        {formatOpcUaValue(live?.value)}
+                      </td>
+                      <td className="px-2 py-1">
+                        {live?.status ? <QualityLamp status={live.status} /> : '—'}
+                      </td>
+                      <td className="px-2 py-1 text-muted-foreground">{row.serverName}</td>
+                      <td className="px-2 py-1">
                         <ConsoleSelect
                           aria-label={`Asset for ${row.displayName}`}
-                          className="h-7 max-w-[14rem] px-1.5 py-0.5 text-[11px]"
-                          value={row.assetId != null ? String(row.assetId) : ''}
+                          className="max-w-[14rem]"
+                          value={assetId}
                           onChange={(e) => {
                             const raw = e.target.value;
                             void applyPatch(row.serverId, row.nodeId, {
@@ -604,14 +699,14 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
                           }}
                         >
                           <option value="">—</option>
-                          {assets.map((asset) => (
+                          {assetsWithSelected(assets, assetId).map((asset) => (
                             <option key={asset.id} value={String(asset.id)}>
                               {asset.path}
                             </option>
                           ))}
                         </ConsoleSelect>
                       </td>
-                      <td className="px-3 py-1.5">
+                      <td className="px-2 py-1">
                         {unitSelect(
                           `Unit of Measure for ${row.displayName}`,
                           row.unitOfMeasure ?? '',
@@ -620,10 +715,10 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
                           key,
                         )}
                       </td>
-                      <td className="px-3 py-1.5">
+                      <td className="px-2 py-1">
                         <ConsoleSelect
                           aria-label={`Class for ${row.displayName}`}
-                          className="h-7 px-1.5 py-0.5 text-[11px]"
+                          className="min-w-[8rem]"
                           value={row.semanticClass ?? ''}
                           onChange={(e) => {
                             const raw = e.target.value;
@@ -634,17 +729,19 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
                           }}
                         >
                           <option value="">—</option>
-                          {SEMANTIC_CLASSES.map((cls) => (
-                            <option key={cls} value={cls}>
-                              {cls}
-                            </option>
-                          ))}
+                          {withSelectedLiteral(SEMANTIC_CLASSES, row.semanticClass ?? '').map(
+                            (cls) => (
+                              <option key={cls} value={cls}>
+                                {cls}
+                              </option>
+                            ),
+                          )}
                         </ConsoleSelect>
                       </td>
-                      <td className="px-3 py-1.5">
+                      <td className="px-2 py-1">
                         <ConsoleSelect
                           aria-label={`Data type for ${row.displayName}`}
-                          className="h-7 px-1.5 py-0.5 text-[11px]"
+                          className="min-w-[6rem]"
                           value={row.dataType ?? ''}
                           onChange={(e) => {
                             const raw = e.target.value;
@@ -654,14 +751,14 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
                           }}
                         >
                           <option value="">—</option>
-                          {DATA_TYPES.map((type) => (
+                          {withSelectedLiteral(DATA_TYPES, row.dataType ?? '').map((type) => (
                             <option key={type} value={type}>
                               {type}
                             </option>
                           ))}
                         </ConsoleSelect>
                       </td>
-                      <td className="px-3 py-1.5">
+                      <td className="px-2 py-1">
                         <div className="flex flex-wrap items-center gap-1">
                           {(row.labels ?? []).map((name) => (
                             <span
@@ -673,7 +770,7 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
                           ))}
                           <ConsoleSelect
                             aria-label={`Add label to ${row.displayName}`}
-                            className="h-7 w-[7.5rem] px-1.5 py-0.5 text-[11px]"
+                            className="w-[7.5rem]"
                             value={otherFor === key && otherKind === 'label' ? OTHER : ''}
                             onChange={(e) => {
                               const name = e.target.value;
@@ -698,9 +795,6 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
                             <option value={OTHER}>Other…</option>
                           </ConsoleSelect>
                         </div>
-                      </td>
-                      <td className="px-3 py-1.5 font-mono text-[11px] text-muted-foreground">
-                        {row.subscribed ? 'Yes' : 'No'}
                       </td>
                     </tr>
                   );

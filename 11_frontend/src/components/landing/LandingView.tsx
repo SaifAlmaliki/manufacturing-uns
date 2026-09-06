@@ -660,7 +660,6 @@ export const LandingView: React.FC = () => {
             <span>ISA-95 Hierarchy</span>
             <span>Sparkplug B 2.2 / 3.0</span>
             <span>TimescaleDB</span>
-            <span>Kafka Streams</span>
             <button
               onClick={() => navigate('/login')}
               className="text-amber-600 dark:text-[#FFC107] hover:underline font-bold"

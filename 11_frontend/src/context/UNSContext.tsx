@@ -45,7 +45,7 @@ function loadSettings(): AppSettings {
   return DEFAULT_APP_SETTINGS;
 }
 
-export type NavigationTab = 'home' | 'explore' | 'sparkplug' | 'streams' | 'system' | 'users';
+export type NavigationTab = 'home' | 'explore' | 'sparkplug' | 'system' | 'users';
 
 interface UNSContextType {
   activeTab: NavigationTab;
@@ -77,10 +77,8 @@ interface UNSContextType {
   jumpToTopicInTree: (topic: string) => Promise<void>;
   jumpToHistorian: (topic: string) => void;
   jumpToSparkplug: (metricName: string) => void;
-  jumpToKafkaTopic: (topic: string) => void;
   historianInitialTopic: string;
   sparkplugInitialMetric: string;
-  kafkaInitialTopic: string;
 }
 
 const UNSContext = createContext<UNSContextType | null>(null);
@@ -176,7 +174,6 @@ export const UNSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [historianInitialTopic, setHistorianInitialTopic] = useState<string>('');
   const [sparkplugInitialMetric, setSparkplugInitialMetric] = useState<string>('');
-  const [kafkaInitialTopic, setKafkaInitialTopic] = useState<string>('');
 
   const [bookmarks, setBookmarks] = useState<TopicBookmark[]>(() => {
     try {
@@ -353,12 +350,6 @@ export const UNSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     window.location.hash = '#/sparkplug';
   };
 
-  const jumpToKafkaTopic = (topic: string) => {
-    setKafkaInitialTopic(topic);
-    setActiveTab('streams');
-    window.location.hash = '#/streams';
-  };
-
   const isPausedRef = useRef(isFeedPaused);
   isPausedRef.current = isFeedPaused;
 
@@ -444,10 +435,8 @@ export const UNSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         jumpToTopicInTree,
         jumpToHistorian,
         jumpToSparkplug,
-        jumpToKafkaTopic,
         historianInitialTopic,
         sparkplugInitialMetric,
-        kafkaInitialTopic,
       }}
     >
       {children}

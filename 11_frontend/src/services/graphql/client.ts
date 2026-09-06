@@ -22,7 +22,6 @@ import {
 import { hierarchyChildNodes, hierarchyRootNodes } from '../../lib/uns/map-hierarchy'
 import type {
   HistoricEvent,
-  KafkaMessage,
   MqttMessage,
   SparkplugNode,
   SystemHealthInfo,
@@ -50,7 +49,6 @@ import {
   SAVE_CONNECTIVITY_SERVER_MUTATION,
   SAVE_HIERARCHY_MUTATION,
   SET_ALERT_RULE_ENABLED_MUTATION,
-  SUBSCRIBE_KAFKA_MESSAGES,
   SUBSCRIBE_MQTT_MESSAGES,
   SUBSCRIBE_OPCUA_DATA_CHANGES,
   SUBSCRIBE_OPCUA_VARIABLES_MUTATION,
@@ -92,7 +90,6 @@ import type {
   GraphqlHierarchySaveResult,
   GraphqlHierarchyTree,
   GraphqlHierarchyTreeInput,
-  GraphqlKafkaMessage,
   GraphqlMqttMessage,
   GraphqlOpcUaBrowseNode,
   GraphqlOpcUaDataValue,
@@ -1045,49 +1042,6 @@ export class UnsGraphQLClient {
       }
       this.mqttMessageSubs.delete(registryId)
     }
-  }
-
-  public subscribeKafkaMessages(topics: string[], onMessage: (msg: KafkaMessage) => void): () => void {
-    if (this.wsConnected && this.ws?.readyState === WebSocket.OPEN) {
-      const subId = `sub_kafka_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-      this.activeWsSubscriptions.set(subId, (data: unknown) => {
-        const payload = data as { getKafkaMessages?: GraphqlKafkaMessage }
-        if (payload?.getKafkaMessages) {
-          const message = payload.getKafkaMessages
-          onMessage({
-            id: `${message.topic}:${Date.now()}`,
-            topic: message.topic,
-            payload:
-              message.payload?.data === undefined || message.payload?.data === null
-                ? null
-                : (typeof message.payload.data === 'object'
-                    ? (message.payload.data as Record<string, unknown>)
-                    : String(message.payload.data)),
-            timestamp: new Date().toISOString(),
-          })
-        }
-      })
-
-      this.ws.send(
-        JSON.stringify({
-          id: subId,
-          type: 'subscribe',
-          payload: {
-            query: SUBSCRIBE_KAFKA_MESSAGES,
-            variables: { topics: topics.map((topic) => ({ topic })) },
-          },
-        }),
-      )
-
-      return () => {
-        this.activeWsSubscriptions.delete(subId)
-        if (this.ws?.readyState === WebSocket.OPEN) {
-          this.ws.send(JSON.stringify({ id: subId, type: 'complete' }))
-        }
-      }
-    }
-
-    return () => undefined
   }
 
   public getHealth(): SystemHealthInfo {

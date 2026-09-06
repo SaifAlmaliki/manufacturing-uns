@@ -366,7 +366,7 @@ export const ConnectivityView: React.FC = () => {
                                 <BtnGhost
                                   onClick={() => openEdit(server)}
                                   className="px-2 py-1 text-[11px]"
-                                  aria-label="Edit"
+                                  aria-label="Edit server"
                                 >
                                   <Pencil className="size-3.5" />
                                   Edit

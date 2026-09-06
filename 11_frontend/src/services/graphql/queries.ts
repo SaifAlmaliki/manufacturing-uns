@@ -329,17 +329,6 @@ export const SUBSCRIBE_MQTT_MESSAGES = `
   }
 `
 
-export const SUBSCRIBE_KAFKA_MESSAGES = `
-  subscription GetKafkaMessages($topics: [String!]!) {
-    getKafkaMessages(topics: $topics) {
-      topic
-      payload {
-        data
-      }
-    }
-  }
-`
-
 /**
  * The plant hierarchy stored in conf/settings.yaml (ADR-0005). One query, one mutation, and
  * one retry: the console edits the whole tree locally and saves once, because there

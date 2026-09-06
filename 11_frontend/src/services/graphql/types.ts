@@ -89,11 +89,6 @@ export type GraphqlMqttMessage = {
     | null
 }
 
-export type GraphqlKafkaMessage = {
-  topic: string
-  payload: { data: unknown } | null
-}
-
 export type GraphqlSpbMetric = {
   name: string
   alias?: number | null

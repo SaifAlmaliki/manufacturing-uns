@@ -381,6 +381,18 @@ html:not(.dark) .quality-lamp {
   color: #8dffc6;
 }
 
+html:not(.dark) .quality-lamp-good {
+  color: #0f766e;
+}
+
+html:not(.dark) .quality-lamp-bad {
+  color: #be123c;
+}
+
+html:not(.dark) .quality-lamp-unknown {
+  color: #57534e;
+}
+
 .quality-lamp-good .quality-lamp-dot,
 .quality-lamp-dot.quality-lamp-good {
   background: #3dffa0;

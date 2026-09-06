@@ -88,18 +88,6 @@ export interface MqttMessage {
   isSparkplug?: boolean;
 }
 
-export interface KafkaMessage {
-  id: string;
-  topic: string;
-  partition?: number;
-  offset?: number;
-  key?: string;
-  payload: Record<string, unknown> | string | number | boolean | null;
-  rawPayload?: string;
-  timestamp: string;
-  headers?: Record<string, string>;
-}
-
 export type ConnectionStatus = 'LIVE' | 'DEGRADED' | 'DOWN';
 
 export interface SystemHealthInfo {
