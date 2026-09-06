@@ -35,6 +35,8 @@ class AssetModelChangeListener:
     LISTEN on a dedicated Postgres connection and invoke a callback on NOTIFY.
 
     Reconnects on failure so a dropped listener does not stay stale forever.
+    `start()` does not return until LISTEN has been issued. A NOTIFY sent in the
+    gap after spawn and before LISTEN is dropped by Postgres.
     """
 
     def __init__(
@@ -51,12 +53,21 @@ class AssetModelChangeListener:
         self._channel = channel
         self._task: asyncio.Task[None] | None = None
         self._stop = asyncio.Event()
+        self._listening = asyncio.Event()
 
-    async def start(self) -> None:
+    async def start(self, *, ready_timeout: float = 30.0) -> None:
         if self._task is not None:
             return
         self._stop.clear()
+        self._listening.clear()
         self._task = asyncio.create_task(self._run(), name="asset-model-change-listener")
+        try:
+            await asyncio.wait_for(self._listening.wait(), timeout=ready_timeout)
+        except TimeoutError:
+            await self.stop()
+            raise RuntimeError(
+                f"Asset Model change listener did not LISTEN on {self._channel!r} within {ready_timeout}s"
+            ) from None
 
     async def stop(self) -> None:
         self._stop.set()
@@ -89,6 +100,8 @@ class AssetModelChangeListener:
                     queue.put_nowait(None)
 
                 await connection.add_listener(self._channel, _on_notify)
+                self._listening.set()
+                LOGGER.debug("Listening for NOTIFY %s", self._channel)
                 while not self._stop.is_set():
                     try:
                         await asyncio.wait_for(queue.get(), timeout=1.0)
