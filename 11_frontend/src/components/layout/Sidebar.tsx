@@ -29,8 +29,6 @@ interface SidebarProps {
   onToggleCollapse: () => void;
   isMobileOpen: boolean;
   onCloseMobile: () => void;
-  onOpenBookmarks: () => void;
-  onOpenStaleDrawer: () => void;
 }
 
 interface NavItem {

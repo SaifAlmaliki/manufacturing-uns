@@ -86,11 +86,6 @@ class HistorianHandler:
         return cls._shared_database()
 
     @classmethod
-    async def get_shared_pool(cls) -> Database:
-        """Backward-compatible alias for startup warm-up."""
-        return await cls.warm()
-
-    @classmethod
     async def close_pool(cls) -> None:
         """Dispose the shared engine."""
         await cls.close()

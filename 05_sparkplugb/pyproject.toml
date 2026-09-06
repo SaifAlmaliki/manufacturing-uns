@@ -26,7 +26,6 @@ classifiers = [
     # "Topic :: Industry 4.0 :: Unified Name Space :: spB to UNS Mapper Client",
 ]
 dependencies = [
-    "logger~=1.4",
     "uns_config",
     "dynaconf~=3.2",
     "psutil>=6.1.1,<8",

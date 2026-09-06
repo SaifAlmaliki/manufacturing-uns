@@ -27,7 +27,6 @@ classifiers = [
     "Topic :: Communications",
 ]
 dependencies = [
-    "logger~=1.4",
     "uns_config",
     "sqlalchemy[asyncio]>=2.0.36,<3",
     "asyncpg>=0.31.0,<0.32",

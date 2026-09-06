@@ -168,19 +168,78 @@ sparkplugb:
 simulator:
   mqtt:
     client_id: "uns_simulator_client"
-  # Fallback only. conf/hierarchy/plant.yaml replaces this whole block when it exists, and it
-  # does in this repository - so edits here have no effect unless that file is removed. Kept
-  # because a deployment with no conf/hierarchy/ directory still has to have a plant.
+  # ISA-95 plant tree. Single source for seed, GraphQL, and the console.
+  # saveHierarchy writes this block. Do not keep a second copy in plant.yaml.
   hierarchy:
-    enterprise: "AcmeWater"
+    enterprise: DemoWTP
     sites:
-    - name: "Site1"
+    - name: Site10
       areas:
-      - name: "Production"
+      - name: RawWater
+        kind: production
         lines:
-        - name: "Train1"
+        - name: Train10
           cells:
-          - "Cell1"
+          - name: V101
+            machines: []
+          - name: P101
+            machines: []
+          - name: P102
+            machines: []
+          - name: P103
+            machines: []
+          - name: T101
+            machines: []
+          - name: FT101
+            machines: []
+          - name: PT101
+            machines: []
+      - name: Treatment
+        kind: production
+        lines:
+        - name: Train1
+          cells:
+          - name: B101
+            machines: []
+          - name: DP101
+            machines: []
+          - name: AIT101
+            machines: []
+      - name: Filtration
+        kind: production
+        lines:
+        - name: Train1
+          cells:
+          - name: F101
+            machines: []
+          - name: V201
+            machines: []
+          - name: V202
+            machines: []
+      - name: Storage
+        kind: production
+        lines:
+        - name: Train1
+          cells:
+          - name: T201
+            machines: []
+      - name: Distribution
+        kind: production
+        lines:
+        - name: Train1
+          cells:
+          - name: P201111
+            machines: []
+          - name: P202
+            machines:
+            - Machine3060
+          - name: FT201
+            machines:
+            - flowmeterX12
+          - name: PT201
+            machines: []
+          - name: V301
+            machines: []
 
   # The legacy `plc:` list moved to conf/simulator/production.yaml as templates `001` and
   # `002`, unchanged. `simulator.py` still reads this key, so a deployment carrying its own

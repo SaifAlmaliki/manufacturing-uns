@@ -34,7 +34,7 @@ MUTATION_ROLES: dict[str, frozenset[str]] = {
     "recordAlertRuleEvaluation": ANY_AUTHENTICATED_ROLE,
     # The one plant-data write this platform allows.
     "assignDowntimeReason": frozenset({"operator", "engineer", "admin"}),
-    # Whole-tree replace of plant.yaml plus prefix migrate. Admin only.
+    # Whole-tree replace of settings.yaml hierarchy plus prefix migrate. Admin only.
     "saveHierarchy": frozenset({"admin"}),
     "retryHierarchyMigrate": frozenset({"admin"}),
     # Access Groups: who may see which Asset subtree. Admin only.

@@ -91,7 +91,7 @@ class Mutation(
     Deliberately narrow: process data is written by publishing to the broker. What is
     left is the console's own configuration (ADR-0005), one correction to plant data
     that no machine can make — which reason a stop is attributed to — and the admin
-    write of plant.yaml, because the console is a static bundle with no backend of
+    write of settings.yaml hierarchy, because the console is a static bundle with no backend of
     its own.
     """
 

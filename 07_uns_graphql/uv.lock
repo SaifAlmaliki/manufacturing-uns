@@ -725,12 +725,6 @@ wheels = [
 ]
 
 [[package]]
-name = "logger"
-version = "1.4"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/73/2f/b0d28eaa1e2c1cf64129f8da3fe701888d152677fec708cd0f13e8309e1e/logger-1.4.tar.gz", hash = "sha256:4ecac57133c6376fa215f0fe6b4dc4d60e4d1ad8be005cab4e8a702df682f8b3", size = 1187, upload-time = "2013-10-22T16:49:01.48Z" }
-
-[[package]]
 name = "mako"
 version = "1.4.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1545,7 +1539,6 @@ dependencies = [
     { name = "asyncpg" },
     { name = "confluent-kafka" },
     { name = "dynaconf" },
-    { name = "logger" },
     { name = "neo4j" },
     { name = "psutil" },
     { name = "pyjwt", extra = ["crypto"] },
@@ -1578,7 +1571,6 @@ requires-dist = [
     { name = "asyncpg", specifier = ">=0.30,<0.32" },
     { name = "confluent-kafka", specifier = ">=2.12,<3" },
     { name = "dynaconf", specifier = "~=3.2" },
-    { name = "logger", specifier = "~=1.4" },
     { name = "neo4j", specifier = "~=6.1" },
     { name = "psutil", specifier = ">=7.2.2,<8" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.10,<3" },
@@ -1610,7 +1602,6 @@ dependencies = [
     { name = "alembic" },
     { name = "asyncpg" },
     { name = "dynaconf" },
-    { name = "logger" },
     { name = "pyyaml" },
     { name = "ruamel-yaml" },
     { name = "sqlalchemy", extra = ["asyncio"] },
@@ -1622,7 +1613,6 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.14.0,<2" },
     { name = "asyncpg", specifier = ">=0.31.0,<0.32" },
     { name = "dynaconf", specifier = "~=3.2" },
-    { name = "logger", specifier = "~=1.4" },
     { name = "pyyaml", specifier = ">=6.0.2,<7" },
     { name = "ruamel-yaml", specifier = ">=0.18,<1" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.36,<3" },
@@ -1644,14 +1634,12 @@ name = "uns-mqtt"
 version = "0.9.38"
 source = { editable = "../02_mqtt-cluster" }
 dependencies = [
-    { name = "logger" },
     { name = "paho-mqtt" },
     { name = "protobuf" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "logger", specifier = "~=1.4" },
     { name = "paho-mqtt", specifier = ">=2.1.0,<3" },
     { name = "protobuf", specifier = "~=7.34" },
 ]
@@ -1673,7 +1661,6 @@ dependencies = [
     { name = "aiomqtt" },
     { name = "asyncua" },
     { name = "dynaconf" },
-    { name = "logger" },
     { name = "prometheus-client" },
     { name = "psutil" },
     { name = "sqlalchemy", extra = ["asyncio"] },
@@ -1686,7 +1673,6 @@ requires-dist = [
     { name = "aiomqtt", specifier = ">=2.5.1,<3" },
     { name = "asyncua", specifier = ">=2.0.1,<3" },
     { name = "dynaconf", specifier = "~=3.2" },
-    { name = "logger", specifier = "~=1.4" },
     { name = "prometheus-client", specifier = ">=0.21.0,<1" },
     { name = "psutil", specifier = ">=6.1.1,<8" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.36,<3" },

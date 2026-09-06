@@ -25,7 +25,6 @@ classifiers = [
 #    "Topic :: Industry 4.0 :: Unified Name Space :: MQTT client wrapper",
 ]
 dependencies = [
-    "logger~=1.4",
     "paho-mqtt>=2.1.0,<3",
     "protobuf~=7.34",
 ]

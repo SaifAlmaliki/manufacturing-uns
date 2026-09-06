@@ -519,6 +519,23 @@ async def test_delete_asset_also_removes_descendants():
     assert removed >= 2
 
 
+def test_seed_dry_run_loads_settings_hierarchy_when_present(tmp_path, monkeypatch, capsys):
+    settings = {
+        "default": {"platform": {"organization_name": "E"}},
+        "simulator": {"hierarchy": tree_to_mapping(_two_cell_tree())},
+    }
+    (tmp_path / "settings.yaml").write_text(yaml.safe_dump(settings), encoding="utf-8")
+    monkeypatch.setattr("uns_model.cli.resolve_conf_dir", lambda: tmp_path)
+    monkeypatch.setattr("uns_model.cli.get_settings", lambda *_args, **_kwargs: {})
+
+    from uns_model.cli import seed
+
+    assert seed(["--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert "E/S/A/L/V101" in out
+    assert "E/S/A/L/V102" in out
+
+
 def test_seed_dry_run_loads_plant_yaml_when_present(tmp_path, monkeypatch, capsys):
     plant_dir = tmp_path / "hierarchy"
     plant_dir.mkdir()

@@ -1,8 +1,8 @@
 """Write the plant hierarchy to YAML, reseed the Asset Model, and migrate prefixes.
 
-YAML stays the reviewable source of truth (ADR-0005 addendum). This mutation is
-how the console writes it. A failed migrate does not roll the files back: the
-admin retries migrate only.
+`settings.yaml` `simulator.hierarchy` stays the reviewable source of truth
+(ADR-0005 addendum). This mutation is how the console writes it. A failed
+migrate does not roll the file back: the admin retries migrate only.
 """
 
 from __future__ import annotations
@@ -324,9 +324,9 @@ def _filter_hierarchy(scope: AccessScope, tree: HierarchyTree) -> HierarchyTree:
     return HierarchyTree(enterprise=tree.enterprise, sites=tuple(sites))
 
 
-@strawberry.type(description="Read the plant hierarchy stored in plant.yaml")
+@strawberry.type(description="Read the plant hierarchy stored in settings.yaml")
 class Query:
-    @strawberry.field(description="The ISA-95 tree from conf/hierarchy/plant.yaml.")
+    @strawberry.field(description="The ISA-95 tree from conf/settings.yaml simulator.hierarchy.")
     async def get_hierarchy(self, info: strawberry.Info) -> HierarchyTreeType:
         tree = load_plant_tree(_conf_dir())
         scope = await scope_from_info(info)
@@ -338,7 +338,7 @@ class Mutation:
     """Role each field needs is in auth/require.py, not in these resolvers."""
 
     @strawberry.mutation(
-        description="Replace plant.yaml with the submitted tree, derive branding, reseed "
+        description="Replace settings.yaml simulator.hierarchy with the submitted tree, derive branding, reseed "
         "the Asset Model, and migrate renamed prefixes. Prefix migrate runs inline in this "
         "GraphQL request until historian and graph rewrites finish; the caller observes "
         "done or failed, not running. A running job file is for crash recovery and Retry, "

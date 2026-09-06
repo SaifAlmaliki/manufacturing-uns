@@ -49,7 +49,7 @@ def raw():
 
 
 def test_hierarchy_plant_yaml_supplies_the_tree(raw):
-    """The ISA-95 tree is conf/hierarchy/plant.yaml, not the simulator profile file."""
+    """The ISA-95 tree is settings.yaml simulator.hierarchy, not the simulator profile file."""
     assert raw["hierarchy"]["enterprise"]
     assert raw["hierarchy"]["sites"]
     assert "profiles" not in raw["hierarchy"]

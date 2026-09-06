@@ -34,7 +34,7 @@ from pathlib import Path
 from uns_config import get_settings, resolve_conf_dir
 
 from uns_model.engine import Database
-from uns_model.hierarchy_io import PLANT_FILENAME, PLANT_SUBDIR, load_plant_tree
+from uns_model.hierarchy_io import load_plant_tree
 from uns_model.model_config import ModelConfig
 from uns_model.oee_master_data import OeeMasterDataRepository
 from uns_model.oee_seed import OeeSeedPlan, plan_from_oee_config, read_oee_conf
@@ -127,9 +127,9 @@ def seed(argv: list[str] | None = None) -> int:
         "equipment": settings.get("equipment"),
     }
     conf_dir = resolve_conf_dir()
-    if (conf_dir / PLANT_SUBDIR / PLANT_FILENAME).is_file():
+    try:
         plan = plan_from_hierarchy_tree(load_plant_tree(conf_dir), extra)
-    else:
+    except FileNotFoundError:
         plan = plan_from_simulator_config({"hierarchy": settings.get("hierarchy"), **extra})
 
     if args.dry_run:

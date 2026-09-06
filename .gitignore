@@ -133,3 +133,6 @@ dmypy.json
 
 # Mac folder metadata
 .DS_Store
+
+# Cygwin / Git Bash crash dumps (Windows)
+*.stackdump

@@ -356,13 +356,13 @@ type HierarchySiteType {
   areas: [HierarchyAreaType!]!
 }
 
-"""The ISA-95 tree to persist as plant.yaml."""
+"""The ISA-95 tree to persist in settings.yaml simulator.hierarchy."""
 input HierarchyTreeInput {
   enterprise: String!
   sites: [HierarchySiteInput!]!
 }
 
-"""The ISA-95 tree stored in plant.yaml."""
+"""The ISA-95 tree stored in settings.yaml simulator.hierarchy."""
 type HierarchyTreeType {
   enterprise: String!
   sites: [HierarchySiteType!]!
@@ -459,7 +459,7 @@ type Mutation {
   assignDowntimeReason(eventId: ID!, reasonCode: String!, note: String = null): DowntimeEvent!
 
   """
-  Replace plant.yaml with the submitted tree, derive branding, reseed the Asset Model, and migrate renamed prefixes. Prefix migrate runs inline in this GraphQL request until historian and graph rewrites finish; the caller observes done or failed, not running. A running job file is for crash recovery and Retry, not for polling. Rejects a second rename while a migrate job is already running.
+  Replace settings.yaml simulator.hierarchy with the submitted tree, derive branding, reseed the Asset Model, and migrate renamed prefixes. Prefix migrate runs inline in this GraphQL request until historian and graph rewrites finish; the caller observes done or failed, not running. A running job file is for crash recovery and Retry, not for polling. Rejects a second rename while a migrate job is already running.
   """
   saveHierarchy(tree: HierarchyTreeInput!, renames: [PrefixRenameInput!]!): HierarchySaveResult!
 
@@ -686,7 +686,7 @@ type Query {
   """
   downtimePareto(assetPath: String!, from: DateTime!, to: DateTime!): [DowntimeParetoBucket!]!
 
-  """The ISA-95 tree from conf/hierarchy/plant.yaml."""
+  """The ISA-95 tree from conf/settings.yaml simulator.hierarchy."""
   getHierarchy: HierarchyTreeType!
 
   """

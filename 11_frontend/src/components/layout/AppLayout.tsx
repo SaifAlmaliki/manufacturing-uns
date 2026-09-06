@@ -68,8 +68,6 @@ export const AppLayout: React.FC = () => {
         onToggleCollapse={handleToggleCollapse}
         isMobileOpen={isMobileOpen}
         onCloseMobile={() => setIsMobileOpen(false)}
-        onOpenBookmarks={() => setIsBookmarksOpen(true)}
-        onOpenStaleDrawer={() => setIsStaleDrawerOpen(true)}
       />
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">

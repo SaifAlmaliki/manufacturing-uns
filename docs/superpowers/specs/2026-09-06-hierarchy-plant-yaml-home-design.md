@@ -1,4 +1,4 @@
-# Hierarchy plant.yaml home
+# Hierarchy in settings.yaml
 
 **Date:** 2026-09-06
 
@@ -6,23 +6,24 @@
 
 ## Decision
 
-The ISA-95 plant tree lives at **`conf/hierarchy/plant.yaml`**. It is not a simulator file.
+The ISA-95 plant tree lives in **`conf/settings.yaml`** under `simulator.hierarchy`. That is the file production already mounts and images already copy.
 
-`#/hierarchy` is the only editor. The Asset Model seed, GraphQL, and (optionally) the internal simulator **read** this tree. The internal simulator does not own it.
+`#/hierarchy` is the only editor. Seed, GraphQL, and the internal simulator **read** this block. `conf/simulator/plant.yaml` keeps only `plant` / `profiles`.
 
 ## Split
 
 | File | Contents |
 | --- | --- |
-| `conf/hierarchy/plant.yaml` | `enterprise`, `sites` (cells as `{ name, machines[] }`) |
+| `conf/settings.yaml` `simulator.hierarchy` | `enterprise`, `sites` (cells as `{ name, machines[] }`) |
 | `conf/simulator/plant.yaml` | `plant`, `profiles` only (WTP scale, families, site filter) |
 
-`saveHierarchy` writes the hierarchy file only. If `conf/simulator/plant.yaml` exists, it updates `profiles.wtp.sites` to the new site names and drops any leftover `enterprise` / `sites` keys.
+`saveHierarchy` writes `simulator.hierarchy` and derives branding / mapper filters in the same settings file. If `conf/simulator/plant.yaml` exists, it updates `profiles.wtp.sites` only.
 
 ## Load
 
-1. `conf/hierarchy/plant.yaml` if present
-2. Else `conf/simulator/plant.yaml` (one-release fallback for old checkouts and tests)
+1. `conf/settings.yaml` `simulator.hierarchy` if it names an enterprise
+2. Else `conf/hierarchy/plant.yaml` (old checkout)
+3. Else `conf/simulator/plant.yaml` (older checkout)
 
 ## Out of scope
 

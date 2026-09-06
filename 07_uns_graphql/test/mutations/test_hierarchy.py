@@ -1,8 +1,8 @@
 """Saving the plant hierarchy through the schema, with rewrites and conf faked.
 
-No live Neo4j or historian: the rewrite functions are replaced, and plant.yaml /
-settings.yaml live in a tmp conf_dir. Auth cells live in test/auth; these tests
-are about order, files, and the migrate job.
+No live Neo4j or historian: the rewrite functions are replaced, and
+settings.yaml / plant.yaml live in a tmp conf_dir. Auth cells live in test/auth;
+these tests are about order, files, and the migrate job.
 """
 
 from __future__ import annotations
@@ -214,6 +214,10 @@ def _read_job(conf_dir: Path) -> dict:
 
 
 def _read_plant(conf_dir: Path) -> dict:
+    settings = yaml.safe_load((conf_dir / "settings.yaml").read_text(encoding="utf-8")) or {}
+    hierarchy = (settings.get("simulator") or {}).get("hierarchy")
+    if isinstance(hierarchy, dict) and hierarchy.get("enterprise") is not None:
+        return hierarchy
     return yaml.safe_load((conf_dir / "hierarchy" / "plant.yaml").read_text(encoding="utf-8"))
 
 

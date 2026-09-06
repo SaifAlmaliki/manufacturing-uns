@@ -28,7 +28,6 @@ classifiers = [
     # "Topic :: Industry 4.0 :: Unified Name Space :: Historian Client",
 ]
 dependencies = [
-    "logger~=1.4",
     "uns_config",
     "uns_model",
     "dynaconf~=3.2",

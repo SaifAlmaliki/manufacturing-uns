@@ -174,7 +174,7 @@ export type GraphqlHierarchySite = {
   areas: GraphqlHierarchyArea[]
 }
 
-/** `HierarchyTreeType` in the schema: the ISA-95 tree stored in plant.yaml. */
+/** `HierarchyTreeType` in the schema: the ISA-95 tree stored in settings.yaml. */
 export type GraphqlHierarchyTree = {
   enterprise: string
   sites: GraphqlHierarchySite[]
@@ -214,7 +214,7 @@ export type GraphqlHierarchySiteInput = {
   areas: GraphqlHierarchyAreaInput[]
 }
 
-/** `HierarchyTreeInput` in the schema: the ISA-95 tree to persist as plant.yaml. */
+/** `HierarchyTreeInput` in the schema: the ISA-95 tree to persist in settings.yaml. */
 export type GraphqlHierarchyTreeInput = {
   enterprise: string
   sites: GraphqlHierarchySiteInput[]

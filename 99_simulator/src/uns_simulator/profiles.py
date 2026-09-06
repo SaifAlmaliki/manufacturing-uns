@@ -398,9 +398,22 @@ def read_simulator_conf(conf_dir: Path | None = None) -> dict[str, Any]:
     directory = conf_root / SIMULATOR_CONF_SUBDIR
     raw: dict[str, Any] = {}
 
+    settings_doc = _read_yaml_mapping(conf_root / "settings.yaml")
+    settings_hierarchy = None
+    if settings_doc is not None:
+        simulator_block = settings_doc.get("simulator")
+        if isinstance(simulator_block, Mapping):
+            candidate = simulator_block.get("hierarchy")
+            if isinstance(candidate, Mapping) and candidate.get("enterprise") is not None:
+                settings_hierarchy = dict(candidate)
+
     hierarchy_doc = _read_yaml_mapping(conf_root / HIERARCHY_CONF_SUBDIR / "plant.yaml")
     plant_doc = _read_yaml_mapping(directory / "plant.yaml")
-    if hierarchy_doc is not None:
+    if settings_hierarchy is not None:
+        raw["hierarchy"] = {
+            key: value for key, value in settings_hierarchy.items() if key not in _PLANT_NON_HIERARCHY_KEYS
+        }
+    elif hierarchy_doc is not None:
         raw["hierarchy"] = {
             key: value for key, value in hierarchy_doc.items() if key not in _PLANT_NON_HIERARCHY_KEYS
         }

@@ -1,8 +1,8 @@
-"""Tests for `hierarchy_io`: read/write `plant.yaml` and derive enterprise settings.
+"""Tests for `hierarchy_io`: read/write `settings.yaml` hierarchy and branding.
 
 No database, no real conf directory: every test copies a minimal snippet into a
-`tmp_path` and asserts on the round-trip. The shipped `conf/hierarchy/plant.yaml`
-uses a list-of-objects sites shape, so `save_plant_tree` must emit that shape.
+`tmp_path` and asserts on the round-trip. The tree lives in
+`simulator.hierarchy`; `plant.yaml` is only a load fallback.
 """
 
 from __future__ import annotations
@@ -53,6 +53,35 @@ default:
     instance_name: "Instance01"
     organization_name: "OldCo"
     display_name: "OldCo UNS"
+graphdb:
+  mqtt:
+    topics: ["test/uns/#", "OtherCorp/#", "spBv1.0/uns_group/#"]
+historian:
+  mqtt:
+    topics: ["test/uns/#", "OtherCorp/#", "spBv1.0/#"]
+kafka_mapper:
+  mqtt:
+    topics: ["test/uns/#", "OtherCorp/#"]
+dynaconf_merge: true
+"""
+
+MINIMAL_SETTINGS_WITH_HIERARCHY = """\
+default:
+  platform:
+    instance_name: "Instance01"
+    organization_name: "OldCo"
+    display_name: "OldCo UNS"
+simulator:
+  hierarchy:
+    enterprise: OldCo
+    sites:
+      - name: Site1
+        areas:
+          - name: RawWater
+            kind: production
+            lines:
+              - name: Train1
+                cells: [V101, V102]
 graphdb:
   mqtt:
     topics: ["test/uns/#", "OtherCorp/#", "spBv1.0/uns_group/#"]
@@ -131,8 +160,8 @@ def _sample_tree() -> HierarchyTree:
 # ---------------------------------------------------------------------------
 
 
-def test_load_plant_tree_reads_the_shipped_list_shape(tmp_path: Path):
-    _write_plant(tmp_path)
+def test_load_plant_tree_reads_settings_hierarchy(tmp_path: Path):
+    _write_settings(tmp_path, MINIMAL_SETTINGS_WITH_HIERARCHY)
 
     tree = load_plant_tree(tmp_path)
 
@@ -149,6 +178,33 @@ def test_load_plant_tree_reads_the_shipped_list_shape(tmp_path: Path):
             ),
         ),
     )
+
+
+def test_load_plant_tree_prefers_settings_over_plant_yaml(tmp_path: Path):
+    _write_settings(tmp_path, MINIMAL_SETTINGS_WITH_HIERARCHY)
+    _write_plant(
+        tmp_path,
+        """\
+enterprise: FromFile
+sites:
+  - name: Other
+    areas: []
+""",
+    )
+
+    tree = load_plant_tree(tmp_path)
+
+    assert tree.enterprise == "OldCo"
+    assert tree.sites[0].name == "Site1"
+
+
+def test_load_plant_tree_falls_back_to_plant_yaml(tmp_path: Path):
+    _write_plant(tmp_path)
+
+    tree = load_plant_tree(tmp_path)
+
+    assert tree.enterprise == "OldCo"
+    assert tree.sites[0].name == "Site1"
 
 
 def test_load_plant_tree_defaults_missing_area_kind_to_production(tmp_path: Path):
@@ -177,7 +233,7 @@ sites:
 
 
 def test_save_then_load_round_trips_the_tree(tmp_path: Path):
-    _write_plant(tmp_path)
+    _write_settings(tmp_path, MINIMAL_SETTINGS_WITH_HIERARCHY)
     tree = _sample_tree()
 
     save_plant_tree(tmp_path, tree)
@@ -185,39 +241,41 @@ def test_save_then_load_round_trips_the_tree(tmp_path: Path):
     assert load_plant_tree(tmp_path) == tree
 
 
-def test_save_writes_the_list_of_objects_sites_shape(tmp_path: Path):
-    _write_plant(tmp_path)
+def test_save_writes_the_list_of_objects_sites_shape_into_settings(tmp_path: Path):
+    _write_settings(tmp_path, MINIMAL_SETTINGS_YAML)
 
     save_plant_tree(tmp_path, _sample_tree())
 
-    doc = yaml.safe_load((tmp_path / "hierarchy" / "plant.yaml").read_text(encoding="utf-8"))
-    assert isinstance(doc["sites"], list)
-    assert doc["sites"][0]["name"] == "Nord"
-    assert doc["sites"][0]["areas"][0]["name"] == "RawWater"
-    assert doc["sites"][0]["areas"][0]["kind"] == "production"
-    assert doc["sites"][0]["areas"][0]["lines"][0]["name"] == "Train1"
-    assert doc["sites"][0]["areas"][0]["lines"][0]["cells"] == [
+    doc = yaml.safe_load((tmp_path / "settings.yaml").read_text(encoding="utf-8"))
+    hierarchy = doc["simulator"]["hierarchy"]
+    assert isinstance(hierarchy["sites"], list)
+    assert hierarchy["sites"][0]["name"] == "Nord"
+    assert hierarchy["sites"][0]["areas"][0]["name"] == "RawWater"
+    assert hierarchy["sites"][0]["areas"][0]["kind"] == "production"
+    assert hierarchy["sites"][0]["areas"][0]["lines"][0]["name"] == "Train1"
+    assert hierarchy["sites"][0]["areas"][0]["lines"][0]["cells"] == [
         {"name": "V101", "machines": ["Dryer"]},
         {"name": "V102", "machines": []},
     ]
-    assert "plant" not in doc
-    assert "profiles" not in doc
+    assert "plant" not in hierarchy
+    assert "profiles" not in hierarchy
 
 
-def test_save_keeps_simulator_profiles_out_of_the_hierarchy_file(tmp_path: Path):
-    _write_plant(tmp_path)
+def test_save_keeps_simulator_profiles_out_of_settings_hierarchy(tmp_path: Path):
+    _write_settings(tmp_path, MINIMAL_SETTINGS_WITH_HIERARCHY)
     _write_simulator_profile(tmp_path)
 
     save_plant_tree(tmp_path, _sample_tree())
 
-    hierarchy = yaml.safe_load((tmp_path / "hierarchy" / "plant.yaml").read_text(encoding="utf-8"))
+    settings = yaml.safe_load((tmp_path / "settings.yaml").read_text(encoding="utf-8"))
+    hierarchy = settings["simulator"]["hierarchy"]
     assert hierarchy["enterprise"] == "Contoso"
     assert "plant" not in hierarchy
     assert "profiles" not in hierarchy
 
     simulator = yaml.safe_load((tmp_path / "simulator" / "plant.yaml").read_text(encoding="utf-8"))
-    assert simulator["enterprise"] == "Contoso"
-    assert simulator["sites"][0]["name"] == "Nord"
+    assert "enterprise" not in simulator
+    assert "sites" not in simulator
     assert simulator["plant"] == {}
     assert simulator["profiles"]["wtp"]["tier_scale"] == 1.0
     assert simulator["profiles"]["wtp"]["families"] == ["wtp"]
@@ -225,7 +283,7 @@ def test_save_keeps_simulator_profiles_out_of_the_hierarchy_file(tmp_path: Path)
 
 
 def test_save_defaults_empty_area_kind_to_production(tmp_path: Path):
-    _write_plant(tmp_path)
+    _write_settings(tmp_path, MINIMAL_SETTINGS_YAML)
 
     tree = HierarchyTree(
         enterprise="E",
@@ -239,26 +297,27 @@ def test_save_defaults_empty_area_kind_to_production(tmp_path: Path):
 
     save_plant_tree(tmp_path, tree)
 
-    doc = yaml.safe_load((tmp_path / "hierarchy" / "plant.yaml").read_text(encoding="utf-8"))
-    assert doc["sites"][0]["areas"][0]["kind"] == "production"
+    doc = yaml.safe_load((tmp_path / "settings.yaml").read_text(encoding="utf-8"))
+    assert doc["simulator"]["hierarchy"]["sites"][0]["areas"][0]["kind"] == "production"
 
 
 def test_save_uses_an_atomic_write(tmp_path: Path):
-    _write_plant(tmp_path)
+    _write_settings(tmp_path, MINIMAL_SETTINGS_YAML)
 
     save_plant_tree(tmp_path, _sample_tree())
 
-    assert not (tmp_path / "hierarchy" / "plant.yaml.tmp").exists()
-    assert (tmp_path / "hierarchy" / "plant.yaml").exists()
+    assert not (tmp_path / "settings.yaml.tmp").exists()
+    assert (tmp_path / "settings.yaml").exists()
 
 
-def test_save_creates_the_hierarchy_dir_when_missing(tmp_path: Path):
+def test_save_writes_plant_yaml_when_settings_are_missing(tmp_path: Path):
     tree = _sample_tree()
 
     save_plant_tree(tmp_path, tree)
 
     assert (tmp_path / "hierarchy" / "plant.yaml").exists()
     assert not (tmp_path / "simulator" / "plant.yaml").exists()
+    assert not (tmp_path / "settings.yaml").exists()
     assert load_plant_tree(tmp_path) == tree
 
 

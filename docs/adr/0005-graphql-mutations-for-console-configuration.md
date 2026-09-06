@@ -97,3 +97,10 @@ only after the publisher is retargeted.
 The ISA-95 tree moved from `conf/simulator/plant.yaml` to `conf/hierarchy/plant.yaml`.
 Simulator `plant` / `profiles` stay under `conf/simulator/`. The internal simulator
 may read the hierarchy file; it does not own it.
+
+## Addendum (2026-09-06, settings.yaml)
+
+The ISA-95 tree lives in `conf/settings.yaml` under `simulator.hierarchy`. That is
+the file production already mounts and images already copy. `saveHierarchy` writes
+that block and derives branding and mapper filters in the same file. Separate
+`plant.yaml` files are a load fallback for old checkouts only.

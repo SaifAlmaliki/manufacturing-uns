@@ -27,7 +27,6 @@ classifiers = [
     # "Topic :: Industry 4.0 :: Unified Name Space :: GraphDB Client",
 ]
 dependencies = [
-    "logger~=1.4",
     "uns_config",
     "neo4j~=6.0",
     "dynaconf~=3.2",
