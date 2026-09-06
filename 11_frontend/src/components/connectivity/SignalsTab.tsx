@@ -47,6 +47,11 @@ function mergeUnit(
   return [...catalog, saved];
 }
 
+function mergeLabel(catalog: string[], saved: string): string[] {
+  if (catalog.includes(saved)) return catalog;
+  return [...catalog, saved];
+}
+
 const EMPTY_COPY = 'Subscribe variables from Browse data on a server — then attach units here.';
 
 export type SignalsToolbar = {
@@ -75,6 +80,7 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [openSignal, setOpenSignal] = useState<GraphqlSubscribedSignal | null>(null);
   const [otherFor, setOtherFor] = useState<string | null>(null);
+  const [otherKind, setOtherKind] = useState<'unit' | 'label'>('unit');
   const [otherSymbol, setOtherSymbol] = useState('');
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -222,6 +228,48 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
     }
   };
 
+  const applyLabelName = async (
+    name: string,
+    target: { serverId: string; nodeId: string } | 'bulk',
+  ): Promise<boolean> => {
+    const targets = target === 'bulk' ? [...selected].map(parseRowKey) : [target];
+    for (const item of targets) {
+      const row = rows.find((r) => r.serverId === item.serverId && r.nodeId === item.nodeId);
+      const next = Array.from(new Set([...(row?.labels ?? []), name]));
+      const ok = await applyPatch(item.serverId, item.nodeId, { labels: next });
+      if (!ok) return false;
+    }
+    return true;
+  };
+
+  const persistOtherLabel = async (target: { serverId: string; nodeId: string } | 'bulk') => {
+    const name = otherSymbol.trim();
+    if (!name) return;
+    try {
+      const saved = await unsGraphQLClient.saveSignalLabel(name);
+      let catalog: string[] = [];
+      try {
+        catalog = await unsGraphQLClient.signalLabels();
+      } catch {
+        catalog = labels;
+      }
+      setLabels(mergeLabel(catalog, saved));
+      const ok = await applyLabelName(saved, target);
+      if (!ok) return;
+      setOtherFor(null);
+      setOtherSymbol('');
+      setSaveError(null);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Signal label was not saved');
+    }
+  };
+
+  const openOther = (kind: 'unit' | 'label', key: string) => {
+    setOtherKind(kind);
+    setOtherFor(key);
+    setOtherSymbol('');
+  };
+
   const toggleSelected = (key: string, on: boolean) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -244,15 +292,14 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
       <ConsoleSelect
         aria-label={ariaLabel}
         className="h-7 px-1.5 py-0.5 text-[11px]"
-        value={otherFor === otherKey ? OTHER : value}
+        value={otherFor === otherKey && otherKind === 'unit' ? OTHER : value}
         onChange={(e) => {
           const next = e.target.value;
           if (next === OTHER) {
-            setOtherFor(otherKey);
-            setOtherSymbol('');
+            openOther('unit', otherKey);
             return;
           }
-          if (otherFor === otherKey) setOtherFor(null);
+          if (otherFor === otherKey && otherKind === 'unit') setOtherFor(null);
           onChoose(next === '' ? null : next);
         }}
       >
@@ -385,21 +432,16 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
           <ConsoleSelect
             aria-label="Apply label"
             className="h-7 px-1.5 py-0.5 text-[11px]"
-            value=""
+            value={otherFor === 'bulk' && otherKind === 'label' ? OTHER : ''}
             onChange={(e) => {
               const name = e.target.value;
               if (!name) return;
-              void (async () => {
-                const targets = [...selected].map(parseRowKey);
-                for (const target of targets) {
-                  const row = rows.find(
-                    (r) => r.serverId === target.serverId && r.nodeId === target.nodeId,
-                  );
-                  const next = Array.from(new Set([...(row?.labels ?? []), name]));
-                  const ok = await applyPatch(target.serverId, target.nodeId, { labels: next });
-                  if (!ok) return;
-                }
-              })();
+              if (name === OTHER) {
+                openOther('label', 'bulk');
+                return;
+              }
+              if (otherFor === 'bulk' && otherKind === 'label') setOtherFor(null);
+              void applyLabelName(name, 'bulk');
             }}
           >
             <option value="">Label…</option>
@@ -408,6 +450,7 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
                 {name}
               </option>
             ))}
+            <option value={OTHER}>Other…</option>
           </ConsoleSelect>
           <BtnGhost className="px-2 py-1 text-[11px]" onClick={() => setSelected(new Set())}>
             Clear
@@ -418,20 +461,21 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
       {otherFor && (
         <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1.5">
           <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-            New Unit of Measure
+            {otherKind === 'label' ? 'New signal label' : 'New Unit of Measure'}
           </span>
           <input
-            aria-label="New Unit of Measure"
+            aria-label={otherKind === 'label' ? 'New signal label' : 'New Unit of Measure'}
             value={otherSymbol}
             onChange={(e) => setOtherSymbol(e.target.value)}
             className="h-7 w-28 rounded-md border border-border bg-background px-2 font-mono text-xs text-foreground focus:border-[#FF7A00]/50 focus:outline-none focus:ring-1 focus:ring-[#FF7A00]/30"
-            placeholder="NTU"
+            placeholder={otherKind === 'label' ? 'Cycle' : 'NTU'}
           />
           <BtnGhost
             className="px-2 py-1 text-[11px]"
             onClick={() => {
-              if (otherFor === 'bulk') void persistOtherUnit('bulk');
-              else void persistOtherUnit(parseRowKey(otherFor));
+              const target = otherFor === 'bulk' ? 'bulk' : parseRowKey(otherFor);
+              if (otherKind === 'label') void persistOtherLabel(target);
+              else void persistOtherUnit(target);
             }}
           >
             Confirm
@@ -600,10 +644,15 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
                           <ConsoleSelect
                             aria-label={`Add label to ${row.displayName}`}
                             className="h-7 w-[7.5rem] px-1.5 py-0.5 text-[11px]"
-                            value=""
+                            value={otherFor === key && otherKind === 'label' ? OTHER : ''}
                             onChange={(e) => {
                               const name = e.target.value;
                               if (!name) return;
+                              if (name === OTHER) {
+                                openOther('label', key);
+                                return;
+                              }
+                              if (otherFor === key && otherKind === 'label') setOtherFor(null);
                               const next = Array.from(new Set([...(row.labels ?? []), name]));
                               void applyPatch(row.serverId, row.nodeId, { labels: next });
                             }}
@@ -616,6 +665,7 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
                                   {name}
                                 </option>
                               ))}
+                            <option value={OTHER}>Other…</option>
                           </ConsoleSelect>
                         </div>
                       </td>

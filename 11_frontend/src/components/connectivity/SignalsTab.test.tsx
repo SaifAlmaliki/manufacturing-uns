@@ -208,4 +208,55 @@ describe('SignalsTab', () => {
 
     await waitFor(() => expect(screen.getByText(/bulk patch failed/i)).toBeTruthy());
   });
+
+  it('persists Other label on a row and then it appears as a chip', async () => {
+    render(<SignalsTab />);
+    await waitFor(() => expect(screen.getByLabelText('Add label to Level')).toBeTruthy());
+
+    fireEvent.change(screen.getByLabelText('Add label to Level'), {
+      target: { value: '__other__' },
+    });
+    fireEvent.change(screen.getByLabelText('New signal label'), { target: { value: 'Custom' } });
+    fireEvent.click(screen.getByRole('button', { name: /^confirm$/i }));
+
+    await waitFor(() => expect(saveSignalLabel).toHaveBeenCalledWith('Custom'));
+    await waitFor(() =>
+      expect(updateConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101', {
+        labels: ['Custom'],
+      }),
+    );
+    await waitFor(() => expect(screen.getAllByText('Custom').length).toBeGreaterThan(0));
+  });
+
+  it('bulk-applies Other label via saveSignalLabel', async () => {
+    render(<SignalsTab />);
+    await waitFor(() => expect(screen.getByText('Level')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /select level/i }));
+    fireEvent.change(screen.getByLabelText('Apply label'), { target: { value: '__other__' } });
+    fireEvent.change(screen.getByLabelText('New signal label'), { target: { value: 'Custom' } });
+    fireEvent.click(screen.getByRole('button', { name: /^confirm$/i }));
+
+    await waitFor(() => expect(saveSignalLabel).toHaveBeenCalledWith('Custom'));
+    await waitFor(() =>
+      expect(updateConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101', {
+        labels: ['Custom'],
+      }),
+    );
+  });
+
+  it('keeps the Other label field when saveSignalLabel fails', async () => {
+    saveSignalLabel.mockRejectedValue(new Error('label catalog failed'));
+    render(<SignalsTab />);
+    await waitFor(() => expect(screen.getByLabelText('Add label to Level')).toBeTruthy());
+
+    fireEvent.change(screen.getByLabelText('Add label to Level'), {
+      target: { value: '__other__' },
+    });
+    fireEvent.change(screen.getByLabelText('New signal label'), { target: { value: 'Custom' } });
+    fireEvent.click(screen.getByRole('button', { name: /^confirm$/i }));
+
+    await waitFor(() => expect(screen.getByText(/label catalog failed/i)).toBeTruthy());
+    expect((screen.getByLabelText('New signal label') as HTMLInputElement).value).toBe('Custom');
+  });
 });
