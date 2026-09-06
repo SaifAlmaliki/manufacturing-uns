@@ -7,9 +7,13 @@ import {
   Radio,
   Activity,
   Search,
+  Cable,
+  Bookmark,
+  ChevronRight,
 } from 'lucide-react';
 import { useUNS } from '../../context/UNSContext';
 import { useAlarms } from '../../context/AlarmContext';
+import { useAuth } from '../../context/AuthContext';
 import {
   ACTIVITY_BUCKET_MS,
   ACTIVITY_BUCKETS,
@@ -22,6 +26,8 @@ import {
   messagesInWindow,
   selectRecentEvents,
 } from '../../lib/dashboard/activity';
+import { buildSignalSnapshot } from '../../lib/dashboard/plant-summary';
+import { useDashboardPlantSummary } from '../../lib/dashboard/useDashboardPlantSummary';
 import {
   PageShell,
   PageContent,
@@ -34,13 +40,28 @@ import {
 
 export const DashboardView: React.FC = () => {
   const navigate = useNavigate();
-  const { allLoadedNodes, staleNodesCount, mqttFeed, health } = useUNS();
+  const { hasPermission } = useAuth();
+  const canConnectivity = hasPermission('connectivity');
+  const {
+    allLoadedNodes,
+    staleNodesCount,
+    mqttFeed,
+    health,
+    bookmarks,
+    jumpToTopicInTree,
+  } = useUNS();
   const { totalUnacknowledgedCount, activeAlarms, rules, isPlatformLive } = useAlarms();
+  const { connectivity, signals } = useDashboardPlantSummary(canConnectivity);
 
   const activeNodes = allLoadedNodes.length - staleNodesCount;
   const messageBuckets = useMemo(() => bucketMessageActivity(mqttFeed), [mqttFeed]);
   const messagesPerMin = useMemo(() => messagesInWindow(mqttFeed), [mqttFeed]);
   const recentMessages = useMemo(() => selectRecentEvents(mqttFeed, 6), [mqttFeed]);
+  const signalSnapshot = useMemo(
+    () => (canConnectivity && signals.length > 0 ? buildSignalSnapshot(signals, mqttFeed, 3) : []),
+    [canConnectivity, signals, mqttFeed],
+  );
+  const pinnedBookmarks = bookmarks.slice(0, 3);
   const lastAge = lastMessageAgeMs(mqttFeed);
   const feedFreshness = freshnessPct(lastAge);
 
@@ -75,12 +96,29 @@ export const DashboardView: React.FC = () => {
     <PageShell id="dashboard-view" scroll={false} className="flex flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
         <PageContent fullWidth className="flex min-h-full flex-col gap-3 pb-4">
+          {staleNodesCount > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+              <div className="flex items-center gap-2 text-xs text-amber-200">
+                <AlertTriangle className="size-4 shrink-0 text-amber-400" />
+                <span>
+                  {staleNodesCount} stale node{staleNodesCount === 1 ? '' : 's'} — telemetry stopped updating
+                </span>
+              </div>
+              <BtnGhost
+                onClick={() => navigate('/condition-monitoring')}
+                className="px-2.5 py-1 text-xs text-amber-200 hover:text-white"
+              >
+                Review in Condition Monitoring
+              </BtnGhost>
+            </div>
+          )}
+
           <CompactKpiRow
             actions={
               <>
-                <BtnGhost onClick={() => navigate('/tree')} className="px-2.5 py-1.5 text-xs">
+                <BtnGhost onClick={() => navigate('/condition-monitoring')} className="px-2.5 py-1.5 text-xs">
                   <Layers className="size-3.5" />
-                  Tree
+                  Condition Monitoring
                 </BtnGhost>
                 <BtnGhost onClick={() => navigate('/historian')} className="px-2.5 py-1.5 text-xs">
                   <Search className="size-3.5" />
@@ -97,10 +135,10 @@ export const DashboardView: React.FC = () => {
               </>
             }
           >
-            <button type="button" onClick={() => navigate('/tree')} className="text-left">
+            <button type="button" onClick={() => navigate('/condition-monitoring')} className="text-left">
               <PageStat compact label="Active Nodes" value={activeNodes} icon={<Layers className="size-3.5 text-[#FF7A00]" />} />
             </button>
-            <button type="button" onClick={() => navigate('/tree')} className="text-left">
+            <button type="button" onClick={() => navigate('/condition-monitoring')} className="text-left">
               <PageStat compact label="Msg / min" value={messagesPerMin} icon={<Radio className="size-3.5 text-emerald-400" />} iconBg="bg-emerald-500/15" />
             </button>
             <button type="button" onClick={() => navigate('/alerts')} className="text-left">
@@ -113,7 +151,7 @@ export const DashboardView: React.FC = () => {
                 iconBg={totalUnacknowledgedCount > 0 ? 'bg-red-500/15' : 'bg-zinc-800'}
               />
             </button>
-            <button type="button" onClick={() => navigate('/tree')} className="text-left">
+            <button type="button" onClick={() => navigate('/condition-monitoring')} className="text-left">
               <PageStat
                 compact
                 label="Stale Nodes"
@@ -124,6 +162,30 @@ export const DashboardView: React.FC = () => {
               />
             </button>
           </CompactKpiRow>
+
+          {canConnectivity && connectivity && (
+            <ConsoleCard padding="sm" className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-[#FF7A00]/15">
+                  <Cable className="size-4 text-[#FF7A00]" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-white">Assets &amp; Connectivity</div>
+                  <div className="text-xs text-zinc-500">
+                    {connectivity.serverCount} OPC UA server{connectivity.serverCount === 1 ? '' : 's'} ·{' '}
+                    {connectivity.signalCount} subscribed signal{connectivity.signalCount === 1 ? '' : 's'}
+                  </div>
+                </div>
+              </div>
+              <BtnGhost
+                onClick={() => navigate('/connectivity/signals')}
+                className="px-2.5 py-1.5 text-xs"
+              >
+                Open signals
+                <ChevronRight className="size-3.5" />
+              </BtnGhost>
+            </ConsoleCard>
+          )}
 
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
             <ConsoleCard padding="sm" className="lg:col-span-2">
@@ -227,10 +289,10 @@ export const DashboardView: React.FC = () => {
                 <h2 className="text-sm font-semibold text-white">Recent Events</h2>
                 <button
                   type="button"
-                  onClick={() => navigate('/historian')}
+                  onClick={() => navigate('/condition-monitoring')}
                   className="text-xs font-medium text-[#FF7A00] hover:text-[#ff9533]"
                 >
-                  Historian
+                  Condition Monitoring
                 </button>
               </div>
               <div className="space-y-2">
@@ -346,6 +408,60 @@ export const DashboardView: React.FC = () => {
               </div>
             </ConsoleCard>
           </div>
+
+          {signalSnapshot.length > 0 && (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {signalSnapshot.map((item) => (
+                <ConsoleCard key={item.topic} padding="sm" className="transition-colors hover:border-[#FF7A00]/40">
+                  <button
+                    type="button"
+                    onClick={() => navigate('/condition-monitoring')}
+                    className="w-full text-left"
+                  >
+                    <div className="mb-1 truncate text-xs font-medium text-zinc-200">{item.label}</div>
+                    {item.asset ? (
+                      <div className="mb-2 truncate text-[10px] text-zinc-500">{item.asset}</div>
+                    ) : (
+                      <div className="mb-2 truncate font-mono text-[10px] text-zinc-600">
+                        {formatTopicShort(item.topic)}
+                      </div>
+                    )}
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="font-mono text-lg tabular-nums text-emerald-400">
+                        {item.value}
+                        {item.unit ? (
+                          <span className="ml-1 text-xs font-normal text-zinc-500">{item.unit}</span>
+                        ) : null}
+                      </span>
+                      <span className="text-[10px] text-zinc-500">{item.age ?? 'quiet'}</span>
+                    </div>
+                  </button>
+                </ConsoleCard>
+              ))}
+            </div>
+          )}
+
+          {pinnedBookmarks.length > 0 && (
+            <ConsoleCard padding="sm">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-white">Pinned bookmarks</h2>
+                <Bookmark className="size-4 text-[#FF7A00]" />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {pinnedBookmarks.map((bookmark) => (
+                  <button
+                    key={bookmark.topic}
+                    type="button"
+                    onClick={() => void jumpToTopicInTree(bookmark.topic)}
+                    className="rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-left text-xs text-zinc-200 transition-colors hover:border-[#FF7A00]/40 hover:text-white"
+                  >
+                    <div className="font-medium">{bookmark.alias || formatTopicShort(bookmark.topic)}</div>
+                    <div className="mt-0.5 truncate font-mono text-[10px] text-zinc-500">{bookmark.topic}</div>
+                  </button>
+                ))}
+              </div>
+            </ConsoleCard>
+          )}
         </PageContent>
       </div>
     </PageShell>

@@ -612,7 +612,7 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
       ) : (
         <ConsoleCard padding="none" className="overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1180px] border-collapse text-left text-sm">
+            <table className="w-full min-w-[980px] border-collapse text-left text-sm">
               <thead className="border-b border-border bg-muted/50 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
                 <tr>
                   <th className="w-8 px-2 py-1.5">
@@ -661,7 +661,7 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
                         />
                       </td>
                       <td className="px-2 py-1">
-                        <div className="w-[10.5rem] max-w-[10.5rem] flex-col gap-0.5">
+                        <div className="flex w-[10.5rem] max-w-[10.5rem] flex-col gap-0.5">
                           <div className="flex items-center gap-1">
                             <button
                               type="button"
@@ -698,7 +698,7 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
                       <td className="px-2 py-1">
                         <ConsoleSelect
                           aria-label={`Asset for ${row.displayName}`}
-                          className="w-[7.5rem] max-w-[7.5rem] text-right"
+                          className="w-[7.5rem] max-w-[7.5rem]"
                           title={
                             assetsWithSelected(assets, assetId).find(
                               (asset) => String(asset.id) === assetId,
@@ -714,8 +714,8 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
                         >
                           <option value="">—</option>
                           {assetsWithSelected(assets, assetId).map((asset) => (
-                            <option key={asset.id} value={String(asset.id)}>
-                              {asset.path}
+                            <option key={asset.id} value={String(asset.id)} title={asset.path}>
+                              {assetLeafLabel(asset.path, asset.segment)}
                             </option>
                           ))}
                         </ConsoleSelect>

@@ -351,9 +351,9 @@ export const FilterToolbar: React.FC<{
         />
       </div>
     ) : null}
-    {selects?.map((select) => (
+    {selects?.map((select, index) => (
       <select
-        key={select['aria-label'] ?? select.options[0]?.value}
+        key={select['aria-label'] ?? `filter-select-${index}`}
         value={select.value}
         onChange={(e) => select.onChange(e.target.value)}
         aria-label={select['aria-label']}

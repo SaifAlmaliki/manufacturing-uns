@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   X,
   AlertTriangle,
@@ -7,6 +7,7 @@ import {
   Volume2,
   Send,
   Check,
+  Radio,
 } from 'lucide-react';
 import {
   AlertRule,
@@ -16,6 +17,15 @@ import {
 } from '../../types/alarm';
 import { UserRole, ROLE_CONFIGS } from '../../types/rbac';
 import { useAlarms } from '../../context/AlarmContext';
+import { unsGraphQLClient } from '../../services/graphql/client';
+import type { GraphqlSubscribedSignal } from '../../services/graphql/types';
+import { filterSubscribedSignals } from '../../lib/connectivity/signal-filters';
+import {
+  conditionsForDataType,
+  defaultsFromSignal,
+  SIGNAL_METRIC_FIELD,
+  signalRowKey,
+} from '../../lib/alarms/from-signal';
 import {
   BtnGhost,
   BtnPrimary,
@@ -31,7 +41,7 @@ interface AlertRuleEditorModalProps {
   onClose: () => void;
 }
 
-type EditorSection = 'identity' | 'threshold' | 'roles' | 'actions';
+type EditorSection = 'signal' | 'rule' | 'roles' | 'actions';
 
 const CATEGORIES: AlarmCategory[] = [
   'TEMPERATURE',
@@ -47,16 +57,6 @@ const CATEGORIES: AlarmCategory[] = [
 ];
 
 const SEVERITIES: AlarmSeverity[] = ['CRITICAL', 'HIGH', 'WARNING', 'INFO'];
-
-const CONDITIONS: { label: string; value: AlarmConditionType }[] = [
-  { label: 'Greater than', value: 'GREATER_THAN' },
-  { label: 'Less than', value: 'LESS_THAN' },
-  { label: 'Equals', value: 'EQUALS' },
-  { label: 'Not equals', value: 'NOT_EQUALS' },
-  { label: 'Range outside', value: 'RANGE_OUTSIDE' },
-  { label: 'Stale timeout', value: 'STALE_TIMEOUT' },
-  { label: 'Contains', value: 'CONTAINS' },
-];
 
 const PREDEFINED_ROLES: UserRole[] = ['operator', 'engineer', 'admin', 'auditor', 'viewer'];
 
@@ -79,13 +79,13 @@ function FieldLabel({ children, required }: { children: React.ReactNode; require
 export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({ rule, onClose }) => {
   const { createRule, updateRule, canPersistRules, rulesError } = useAlarms();
 
-  const [section, setSection] = useState<EditorSection>('identity');
+  const [section, setSection] = useState<EditorSection>('signal');
   const [name, setName] = useState(rule?.name || '');
   const [description, setDescription] = useState(rule?.description || '');
-  const [category, setCategory] = useState<AlarmCategory>(rule?.category || 'TEMPERATURE');
+  const [category, setCategory] = useState<AlarmCategory>(rule?.category || 'THRESHOLD');
   const [severity, setSeverity] = useState<AlarmSeverity>(rule?.severity || 'HIGH');
   const [topic, setTopic] = useState(rule?.topic || '');
-  const [metricField, setMetricField] = useState(rule?.metricField || '');
+  const [metricField, setMetricField] = useState(rule?.metricField || SIGNAL_METRIC_FIELD);
   const [condition, setCondition] = useState<AlarmConditionType>(rule?.condition || 'GREATER_THAN');
   const [thresholdValue, setThresholdValue] = useState<string>(
     rule?.thresholdValue !== undefined ? String(rule?.thresholdValue) : '',
@@ -114,8 +114,68 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({ rule
   const [emailWebhook, setEmailWebhook] = useState(rule?.actions.emailWebhook ?? false);
   const [webhookUrl, setWebhookUrl] = useState(rule?.actions.webhookUrl || '');
 
+  const [signals, setSignals] = useState<GraphqlSubscribedSignal[]>([]);
+  const [signalsLoading, setSignalsLoading] = useState(true);
+  const [signalsError, setSignalsError] = useState<string | null>(null);
+  const [signalSearch, setSignalSearch] = useState('');
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      setSignalsLoading(true);
+      setSignalsError(null);
+      try {
+        const rows = await unsGraphQLClient.getSubscribedSignals();
+        if (cancelled) return;
+        setSignals(rows);
+        if (rule?.topic) {
+          const match = rows.find((row) => row.mqttTopic === rule.topic);
+          if (match) setSelectedKey(signalRowKey(match));
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setSignals([]);
+          setSignalsError(
+            error instanceof Error ? error.message : 'Subscribed signals could not be loaded.',
+          );
+        }
+      } finally {
+        if (!cancelled) setSignalsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [rule?.topic]);
+
+  const filteredSignals = useMemo(
+    () => filterSubscribedSignals(signals, { search: signalSearch }),
+    [signals, signalSearch],
+  );
+  const selectedSignal = signals.find((row) => signalRowKey(row) === selectedKey) ?? null;
+  const conditionOptions = useMemo(() => {
+    const options = conditionsForDataType(selectedSignal?.dataType);
+    if (options.some((option) => option.value === condition)) return options;
+    return [{ label: condition.replaceAll('_', ' '), value: condition }, ...options];
+  }, [selectedSignal, condition]);
+
+  const applySignal = (row: GraphqlSubscribedSignal) => {
+    const defaults = defaultsFromSignal(row);
+    setSelectedKey(signalRowKey(row));
+    setTopic(defaults.topic);
+    setMetricField(defaults.metricField);
+    if (defaults.unit) setUnit(defaults.unit);
+    if (!rule) {
+      setName(defaults.suggestedName);
+      setCategory(defaults.category);
+      setCondition(defaults.condition);
+    }
+    setValidationError(null);
+  };
 
   const toggleRole = (r: UserRole) => {
     setTargetRoles((prev) => {
@@ -127,6 +187,20 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({ rule
     });
   };
 
+  const goNext = () => {
+    if (section === 'signal') {
+      if (!topic.trim()) {
+        setValidationError('Select a signal first.');
+        return;
+      }
+      setValidationError(null);
+      setSection('rule');
+      return;
+    }
+    if (section === 'rule') setSection('roles');
+    else if (section === 'roles') setSection('actions');
+  };
+
   const handleSave = async () => {
     if (!canPersistRules) {
       setValidationError(
@@ -135,19 +209,19 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({ rule
       );
       return;
     }
-    if (!name.trim()) {
-      setValidationError('Rule name is required.');
-      setSection('identity');
-      return;
-    }
     if (!topic.trim()) {
-      setValidationError('Target topic path is required.');
-      setSection('threshold');
+      setValidationError('Select a signal first.');
+      setSection('signal');
       return;
     }
     if (!metricField.trim()) {
       setValidationError('Metric field is required.');
-      setSection('threshold');
+      setSection('rule');
+      return;
+    }
+    if (!name.trim()) {
+      setValidationError('Rule name is required.');
+      setSection('rule');
       return;
     }
     if (targetRoles.length === 0) {
@@ -209,8 +283,8 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({ rule
   };
 
   const sectionTabs = [
-    { id: 'identity', label: 'Identity' },
-    { id: 'threshold', label: 'Threshold' },
+    { id: 'signal', label: 'Signal' },
+    { id: 'rule', label: 'Rule' },
     { id: 'roles', label: 'Roles', badge: targetRoles.length },
     { id: 'actions', label: 'Actions' },
   ];
@@ -222,7 +296,6 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({ rule
         role="dialog"
         aria-labelledby="alert-rule-editor-title"
       >
-        {/* Header */}
         <div className="flex shrink-0 items-center justify-between border-b border-zinc-800 px-4 py-3">
           <div className="flex items-center gap-2.5">
             <div className="flex size-8 items-center justify-center rounded-lg bg-[#FF7A00]/15">
@@ -237,7 +310,6 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({ rule
           </BtnGhost>
         </div>
 
-        {/* Section tabs */}
         <div className="shrink-0 border-b border-zinc-800 px-4 py-2">
           <SegmentTabs
             tabs={sectionTabs}
@@ -246,7 +318,6 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({ rule
           />
         </div>
 
-        {/* Body */}
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
           {validationError && (
             <div className="flex items-center gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
@@ -255,91 +326,155 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({ rule
             </div>
           )}
 
-          {section === 'identity' && (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="sm:col-span-2">
-                <FieldLabel required>Rule name</FieldLabel>
-                <ConsoleInput
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Reactor 01 temperature high-high"
-                />
-              </div>
-              <div>
-                <FieldLabel>Category</FieldLabel>
-                <ConsoleSelect
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value as AlarmCategory)}
-                >
-                  {CATEGORIES.map((cat) => (
-                    <option key={cat} value={cat}>
-                      {cat}
-                    </option>
-                  ))}
-                </ConsoleSelect>
-              </div>
-              <div>
-                <FieldLabel>Description</FieldLabel>
-                <ConsoleInput
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Optional context for operators"
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <FieldLabel>Severity</FieldLabel>
-                <div className="flex flex-wrap gap-1.5">
-                  {SEVERITIES.map((sev) => (
-                    <button
-                      key={sev}
-                      type="button"
-                      onClick={() => setSeverity(sev)}
-                      className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
-                        severity === sev
-                          ? severityActiveClass[sev]
-                          : 'border-zinc-800 bg-zinc-900/60 text-zinc-400 hover:text-zinc-200'
-                      }`}
-                    >
-                      {sev}
-                    </button>
-                  ))}
+          {section === 'signal' && (
+            <div className="space-y-3">
+              <p className="text-xs text-zinc-500">
+                Pick the subscribed signal this alert watches, then choose the condition on the Rule
+                tab.
+              </p>
+              <ConsoleInput
+                aria-label="Search signals"
+                value={signalSearch}
+                onChange={(e) => setSignalSearch(e.target.value)}
+                placeholder="Search name, topic, server…"
+              />
+              {signalsError && (
+                <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+                  {signalsError}
                 </div>
-              </div>
+              )}
+              {signalsLoading ? (
+                <div className="py-10 text-center text-sm text-zinc-500">Loading subscribed signals…</div>
+              ) : filteredSignals.length === 0 ? (
+                <div className="py-10 text-center text-sm text-zinc-500">
+                  {signals.length === 0
+                    ? 'No subscribed signals. Subscribe tags on Connectivity → Signals first.'
+                    : 'No signals match this search.'}
+                </div>
+              ) : (
+                <ul className="max-h-72 divide-y divide-zinc-800 overflow-y-auto rounded-lg border border-zinc-800">
+                  {filteredSignals.map((row) => {
+                    const isSelected = selectedKey === signalRowKey(row);
+                    return (
+                      <li key={signalRowKey(row)}>
+                        <button
+                          type="button"
+                          aria-pressed={isSelected}
+                          onClick={() => applySignal(row)}
+                          className={`flex w-full items-start gap-2.5 px-3 py-2.5 text-left transition-colors ${
+                            isSelected
+                              ? 'bg-[#FF7A00]/10'
+                              : 'hover:bg-zinc-800/40'
+                          }`}
+                        >
+                          <Radio
+                            className={`mt-0.5 size-3.5 shrink-0 ${
+                              isSelected ? 'text-[#FF7A00]' : 'text-zinc-600'
+                            }`}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-medium text-white">{row.displayName}</div>
+                            <div className="truncate font-mono text-[11px] text-zinc-500">
+                              {row.mqttTopic}
+                            </div>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            {row.unitOfMeasure ? (
+                              <div className="font-mono text-[11px] text-zinc-400">{row.unitOfMeasure}</div>
+                            ) : null}
+                            <div className="text-[10px] uppercase text-zinc-600">{row.serverName}</div>
+                          </div>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {topic ? (
+                <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-xs text-zinc-300">
+                  Watching{' '}
+                  <span className="font-mono text-[#FF7A00]">{topic}</span>
+                  {selectedSignal ? null : (
+                    <span className="ml-2 text-zinc-500">
+                      (path is not in the subscribed catalog)
+                    </span>
+                  )}
+                </div>
+              ) : null}
             </div>
           )}
 
-          {section === 'threshold' && (
+          {section === 'rule' && (
             <div className="space-y-3">
-              <div>
-                <div className="mb-1 flex items-center justify-between">
-                  <FieldLabel required>Target topic</FieldLabel>
-                  <span className="text-[10px] text-zinc-600">* = wildcard</span>
+              {topic ? (
+                <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-xs text-zinc-400">
+                  Signal{' '}
+                  <span className="font-mono text-zinc-200">{topic}</span>
                 </div>
-                <ConsoleInput
-                  value={topic}
-                  onChange={(e) => setTopic(e.target.value)}
-                  placeholder="Plant/Area/Line/sensor_topic"
-                  className="font-mono text-sm"
-                />
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <div>
-                  <FieldLabel required>Metric field</FieldLabel>
+              ) : (
+                <p className="text-xs text-amber-300">Select a signal first — this rule needs a target.</p>
+              )}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <FieldLabel required>Rule name</FieldLabel>
                   <ConsoleInput
-                    value={metricField}
-                    onChange={(e) => setMetricField(e.target.value)}
-                    placeholder="temp_celsius"
-                    className="font-mono"
+                    aria-label="Rule name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Reactor 01 temperature high-high"
                   />
                 </div>
                 <div>
+                  <FieldLabel>Category</FieldLabel>
+                  <ConsoleSelect
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value as AlarmCategory)}
+                  >
+                    {CATEGORIES.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                  </ConsoleSelect>
+                </div>
+                <div>
+                  <FieldLabel>Description</FieldLabel>
+                  <ConsoleInput
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="Optional context for operators"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <FieldLabel>Severity</FieldLabel>
+                  <div className="flex flex-wrap gap-1.5">
+                    {SEVERITIES.map((sev) => (
+                      <button
+                        key={sev}
+                        type="button"
+                        onClick={() => setSeverity(sev)}
+                        className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                          severity === sev
+                            ? severityActiveClass[sev]
+                            : 'border-zinc-800 bg-zinc-900/60 text-zinc-400 hover:text-zinc-200'
+                        }`}
+                      >
+                        {sev}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="grid gap-3 border-t border-zinc-800 pt-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div>
                   <FieldLabel>Condition</FieldLabel>
                   <ConsoleSelect
+                    aria-label="Condition"
                     value={condition}
                     onChange={(e) => setCondition(e.target.value as AlarmConditionType)}
                     className="font-mono text-xs"
                   >
-                    {CONDITIONS.map((cond) => (
+                    {conditionOptions.map((cond) => (
                       <option key={cond.value} value={cond.value}>
                         {cond.label}
                       </option>
@@ -349,6 +484,7 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({ rule
                 <div>
                   <FieldLabel required>Threshold</FieldLabel>
                   <ConsoleInput
+                    aria-label="Threshold"
                     value={thresholdValue}
                     onChange={(e) => setThresholdValue(e.target.value)}
                     placeholder="85"
@@ -364,6 +500,16 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({ rule
                     className="font-mono"
                   />
                 </div>
+                <div>
+                  <FieldLabel>Delay (seconds)</FieldLabel>
+                  <ConsoleInput
+                    type="number"
+                    min={0}
+                    value={delaySeconds}
+                    onChange={(e) => setDelaySeconds(Number(e.target.value))}
+                    className="font-mono"
+                  />
+                </div>
               </div>
               {condition === 'RANGE_OUTSIDE' && (
                 <div className="max-w-xs">
@@ -376,23 +522,13 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({ rule
                   />
                 </div>
               )}
-              <div className="max-w-xs">
-                <FieldLabel>Delay (seconds)</FieldLabel>
-                <ConsoleInput
-                  type="number"
-                  min={0}
-                  value={delaySeconds}
-                  onChange={(e) => setDelaySeconds(Number(e.target.value))}
-                  className="font-mono"
-                />
-              </div>
             </div>
           )}
 
           {section === 'roles' && (
             <div className="space-y-3">
               <p className="text-xs text-zinc-500">
-                Roles that receive this alarm when the threshold breaches.
+                Roles that receive this alarm when the signal breaches the rule.
               </p>
               <div className="flex flex-wrap gap-2">
                 {PREDEFINED_ROLES.map((r) => {
@@ -509,11 +645,15 @@ export const AlertRuleEditorModal: React.FC<AlertRuleEditorModalProps> = ({ rule
           )}
         </div>
 
-        {/* Footer */}
         <div className="flex shrink-0 items-center justify-end gap-2 border-t border-zinc-800 px-4 py-3">
           <BtnSecondary onClick={onClose} className="px-3 py-1.5 text-xs">
             Cancel
           </BtnSecondary>
+          {section !== 'actions' && (
+            <BtnSecondary onClick={goNext} className="px-3 py-1.5 text-xs">
+              Next
+            </BtnSecondary>
+          )}
           <BtnPrimary
             onClick={() => void handleSave()}
             disabled={isSaving || !canPersistRules}
