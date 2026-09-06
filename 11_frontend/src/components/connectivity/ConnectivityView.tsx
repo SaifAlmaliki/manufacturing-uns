@@ -49,6 +49,7 @@ import {
   type ConnectivitySecurityPolicy,
 } from '../../lib/connectivity/validate-server';
 import { BrowseDataDrawer } from './BrowseDataDrawer';
+import { SignalsTab } from './SignalsTab';
 
 function newServerId(): string {
   return `srv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -58,6 +59,7 @@ export const ConnectivityView: React.FC = () => {
   const { hasPermission } = useAuth();
   const canMutate = hasPermission('connectivity');
 
+  const [pageTab, setPageTab] = useState<'servers' | 'signals'>('servers');
   const [search, setSearch] = useState('');
   const [servers, setServers] = useState<GraphqlConnectivityServer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -236,9 +238,21 @@ export const ConnectivityView: React.FC = () => {
       <div className="min-h-0 flex-1 overflow-y-auto">
         <PageContent fullWidth className="flex min-h-full flex-col gap-3 pb-4">
           <FilterToolbar
-            search={{ value: search, onChange: setSearch, placeholder: 'Search name or endpoint…' }}
+            tabs={{
+              items: [
+                { id: 'servers', label: 'Servers' },
+                { id: 'signals', label: 'Signals' },
+              ],
+              active: pageTab,
+              onChange: (id) => setPageTab(id as 'servers' | 'signals'),
+            }}
+            search={
+              pageTab === 'servers'
+                ? { value: search, onChange: setSearch, placeholder: 'Search name or endpoint…' }
+                : undefined
+            }
             trailing={
-              canMutate ? (
+              pageTab === 'servers' && canMutate ? (
                 <BtnPrimary
                   onClick={() => {
                     resetDraft();
@@ -254,105 +268,111 @@ export const ConnectivityView: React.FC = () => {
             }
           />
 
-          {loadError && (
-            <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
-              {loadError}
-            </div>
-          )}
-
-          {loading ? (
-            <ConsoleCard padding="md" className="text-sm text-muted-foreground">
-              Loading OPC UA servers…
-            </ConsoleCard>
-          ) : loadError ? null : filtered.length === 0 ? (
-            <ConsoleCard padding="md" className="text-sm text-muted-foreground">
-              {search
-                ? 'No servers match this search.'
-                : 'No OPC UA servers yet. Add one to test, browse, and subscribe its variables.'}
-            </ConsoleCard>
+          {pageTab === 'signals' ? (
+            <SignalsTab />
           ) : (
-            <ConsoleCard padding="none" className="overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[860px] border-collapse text-left text-sm">
-                  <thead className="border-b border-border bg-muted/50 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-                    <tr>
-                      <th className="px-4 py-3">Name</th>
-                      <th className="px-4 py-3">Endpoint</th>
-                      <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3">Last test</th>
-                      <th className="px-4 py-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border text-xs">
-                    {filtered.map((server) => (
-                      <tr
-                        key={server.id}
-                        className="cursor-pointer hover:bg-muted/60"
-                        onClick={() => openSignalTerminal(server)}
-                      >
-                        <td className="px-4 py-3">
-                          <button
-                            type="button"
-                            aria-label={`Open ${server.name}`}
+            <>
+              {loadError && (
+                <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+                  {loadError}
+                </div>
+              )}
+
+              {loading ? (
+                <ConsoleCard padding="md" className="text-sm text-muted-foreground">
+                  Loading OPC UA servers…
+                </ConsoleCard>
+              ) : loadError ? null : filtered.length === 0 ? (
+                <ConsoleCard padding="md" className="text-sm text-muted-foreground">
+                  {search
+                    ? 'No servers match this search.'
+                    : 'No OPC UA servers yet. Add one to test, browse, and subscribe its variables.'}
+                </ConsoleCard>
+              ) : (
+                <ConsoleCard padding="none" className="overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[860px] border-collapse text-left text-sm">
+                      <thead className="border-b border-border bg-muted/50 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                        <tr>
+                          <th className="px-4 py-3">Name</th>
+                          <th className="px-4 py-3">Endpoint</th>
+                          <th className="px-4 py-3">Status</th>
+                          <th className="px-4 py-3">Last test</th>
+                          <th className="px-4 py-3 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border text-xs">
+                        {filtered.map((server) => (
+                          <tr
+                            key={server.id}
+                            className="cursor-pointer hover:bg-muted/60"
                             onClick={() => openSignalTerminal(server)}
-                            className="font-heading text-left font-semibold text-foreground hover:text-[#FF7A00] hover:underline"
                           >
-                            {server.name}
-                          </button>
-                        </td>
-                        <td className="px-4 py-3 font-mono text-[11px] text-muted-foreground">
-                          {server.endpoint}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <span className={`size-2 rounded-full ${statusDotClass(server.lastStatus)}`} />
-                            <span className="text-foreground">{statusLabel(server.lastStatus)}</span>
-                            {server.lastError && (
-                              <span className="truncate text-[10px] text-rose-400" title={server.lastError}>
-                                {server.lastError}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 font-mono text-[11px] tabular-nums text-muted-foreground">
-                          {formatLastTestedAt(server.lastTestedAt)}
-                        </td>
-                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex items-center justify-end gap-1">
-                            <BtnGhost
-                              onClick={() => void handleTest(server)}
-                              disabled={testingId === server.id}
-                              className="px-2 py-1 text-[11px]"
-                              aria-label="Test"
-                            >
-                              <Zap className="size-3.5" />
-                              Test
-                            </BtnGhost>
-                            <BtnGhost
-                              onClick={() => openSignalTerminal(server)}
-                              className="px-2 py-1 text-[11px]"
-                              aria-label="Browse data"
-                            >
-                              <FolderTree className="size-3.5" />
-                              Browse data
-                            </BtnGhost>
-                            <BtnGhost
-                              onClick={() => setConfirmDeleteId(server.id)}
-                              disabled={deletingId === server.id}
-                              className="px-2 py-1 text-[11px] text-rose-400 hover:text-rose-300"
-                              aria-label="Delete"
-                            >
-                              <Trash2 className="size-3.5" />
-                              Delete
-                            </BtnGhost>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </ConsoleCard>
+                            <td className="px-4 py-3">
+                              <button
+                                type="button"
+                                aria-label={`Open ${server.name}`}
+                                onClick={() => openSignalTerminal(server)}
+                                className="font-heading text-left font-semibold text-foreground hover:text-[#FF7A00] hover:underline"
+                              >
+                                {server.name}
+                              </button>
+                            </td>
+                            <td className="px-4 py-3 font-mono text-[11px] text-muted-foreground">
+                              {server.endpoint}
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <span className={`size-2 rounded-full ${statusDotClass(server.lastStatus)}`} />
+                                <span className="text-foreground">{statusLabel(server.lastStatus)}</span>
+                                {server.lastError && (
+                                  <span className="truncate text-[10px] text-rose-400" title={server.lastError}>
+                                    {server.lastError}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 font-mono text-[11px] tabular-nums text-muted-foreground">
+                              {formatLastTestedAt(server.lastTestedAt)}
+                            </td>
+                            <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center justify-end gap-1">
+                                <BtnGhost
+                                  onClick={() => void handleTest(server)}
+                                  disabled={testingId === server.id}
+                                  className="px-2 py-1 text-[11px]"
+                                  aria-label="Test"
+                                >
+                                  <Zap className="size-3.5" />
+                                  Test
+                                </BtnGhost>
+                                <BtnGhost
+                                  onClick={() => openSignalTerminal(server)}
+                                  className="px-2 py-1 text-[11px]"
+                                  aria-label="Browse data"
+                                >
+                                  <FolderTree className="size-3.5" />
+                                  Browse data
+                                </BtnGhost>
+                                <BtnGhost
+                                  onClick={() => setConfirmDeleteId(server.id)}
+                                  disabled={deletingId === server.id}
+                                  className="px-2 py-1 text-[11px] text-rose-400 hover:text-rose-300"
+                                  aria-label="Delete"
+                                >
+                                  <Trash2 className="size-3.5" />
+                                  Delete
+                                </BtnGhost>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </ConsoleCard>
+              )}
+            </>
           )}
         </PageContent>
       </div>

@@ -150,6 +150,14 @@ describe('access', () => {
   });
 });
 
+describe('page tabs', () => {
+  it('shows Servers and Signals tabs', async () => {
+    render(<ConnectivityView />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /signals/i })).toBeTruthy());
+    expect(screen.getByRole('button', { name: /servers/i })).toBeTruthy();
+  });
+});
+
 describe('the OPC UA server table', () => {
   it('shows a GraphQL catalog error without the empty-plant copy', async () => {
     getConnectivityServers.mockRejectedValue(

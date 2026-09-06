@@ -1,0 +1,167 @@
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const getSubscribedSignals = vi.hoisted(() => vi.fn());
+const unitsOfMeasure = vi.hoisted(() => vi.fn());
+const signalLabels = vi.hoisted(() => vi.fn());
+const getAssets = vi.hoisted(() => vi.fn());
+const updateConnectivityTag = vi.hoisted(() => vi.fn());
+const saveUnitOfMeasure = vi.hoisted(() => vi.fn());
+const unsubscribeConnectivityTag = vi.hoisted(() => vi.fn());
+const saveSignalLabel = vi.hoisted(() => vi.fn());
+
+vi.mock('../../services/graphql/client', () => ({
+  unsGraphQLClient: {
+    getSubscribedSignals,
+    unitsOfMeasure,
+    signalLabels,
+    getAssets,
+    updateConnectivityTag,
+    saveUnitOfMeasure,
+    unsubscribeConnectivityTag,
+    saveSignalLabel,
+  },
+}));
+
+import { SignalsTab } from './SignalsTab';
+import type { GraphqlSubscribedSignal } from '../../services/graphql/types';
+
+const SIGNAL: GraphqlSubscribedSignal = {
+  serverId: 's1',
+  serverName: 'opcplc',
+  nodeId: 'ns=3;s=T101',
+  browsePath: 'T101/Level',
+  displayName: 'Level',
+  mqttTopic: 'Plant/T101/Level',
+  subscribed: true,
+  unitOfMeasure: null,
+  labels: [],
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  getSubscribedSignals.mockResolvedValue([SIGNAL]);
+  unitsOfMeasure.mockResolvedValue([{ symbol: '°C', name: 'Celsius' }]);
+  signalLabels.mockResolvedValue(['Cycle']);
+  getAssets.mockResolvedValue([
+    { id: 9, path: 'AcmeWater/Site1/Filtration', segment: 'Filtration', level: 'AREA' },
+  ]);
+  updateConnectivityTag.mockImplementation(async (_serverId, _nodeId, patch) => ({
+    ...SIGNAL,
+    ...patch,
+  }));
+  saveUnitOfMeasure.mockResolvedValue({ symbol: 'NTU', name: null });
+  unsubscribeConnectivityTag.mockResolvedValue(true);
+  saveSignalLabel.mockResolvedValue('Custom');
+});
+
+describe('SignalsTab', () => {
+  it('lists a subscribed signal and saves a unit from the dropdown', async () => {
+    render(<SignalsTab />);
+    await waitFor(() => expect(screen.getByText('Level')).toBeTruthy());
+    expect(screen.getAllByText('opcplc').length).toBeGreaterThan(0);
+
+    fireEvent.change(screen.getByLabelText('Unit of Measure'), { target: { value: '°C' } });
+    await waitFor(() =>
+      expect(updateConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101', {
+        unitOfMeasure: '°C',
+      }),
+    );
+  });
+
+  it('persists Other unit and then it appears in the dropdown', async () => {
+    render(<SignalsTab />);
+    await waitFor(() => expect(screen.getByLabelText('Unit of Measure')).toBeTruthy());
+
+    fireEvent.change(screen.getByLabelText('Unit of Measure'), { target: { value: '__other__' } });
+    fireEvent.change(screen.getByLabelText('New Unit of Measure'), { target: { value: 'NTU' } });
+    fireEvent.click(screen.getByRole('button', { name: /^confirm$/i }));
+
+    await waitFor(() => expect(saveUnitOfMeasure).toHaveBeenCalledWith('NTU', undefined));
+    await waitFor(() => expect(screen.getByRole('option', { name: 'NTU' })).toBeTruthy());
+  });
+
+  it('shows empty copy when nothing is subscribed', async () => {
+    getSubscribedSignals.mockResolvedValue([]);
+    render(<SignalsTab />);
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          'Subscribe variables from Browse data on a server — then attach units here.',
+        ),
+      ).toBeTruthy(),
+    );
+  });
+
+  it('shows a rose load-error banner instead of empty copy', async () => {
+    getSubscribedSignals.mockRejectedValue(new Error('GraphQL endpoint unreachable'));
+    render(<SignalsTab />);
+    await waitFor(() => expect(screen.getByText(/GraphQL endpoint unreachable/i)).toBeTruthy());
+    expect(
+      screen.queryByText(
+        'Subscribe variables from Browse data on a server — then attach units here.',
+      ),
+    ).toBeNull();
+  });
+
+  it('opens the context panel and saves name and topic', async () => {
+    render(<SignalsTab />);
+    await waitFor(() => expect(screen.getByText('Level')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Level' }));
+    const dialog = await screen.findByRole('dialog');
+    const panel = within(dialog);
+
+    fireEvent.change(panel.getByLabelText('Name'), { target: { value: 'Tank Level' } });
+    fireEvent.change(panel.getByLabelText('Topic'), { target: { value: 'Plant/T101/TankLevel' } });
+    fireEvent.click(panel.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() =>
+      expect(updateConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101', {
+        displayName: 'Tank Level',
+        mqttTopic: 'Plant/T101/TankLevel',
+      }),
+    );
+  });
+
+  it('unsubscribes from the panel after confirm', async () => {
+    render(<SignalsTab />);
+    await waitFor(() => expect(screen.getByText('Level')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Level' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: /^unsubscribe$/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^confirm$/i }));
+
+    await waitFor(() =>
+      expect(unsubscribeConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101'),
+    );
+    await waitFor(() => expect(screen.queryByText('Level')).toBeNull());
+  });
+
+  it('bulk-applies a Unit of Measure without sending mqttTopic', async () => {
+    render(<SignalsTab />);
+    await waitFor(() => expect(screen.getByText('Level')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /select level/i }));
+    fireEvent.change(screen.getByLabelText('Apply Unit of Measure'), { target: { value: '°C' } });
+
+    await waitFor(() =>
+      expect(updateConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101', {
+        unitOfMeasure: '°C',
+      }),
+    );
+    expect(updateConnectivityTag.mock.calls[0][2]).not.toHaveProperty('mqttTopic');
+  });
+
+  it('assigns an Asset without rewriting mqttTopic', async () => {
+    render(<SignalsTab />);
+    await waitFor(() => expect(screen.getByText('Level')).toBeTruthy());
+
+    fireEvent.change(screen.getByLabelText('Asset'), { target: { value: '9' } });
+    await waitFor(() =>
+      expect(updateConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101', { assetId: 9 }),
+    );
+    expect(updateConnectivityTag.mock.calls[0][2]).not.toHaveProperty('mqttTopic');
+  });
+});
