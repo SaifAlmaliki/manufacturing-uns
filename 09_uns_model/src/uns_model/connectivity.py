@@ -36,6 +36,7 @@ from typing import Any
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.orm import selectinload
 
 from uns_model.engine import Database
 import re
@@ -336,7 +337,9 @@ class ConnectivityRepository:
             )
             row = (
                 await session.execute(
-                    select(ConnectivityTag).where(
+                    select(ConnectivityTag)
+                    .options(selectinload(ConnectivityTag.asset))
+                    .where(
                         ConnectivityTag.server_id == server_id,
                         ConnectivityTag.node_id == node_id,
                     )
@@ -445,8 +448,10 @@ class ConnectivityRepository:
 
     async def list_servers(self, *, protocol: str | None = None) -> list[ConnectivityServer]:
         """Every server, newest edit last, so the console renders a stable order."""
-        statement = select(ConnectivityServer).order_by(
-            ConnectivityServer.created_at, ConnectivityServer.id
+        statement = (
+            select(ConnectivityServer)
+            .options(selectinload(ConnectivityServer.tags).selectinload(ConnectivityTag.asset))
+            .order_by(ConnectivityServer.created_at, ConnectivityServer.id)
         )
         if protocol is not None:
             statement = statement.where(ConnectivityServer.protocol == protocol)
@@ -467,6 +472,7 @@ class ConnectivityRepository:
         """Every tag for one server, in node_id order. Used by the bridge and by discovery."""
         statement = (
             select(ConnectivityTag)
+            .options(selectinload(ConnectivityTag.asset))
             .where(ConnectivityTag.server_id == server_id)
             .order_by(ConnectivityTag.node_id)
         )

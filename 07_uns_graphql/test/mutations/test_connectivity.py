@@ -415,6 +415,64 @@ async def test_get_subscribed_signals_skips_unsubscribed_tags():
     repository.list_subscribed_tags.assert_awaited_once_with("s1")
 
 
+def _tag_with_asset() -> SimpleNamespace:
+    return SimpleNamespace(
+        server_id="s1",
+        node_id="ns=2;s=Temperature",
+        browse_path="Objects/Temperature",
+        display_name="Temperature",
+        mqtt_topic="enterprise/site/temperature",
+        subscribed=True,
+        created_at=datetime(2026, 9, 1, 9, 0, tzinfo=UTC),
+        updated_at=datetime(2026, 9, 1, 9, 0, tzinfo=UTC),
+        asset_id=42,
+        asset=SimpleNamespace(path="AcmeWater/Site1/Furnace", name="Furnace 1"),
+        unit_of_measure="°C",
+        semantic_class=None,
+        data_type=None,
+        labels=["Cycle"],
+    )
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_get_subscribed_signals_returns_asset_path_and_display_name():
+    repository = AsyncMock()
+    repository.list_servers.return_value = [_server(name="PLC1")]
+    repository.list_subscribed_tags.return_value = [_tag_with_asset()]
+    with patch(QUERY_REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            "{ getSubscribedSignals { assetPath assetDisplayName } }",
+            context_value=ADMIN,
+        )
+    assert result.errors is None
+    assert result.data["getSubscribedSignals"] == [
+        {"assetPath": "AcmeWater/Site1/Furnace", "assetDisplayName": "Furnace 1"}
+    ]
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_update_connectivity_tag_returns_asset_path_and_display_name():
+    repository = AsyncMock()
+    repository.update_tag.return_value = _tag_with_asset()
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            """
+            mutation ($patch: ConnectivityTagUpdateInput!) {
+              updateConnectivityTag(serverId: "s1", nodeId: "ns=2;s=Temperature", patch: $patch) {
+                assetPath assetDisplayName
+              }
+            }
+            """,
+            variable_values={"patch": {"assetId": 42}},
+            context_value=ADMIN,
+        )
+    assert result.errors is None
+    assert result.data["updateConnectivityTag"] == {
+        "assetPath": "AcmeWater/Site1/Furnace",
+        "assetDisplayName": "Furnace 1",
+    }
+
+
 # --------------------------------------------------------------- update / unsubscribe
 
 

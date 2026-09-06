@@ -647,6 +647,7 @@ class ConnectivityTag(Base):
     )
 
     server: Mapped[ConnectivityServer] = relationship(back_populates="tags")
+    asset: Mapped[Asset | None] = relationship(foreign_keys=[asset_id])
 
     def __repr__(self) -> str:
         return f"ConnectivityTag(server_id={self.server_id!r}, node_id={self.node_id!r}, subscribed={self.subscribed})"

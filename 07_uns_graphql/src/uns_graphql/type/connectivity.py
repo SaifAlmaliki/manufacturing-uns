@@ -166,7 +166,13 @@ class ConnectivityTagType:
             updated_at=tag.updated_at,
             asset_id=getattr(tag, "asset_id", None),
             asset_path=getattr(asset, "path", None) if asset is not None else None,
-            asset_display_name=getattr(asset, "display_name", None) if asset is not None else None,
+            asset_display_name=(
+                getattr(asset, "name", None)
+                or getattr(asset, "display_name", None)
+                or getattr(asset, "segment", None)
+            )
+            if asset is not None
+            else None,
             unit_of_measure=getattr(tag, "unit_of_measure", None),
             semantic_class=_optional_enum(SignalSemanticClass, getattr(tag, "semantic_class", None)),
             data_type=_optional_enum(SignalDataType, getattr(tag, "data_type", None)),

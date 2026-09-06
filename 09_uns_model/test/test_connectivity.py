@@ -33,6 +33,7 @@ from unittest.mock import patch
 import pytest
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.sql.dml import Insert, Update
+from sqlalchemy.sql.selectable import Select
 
 from uns_model.connectivity import (
     ConnectivityRepository,
@@ -213,6 +214,21 @@ class _FakeDatabase:
         yield self._session
 
 
+def _loader_blob(statement: object) -> str:
+    """Loader options are not in compiled SQL; inspect `_with_options` instead."""
+    chunks = [repr(getattr(statement, "_with_options", ()))]
+    for opt in getattr(statement, "_with_options", ()):
+        chunks.append(str(getattr(opt, "path", "")))
+        chunks.append(repr(getattr(opt, "context", {})))
+        chunks.append(str(opt))
+        chunks.append(repr(opt))
+    return " ".join(chunks).lower()
+
+
+def _selects(session: _FakeSession) -> list[Select]:
+    return [stmt for stmt in session.statements if isinstance(stmt, Select)]
+
+
 @pytest.mark.asyncio
 async def test_save_unit_of_measure_rejects_blank_symbol():
     repo = ConnectivityRepository(database=None)  # type: ignore[arg-type]
@@ -359,3 +375,40 @@ async def test_update_tag_upserts_metric_when_asset_and_unit_are_set():
     assert captured["asset_path"] == "AcmeWater/Site1/Furnace"
     assert captured["unit_of_measure"] == "°C"
     assert captured["display_name"] == "Temp"
+
+
+@pytest.mark.asyncio
+async def test_list_subscribed_tags_eager_loads_asset():
+    session = _FakeSession(tag=[])
+    repo = ConnectivityRepository(_FakeDatabase(session))
+    await repo.list_subscribed_tags("s1")
+    blob = _loader_blob(session.statements[0])
+    assert "asset" in blob
+
+
+@pytest.mark.asyncio
+async def test_list_servers_eager_loads_tag_assets():
+    session = _FakeSession(tag=[])
+    repo = ConnectivityRepository(_FakeDatabase(session))
+    await repo.list_servers()
+    blob = _loader_blob(session.statements[0])
+    assert "tags" in blob
+    assert "asset" in blob
+
+
+@pytest.mark.asyncio
+async def test_update_tag_eager_loads_asset_on_returned_row():
+    tag = SimpleNamespace(
+        server_id="s1",
+        node_id="ns=3;s=A",
+        browse_path="Heater/Temp",
+        display_name="Temp",
+        mqtt_topic="Plant/A",
+        asset_id=None,
+        unit_of_measure=None,
+    )
+    session = _FakeSession(tag=tag)
+    repo = ConnectivityRepository(_FakeDatabase(session))
+    await repo.update_tag("s1", "ns=3;s=A", mqtt_topic="Plant/T101/Level")
+    blob = _loader_blob(_selects(session)[0])
+    assert "asset" in blob
