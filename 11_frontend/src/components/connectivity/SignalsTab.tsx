@@ -460,11 +460,7 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
     setAddSignalError(null);
   };
 
-  /**
-   * S7/EtherNet-IP have no browse discovery, so the engineer authors the tag's address
-   * directly. `ConnectivityTagInput` has no `dataType` field — save the tag first, then
-   * patch `dataType` through the existing `updateConnectivityTag` when one was chosen.
-   */
+  /** S7/EtherNet-IP have no browse discovery, so the engineer authors the tag's address directly. */
   const handleAddSignal = async () => {
     if (!selectedServer) return;
     const nodeId = newAddress.trim();
@@ -483,8 +479,9 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
         displayName,
         mqttTopic,
         subscribed: true,
+        dataType: newDataType || null,
       });
-      let tag: GraphqlSubscribedSignal = {
+      const tag: GraphqlSubscribedSignal = {
         serverId: selectedServer.id,
         serverName: selectedServer.name,
         nodeId: saved.nodeId,
@@ -495,12 +492,6 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
         dataType: saved.dataType ?? null,
         labels: [],
       };
-      if (newDataType) {
-        const updated = await unsGraphQLClient.updateConnectivityTag(selectedServer.id, nodeId, {
-          dataType: newDataType,
-        });
-        tag = { ...tag, ...updated, serverName: selectedServer.name };
-      }
       setRows((prev) => [...prev, tag]);
       setAddSignalOpen(false);
       resetAddSignalDraft();

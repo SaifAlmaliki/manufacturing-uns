@@ -329,6 +329,7 @@ export type GraphqlConnectivityTagInput = {
   displayName: string
   mqttTopic: string
   subscribed?: boolean
+  dataType?: GraphqlSignalDataType | null
 }
 
 /** Result of `saveConnectivityTag` — the field set that mutation selects. */

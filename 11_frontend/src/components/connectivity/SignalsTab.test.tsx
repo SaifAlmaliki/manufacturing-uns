@@ -480,8 +480,13 @@ describe('SignalsTab', () => {
     await waitFor(() =>
       expect(saveConnectivityTag).toHaveBeenCalledWith(
         's2',
-        expect.objectContaining({ nodeId: '%ID103', mqttTopic: 'Acme/Line/Speed' }),
+        expect.objectContaining({
+          nodeId: '%ID103',
+          mqttTopic: 'Acme/Line/Speed',
+          dataType: 'Integer',
+        }),
       ),
     );
+    expect(updateConnectivityTag).not.toHaveBeenCalled();
   });
 });

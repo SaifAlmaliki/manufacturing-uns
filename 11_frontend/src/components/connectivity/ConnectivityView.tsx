@@ -240,7 +240,10 @@ export const ConnectivityView: React.FC = () => {
       const wasEdit = Boolean(editingId);
       setAddOpen(false);
       resetDraft();
-      if (!wasEdit) await handleTest(saved);
+      // S7/EtherNet-IP need uns_mqtt_broker recreated before their Edge adapter is live —
+      // testing right after Add would just report EDGE_APPLY_ERROR back at the engineer.
+      // They stay `pending` until an explicit Test after the broker picks up config.xml.
+      if (!wasEdit && saved.protocol === 'OPC_UA') await handleTest(saved);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Server was not added');
     } finally {

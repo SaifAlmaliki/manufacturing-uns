@@ -463,6 +463,33 @@ describe('S7 and EtherNet/IP servers', () => {
     await waitFor(() => expect(testConnectivityServer).toHaveBeenCalledWith('s2'));
     expect(testOpcUaConnection).not.toHaveBeenCalled();
   });
+
+  it('does not auto-test a newly added S7 server, leaving it pending', async () => {
+    saveConnectivityServer.mockImplementation(async (input) => ({
+      ...S7_SERVER,
+      ...input,
+      lastStatus: 'pending',
+      lastError: 'Recreate uns_mqtt_broker to apply Edge config',
+      lastTestedAt: null,
+      tags: [],
+    }));
+    renderView();
+    await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: /add server/i }));
+    fireEvent.change(await screen.findByLabelText('Name'), { target: { value: 'plc1' } });
+    fireEvent.change(screen.getByLabelText('Protocol'), { target: { value: 's7' } });
+    fireEvent.change(screen.getByLabelText('Host'), { target: { value: '10.0.0.5' } });
+    fireEvent.click(screen.getByRole('button', { name: /^add$/i }));
+
+    await waitFor(() => expect(saveConnectivityServer).toHaveBeenCalled());
+    expect(testConnectivityServer).not.toHaveBeenCalled();
+    expect(testOpcUaConnection).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByText('plc1')).toBeTruthy());
+    expect(
+      screen.getByText('Recreate uns_mqtt_broker to apply Edge config'),
+    ).toBeTruthy();
+  });
 });
 
 async function openDrawerAndSelectWtp() {
