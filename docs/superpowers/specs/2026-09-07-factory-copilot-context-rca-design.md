@@ -2,7 +2,7 @@
 
 Date: 2026-09-07
 Modules: `13_uns_factory_agent`, `11_frontend` copilot drawer
-Status: Draft (awaiting review)
+Status: Approved
 Amends: `docs/superpowers/specs/2026-09-05-factory-copilot-design.md`
 
 Factory Copilot already talks. He still asks “which Asset?” when the drawer shows

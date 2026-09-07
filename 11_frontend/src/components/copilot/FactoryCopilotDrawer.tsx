@@ -9,6 +9,7 @@ import {
   checkCopilotHealth,
   createConversation,
   deleteConversation,
+  fetchCopilotScope,
   getConversation,
   listConversations,
   sendChat,
@@ -16,9 +17,9 @@ import {
   type CopilotConversation,
   type CopilotMessage,
 } from './copilotApi';
-import { contextChip, pageContext } from './copilotContext';
+import { contextChip, pageContext, type CopilotScope } from './copilotContext';
 import { citationTarget } from './citationJump';
-import { JOB_CARDS } from './jobCards';
+import { jobCards } from './jobCards';
 
 interface FactoryCopilotDrawerProps {
   isOpen: boolean;
@@ -38,6 +39,7 @@ export const FactoryCopilotDrawer: React.FC<FactoryCopilotDrawerProps> = ({ isOp
   const [draft, setDraft] = useState('');
   const [lamp, setLamp] = useState<LampState>('idle');
   const [unavailable, setUnavailable] = useState(false);
+  const [scope, setScope] = useState<CopilotScope | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
 
   const ctx = useMemo(
@@ -51,7 +53,9 @@ export const FactoryCopilotDrawer: React.FC<FactoryCopilotDrawerProps> = ({ isOp
     [location.pathname, selectedNode?.topic, copilotMetricKey, focusedAlarmTopic],
   );
 
-  const chip = contextChip(ctx);
+  const hasFocus = Boolean(ctx.assetPath || ctx.metricKey || ctx.alarmTopic);
+  const cards = useMemo(() => jobCards(hasFocus), [hasFocus]);
+  const chip = contextChip(ctx, scope);
 
   const loadThreads = useCallback(async () => {
     try {
@@ -83,6 +87,9 @@ export const FactoryCopilotDrawer: React.FC<FactoryCopilotDrawerProps> = ({ isOp
     void checkCopilotHealth().then((ok) => {
       setUnavailable(!ok);
     });
+    // Scope only tells the chip which Access Groups are in play; health check
+    // above is the sole owner of `unavailable`, so a scope failure (401/502) is swallowed.
+    fetchCopilotScope().then(setScope).catch(() => {});
   }, [isOpen, loadThreads]);
 
   useEffect(() => {
@@ -277,7 +284,7 @@ export const FactoryCopilotDrawer: React.FC<FactoryCopilotDrawerProps> = ({ isOp
                   Try one of these to get started:
                 </p>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {JOB_CARDS.map((card) => (
+                  {cards.map((card) => (
                     <button
                       key={card.id}
                       type="button"

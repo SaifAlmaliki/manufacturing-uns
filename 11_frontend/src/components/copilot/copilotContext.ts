@@ -1,5 +1,7 @@
 export type CopilotSource = 'model' | 'historian' | 'live' | 'alarms';
 
+export type CopilotScope = { roots: string[]; unrestricted: boolean };
+
 export type PageContext = {
   route: string;
   assetPath: string;
@@ -25,7 +27,11 @@ export function pageContext(input: {
   };
 }
 
-export function contextChip(ctx: PageContext): string {
+export function contextChip(ctx: PageContext, scope?: CopilotScope | null): string {
   const focus = ctx.assetPath || ctx.metricKey || ctx.alarmTopic;
-  return focus ? focus : 'Plant · no Asset selected';
+  if (focus) return focus;
+  const roots = scope?.roots ?? [];
+  if (roots.length === 1) return `Plant · ${roots[0]}`;
+  if (roots.length > 1) return `Plant · ${roots.length} Access Groups`;
+  return 'Plant · my Access Groups';
 }

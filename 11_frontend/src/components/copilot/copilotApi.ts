@@ -1,5 +1,5 @@
 import { authClient } from '../../lib/auth/oidc';
-import type { PageContext } from './copilotContext';
+import type { CopilotScope, PageContext } from './copilotContext';
 
 export type CopilotSource = 'model' | 'historian' | 'live' | 'alarms';
 
@@ -97,6 +97,11 @@ export async function sendChat(body: {
     headers: agentHeaders(),
     body: JSON.stringify(body),
   });
+  return handleResponse(response);
+}
+
+export async function fetchCopilotScope(): Promise<CopilotScope> {
+  const response = await fetch(`${BASE}/scope`, { headers: agentHeaders() });
   return handleResponse(response);
 }
 

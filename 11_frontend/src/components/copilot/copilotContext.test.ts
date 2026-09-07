@@ -28,7 +28,7 @@ describe('pageContext', () => {
 });
 
 describe('contextChip', () => {
-  it('shows plant placeholder when empty', () => {
+  it('shows the my Access Groups placeholder before scope loads', () => {
     expect(
       contextChip({
         route: '/dashboard',
@@ -36,7 +36,31 @@ describe('contextChip', () => {
         metricKey: '',
         alarmTopic: '',
       }),
-    ).toBe('Plant · no Asset selected');
+    ).toBe('Plant · my Access Groups');
+  });
+
+  it('names Access Group roots when nothing is selected', () => {
+    expect(
+      contextChip(
+        { route: '/dashboard', assetPath: '', metricKey: '', alarmTopic: '' },
+        { roots: ['AcmeWater/Site1'], unrestricted: false },
+      ),
+    ).toBe('Plant · AcmeWater/Site1');
+  });
+
+  it('counts Access Groups when there are several roots', () => {
+    expect(
+      contextChip(
+        { route: '/dashboard', assetPath: '', metricKey: '', alarmTopic: '' },
+        { roots: ['Acme/Site1', 'Acme/Site2'], unrestricted: false },
+      ),
+    ).toBe('Plant · 2 Access Groups');
+  });
+
+  it('does not say no Asset selected', () => {
+    expect(
+      contextChip({ route: '/dashboard', assetPath: '', metricKey: '', alarmTopic: '' }),
+    ).not.toMatch(/no Asset selected/i);
   });
 
   it('prefers assetPath', () => {

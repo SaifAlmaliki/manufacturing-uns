@@ -17,18 +17,24 @@ const copilotApi = vi.hoisted(() => ({
     citations: [{ asset: 'P101', topic: 'Halabja/RawWater/Train10/P101/Flow', time: '2026-09-06T09:00:00Z', source: 'historian' as const }],
   })),
   checkCopilotHealth: vi.fn(async () => true),
+  fetchCopilotScope: vi.fn(async () => ({ roots: [], unrestricted: false })),
 }));
 
 vi.mock('./copilotApi', () => ({
   ...copilotApi,
+  CopilotAuthError: class CopilotAuthError extends Error {},
   CopilotUnavailableError: class CopilotUnavailableError extends Error {},
 }));
 
 const uns = vi.hoisted(() => ({
-  selectedNode: { topic: 'Halabja/RawWater/Train10/P101' },
-  copilotMetricKey: 'Halabja/RawWater/Train10/P101/Flow',
+  selectedNode: { topic: 'Halabja/RawWater/Train10/P101' } as { topic?: string } | undefined,
+  copilotMetricKey: 'Halabja/RawWater/Train10/P101/Flow' as string | undefined,
   jumpToHistorian: vi.fn(),
   jumpToTopicInTree: vi.fn(),
+}));
+
+const alarms = vi.hoisted(() => ({
+  focusedAlarmTopic: 'Halabja/RawWater/Train10/P101' as string | undefined,
 }));
 
 vi.mock('../../context/UNSContext', () => ({
@@ -36,12 +42,12 @@ vi.mock('../../context/UNSContext', () => ({
 }));
 
 vi.mock('../../context/AlarmContext', () => ({
-  useAlarms: () => ({ focusedAlarmTopic: 'Halabja/RawWater/Train10/P101' }),
+  useAlarms: () => alarms,
 }));
 
 import { FactoryCopilotDrawer } from './FactoryCopilotDrawer';
 import { CopilotUnavailableError } from './copilotApi';
-import { JOB_CARDS } from './jobCards';
+import { JOB_CARDS, jobCards } from './jobCards';
 
 function renderDrawer(open = true) {
   const onClose = vi.fn();
@@ -53,8 +59,17 @@ function renderDrawer(open = true) {
   return { onClose };
 }
 
+function clearFocus() {
+  uns.selectedNode = undefined;
+  uns.copilotMetricKey = undefined;
+  alarms.focusedAlarmTopic = undefined;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
+  uns.selectedNode = { topic: 'Halabja/RawWater/Train10/P101' };
+  uns.copilotMetricKey = 'Halabja/RawWater/Train10/P101/Flow';
+  alarms.focusedAlarmTopic = 'Halabja/RawWater/Train10/P101';
   copilotApi.sendChat.mockResolvedValue({
     text: 'Pump P101 flow dropped 12% over three weeks.',
     citations: [
@@ -66,6 +81,8 @@ beforeEach(() => {
       },
     ],
   });
+  copilotApi.checkCopilotHealth.mockResolvedValue(true);
+  copilotApi.fetchCopilotScope.mockResolvedValue({ roots: [], unrestricted: false });
 });
 
 describe('FactoryCopilotDrawer', () => {
@@ -164,5 +181,34 @@ describe('FactoryCopilotDrawer', () => {
     renderDrawer();
     const text = JOB_CARDS.map((c) => c.prompt).join(' ');
     expect(text).not.toMatch(/schedule|instruction|SOP|Brent|Hot Rolling/i);
+  });
+
+  it('shows the Access Group chip once scope resolves and nothing is focused', async () => {
+    clearFocus();
+    copilotApi.fetchCopilotScope.mockResolvedValue({ roots: ['Acme/Site1'], unrestricted: false });
+    renderDrawer();
+    await waitFor(() => {
+      expect(screen.getByTestId('copilot-context').textContent).toBe('Plant · Acme/Site1');
+    });
+  });
+
+  it('shows plant-scoped job card copy when nothing is focused', async () => {
+    clearFocus();
+    renderDrawer();
+    const plantCard = jobCards(false)[0];
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: plantCard.prompt })).toBeTruthy();
+    });
+    expect(screen.getByText(/my plant right now/i)).toBeTruthy();
+  });
+
+  it('does not mark unavailable when scope fetch fails but health check is ok', async () => {
+    copilotApi.checkCopilotHealth.mockResolvedValue(true);
+    copilotApi.fetchCopilotScope.mockRejectedValue(new CopilotUnavailableError());
+    renderDrawer();
+    await waitFor(() => {
+      expect(screen.getByText('Hello, how can I help you today?')).toBeTruthy();
+    });
+    expect(screen.queryByText('Factory Copilot is unavailable.')).toBeNull();
   });
 });
