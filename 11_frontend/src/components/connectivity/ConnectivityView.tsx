@@ -268,11 +268,12 @@ export const ConnectivityView: React.FC = () => {
         <PageContent fullWidth className="flex min-h-full flex-col gap-3 pb-4">
           {pageTab === 'signals' ? (
             <SignalsTab
-              renderToolbar={({ search: signalSearch, selects }) => (
+              renderToolbar={({ search: signalSearch, selects, trailing }) => (
                 <FilterToolbar
                   tabs={pageTabs}
                   search={signalSearch}
                   selects={selects}
+                  trailing={trailing}
                 />
               )}
             />

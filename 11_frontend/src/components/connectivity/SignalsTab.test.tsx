@@ -74,13 +74,20 @@ beforeEach(() => {
   subscribeOpcUaDataChanges.mockReturnValue(() => undefined);
 });
 
+async function saveSignalChanges() {
+  fireEvent.click(screen.getByRole('button', { name: /save signal changes/i }));
+}
+
 describe('SignalsTab', () => {
-  it('lists a subscribed signal and saves a unit from the dropdown', async () => {
+  it('lists a subscribed signal and saves a unit only after Save', async () => {
     render(<SignalsTab />);
     await waitFor(() => expect(screen.getByText('Level')).toBeTruthy());
     expect(screen.getAllByText('opcplc').length).toBeGreaterThan(0);
 
     fireEvent.change(screen.getByLabelText('Unit of Measure for Level'), { target: { value: '°C' } });
+    expect(updateConnectivityTag).not.toHaveBeenCalled();
+
+    await saveSignalChanges();
     await waitFor(() =>
       expect(updateConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101', {
         unitOfMeasure: '°C',
@@ -100,6 +107,7 @@ describe('SignalsTab', () => {
 
     await waitFor(() => expect(saveUnitOfMeasure).toHaveBeenCalledWith('NTU', undefined));
     await waitFor(() => expect(screen.getByRole('option', { name: 'NTU' })).toBeTruthy());
+    expect(updateConnectivityTag).not.toHaveBeenCalled();
   });
 
   it('shows empty copy when nothing is subscribed', async () => {
@@ -173,7 +181,9 @@ describe('SignalsTab', () => {
 
     fireEvent.click(screen.getByRole('checkbox', { name: /select level/i }));
     fireEvent.change(screen.getByLabelText('Apply Unit of Measure'), { target: { value: '°C' } });
+    expect(updateConnectivityTag).not.toHaveBeenCalled();
 
+    await saveSignalChanges();
     await waitFor(() =>
       expect(updateConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101', {
         unitOfMeasure: '°C',
@@ -187,6 +197,9 @@ describe('SignalsTab', () => {
     await waitFor(() => expect(screen.getByText('Level')).toBeTruthy());
 
     fireEvent.change(screen.getByLabelText('Asset for Level'), { target: { value: '9' } });
+    expect(updateConnectivityTag).not.toHaveBeenCalled();
+
+    await saveSignalChanges();
     await waitFor(() =>
       expect(updateConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101', { assetId: 9 }),
     );
@@ -199,6 +212,7 @@ describe('SignalsTab', () => {
     await waitFor(() => expect(screen.getByText('Level')).toBeTruthy());
 
     fireEvent.change(screen.getByLabelText('Unit of Measure for Level'), { target: { value: '°C' } });
+    await saveSignalChanges();
     await waitFor(() => expect(screen.getByText(/tag update failed/i)).toBeTruthy());
   });
 
@@ -224,6 +238,7 @@ describe('SignalsTab', () => {
 
     fireEvent.click(screen.getByRole('checkbox', { name: /select level/i }));
     fireEvent.change(screen.getByLabelText('Apply Unit of Measure'), { target: { value: '°C' } });
+    await saveSignalChanges();
 
     await waitFor(() => expect(screen.getByText(/bulk patch failed/i)).toBeTruthy());
   });
@@ -239,12 +254,15 @@ describe('SignalsTab', () => {
     fireEvent.click(screen.getByRole('button', { name: /^confirm$/i }));
 
     await waitFor(() => expect(saveSignalLabel).toHaveBeenCalledWith('Custom'));
+    expect(updateConnectivityTag).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getAllByText('Custom').length).toBeGreaterThan(0));
+
+    await saveSignalChanges();
     await waitFor(() =>
       expect(updateConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101', {
         labels: ['Custom'],
       }),
     );
-    await waitFor(() => expect(screen.getAllByText('Custom').length).toBeGreaterThan(0));
   });
 
   it('bulk-applies Other label via saveSignalLabel', async () => {
@@ -257,6 +275,9 @@ describe('SignalsTab', () => {
     fireEvent.click(screen.getByRole('button', { name: /^confirm$/i }));
 
     await waitFor(() => expect(saveSignalLabel).toHaveBeenCalledWith('Custom'));
+    expect(updateConnectivityTag).not.toHaveBeenCalled();
+
+    await saveSignalChanges();
     await waitFor(() =>
       expect(updateConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101', {
         labels: ['Custom'],
@@ -360,5 +381,42 @@ describe('SignalsTab', () => {
 
     await waitFor(() => expect(screen.getByText(/label catalog failed/i)).toBeTruthy());
     expect((screen.getByLabelText('New signal label') as HTMLInputElement).value).toBe('Custom');
+  });
+
+  it('discards staged table edits without calling the API', async () => {
+    render(<SignalsTab />);
+    await waitFor(() => expect(screen.getByText('Level')).toBeTruthy());
+
+    fireEvent.change(screen.getByLabelText('Unit of Measure for Level'), { target: { value: '°C' } });
+    expect((screen.getByLabelText('Unit of Measure for Level') as HTMLSelectElement).value).toBe(
+      '°C',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^discard$/i }));
+    expect((screen.getByLabelText('Unit of Measure for Level') as HTMLSelectElement).value).toBe('');
+    expect(updateConnectivityTag).not.toHaveBeenCalled();
+  });
+
+  it('places bulk editors on one header row and deletes selected signals after confirm', async () => {
+    render(<SignalsTab />);
+    await waitFor(() => expect(screen.getByText('Level')).toBeTruthy());
+
+    expect(screen.queryByRole('button', { name: /delete selected/i })).toBeNull();
+    fireEvent.click(screen.getByRole('checkbox', { name: /select level/i }));
+
+    const applyAsset = screen.getByLabelText('Apply Asset');
+    expect(applyAsset.closest('thead')).toBeTruthy();
+    expect(applyAsset.closest('tr')?.querySelector('[aria-label="Apply class"]')).toBeTruthy();
+    expect(applyAsset.closest('tr')?.querySelector('[aria-label="Apply Unit of Measure"]')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /delete selected/i }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/delete 1 selected signal/i)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: /^confirm$/i }));
+
+    await waitFor(() =>
+      expect(unsubscribeConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101'),
+    );
+    await waitFor(() => expect(screen.queryByText('Level')).toBeNull());
   });
 });

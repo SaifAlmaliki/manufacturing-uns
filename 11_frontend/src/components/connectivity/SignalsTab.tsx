@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pencil } from 'lucide-react';
+import { Pencil, Trash2 } from 'lucide-react';
 import { unsGraphQLClient } from '../../services/graphql/client';
 import type {
   AccessAssetDto,
@@ -12,10 +12,27 @@ import type {
   GraphqlUnitOfMeasure,
 } from '../../services/graphql/types';
 import { filterSubscribedSignals } from '../../lib/connectivity/signal-filters';
+import {
+  draftCount,
+  mergeSignalDraft,
+  stageSignalPatch,
+  withAddedLabel,
+  type SignalDrafts,
+} from '../../lib/connectivity/signal-drafts';
 import { formatOpcUaValue } from '../../lib/connectivity/map-servers';
 import { assetLeafLabel } from '../../lib/condition-monitoring/match-tags';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   BtnGhost,
+  BtnPrimary,
   ConsoleCard,
   ConsoleSelect,
   FilterToolbar,
@@ -92,6 +109,7 @@ const EMPTY_COPY = 'Subscribe variables from Browse data on a server — then at
 export type SignalsToolbar = {
   search: { value: string; onChange: (value: string) => void; placeholder?: string };
   selects: FilterToolbarSelect[];
+  trailing?: React.ReactNode;
 };
 
 type SignalsTabProps = {
@@ -119,6 +137,10 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
   const [otherSymbol, setOtherSymbol] = useState('');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [liveByKey, setLiveByKey] = useState<Record<string, LiveReading>>({});
+  const [drafts, setDrafts] = useState<SignalDrafts>({});
+  const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -257,8 +279,13 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
     };
   }, [liveTargets]);
 
+  const displayedRows = useMemo(
+    () => rows.map((row) => mergeSignalDraft(row, drafts[rowKey(row)])),
+    [rows, drafts],
+  );
+
   const filtered = useMemo(() => {
-    const byCatalog = filterSubscribedSignals(rows, {
+    const byCatalog = filterSubscribedSignals(displayedRows, {
       search,
       serverId: serverId || undefined,
       missingUnit: missingUnit || undefined,
@@ -267,7 +294,7 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
     });
     if (!assetFilter) return byCatalog;
     return byCatalog.filter((row) => String(row.assetId ?? '') === assetFilter);
-  }, [rows, search, serverId, assetFilter, missingUnit, semanticClass, labelFilter]);
+  }, [displayedRows, search, serverId, assetFilter, missingUnit, semanticClass, labelFilter]);
 
   const serverOptions = useMemo(() => {
     const seen = new Map<string, string>();
@@ -299,13 +326,38 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
     }
   };
 
-  const applyBulk = async (patch: GraphqlConnectivityTagPatch): Promise<boolean> => {
-    const targets = [...selected].map(parseRowKey);
-    for (const target of targets) {
-      const ok = await applyPatch(target.serverId, target.nodeId, patch);
-      if (!ok) return false;
+  const stageOn = (keys: string[], patch: GraphqlConnectivityTagPatch) => {
+    setDrafts((prev) => {
+      let next = prev;
+      for (const key of keys) {
+        const row = rows.find((item) => rowKey(item) === key);
+        if (!row) continue;
+        next = stageSignalPatch(next, key, row, patch);
+      }
+      return next;
+    });
+    setSaveError(null);
+  };
+
+  const persistDrafts = async () => {
+    const entries = Object.entries(drafts);
+    if (entries.length === 0) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      for (const [key, patch] of entries) {
+        const target = parseRowKey(key);
+        const ok = await applyPatch(target.serverId, target.nodeId, patch);
+        if (!ok) return;
+        setDrafts((prev) => {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+      }
+    } finally {
+      setSaving(false);
     }
-    return true;
   };
 
   const persistOtherUnit = async (target: { serverId: string; nodeId: string } | 'bulk') => {
@@ -320,11 +372,8 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
         catalog = units;
       }
       setUnits(mergeUnit(catalog, saved));
-      const ok =
-        target === 'bulk'
-          ? await applyBulk({ unitOfMeasure: saved.symbol })
-          : await applyPatch(target.serverId, target.nodeId, { unitOfMeasure: saved.symbol });
-      if (!ok) return;
+      const keys = target === 'bulk' ? [...selected] : [rowKey(target)];
+      stageOn(keys, { unitOfMeasure: saved.symbol });
       setOtherFor(null);
       setOtherSymbol('');
       setSaveError(null);
@@ -333,18 +382,19 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
     }
   };
 
-  const applyLabelName = async (
-    name: string,
-    target: { serverId: string; nodeId: string } | 'bulk',
-  ): Promise<boolean> => {
+  const stageLabelName = (name: string, target: { serverId: string; nodeId: string } | 'bulk') => {
     const targets = target === 'bulk' ? [...selected].map(parseRowKey) : [target];
-    for (const item of targets) {
-      const row = rows.find((r) => r.serverId === item.serverId && r.nodeId === item.nodeId);
-      const next = Array.from(new Set([...(row?.labels ?? []), name]));
-      const ok = await applyPatch(item.serverId, item.nodeId, { labels: next });
-      if (!ok) return false;
-    }
-    return true;
+    setDrafts((prev) => {
+      let next = prev;
+      for (const item of targets) {
+        const key = rowKey(item);
+        const row = rows.find((r) => r.serverId === item.serverId && r.nodeId === item.nodeId);
+        if (!row) continue;
+        next = stageSignalPatch(next, key, row, withAddedLabel(row, prev[key], name));
+      }
+      return next;
+    });
+    setSaveError(null);
   };
 
   const persistOtherLabel = async (target: { serverId: string; nodeId: string } | 'bulk') => {
@@ -359,13 +409,45 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
         catalog = labels;
       }
       setLabels(mergeLabel(catalog, saved));
-      const ok = await applyLabelName(saved, target);
-      if (!ok) return;
+      stageLabelName(saved, target);
       setOtherFor(null);
       setOtherSymbol('');
       setSaveError(null);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Signal label was not saved');
+    }
+  };
+
+  const deleteSelected = async () => {
+    const targets = [...selected].map(parseRowKey);
+    if (targets.length === 0) return;
+    setDeleting(true);
+    setSaveError(null);
+    try {
+      for (const target of targets) {
+        await unsGraphQLClient.unsubscribeConnectivityTag(target.serverId, target.nodeId);
+        const key = rowKey(target);
+        setRows((prev) =>
+          prev.filter((row) => !(row.serverId === target.serverId && row.nodeId === target.nodeId)),
+        );
+        setDrafts((prev) => {
+          if (!(key in prev)) return prev;
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+        setSelected((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+      }
+      setConfirmDelete(false);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Selected signals were not deleted');
+      setConfirmDelete(false);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -419,6 +501,7 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
     </div>
   );
 
+  const dirtyCount = draftCount(drafts);
   const toolbar: SignalsToolbar = {
     search: { value: search, onChange: setSearch, placeholder: 'Search name, topic, node…' },
     selects: [
@@ -468,100 +551,41 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
         ],
       },
     ],
+    trailing: (
+      <div className="ml-auto flex shrink-0 items-center gap-1">
+        {dirtyCount > 0 ? (
+          <BtnGhost
+            className="px-2 py-1 text-[11px]"
+            onClick={() => {
+              setDrafts({});
+              setSaveError(null);
+            }}
+          >
+            Discard
+          </BtnGhost>
+        ) : null}
+        <BtnPrimary
+          className="px-2.5 py-1 text-[11px]"
+          disabled={dirtyCount === 0 || saving}
+          aria-label="Save signal changes"
+          onClick={() => void persistDrafts()}
+        >
+          {saving
+            ? 'Saving…'
+            : dirtyCount > 0
+              ? `Save ${dirtyCount} ${dirtyCount === 1 ? 'change' : 'changes'}`
+              : 'Save'}
+        </BtnPrimary>
+      </div>
+    ),
   };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
-      {renderToolbar ? renderToolbar(toolbar) : <FilterToolbar search={toolbar.search} selects={toolbar.selects} />}
-
-      {selected.size > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-[#FF7A00]/25 bg-[#FF7A00]/8 px-2 py-1.5">
-          <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-[#FF7A00]">
-            {selected.size} selected
-          </span>
-          {unitSelect(
-            'Apply Unit of Measure',
-            '',
-            (symbol) => void applyBulk({ unitOfMeasure: symbol }),
-            'bulk',
-          )}
-          <ConsoleSelect
-            aria-label="Apply Asset"
-            className="max-w-[14rem]"
-            value=""
-            onChange={(e) => {
-              const raw = e.target.value;
-              if (!raw) return;
-              void applyBulk({ assetId: raw === '__clear__' ? null : Number(raw) });
-            }}
-          >
-            <option value="">Asset…</option>
-            <option value="__clear__">Clear Asset</option>
-            {assets.map((asset) => (
-              <option key={asset.id} value={String(asset.id)} title={asset.path}>
-                {assetLeafLabel(asset.path, asset.segment)}
-              </option>
-            ))}
-          </ConsoleSelect>
-          <ConsoleSelect
-            aria-label="Apply class"
-            value=""
-            onChange={(e) => {
-              const raw = e.target.value;
-              void applyBulk({
-                semanticClass: raw === '' ? null : (raw as GraphqlSignalSemanticClass),
-              });
-            }}
-          >
-            <option value="">Class…</option>
-            {SEMANTIC_CLASSES.map((cls) => (
-              <option key={cls} value={cls}>
-                {cls}
-              </option>
-            ))}
-          </ConsoleSelect>
-          <ConsoleSelect
-            aria-label="Apply data type"
-            value=""
-            onChange={(e) => {
-              const raw = e.target.value;
-              void applyBulk({ dataType: raw === '' ? null : (raw as GraphqlSignalDataType) });
-            }}
-          >
-            <option value="">Data type…</option>
-            {DATA_TYPES.map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </ConsoleSelect>
-          <ConsoleSelect
-            aria-label="Apply label"
-            className="min-w-[6.5rem]"
-            value={otherFor === 'bulk' && otherKind === 'label' ? OTHER : ''}
-            onChange={(e) => {
-              const name = e.target.value;
-              if (!name) return;
-              if (name === OTHER) {
-                openOther('label', 'bulk');
-                return;
-              }
-              if (otherFor === 'bulk' && otherKind === 'label') setOtherFor(null);
-              void applyLabelName(name, 'bulk');
-            }}
-          >
-            <option value="">Label…</option>
-            {labels.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-            <option value={OTHER}>Other…</option>
-          </ConsoleSelect>
-          <BtnGhost className="px-2 py-1 text-[11px]" onClick={() => setSelected(new Set())}>
-            Clear
-          </BtnGhost>
-        </div>
+      {renderToolbar ? (
+        renderToolbar(toolbar)
+      ) : (
+        <FilterToolbar search={toolbar.search} selects={toolbar.selects} trailing={toolbar.trailing} />
       )}
 
       {otherFor && (
@@ -644,14 +668,142 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
                   <th className="px-2 py-1.5">Data type</th>
                   <th className="px-2 py-1.5">Labels</th>
                 </tr>
+                {selected.size > 0 && (
+                  <tr className="border-t border-[#FF7A00]/20 bg-[#FF7A00]/8 text-[11px] font-normal normal-case tracking-normal text-foreground">
+                    <td className="whitespace-nowrap px-2 py-1">
+                      <span
+                        className="text-[10px] font-medium uppercase tracking-[0.16em] text-[#FF7A00] tabular-nums"
+                        aria-label={`${selected.size} selected`}
+                      >
+                        {selected.size}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-2 py-1">
+                      <div className="flex items-center gap-1">
+                        <BtnGhost
+                          className="px-2 py-1 text-[11px] text-rose-400 hover:text-rose-300"
+                          aria-label="Delete selected"
+                          onClick={() => setConfirmDelete(true)}
+                        >
+                          <Trash2 className="size-3" />
+                          Delete
+                        </BtnGhost>
+                        <BtnGhost
+                          className="px-2 py-1 text-[11px]"
+                          onClick={() => setSelected(new Set())}
+                        >
+                          Clear
+                        </BtnGhost>
+                      </div>
+                    </td>
+                    <td className="px-2 py-1" />
+                    <td className="px-2 py-1" />
+                    <td className="px-2 py-1" />
+                    <td className="px-2 py-1">
+                      <ConsoleSelect
+                        aria-label="Apply Asset"
+                        className="w-[7.5rem] max-w-[7.5rem]"
+                        value=""
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          if (!raw) return;
+                          stageOn([...selected], { assetId: raw === '__clear__' ? null : Number(raw) });
+                        }}
+                      >
+                        <option value="">Asset…</option>
+                        <option value="__clear__">Clear Asset</option>
+                        {assets.map((asset) => (
+                          <option key={asset.id} value={String(asset.id)} title={asset.path}>
+                            {assetLeafLabel(asset.path, asset.segment)}
+                          </option>
+                        ))}
+                      </ConsoleSelect>
+                    </td>
+                    <td className="px-2 py-1">
+                      {unitSelect(
+                        'Apply Unit of Measure',
+                        '',
+                        (symbol) => stageOn([...selected], { unitOfMeasure: symbol }),
+                        'bulk',
+                      )}
+                    </td>
+                    <td className="px-2 py-1">
+                      <ConsoleSelect
+                        aria-label="Apply class"
+                        className="min-w-[8rem]"
+                        value=""
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          stageOn([...selected], {
+                            semanticClass: raw === '' ? null : (raw as GraphqlSignalSemanticClass),
+                          });
+                        }}
+                      >
+                        <option value="">Class…</option>
+                        {SEMANTIC_CLASSES.map((cls) => (
+                          <option key={cls} value={cls}>
+                            {cls}
+                          </option>
+                        ))}
+                      </ConsoleSelect>
+                    </td>
+                    <td className="px-2 py-1">
+                      <ConsoleSelect
+                        aria-label="Apply data type"
+                        className="min-w-[6rem]"
+                        value=""
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          stageOn([...selected], {
+                            dataType: raw === '' ? null : (raw as GraphqlSignalDataType),
+                          });
+                        }}
+                      >
+                        <option value="">Data type…</option>
+                        {DATA_TYPES.map((type) => (
+                          <option key={type} value={type}>
+                            {type}
+                          </option>
+                        ))}
+                      </ConsoleSelect>
+                    </td>
+                    <td className="px-2 py-1">
+                      <ConsoleSelect
+                        aria-label="Apply label"
+                        className="w-[7.5rem]"
+                        value={otherFor === 'bulk' && otherKind === 'label' ? OTHER : ''}
+                        onChange={(e) => {
+                          const name = e.target.value;
+                          if (!name) return;
+                          if (name === OTHER) {
+                            openOther('label', 'bulk');
+                            return;
+                          }
+                          if (otherFor === 'bulk' && otherKind === 'label') setOtherFor(null);
+                          stageLabelName(name, 'bulk');
+                        }}
+                      >
+                        <option value="">Label…</option>
+                        {labels.map((name) => (
+                          <option key={name} value={name}>
+                            {name}
+                          </option>
+                        ))}
+                        <option value={OTHER}>Other…</option>
+                      </ConsoleSelect>
+                    </td>
+                  </tr>
+                )}
               </thead>
               <tbody className="divide-y divide-border text-xs">
                 {filtered.map((row) => {
                   const key = rowKey(row);
                   const live = liveByKey[key];
                   const assetId = row.assetId != null ? String(row.assetId) : '';
+                  const catalogRow = rows.find((item) => rowKey(item) === key) ?? row;
+                  const dirty = Boolean(drafts[key]);
                   return (
-                    <tr key={key} className="hover:bg-muted/60">
+                    <tr key={key} className={dirty ? 'bg-[#FF7A00]/5 hover:bg-[#FF7A00]/10' : 'hover:bg-muted/60'}>
                       <td className="px-2 py-1">
                         <input
                           type="checkbox"
@@ -665,7 +817,7 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
                           <div className="flex items-center gap-1">
                             <button
                               type="button"
-                              onClick={() => setOpenSignal(row)}
+                              onClick={() => setOpenSignal(catalogRow)}
                               className="min-w-0 truncate font-heading text-left text-[13px] font-semibold text-foreground hover:text-[#FF7A00]"
                             >
                               {row.displayName}
@@ -674,7 +826,7 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
                               type="button"
                               aria-label={`Edit ${row.displayName}`}
                               title="Edit name and topic"
-                              onClick={() => setOpenSignal(row)}
+                              onClick={() => setOpenSignal(catalogRow)}
                               className="inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-[#FF7A00]/15 hover:text-[#FF7A00]"
                             >
                               <Pencil className="size-3" />
@@ -707,9 +859,7 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
                           value={assetId}
                           onChange={(e) => {
                             const raw = e.target.value;
-                            void applyPatch(row.serverId, row.nodeId, {
-                              assetId: raw === '' ? null : Number(raw),
-                            });
+                            stageOn([key], { assetId: raw === '' ? null : Number(raw) });
                           }}
                         >
                           <option value="">—</option>
@@ -724,8 +874,7 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
                         {unitSelect(
                           `Unit of Measure for ${row.displayName}`,
                           row.unitOfMeasure ?? '',
-                          (symbol) =>
-                            void applyPatch(row.serverId, row.nodeId, { unitOfMeasure: symbol }),
+                          (symbol) => stageOn([key], { unitOfMeasure: symbol }),
                           key,
                         )}
                       </td>
@@ -736,7 +885,7 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
                           value={row.semanticClass ?? ''}
                           onChange={(e) => {
                             const raw = e.target.value;
-                            void applyPatch(row.serverId, row.nodeId, {
+                            stageOn([key], {
                               semanticClass:
                                 raw === '' ? null : (raw as GraphqlSignalSemanticClass),
                             });
@@ -759,7 +908,7 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
                           value={row.dataType ?? ''}
                           onChange={(e) => {
                             const raw = e.target.value;
-                            void applyPatch(row.serverId, row.nodeId, {
+                            stageOn([key], {
                               dataType: raw === '' ? null : (raw as GraphqlSignalDataType),
                             });
                           }}
@@ -794,8 +943,7 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
                                 return;
                               }
                               if (otherFor === key && otherKind === 'label') setOtherFor(null);
-                              const next = Array.from(new Set([...(row.labels ?? []), name]));
-                              void applyPatch(row.serverId, row.nodeId, { labels: next });
+                              stageLabelName(name, { serverId: row.serverId, nodeId: row.nodeId });
                             }}
                           >
                             <option value="">Add…</option>
@@ -832,18 +980,55 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
             setOpenSignal(next);
           }}
           onUnsubscribed={(serverIdValue, nodeId) => {
+            const key = rowKey({ serverId: serverIdValue, nodeId });
             setRows((prev) =>
               prev.filter((row) => !(row.serverId === serverIdValue && row.nodeId === nodeId)),
             );
             setSelected((prev) => {
               const next = new Set(prev);
-              next.delete(rowKey({ serverId: serverIdValue, nodeId }));
+              next.delete(key);
+              return next;
+            });
+            setDrafts((prev) => {
+              if (!(key in prev)) return prev;
+              const next = { ...prev };
+              delete next[key];
               return next;
             });
             setOpenSignal(null);
           }}
         />
       )}
+
+      <Dialog open={confirmDelete} onOpenChange={(open) => !open && setConfirmDelete(false)}>
+        <DialogContent
+          aria-label="Confirm delete"
+          showCloseButton={false}
+          className="instrument-panel instrument-grain border-[#FF7A00]/20 sm:max-w-sm"
+        >
+          <DialogHeader>
+            <DialogTitle className="font-heading text-lg">
+              Delete {selected.size} selected {selected.size === 1 ? 'signal' : 'signals'}?
+            </DialogTitle>
+            <DialogDescription>
+              Selected signals are unsubscribed and removed from the catalog. Condition Monitoring
+              stops showing them after the next refresh.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDelete(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void deleteSelected()}
+              disabled={deleting}
+              aria-label="Confirm"
+            >
+              {deleting ? 'Deleting…' : 'Confirm'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

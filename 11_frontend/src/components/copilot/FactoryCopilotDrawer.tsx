@@ -56,10 +56,10 @@ export const FactoryCopilotDrawer: React.FC<FactoryCopilotDrawerProps> = ({ isOp
     try {
       const rows = await listConversations();
       setThreads(rows);
-      setUnavailable(false);
     } catch (err) {
-      if (err instanceof CopilotUnavailableError) {
-        setUnavailable(true);
+      if (!(err instanceof CopilotUnavailableError)) {
+        // Auth or other errors should not block the composer when health is ok.
+        return;
       }
     }
   }, []);
@@ -69,7 +69,6 @@ export const FactoryCopilotDrawer: React.FC<FactoryCopilotDrawerProps> = ({ isOp
       const row = await getConversation(id);
       setActiveId(id);
       setMessages(row.messages);
-      setUnavailable(false);
     } catch (err) {
       if (err instanceof CopilotUnavailableError) {
         setUnavailable(true);
@@ -81,7 +80,7 @@ export const FactoryCopilotDrawer: React.FC<FactoryCopilotDrawerProps> = ({ isOp
     if (!isOpen) return;
     void loadThreads();
     void checkCopilotHealth().then((ok) => {
-      if (!ok) setUnavailable(true);
+      setUnavailable(!ok);
     });
   }, [isOpen, loadThreads]);
 
@@ -267,6 +266,9 @@ export const FactoryCopilotDrawer: React.FC<FactoryCopilotDrawerProps> = ({ isOp
               <div className="space-y-4">
                 <p className="font-heading text-sm text-foreground">
                   Hello, how can I help you today?
+                </p>
+                <p className="font-mono text-[10px] text-muted-foreground">
+                  Try one of these to get started:
                 </p>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {JOB_CARDS.map((card) => (
