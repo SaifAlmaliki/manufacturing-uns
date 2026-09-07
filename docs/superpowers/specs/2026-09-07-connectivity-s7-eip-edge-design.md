@@ -3,7 +3,7 @@
 Date: 2026-09-07
 Modules: `09_uns_model`, `07_uns_graphql`, `11_frontend`, `00_uns_config`,
 `10_uns_opcua`, `conf/hivemq/`
-Status: Draft — awaiting user review of this file
+Status: Approved
 
 Related:
 [2026-09-03-hivemq-edge-uns-broker-design.md](./2026-09-03-hivemq-edge-uns-broker-design.md)
