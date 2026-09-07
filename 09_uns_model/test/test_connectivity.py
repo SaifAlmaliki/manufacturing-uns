@@ -37,11 +37,15 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.sql.dml import Insert, Update
 from sqlalchemy.sql.selectable import Select
 
+from uns_config.hivemq_edge_xml import EdgeAdapterInput, EdgeTagInput
+
 from uns_model.connectivity import (
     ConnectivityRepository,
     ConnectivityServerSpec,
     ConnectivityTagSpec,
     EDGE_APPLY_ERROR,
+    assert_unique_mqtt_topic,
+    edge_adapters_from_rows,
     merge_discovered,
     metric_key_for_tag,
     parse_host_port,
@@ -272,6 +276,95 @@ def test_metric_key_uses_display_name_when_topic_equals_asset_path():
         )
         == "Temp"
     )
+
+
+def test_edge_adapters_from_rows_maps_s7_and_skips_opc_ua():
+    s7 = SimpleNamespace(
+        id="srv_s7",
+        protocol="s7",
+        endpoint="10.0.0.5:102",
+        protocol_config={"controllerType": "S7_1200"},
+        tags=[
+            SimpleNamespace(
+                node_id="%ID103",
+                display_name="Speed",
+                mqtt_topic="Acme/Line/Speed",
+                data_type="Integer",
+                subscribed=True,
+            ),
+            SimpleNamespace(
+                node_id="%ID104",
+                display_name="Skip",
+                mqtt_topic="Acme/Line/Skip",
+                data_type="Integer",
+                subscribed=False,
+            ),
+        ],
+    )
+    opc = SimpleNamespace(id="srv_opc", protocol="opc_ua", endpoint="opc.tcp://h:4840", tags=[])
+    adapters = edge_adapters_from_rows([s7, opc])
+    assert len(adapters) == 1
+    assert adapters[0] == EdgeAdapterInput(
+        server_id="srv_s7",
+        protocol="s7",
+        host="10.0.0.5",
+        port=102,
+        controller_type="S7_1200",
+        tags=(EdgeTagInput("%ID103", "Speed", "Acme/Line/Speed", "Integer"),),
+    )
+
+
+def test_edge_adapters_from_rows_defaults_controller_type_and_handles_empty_tags():
+    s7 = SimpleNamespace(id="srv_s7", protocol="s7", endpoint="10.0.0.5:102", protocol_config=None, tags=[])
+    adapters = edge_adapters_from_rows([s7])
+    assert adapters == [
+        EdgeAdapterInput(server_id="srv_s7", protocol="s7", host="10.0.0.5", port=102, controller_type="S7_1500")
+    ]
+
+
+def test_edge_adapters_from_rows_returns_empty_for_no_servers():
+    assert edge_adapters_from_rows([]) == []
+
+
+def test_assert_unique_mqtt_topic_rejects_when_topic_is_already_subscribed():
+    with pytest.raises(ValueError, match="mqtt_topic"):
+        assert_unique_mqtt_topic({"Plant/A"}, "Plant/A", node_id="%ID2")
+
+
+def test_assert_unique_mqtt_topic_allows_a_distinct_or_blank_topic():
+    """Neither call raises: a distinct topic is fine, and a blank one is not yet assigned."""
+    assert_unique_mqtt_topic({"Plant/A"}, "Plant/B", node_id="%ID2")
+    assert_unique_mqtt_topic({"Plant/A"}, "", node_id="%ID2")
+
+
+class _TopicRowsSession:
+    """Fakes just enough of AsyncSession for `subscribed_topics`: one `execute().all()`."""
+
+    def __init__(self, rows: list[tuple[str, str, str]]) -> None:
+        self._rows = rows
+
+    async def execute(self, statement: object) -> _TopicRowsSession:  # noqa: ARG002
+        return self
+
+    def all(self) -> list[tuple[str, str, str]]:
+        return self._rows
+
+
+@pytest.mark.asyncio
+async def test_subscribed_topics_excludes_the_given_server_and_node():
+    session = _TopicRowsSession(
+        [("srv_s7", "%ID1", "Plant/A"), ("srv_s7", "%ID2", "Plant/B"), ("srv_s7", "%ID3", "")]
+    )
+    repo = ConnectivityRepository(database=None)  # type: ignore[arg-type]
+    topics = await repo.subscribed_topics(session, exclude=("srv_s7", "%ID1"))
+    assert topics == {"Plant/B"}
+
+
+@pytest.mark.asyncio
+async def test_subscribed_topics_with_no_exclusion_returns_every_topic():
+    session = _TopicRowsSession([("srv_s7", "%ID1", "Plant/A"), ("srv_s7", "%ID2", "Plant/B")])
+    repo = ConnectivityRepository(database=None)  # type: ignore[arg-type]
+    assert await repo.subscribed_topics(session) == {"Plant/A", "Plant/B"}
 
 
 def test_replace_subscribed_tags_on_conflict_omits_display_name_and_context():

@@ -29,15 +29,17 @@ know which servers to dial and which nodes to subscribe to, and which writes
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, fields
 from datetime import datetime
 from typing import Any
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from uns_config.hivemq_edge_xml import EdgeAdapterInput, EdgeTagInput
 from uns_model.engine import Database
 import re
 
@@ -72,6 +74,52 @@ def parse_host_port(endpoint: str) -> tuple[str, int]:
     if port < 1 or port > 65535:
         raise ValueError("port must be 1–65535")
     return match.group(1), port
+
+
+def edge_adapters_from_rows(servers: Sequence[ConnectivityServer]) -> list[EdgeAdapterInput]:
+    """
+    Map catalog rows to what `uns_config.hivemq_edge_xml` needs to splice HiveMQ Edge.
+
+    Only PLC rows (S7, EtherNet/IP) become adapters: OPC UA is not a HiveMQ Edge
+    protocol adapter, the OPC-UA bridge (`10_uns_opcua`) still owns those. Only
+    subscribed tags are republished, same rule as everywhere else in this module.
+    """
+    adapters: list[EdgeAdapterInput] = []
+    for server in servers:
+        if getattr(server, "protocol", None) not in PLC_PROTOCOLS:
+            continue
+        host, port = parse_host_port(server.endpoint)
+        controller = (getattr(server, "protocol_config", None) or {}).get("controllerType", "S7_1500")
+        tags = tuple(
+            EdgeTagInput(tag.node_id, tag.display_name, tag.mqtt_topic, getattr(tag, "data_type", None))
+            for tag in getattr(server, "tags", [])
+            if tag.subscribed
+        )
+        adapters.append(
+            EdgeAdapterInput(
+                server_id=server.id,
+                protocol=server.protocol,
+                host=host,
+                port=port,
+                controller_type=controller,
+                tags=tags,
+            )
+        )
+    return adapters
+
+
+def assert_unique_mqtt_topic(existing: set[str], topic: str, *, node_id: str) -> None:
+    """
+    Reject a tag write that would republish another node under the same topic.
+
+    Two subscribed nodes sharing an `mqtt_topic` would make one of them
+    unrecoverable at the consumer end, so this must run before any write
+    reaches Postgres. A blank topic is not yet assigned and cannot collide.
+    """
+    if topic and topic in existing:
+        raise ValueError(
+            f"mqtt_topic {topic!r} is already subscribed by another tag; node {node_id!r} needs a distinct one"
+        )
 
 
 @dataclass(slots=True)
@@ -233,14 +281,30 @@ class ConnectivityRepository:
 
     # ------------------------------------------------------------------ writes
 
-    async def save_server(self, spec: ConnectivityServerSpec) -> ConnectivityServer:
-        """Create or replace one OPC-UA server."""
+    async def save_server(
+        self,
+        spec: ConnectivityServerSpec,
+        *,
+        after_flush: Callable[[list[EdgeAdapterInput]], None] | None = None,
+    ) -> ConnectivityServer:
+        """
+        Create or replace one Connectivity server.
+
+        `after_flush`, when given, is called with every PLC row's `EdgeAdapterInput`
+        before this transaction commits, so a HiveMQ Edge XML write failure rolls
+        back the catalog write instead of leaving them out of sync. The console
+        always passes it for S7/EtherNet/IP, which is also when this sets
+        `last_status="pending"` / `last_error=EDGE_APPLY_ERROR`: the row is not
+        actually live until `testConnectivityServer` confirms the Edge apply.
+        """
         spec.validate()
         if not spec.password:
             existing = await self._server_by_id(spec.id)
             if existing is not None and existing.password:
                 spec.password = existing.password
         values = spec.column_values()
+        if after_flush is not None and spec.protocol in PLC_PROTOCOLS:
+            values = values | {"last_status": "pending", "last_error": EDGE_APPLY_ERROR}
         async with self._database.session() as session:
             statement = (
                 insert(ConnectivityServer)
@@ -252,9 +316,12 @@ class ConnectivityRepository:
                 )
             )
             await session.execute(statement)
-            return (
+            server = (
                 await session.execute(select(ConnectivityServer).where(ConnectivityServer.id == spec.id))
             ).scalar_one()
+            if after_flush is not None:
+                await self._sync_edge(session, after_flush)
+            return server
 
     async def _server_by_id(self, server_id: str) -> ConnectivityServer | None:
         async with self._database.session() as session:
@@ -262,13 +329,118 @@ class ConnectivityRepository:
                 await session.execute(select(ConnectivityServer).where(ConnectivityServer.id == server_id))
             ).scalar_one_or_none()
 
-    async def delete_server(self, server_id: str) -> bool:
+    async def delete_server(
+        self,
+        server_id: str,
+        *,
+        after_flush: Callable[[list[EdgeAdapterInput]], None] | None = None,
+    ) -> bool:
         """Delete a server and its tags (cascade). False when there was nothing to delete."""
         async with self._database.session() as session:
             result = await session.execute(
                 delete(ConnectivityServer).where(ConnectivityServer.id == server_id)
             )
-            return bool(result.rowcount)
+            deleted = bool(result.rowcount)
+            if after_flush is not None and deleted:
+                await self._sync_edge(session, after_flush)
+            return deleted
+
+    async def save_tag(
+        self,
+        server_id: str,
+        spec: ConnectivityTagSpec,
+        *,
+        after_flush: Callable[[list[EdgeAdapterInput]], None] | None = None,
+    ) -> ConnectivityTag:
+        """
+        Create or replace one tag, engineer-authored rather than discovered.
+
+        Unlike `replace_subscribed_tags` (the discovery path), this is one node
+        at a time and rejects an `mqtt_topic` already used by another subscribed
+        node in the same transaction: two nodes publishing to the same topic
+        would make one of them unrecoverable at the consumer end.
+        """
+        spec.validate()
+        async with self._database.session() as session:
+            existing_topics = await self.subscribed_topics(session, exclude=(server_id, spec.node_id))
+            assert_unique_mqtt_topic(existing_topics, spec.mqtt_topic, node_id=spec.node_id)
+            values: dict[str, Any] = {
+                "server_id": server_id,
+                "node_id": spec.node_id,
+                "browse_path": spec.browse_path,
+                "display_name": spec.display_name,
+                "mqtt_topic": spec.mqtt_topic,
+                "subscribed": spec.subscribed,
+            }
+            await session.execute(
+                insert(ConnectivityTag)
+                .values(**values)
+                .on_conflict_do_update(
+                    index_elements=[ConnectivityTag.server_id, ConnectivityTag.node_id],
+                    set_={key: value for key, value in values.items() if key not in ("server_id", "node_id")}
+                    | {"updated_at": func.now()},
+                )
+            )
+            if after_flush is not None:
+                await self._mark_pending_if_plc(session, server_id)
+            row = (
+                await session.execute(
+                    select(ConnectivityTag)
+                    .options(selectinload(ConnectivityTag.asset))
+                    .where(ConnectivityTag.server_id == server_id, ConnectivityTag.node_id == spec.node_id)
+                )
+            ).scalar_one()
+            if after_flush is not None:
+                await self._sync_edge(session, after_flush)
+            return row
+
+    async def subscribed_topics(
+        self, session: AsyncSession, *, exclude: tuple[str, str] | None = None
+    ) -> set[str]:
+        """
+        Every `mqtt_topic` currently subscribed, in this session's transaction.
+
+        Takes a `session` rather than opening its own, so a caller like `save_tag`
+        can check for a duplicate topic and write the new one in the same
+        transaction, instead of racing a second writer between the check and
+        the write.
+        """
+        statement = select(
+            ConnectivityTag.server_id, ConnectivityTag.node_id, ConnectivityTag.mqtt_topic
+        ).where(ConnectivityTag.subscribed.is_(True))
+        rows = (await session.execute(statement)).all()
+        return {
+            topic
+            for row_server_id, row_node_id, topic in rows
+            if topic and (exclude is None or (row_server_id, row_node_id) != exclude)
+        }
+
+    async def _mark_pending_if_plc(self, session: AsyncSession, server_id: str) -> None:
+        """Flag the server a tag write touched as needing a HiveMQ Edge re-apply."""
+        protocol = (
+            await session.execute(select(ConnectivityServer.protocol).where(ConnectivityServer.id == server_id))
+        ).scalar_one_or_none()
+        if protocol in PLC_PROTOCOLS:
+            await session.execute(
+                update(ConnectivityServer)
+                .where(ConnectivityServer.id == server_id)
+                .values(last_status="pending", last_error=EDGE_APPLY_ERROR, updated_at=func.now())
+            )
+
+    async def _sync_edge(
+        self, session: AsyncSession, after_flush: Callable[[list[EdgeAdapterInput]], None]
+    ) -> None:
+        """
+        Flush this transaction's writes and hand every PLC row to `after_flush`.
+
+        Called before the session commits: an `after_flush` that raises (a bad
+        XML write) rolls the whole catalog write back with it, rather than
+        leaving Postgres and HiveMQ Edge's `config.xml` disagreeing.
+        """
+        await session.flush()
+        statement = select(ConnectivityServer).options(selectinload(ConnectivityServer.tags))
+        servers = list((await session.execute(statement)).scalars())
+        after_flush(edge_adapters_from_rows(servers))
 
     async def replace_subscribed_tags(
         self, server_id: str, tags: Sequence[ConnectivityTagSpec]
@@ -335,7 +507,14 @@ class ConnectivityRepository:
         }
     )
 
-    async def update_tag(self, server_id: str, node_id: str, **fields: Any) -> ConnectivityTag | None:
+    async def update_tag(
+        self,
+        server_id: str,
+        node_id: str,
+        *,
+        after_flush: Callable[[list[EdgeAdapterInput]], None] | None = None,
+        **fields: Any,
+    ) -> ConnectivityTag | None:
         """
         Partial-update one catalog tag. Only keys the caller passed are written.
 
@@ -369,6 +548,9 @@ class ConnectivityRepository:
             ).scalar_one_or_none()
             if row is None:
                 return None
+            if after_flush is not None:
+                await self._mark_pending_if_plc(session, server_id)
+                await self._sync_edge(session, after_flush)
             if row.asset_id is not None and row.unit_of_measure is not None:
                 asset_path = (
                     await session.execute(select(Asset.path).where(Asset.id == row.asset_id))
@@ -422,7 +604,13 @@ class ConnectivityRepository:
             )
             return (await session.execute(select(SignalLabel).where(SignalLabel.name == name))).scalar_one()
 
-    async def unsubscribe_tag(self, server_id: str, node_id: str) -> ConnectivityTag | None:
+    async def unsubscribe_tag(
+        self,
+        server_id: str,
+        node_id: str,
+        *,
+        after_flush: Callable[[list[EdgeAdapterInput]], None] | None = None,
+    ) -> ConnectivityTag | None:
         """Stop subscribing to a node. A deliberate act, never done by omission."""
         async with self._database.session() as session:
             await session.execute(
@@ -430,7 +618,7 @@ class ConnectivityRepository:
                 .where(ConnectivityTag.server_id == server_id, ConnectivityTag.node_id == node_id)
                 .values(subscribed=False, updated_at=func.now())
             )
-            return (
+            row = (
                 await session.execute(
                     select(ConnectivityTag).where(
                         ConnectivityTag.server_id == server_id,
@@ -438,6 +626,10 @@ class ConnectivityRepository:
                     )
                 )
             ).scalar_one_or_none()
+            if after_flush is not None:
+                await self._mark_pending_if_plc(session, server_id)
+                await self._sync_edge(session, after_flush)
+            return row
 
     async def record_test(
         self, server_id: str, *, ok: bool, error: str | None = None
@@ -519,6 +711,8 @@ __all__ = [
     "ConnectivityServerSpec",
     "ConnectivityTagSpec",
     "EDGE_APPLY_ERROR",
+    "assert_unique_mqtt_topic",
+    "edge_adapters_from_rows",
     "merge_discovered",
     "metric_key_for_tag",
     "parse_host_port",

@@ -36,10 +36,13 @@ from sqlalchemy import text
 
 from uns_model.alert_rules import AlertRuleRepository, AlertRuleSpec
 from uns_model.asset_context import TopicContextResolver
+from uns_config.hivemq_edge_xml import EdgeTagInput
+
 from uns_model.connectivity import (
     ConnectivityRepository,
     ConnectivityServerSpec,
     ConnectivityTagSpec,
+    EDGE_APPLY_ERROR,
 )
 from uns_model.engine import Database
 from uns_model.model_config import ModelConfig
@@ -874,3 +877,116 @@ async def test_a_server_outside_the_vocabulary_never_reaches_the_database(
         await connectivity.save_server(_server(protocol="modbus"))
 
     assert await connectivity.list_servers(protocol="modbus") == []
+
+
+@pytest.mark.integrationtest
+@pytest.mark.asyncio(loop_scope="session")
+async def test_save_tag_rejects_duplicate_mqtt_topic(connectivity: ConnectivityRepository):
+    """Two subscribed nodes publishing to the same topic would make one unrecoverable."""
+    server = await connectivity.save_server(_server(protocol="s7", endpoint="10.0.0.5:102"))
+
+    await connectivity.save_tag(
+        server.id,
+        ConnectivityTagSpec(node_id="%ID1", browse_path="", display_name="A", mqtt_topic="Plant/A"),
+    )
+    with pytest.raises(ValueError, match="mqtt_topic"):
+        await connectivity.save_tag(
+            server.id,
+            ConnectivityTagSpec(node_id="%ID2", browse_path="", display_name="B", mqtt_topic="Plant/A"),
+        )
+    # The rejected write never reached Postgres.
+    tags = await connectivity.list_subscribed_tags(server.id)
+    assert [tag.node_id for tag in tags] == ["%ID1"]
+
+
+@pytest.mark.integrationtest
+@pytest.mark.asyncio(loop_scope="session")
+async def test_save_tag_re_saving_the_same_node_with_its_own_topic_is_not_a_duplicate(
+    connectivity: ConnectivityRepository,
+):
+    server = await connectivity.save_server(_server(protocol="s7", endpoint="10.0.0.5:102"))
+    await connectivity.save_tag(
+        server.id,
+        ConnectivityTagSpec(node_id="%ID1", browse_path="", display_name="A", mqtt_topic="Plant/A"),
+    )
+
+    saved = await connectivity.save_tag(
+        server.id,
+        ConnectivityTagSpec(node_id="%ID1", browse_path="", display_name="A renamed", mqtt_topic="Plant/A"),
+    )
+
+    assert saved.display_name == "A renamed"
+    assert saved.mqtt_topic == "Plant/A"
+
+
+@pytest.mark.integrationtest
+@pytest.mark.asyncio(loop_scope="session")
+async def test_save_server_sets_pending_and_calls_after_flush_for_plc(
+    connectivity: ConnectivityRepository,
+):
+    captured: list[list] = []
+
+    def _capture(adapters) -> None:
+        captured.append(adapters)
+
+    saved = await connectivity.save_server(
+        _server(protocol="s7", endpoint="10.0.0.5:102"),
+        after_flush=_capture,
+    )
+
+    assert saved.last_status == "pending"
+    assert saved.last_error == EDGE_APPLY_ERROR
+    assert len(captured) == 1
+    assert [adapter.server_id for adapter in captured[0]] == [saved.id]
+
+
+@pytest.mark.integrationtest
+@pytest.mark.asyncio(loop_scope="session")
+async def test_save_server_does_not_set_pending_without_after_flush(
+    connectivity: ConnectivityRepository,
+):
+    saved = await connectivity.save_server(_server(protocol="s7", endpoint="10.0.0.5:102"))
+
+    assert saved.last_status == "untested"
+    assert saved.last_error == ""
+
+
+@pytest.mark.integrationtest
+@pytest.mark.asyncio(loop_scope="session")
+async def test_save_tag_marks_its_plc_server_pending_when_after_flush_is_given(
+    connectivity: ConnectivityRepository,
+):
+    server = await connectivity.save_server(_server(protocol="s7", endpoint="10.0.0.5:102"))
+    captured: list[list] = []
+
+    await connectivity.save_tag(
+        server.id,
+        ConnectivityTagSpec(node_id="%ID1", browse_path="", display_name="A", mqtt_topic="Plant/A"),
+        after_flush=captured.append,
+    )
+
+    updated = [s for s in await connectivity.list_servers() if s.id == server.id][0]
+    assert updated.last_status == "pending"
+    assert updated.last_error == EDGE_APPLY_ERROR
+    assert len(captured) == 1
+    assert captured[0][0].tags == (EdgeTagInput("%ID1", "A", "Plant/A", None),)
+
+
+@pytest.mark.integrationtest
+@pytest.mark.asyncio(loop_scope="session")
+async def test_an_after_flush_failure_rolls_back_the_catalog_write(
+    connectivity: ConnectivityRepository,
+):
+    """XML write happens before commit: a bad write must not leave a stray catalog row."""
+
+    def _boom(adapters) -> None:  # noqa: ARG001
+        raise RuntimeError("xml write failed")
+
+    with pytest.raises(RuntimeError, match="xml write failed"):
+        await connectivity.save_server(
+            _server(protocol="s7", endpoint="10.0.0.5:102"),
+            after_flush=_boom,
+        )
+
+    servers = [s for s in await connectivity.list_servers() if s.id.startswith(TEST_SERVER_PREFIX)]
+    assert servers == []
