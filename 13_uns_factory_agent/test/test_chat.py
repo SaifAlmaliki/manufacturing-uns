@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 from uns_factory_agent.app import create_app
 from uns_factory_agent.auth import AuthError, Identity
-from uns_factory_agent.chat import ModelTurn, PageContext, ToolCall, run_turn
+from uns_factory_agent.chat import ChatResult, ModelTurn, PageContext, ToolCall, run_turn
 from uns_factory_agent.conversations import Citation, MemoryConversationStore
 from uns_factory_agent.scope_sql import Scope
 
@@ -262,6 +262,43 @@ async def test_alarms_on_focus_playbook_calls_graphql_before_model():
     )
     assert queries, "alarms_on_focus playbook must call GraphQL before the model"
     assert "firing" in result.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_playbook_sql_exception_does_not_raise_and_still_answers():
+    store = MemoryConversationStore()
+    conv = await store.create("alice", now=NOW)
+
+    class BoomExec:
+        async def fetch(self, sql, params):
+            raise RuntimeError("db exploded")
+
+    class Graphql:
+        async def post(self, query, variables, token):
+            return {"data": {"getUnsNodes": [], "getAlertRules": []}}
+
+    model = ScriptedModel([
+        ModelTurn(
+            text="I cannot see historian values for that Metric in the last eight hours.",
+            tool_calls=(),
+            citations=(),
+        ),
+    ])
+    result = await run_turn(
+        store=store,
+        conversation_id=conv.id,
+        subject="alice",
+        token="t",
+        message="How does this metric compare to the last eight hours?",
+        context=PageContext("/condition-monitoring", "Acme/P101", "", ""),
+        scope=Scope(True, frozenset()),
+        model=model,
+        sql_execute=BoomExec(),
+        graphql=Graphql(),
+        now=NOW,
+    )
+    assert isinstance(result, ChatResult)
+    assert "cannot see" in result.text.lower()
 
 
 def test_chat_returns_assistant_text():
