@@ -9,7 +9,10 @@ from xml.etree import ElementTree as ET
 
 _DATA_TYPES = {"Integer": "DINT", "Double": "REAL", "Boolean": "BOOL", "String": "STRING"}
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9_]+")
-_ADAPTER_SPLIT = re.compile(r"(?=<protocol-adapter>)")
+_ADAPTER_BLOCK = re.compile(
+    r"[ \t]*<protocol-adapter>.*?</protocol-adapter>",
+    re.DOTALL,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,8 +116,11 @@ def apply_catalog_adapters(document: str, adapters: list[EdgeAdapterInput]) -> s
     prefix = document[: start + open_len]
     inner = document[start + open_len : end]
     suffix = document[end:]
-    kept = [block.strip("\n") for block in _ADAPTER_SPLIT.split(inner) if block.strip()]
-    kept = [block for block in kept if "<adapterId>catalog-" not in block]
+    kept = [
+        block
+        for block in _ADAPTER_BLOCK.findall(inner)
+        if "<adapterId>catalog-" not in block
+    ]
     rendered = [render_catalog_adapter(item) for item in sorted(adapters, key=lambda a: a.server_id)]
     body = "\n".join([*kept, *rendered])
     return f"{prefix}\n{body}\n    {suffix}" if body else f"{prefix}\n    {suffix}"

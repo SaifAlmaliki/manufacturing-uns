@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import pytest
@@ -91,6 +92,34 @@ def test_render_s7_structural_indent():
     assert mapping_children == ["topic", "tagName", "maxQos", "includeTimestamp"]
     assert "<adapterId>catalog-fixture-s7</adapterId>" in rendered
     assert f"<tagName>{tag_xml_name('%ID103')}</tagName>" in rendered
+
+
+def _simulation_adapter_block(document: str) -> str:
+    match = re.search(
+        r"(        <protocol-adapter>.*?<adapterId>sim</adapterId>.*?</protocol-adapter>)",
+        document,
+        re.DOTALL,
+    )
+    assert match, "simulation adapter block not found"
+    return match.group(1)
+
+
+def _protocol_adapters_inner(document: str) -> str:
+    start = document.find("<protocol-adapters>") + len("<protocol-adapters>")
+    end = document.find("</protocol-adapters>")
+    return document[start:end]
+
+
+def test_simulation_adapter_bytes_preserved_and_inner_stable():
+    sim_block = _simulation_adapter_block(_CONFIG)
+    adapter = _s7(server_id="srv1")
+    once = apply_catalog_adapters(_CONFIG, [adapter])
+    assert _simulation_adapter_block(once) == sim_block
+
+    inner_once = _protocol_adapters_inner(once)
+    twice = apply_catalog_adapters(once, [adapter])
+    assert _simulation_adapter_block(twice) == sim_block
+    assert len(_protocol_adapters_inner(twice)) == len(inner_once)
 
 
 def test_declaration_and_simulation_survive_apply(tmp_path: Path):
