@@ -32,6 +32,8 @@ def servers_from_catalog(
     """
     configs: list[ServerConfig] = []
     for server in servers:
+        if server.protocol != "opc_ua":
+            continue
         subscribed = [tag for tag in tags_by_server_id.get(server.id, ()) if tag.subscribed]
         if not subscribed:
             continue

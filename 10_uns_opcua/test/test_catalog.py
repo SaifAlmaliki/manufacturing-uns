@@ -45,6 +45,22 @@ def test_server_missing_from_tags_map_is_skipped():
     assert configs == ()
 
 
+def test_s7_and_eip_catalog_rows_are_not_opcua_collectors():
+    servers = [
+        ConnectivityServerSpec("s1", "opcplc", "opc_ua", "opc.tcp://host:4840/"),
+        ConnectivityServerSpec("s2", "line-s7", "s7", "10.0.0.5:102"),
+        ConnectivityServerSpec("s3", "pack", "ethernet_ip", "10.0.0.8:44818"),
+    ]
+    tags = {
+        "s1": [ConnectivityTagSpec("ns=3;s=A", "A", "A", "Plant/A", True)],
+        "s2": [ConnectivityTagSpec("%ID103", "", "Speed", "Plant/Speed", True)],
+        "s3": [ConnectivityTagSpec("Program:Count", "", "Count", "Plant/Count", True)],
+    }
+    configs = servers_from_catalog(servers, tags)
+    assert [server.name for server in configs] == ["opcplc"]
+    assert configs[0].url.startswith("opc.tcp://")
+
+
 def test_tag_uses_mqtt_topic_as_asset_and_metric_path_is_empty():
     servers = [ConnectivityServerSpec("s1", "opcplc", "opc_ua", "opc.tcp://host:4840/")]
     tags = {"s1": [ConnectivityTagSpec("ns=3;s=A", "Path/A", "A", "Plant/Area/Line/Level", True)]}
