@@ -123,6 +123,147 @@ def test_chat_foreign_conversation_is_404():
     )
 
 
+@pytest.mark.asyncio
+async def test_metric_question_runs_playbook_sql_before_model():
+    store = MemoryConversationStore()
+    conv = await store.create("alice", now=NOW)
+    seen = []
+
+    class Exec:
+        async def fetch(self, sql, params):
+            seen.append(sql)
+            return []
+
+    class Graphql:
+        async def post(self, query, variables, token):
+            return {"data": {"getUnsNodes": [], "getAlertRules": []}}
+
+    model = ScriptedModel([
+        ModelTurn(
+            text="I cannot see historian values for that Metric in the last eight hours.",
+            tool_calls=(),
+            citations=(),
+        ),
+    ])
+    result = await run_turn(
+        store=store,
+        conversation_id=conv.id,
+        subject="alice",
+        token="t",
+        message="How does this metric compare to the last eight hours?",
+        context=PageContext("/condition-monitoring", "Acme/P101", "", ""),
+        scope=Scope(True, frozenset()),
+        model=model,
+        sql_execute=Exec(),
+        graphql=Graphql(),
+        now=NOW,
+    )
+    assert seen, "playbook must hit SQL before the model"
+    assert "cannot see" in result.text.lower()
+    assert "12.3" not in result.text
+
+
+@pytest.mark.asyncio
+async def test_platform_map_does_not_dispatch_sql():
+    store = MemoryConversationStore()
+    conv = await store.create("alice", now=NOW)
+    calls = []
+
+    class Boom:
+        async def fetch(self, sql, params):
+            calls.append(sql)
+            return []
+
+    class Boomql:
+        async def post(self, query, variables, token):
+            raise AssertionError("no graphql")
+
+    model = ScriptedModel([
+        ModelTurn(text="Postgres holds the Asset Model. Timescale holds history.", tool_calls=(), citations=()),
+    ])
+    await run_turn(
+        store=store,
+        conversation_id=conv.id,
+        subject="alice",
+        token="t",
+        message="how does historian work?",
+        context=PageContext("", "", "", ""),
+        scope=Scope(True, frozenset()),
+        model=model,
+        sql_execute=Boom(),
+        graphql=Boomql(),
+        now=NOW,
+    )
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_platform_health_falls_back_to_static_reply_when_model_is_empty():
+    from uns_factory_agent.console_map import PLATFORM_HEALTH_REPLY
+
+    store = MemoryConversationStore()
+    conv = await store.create("alice", now=NOW)
+
+    class Boom:
+        async def fetch(self, sql, params):
+            raise AssertionError("no sql")
+
+    class Boomql:
+        async def post(self, query, variables, token):
+            raise AssertionError("no graphql")
+
+    model = ScriptedModel([ModelTurn(text=None, tool_calls=(), citations=()) for _ in range(4)])
+    result = await run_turn(
+        store=store,
+        conversation_id=conv.id,
+        subject="alice",
+        token="t",
+        message="why is graphql down?",
+        context=PageContext("", "", "", ""),
+        scope=Scope(True, frozenset()),
+        model=model,
+        sql_execute=Boom(),
+        graphql=Boomql(),
+        now=NOW,
+    )
+    assert result.text == PLATFORM_HEALTH_REPLY
+
+
+@pytest.mark.asyncio
+async def test_alarms_on_focus_playbook_calls_graphql_before_model():
+    store = MemoryConversationStore()
+    conv = await store.create("alice", now=NOW)
+    queries = []
+
+    class Exec:
+        async def fetch(self, sql, params):
+            raise AssertionError("no sql expected for alarms_on_focus")
+
+    class Graphql:
+        async def post(self, query, variables, token):
+            queries.append(query)
+            return {"data": {"getAlertRules": [], "getUnsNodes": []}}
+
+    model = ScriptedModel([
+        ModelTurn(text="No Alert Rules are firing on that Asset.", tool_calls=(), citations=()),
+    ])
+    result = await run_turn(
+        store=store,
+        conversation_id=conv.id,
+        subject="alice",
+        token="t",
+        message="Is P101 in alarm?",
+        context=PageContext("/alerts", "Acme/P101", "", ""),
+        scope=Scope(True, frozenset()),
+        model=model,
+        sql_execute=Exec(),
+        graphql=Graphql(),
+        now=NOW,
+    )
+    assert queries, "alarms_on_focus playbook must call GraphQL before the model"
+    assert "firing" in result.text.lower()
+
+
 def test_chat_returns_assistant_text():
     import asyncio
 

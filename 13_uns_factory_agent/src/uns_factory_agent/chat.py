@@ -4,7 +4,11 @@ import json
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from uns_factory_agent.classify import classify
+from uns_factory_agent.console_map import CONSOLE_MAP, PLATFORM_HEALTH_REPLY
+from uns_factory_agent.context_pack import ContextPack, build_context_pack
 from uns_factory_agent.conversations import Citation, ConversationStore
+from uns_factory_agent.playbook import PlaybookResult, run_playbook
 from uns_factory_agent.schema_cards import SCHEMA_CARDS
 from uns_factory_agent.scope_sql import Scope
 from uns_factory_agent.tools_graphql import GraphqlPost, query_alarms, query_live
@@ -140,15 +144,32 @@ OPENAI_TOOLS: list[dict] = [
 ]
 
 
-def _build_system(context: PageContext) -> str:
+def _build_system(pack: ContextPack, playbook: PlaybookResult) -> str:
     cards = "\n\n".join(f"### {name}\n{body}" for name, body in SCHEMA_CARDS.items())
+    focus = pack.focus
     ctx = (
-        f"Page route: {context.route or '(none)'}\n"
-        f"Selected Asset path: {context.asset_path or '(none)'}\n"
-        f"Selected Metric key: {context.metric_key or '(none)'}\n"
-        f"Selected alarm topic: {context.alarm_topic or '(none)'}"
+        f"Page route: {pack.route or '(none)'}\n"
+        f"Selected Asset path: {focus.asset_path or '(none)'}\n"
+        f"Selected Metric key: {focus.metric_key or '(none)'}\n"
+        f"Selected alarm topic: {focus.alarm_topic or '(none)'}\n"
+        f"Default plant roots: {', '.join(pack.default_plant) or '(none)'}\n"
+        f"Page hint: {pack.page_hint}\n"
+        f"Unrestricted: {pack.unrestricted}"
     )
-    return f"{SYSTEM_PROMPT}\n\n## Schema cards\n{cards}\n\n## Page context\n{ctx}"
+    parts = [
+        SYSTEM_PROMPT,
+        f"## Console map\n{CONSOLE_MAP}",
+        f"## Schema cards\n{cards}",
+        f"## Page context\n{ctx}",
+        "Do not ask for an Asset path, Metric, or topic that is already in this pack. "
+        "Use default plant when focus is empty.",
+        f"## Playbook observations\n{playbook.observations or '(none)'}",
+    ]
+    if playbook.kind in ("platform_health", "platform_map"):
+        parts.append(
+            "Answer this question using only the Playbook observations above. Do not call any tools."
+        )
+    return "\n\n".join(parts)
 
 
 async def _history_messages(store: ConversationStore, conversation_id: str, subject: str) -> list[dict]:
@@ -217,10 +238,20 @@ async def run_turn(
     sql_execute: SqlExecutor,
     graphql: GraphqlPost,
     now,
+    admin_roots: tuple[str, ...] = (),
 ) -> ChatResult:
     await store.append(conversation_id, subject, "user", message, (), now=now)
 
-    messages: list[dict[str, Any]] = [{"role": "system", "content": _build_system(context)}]
+    kind = classify(message)
+    pack = build_context_pack(
+        context,
+        is_admin=scope.unrestricted,
+        root_paths=scope.root_paths,
+        admin_roots=admin_roots,
+    )
+    playbook = await run_playbook(kind, pack, scope=scope, sql_execute=sql_execute, graphql=graphql, token=token)
+
+    messages: list[dict[str, Any]] = [{"role": "system", "content": _build_system(pack, playbook)}]
     messages.extend(await _history_messages(store, conversation_id, subject))
 
     citations: tuple[Citation, ...] = ()
@@ -266,7 +297,10 @@ async def run_turn(
             break
 
     if not final_text:
-        final_text = "I could not finish that lookup. Try rephrasing or narrowing the Asset path."
+        if kind == "platform_health":
+            final_text = PLATFORM_HEALTH_REPLY
+        else:
+            final_text = "I could not finish that lookup. Try rephrasing or narrowing the Asset path."
 
     await store.append(conversation_id, subject, "assistant", final_text, citations, now=now)
     return ChatResult(text=final_text, citations=citations)

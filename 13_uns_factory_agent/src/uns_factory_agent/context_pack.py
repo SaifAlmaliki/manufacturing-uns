@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from uns_factory_agent.chat import PageContext
+if TYPE_CHECKING:
+    from uns_factory_agent.chat import PageContext
 
 
 @dataclass(frozen=True, slots=True)

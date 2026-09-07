@@ -17,7 +17,9 @@ from uns_factory_agent.health import health_payload
 from uns_factory_agent.jwks import JwksCache
 from uns_factory_agent.openai_model import OpenAIModelClient
 from uns_factory_agent.pg_store import PostgresConversationStore, ensure_schema
-from uns_factory_agent.scope_sql import scope_for
+from uns_factory_agent.playbook import ADMIN_ROOTS_SQL
+from uns_factory_agent.scope_sql import Scope, scope_for
+from uns_factory_agent.tools_sql import query_asset_model
 from uns_model.access_repository import AccessGroupRepository
 from uns_model.engine import Database
 
@@ -160,11 +162,19 @@ def create_production_app():
         identity: Identity = kwargs.pop("identity")
         roots = await _root_paths_for(identity.subject)
         scope = scope_for(is_admin=identity.is_admin, root_paths=roots)
+        if identity.is_admin:
+            rows = await query_asset_model(
+                ADMIN_ROOTS_SQL, scope=Scope(True, frozenset()), execute=sql_execute
+            )
+            admin_roots = tuple(str(row["path"]) for row in rows)
+        else:
+            admin_roots = ()
         return await run_turn(
             scope=scope,
             model=model,
             sql_execute=sql_execute,
             graphql=graphql,
+            admin_roots=admin_roots,
             **kwargs,
         )
 
