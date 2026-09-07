@@ -158,6 +158,18 @@ def create_production_app():
             raise AuthError("The request has no Authorization bearer token.")
         return await identity_from_token(token, jwks)
 
+    async def load_scope(identity: Identity) -> dict:
+        if identity.is_admin:
+            rows = await query_asset_model(
+                ADMIN_ROOTS_SQL, scope=Scope(True, frozenset()), execute=sql_execute
+            )
+            return {
+                "roots": [r["path"] for r in rows if "path" in r],
+                "unrestricted": True,
+            }
+        roots = await _root_paths_for(identity.subject)
+        return {"roots": sorted(roots), "unrestricted": False}
+
     async def chat_handler(**kwargs):
         identity: Identity = kwargs.pop("identity")
         roots = await _root_paths_for(identity.subject)
@@ -183,5 +195,6 @@ def create_production_app():
         get_identity=get_identity,
         health_check=check_health,
         chat_handler=chat_handler,
+        scope_loader=load_scope,
         lifespan=lifespan,
     )

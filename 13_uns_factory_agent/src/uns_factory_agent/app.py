@@ -63,12 +63,16 @@ async def _resolve_identity(get_identity: IdentityGetter, authorization: str | N
         raise HTTPException(status_code=401, detail=str(ex)) from ex
 
 
+ScopeLoader = Callable[[Identity], dict | Awaitable[dict]]
+
+
 def create_app(
     store: ConversationStore,
     *,
     get_identity: IdentityGetter,
     health_check: Callable[[], dict | Awaitable[dict]] | None = None,
     chat_handler: Callable[..., Any] | None = None,
+    scope_loader: ScopeLoader | None = None,
     lifespan: Callable[[FastAPI], AbstractAsyncContextManager[None]] | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Factory Copilot", lifespan=lifespan)
@@ -81,6 +85,16 @@ def create_app(
         if hasattr(result, "__await__"):
             return await result  # type: ignore[misc]
         return result  # type: ignore[return-value]
+
+    @app.get("/scope")
+    async def get_scope(authorization: str | None = Header(default=None)) -> dict:
+        identity = await _resolve_identity(get_identity, authorization)
+        if scope_loader is None:
+            return {"roots": [], "unrestricted": identity.is_admin}
+        result = scope_loader(identity)
+        if hasattr(result, "__await__"):
+            return await result
+        return result
 
     @app.get("/conversations")
     async def list_conversations(authorization: str | None = Header(default=None)) -> list[dict]:
