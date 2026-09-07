@@ -40,3 +40,13 @@ def test_rejects_unknown_table():
 def test_rejects_copilot_schema():
     with pytest.raises(SQLGuardError, match="allowlist"):
         guard_select("SELECT * FROM copilot.conversation")
+
+
+def test_accepts_downtime_joined_to_asset_via_oee_unit():
+    sql = (
+        "SELECT a.path AS topic, d.started_at, d.ended_at, d.reason_code\n"
+        "FROM oee.downtime_event d\n"
+        "JOIN model.oee_unit u ON u.id = d.oee_unit_id\n"
+        "JOIN model.asset a ON a.id = u.asset_id"
+    )
+    assert guard_select(sql) == sql

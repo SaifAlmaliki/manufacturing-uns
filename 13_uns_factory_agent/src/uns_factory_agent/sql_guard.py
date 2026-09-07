@@ -9,6 +9,7 @@ ALLOWED_TABLES: frozenset[str] = frozenset(
         "model.access_group",
         "model.access_group_member",
         "model.access_group_root",
+        "model.oee_unit",
         "unifiednamespace",
         "public.unifiednamespace",
         "uns_metrics",
