@@ -7,6 +7,8 @@ const getConnectivityServers = vi.hoisted(() => vi.fn());
 const saveConnectivityServer = vi.hoisted(() => vi.fn());
 const deleteConnectivityServer = vi.hoisted(() => vi.fn());
 const testOpcUaConnection = vi.hoisted(() => vi.fn());
+const testConnectivityServer = vi.hoisted(() => vi.fn());
+const saveConnectivityTag = vi.hoisted(() => vi.fn());
 const browseOpcUa = vi.hoisted(() => vi.fn());
 const discoverOpcUaVariables = vi.hoisted(() => vi.fn());
 const subscribeOpcUaVariables = vi.hoisted(() => vi.fn());
@@ -27,6 +29,8 @@ vi.mock('../../services/graphql/client', () => ({
     saveConnectivityServer,
     deleteConnectivityServer,
     testOpcUaConnection,
+    testConnectivityServer,
+    saveConnectivityTag,
     browseOpcUa,
     discoverOpcUaVariables,
     subscribeOpcUaVariables,
@@ -68,10 +72,22 @@ function renderView(path = '/connectivity/servers') {
 const SERVER = {
   id: 's1',
   name: 'opcplc',
-  protocol: 'opc_ua',
+  protocol: 'OPC_UA',
   endpoint: 'opc.tcp://desktop-h4hdql2:50000/',
   lastStatus: 'untested',
   lastError: '',
+  lastTestedAt: null,
+  tags: [],
+};
+
+const S7_SERVER = {
+  id: 's2',
+  name: 'plc1',
+  protocol: 'S7',
+  endpoint: '10.0.0.5:102',
+  protocolConfig: { controllerType: 'S7_1500' },
+  lastStatus: 'pending',
+  lastError: 'Recreate uns_mqtt_broker to apply Edge config',
   lastTestedAt: null,
   tags: [],
 };
@@ -92,6 +108,19 @@ beforeEach(() => {
   }));
   deleteConnectivityServer.mockResolvedValue(true);
   testOpcUaConnection.mockResolvedValue({ ok: true, error: null, elapsedMs: 12 });
+  testConnectivityServer.mockResolvedValue({
+    id: 's2',
+    lastStatus: 'connected',
+    lastError: '',
+    lastTestedAt: '2026-09-07T18:00:00.000Z',
+  });
+  saveConnectivityTag.mockResolvedValue({
+    serverId: 's2',
+    nodeId: '%ID103',
+    mqttTopic: 'Acme/Line/Speed',
+    dataType: null,
+    subscribed: true,
+  });
   browseOpcUa.mockImplementation(async (_endpoint: string, nodeId?: string | null) => {
     if (!nodeId) {
       return [
@@ -233,14 +262,14 @@ describe('the OPC UA server table', () => {
         screen.getByText(/column connectivity_servers.auth_mode does not exist/i),
       ).toBeTruthy(),
     );
-    expect(screen.queryByText(/no opc ua servers yet/i)).toBeNull();
+    expect(screen.queryByText(/no servers/i)).toBeNull();
   });
 
   it('shows the empty-plant copy when the catalog has no servers', async () => {
     getConnectivityServers.mockResolvedValue([]);
     renderView();
 
-    await waitFor(() => expect(screen.getByText(/no opc ua servers yet/i)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/no servers/i)).toBeTruthy());
     expect(screen.queryByText(/could not be loaded/i)).toBeNull();
   });
 
@@ -376,6 +405,63 @@ describe('the OPC UA server table', () => {
     expect(protocol).toBeTruthy();
     expect(screen.getByRole('option', { name: 'OPC UA' })).toBeTruthy();
     expect(screen.getByRole('option', { name: /Modbus TCP — later/i })).toBeDisabled();
+  });
+});
+
+describe('S7 and EtherNet/IP servers', () => {
+  it('shows Host, Port, and Controller type for S7 and hides the OPC UA fields', async () => {
+    renderView();
+    await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: /add server/i }));
+    fireEvent.change(await screen.findByLabelText('Protocol'), { target: { value: 's7' } });
+
+    expect(screen.getByLabelText('Host')).toBeTruthy();
+    expect((screen.getByLabelText('Port') as HTMLInputElement).value).toBe('102');
+    expect(screen.getByLabelText('Controller type')).toBeTruthy();
+    expect(screen.queryByLabelText('Endpoint')).toBeNull();
+    expect(screen.queryByLabelText('Security policy')).toBeNull();
+    expect(screen.queryByLabelText('Username/Password')).toBeNull();
+  });
+
+  it('saves an S7 server with host:port endpoint and protocolConfig', async () => {
+    renderView();
+    await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: /add server/i }));
+    fireEvent.change(await screen.findByLabelText('Name'), { target: { value: 'plc1' } });
+    fireEvent.change(screen.getByLabelText('Protocol'), { target: { value: 's7' } });
+    fireEvent.change(screen.getByLabelText('Host'), { target: { value: '10.0.0.5' } });
+    fireEvent.click(screen.getByRole('button', { name: /^add$/i }));
+
+    await waitFor(() => expect(saveConnectivityServer).toHaveBeenCalled());
+    expect(saveConnectivityServer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'plc1',
+        protocol: 'S7',
+        endpoint: '10.0.0.5:102',
+        protocolConfig: { controllerType: 'S7_1500' },
+      }),
+    );
+  });
+
+  it('shows an S7 row with its protocol label, pending lamp, and no Browse data button', async () => {
+    getConnectivityServers.mockResolvedValue([S7_SERVER]);
+    renderView();
+
+    await waitFor(() => expect(screen.getByText('plc1')).toBeTruthy());
+    expect(screen.getByText('S7')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /browse data/i })).toBeNull();
+  });
+
+  it('tests an S7 row with testConnectivityServer, not testOpcUaConnection', async () => {
+    getConnectivityServers.mockResolvedValue([S7_SERVER]);
+    renderView();
+    await waitFor(() => expect(screen.getByText('plc1')).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: /^test$/i }));
+    await waitFor(() => expect(testConnectivityServer).toHaveBeenCalledWith('s2'));
+    expect(testOpcUaConnection).not.toHaveBeenCalled();
   });
 });
 

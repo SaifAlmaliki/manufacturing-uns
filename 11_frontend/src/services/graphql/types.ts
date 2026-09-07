@@ -322,6 +322,32 @@ export type GraphqlConnectivityServerInput = {
   protocolConfig?: { controllerType?: string } | null
 }
 
+/** `ConnectivityTagInput`: one PLC tag the console authors directly, no OPC UA discovery. */
+export type GraphqlConnectivityTagInput = {
+  nodeId: string
+  browsePath: string
+  displayName: string
+  mqttTopic: string
+  subscribed?: boolean
+}
+
+/** Result of `saveConnectivityTag` — the field set that mutation selects. */
+export type GraphqlSavedConnectivityTag = {
+  serverId: string
+  nodeId: string
+  mqttTopic: string
+  dataType?: GraphqlSignalDataType | null
+  subscribed: boolean
+}
+
+/** Result of `testConnectivityServer` — enough to refresh one server row's status. */
+export type GraphqlConnectivityServerTestResult = {
+  id: string
+  lastStatus: string
+  lastError: string
+  lastTestedAt?: string | null
+}
+
 /** `ConnectivityTestResultType`: the outcome of a probe against one OPC UA endpoint. */
 export type GraphqlConnectivityTestResult = {
   ok: boolean

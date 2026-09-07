@@ -59,7 +59,9 @@ import {
   GET_ACCESS_GROUPS_QUERY,
   GET_ASSETS_QUERY,
   SAVE_ACCESS_GROUP_MUTATION,
+  SAVE_CONNECTIVITY_TAG_MUTATION,
   SET_ACCESS_GROUP_MEMBERS_MUTATION,
+  TEST_CONNECTIVITY_SERVER_MUTATION,
   TEST_OPCUA_CONNECTION_QUERY,
   UNSUBSCRIBE_CONNECTIVITY_TAG_MUTATION,
   UPDATE_CONNECTIVITY_TAG_TOPIC_MUTATION,
@@ -83,9 +85,12 @@ import type {
   GraphqlConnectivityProtocol,
   GraphqlConnectivityServer,
   GraphqlConnectivityServerInput,
+  GraphqlConnectivityServerTestResult,
   GraphqlConnectivityTag,
+  GraphqlConnectivityTagInput,
   GraphqlConnectivityTagPatch,
   GraphqlConnectivityTestResult,
+  GraphqlSavedConnectivityTag,
   GraphqlHistoricalEvent,
   GraphqlHierarchyMigrateJob,
   GraphqlHierarchySaveResult,
@@ -770,6 +775,33 @@ export class UnsGraphQLClient {
       throw new Error(res.error)
     }
     return res.data?.deleteConnectivityServer === true
+  }
+
+  /** Author one PLC tag directly — S7/EtherNet-IP have no browse discovery. */
+  public async saveConnectivityTag(
+    serverId: string,
+    tag: GraphqlConnectivityTagInput,
+  ): Promise<GraphqlSavedConnectivityTag> {
+    const res = await this.executeQuery<{ saveConnectivityTag: GraphqlSavedConnectivityTag }>(
+      SAVE_CONNECTIVITY_TAG_MUTATION,
+      { serverId, tag },
+    )
+    if (res.error || !res.data?.saveConnectivityTag) {
+      throw new Error(res.error || 'Signal was not saved')
+    }
+    return res.data.saveConnectivityTag
+  }
+
+  /** Probe a saved server: OPC UA session for `OPC_UA`, a bare TCP connect for S7/EtherNet-IP. */
+  public async testConnectivityServer(id: string): Promise<GraphqlConnectivityServerTestResult> {
+    const res = await this.executeQuery<{ testConnectivityServer: GraphqlConnectivityServerTestResult }>(
+      TEST_CONNECTIVITY_SERVER_MUTATION,
+      { id },
+    )
+    if (res.error || !res.data?.testConnectivityServer) {
+      throw new Error(res.error || 'Test failed')
+    }
+    return res.data.testConnectivityServer
   }
 
   public async testOpcUaConnection(endpoint: string): Promise<GraphqlConnectivityTestResult> {

@@ -33,6 +33,8 @@ import {
   CONNECTIVITY_SERVERS_PATH,
   CONNECTIVITY_SIGNALS_PATH,
   PROTOCOL_TABS,
+  PROTOCOL_TO_GQL,
+  S7_CONTROLLER_TYPES,
   type ConnectivityTabId,
   connectivityTabFromPath,
   filterServers,
@@ -41,6 +43,7 @@ import {
   statusDotClass,
   statusLabel,
 } from '../../lib/connectivity/map-servers';
+import { defaultPortFor, joinHostPort, splitHostPort } from '../../lib/connectivity/host-port';
 import {
   AUTH_MODE_TO_GQL,
   CONNECTIVITY_SECURITY_MODES,
@@ -59,6 +62,40 @@ function newServerId(): string {
   return `srv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+const TAB_ID_BY_GQL: Record<GraphqlConnectivityProtocol, ConnectivityTabId> = {
+  OPC_UA: 'opc_ua',
+  S7: 's7',
+  ETHERNET_IP: 'ethernet_ip',
+};
+
+function protocolLabel(protocol: GraphqlConnectivityProtocol): string {
+  const tabId = TAB_ID_BY_GQL[protocol];
+  return PROTOCOL_TABS.find((tab) => tab.id === tabId)?.label ?? protocol;
+}
+
+const DIALOG_COPY: Record<'opc_ua' | 's7' | 'ethernet_ip', { add: string; edit: string; description: string }> = {
+  opc_ua: {
+    add: 'Add OPC UA server',
+    edit: 'Edit OPC UA server',
+    description: 'OPC UA is what this slice serves. Other protocols stay listed for later.',
+  },
+  s7: {
+    add: 'Add S7 PLC',
+    edit: 'Edit S7 PLC',
+    description: 'S7 has no browse discovery — dial the PLC directly, then author its tags on the Signals tab.',
+  },
+  ethernet_ip: {
+    add: 'Add EtherNet/IP PLC',
+    edit: 'Edit EtherNet/IP PLC',
+    description:
+      'EtherNet/IP has no browse discovery — dial the PLC directly, then author its tags on the Signals tab.',
+  },
+};
+
+function dialogCopyFor(protocol: ConnectivityTabId) {
+  return DIALOG_COPY[protocol as 'opc_ua' | 's7' | 'ethernet_ip'] ?? DIALOG_COPY.opc_ua;
+}
+
 export const ConnectivityView: React.FC = () => {
   const { hasPermission } = useAuth();
   const canMutate = hasPermission('connectivity');
@@ -74,6 +111,9 @@ export const ConnectivityView: React.FC = () => {
   const [draftProtocol, setDraftProtocol] = useState<ConnectivityTabId>('opc_ua');
   const [draftName, setDraftName] = useState('');
   const [draftEndpoint, setDraftEndpoint] = useState('opc.tcp://');
+  const [draftHost, setDraftHost] = useState('');
+  const [draftPort, setDraftPort] = useState('');
+  const [draftControllerType, setDraftControllerType] = useState<string>('S7_1500');
   const [draftAuthMode, setDraftAuthMode] = useState<ConnectivityAuthMode>('anonymous');
   const [draftSecurityPolicy, setDraftSecurityPolicy] =
     useState<ConnectivitySecurityPolicy>('None');
@@ -118,6 +158,9 @@ export const ConnectivityView: React.FC = () => {
     setDraftProtocol('opc_ua');
     setDraftName('');
     setDraftEndpoint('opc.tcp://');
+    setDraftHost('');
+    setDraftPort('');
+    setDraftControllerType('S7_1500');
     setDraftAuthMode('anonymous');
     setDraftSecurityPolicy('None');
     setDraftSecurityMode('None');
@@ -133,15 +176,28 @@ export const ConnectivityView: React.FC = () => {
     resetDraft();
     setEditingId(server.id);
     setDraftName(server.name);
-    setDraftEndpoint(server.endpoint);
+    const tabId = TAB_ID_BY_GQL[server.protocol] ?? 'opc_ua';
+    setDraftProtocol(tabId);
+    if (tabId === 'opc_ua') {
+      setDraftEndpoint(server.endpoint);
+    } else {
+      const { host, port } = splitHostPort(server.endpoint);
+      setDraftHost(host);
+      setDraftPort(port || defaultPortFor(tabId));
+      if (tabId === 's7') {
+        setDraftControllerType(server.protocolConfig?.controllerType ?? 'S7_1500');
+      }
+    }
     setAddOpen(true);
   };
 
   const handleAdd = async () => {
+    const isPlc = draftProtocol === 's7' || draftProtocol === 'ethernet_ip';
+    const endpoint = isPlc ? joinHostPort(draftHost, draftPort) : draftEndpoint;
     const invalid = validateConnectivityServer({
       protocol: draftProtocol,
       name: draftName,
-      endpoint: draftEndpoint,
+      endpoint,
       authMode: draftAuthMode,
       securityPolicy: draftSecurityPolicy,
       securityMode: draftSecurityMode,
@@ -150,6 +206,7 @@ export const ConnectivityView: React.FC = () => {
       certificate: draftCertificate,
       privateKey: draftPrivateKey,
       serverCertificate: draftServerCertificate,
+      controllerType: draftControllerType,
     });
     if (invalid) {
       setSaveError(invalid);
@@ -161,8 +218,8 @@ export const ConnectivityView: React.FC = () => {
       const input: GraphqlConnectivityServerInput = {
         id: editingId ?? newServerId(),
         name: draftName.trim(),
-        protocol: 'OPC_UA' as GraphqlConnectivityProtocol,
-        endpoint: draftEndpoint.trim(),
+        protocol: PROTOCOL_TO_GQL[draftProtocol as 'opc_ua' | 's7' | 'ethernet_ip'] as GraphqlConnectivityProtocol,
+        endpoint: endpoint.trim(),
         authMode: AUTH_MODE_TO_GQL[draftAuthMode],
         securityPolicy: SECURITY_POLICY_TO_GQL[draftSecurityPolicy],
         securityMode: SECURITY_MODE_TO_GQL[draftSecurityMode],
@@ -171,6 +228,7 @@ export const ConnectivityView: React.FC = () => {
         certificate: draftCertificate.trim(),
         privateKey: draftPrivateKey.trim(),
         serverCertificate: draftServerCertificate.trim(),
+        protocolConfig: draftProtocol === 's7' ? { controllerType: draftControllerType } : null,
       };
       const saved = await unsGraphQLClient.saveConnectivityServer(input);
       setServers((prev) => {
@@ -182,7 +240,7 @@ export const ConnectivityView: React.FC = () => {
       const wasEdit = Boolean(editingId);
       setAddOpen(false);
       resetDraft();
-      if (!wasEdit) await applyConnectionTest(saved);
+      if (!wasEdit) await handleTest(saved);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Server was not added');
     } finally {
@@ -219,8 +277,25 @@ export const ConnectivityView: React.FC = () => {
     }
   };
 
+  /** S7/EtherNet-IP have no OPC UA session to probe — `testConnectivityServer` dials a bare TCP connect instead. */
+  const applyPlcConnectionTest = async (server: GraphqlConnectivityServer) => {
+    setTestingId(server.id);
+    try {
+      const updated = await unsGraphQLClient.testConnectivityServer(server.id);
+      setServers((prev) => prev.map((s) => (s.id === updated.id ? { ...s, ...updated } : s)));
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Test failed');
+    } finally {
+      setTestingId(null);
+    }
+  };
+
   const handleTest = async (server: GraphqlConnectivityServer) => {
-    await applyConnectionTest(server);
+    if (server.protocol === 'OPC_UA') {
+      await applyConnectionTest(server);
+      return;
+    }
+    await applyPlcConnectionTest(server);
   };
 
   const handleDelete = async (server: GraphqlConnectivityServer) => {
@@ -238,6 +313,9 @@ export const ConnectivityView: React.FC = () => {
   };
 
   const openSignalTerminal = (server: GraphqlConnectivityServer) => {
+    // S7/EtherNet-IP have no OPC UA address space to browse — their tags are authored on
+    // the Signals tab (Add signal), not discovered through this drawer.
+    if (server.protocol !== 'OPC_UA') return;
     setBrowseServer(server);
   };
 
@@ -307,13 +385,13 @@ export const ConnectivityView: React.FC = () => {
 
               {loading ? (
                 <ConsoleCard padding="md" className="text-sm text-muted-foreground">
-                  Loading OPC UA servers…
+                  Loading servers…
                 </ConsoleCard>
               ) : loadError ? null : filtered.length === 0 ? (
                 <ConsoleCard padding="md" className="text-sm text-muted-foreground">
                   {search
                     ? 'No servers match this search.'
-                    : 'No OPC UA servers yet. Add one to test, browse, and subscribe its variables.'}
+                    : 'No servers yet. Add one to test, browse, and subscribe its variables.'}
                 </ConsoleCard>
               ) : (
                 <ConsoleCard padding="none" className="overflow-hidden">
@@ -322,6 +400,7 @@ export const ConnectivityView: React.FC = () => {
                       <thead className="border-b border-border bg-muted/50 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
                         <tr>
                           <th className="px-4 py-3">Name</th>
+                          <th className="px-4 py-3">Protocol</th>
                           <th className="px-4 py-3">Endpoint</th>
                           <th className="px-4 py-3">Status</th>
                           <th className="px-4 py-3">Last test</th>
@@ -344,6 +423,9 @@ export const ConnectivityView: React.FC = () => {
                               >
                                 {server.name}
                               </button>
+                            </td>
+                            <td className="px-4 py-3 text-muted-foreground">
+                              {protocolLabel(server.protocol)}
                             </td>
                             <td className="px-4 py-3 font-mono text-[11px] text-muted-foreground">
                               {server.endpoint}
@@ -381,14 +463,16 @@ export const ConnectivityView: React.FC = () => {
                                   <Zap className="size-3.5" />
                                   Test
                                 </BtnGhost>
-                                <BtnGhost
-                                  onClick={() => openSignalTerminal(server)}
-                                  className="px-2 py-1 text-[11px]"
-                                  aria-label="Browse data"
-                                >
-                                  <FolderTree className="size-3.5" />
-                                  Browse data
-                                </BtnGhost>
+                                {server.protocol === 'OPC_UA' && (
+                                  <BtnGhost
+                                    onClick={() => openSignalTerminal(server)}
+                                    className="px-2 py-1 text-[11px]"
+                                    aria-label="Browse data"
+                                  >
+                                    <FolderTree className="size-3.5" />
+                                    Browse data
+                                  </BtnGhost>
+                                )}
                                 <BtnGhost
                                   onClick={() => setConfirmDeleteId(server.id)}
                                   disabled={deletingId === server.id}
@@ -420,7 +504,7 @@ export const ConnectivityView: React.FC = () => {
         }}
       >
         <DialogContent
-          aria-label={editingId ? 'Edit OPC UA server' : 'Add OPC UA server'}
+          aria-label={editingId ? dialogCopyFor(draftProtocol).edit : dialogCopyFor(draftProtocol).add}
           showCloseButton={false}
           className="instrument-panel instrument-grain !overflow-y-auto max-h-[min(90dvh,52rem)] gap-4 overflow-x-hidden border-[#FF7A00]/20 sm:max-w-lg"
         >
@@ -429,11 +513,9 @@ export const ConnectivityView: React.FC = () => {
               {editingId ? 'Existing connection' : 'New connection'}
             </p>
             <DialogTitle className="font-heading text-lg">
-              {editingId ? 'Edit OPC UA server' : 'Add OPC UA server'}
+              {editingId ? dialogCopyFor(draftProtocol).edit : dialogCopyFor(draftProtocol).add}
             </DialogTitle>
-            <DialogDescription>
-              OPC UA is what this slice serves. Other protocols stay listed for later.
-            </DialogDescription>
+            <DialogDescription>{dialogCopyFor(draftProtocol).description}</DialogDescription>
           </DialogHeader>
           {saveError && (
             <div className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
@@ -447,7 +529,14 @@ export const ConnectivityView: React.FC = () => {
                 id="conn-protocol"
                 aria-label="Protocol"
                 value={draftProtocol}
-                onChange={(e) => setDraftProtocol(e.target.value as ConnectivityTabId)}
+                onChange={(e) => {
+                  const next = e.target.value as ConnectivityTabId;
+                  const changingProtocol = next !== draftProtocol;
+                  setDraftProtocol(next);
+                  if ((next === 's7' || next === 'ethernet_ip') && changingProtocol) {
+                    setDraftPort(defaultPortFor(next));
+                  }
+                }}
               >
                 {PROTOCOL_TABS.map((tab) => (
                   <option key={tab.id} value={tab.id} disabled={!isProtocolInSlice(tab.id)}>
@@ -467,19 +556,65 @@ export const ConnectivityView: React.FC = () => {
                 placeholder="opcplc"
               />
             </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="conn-endpoint">Endpoint</Label>
-              <Input
-                id="conn-endpoint"
-                aria-label="Endpoint"
-                value={draftEndpoint}
-                onChange={(e) => setDraftEndpoint(e.target.value)}
-                placeholder="opc.tcp://host.docker.internal:50000/"
-                className="font-mono text-xs"
-              />
-            </div>
+            {draftProtocol === 'opc_ua' ? (
+              <div className="grid gap-1.5">
+                <Label htmlFor="conn-endpoint">Endpoint</Label>
+                <Input
+                  id="conn-endpoint"
+                  aria-label="Endpoint"
+                  value={draftEndpoint}
+                  onChange={(e) => setDraftEndpoint(e.target.value)}
+                  placeholder="opc.tcp://host.docker.internal:50000/"
+                  className="font-mono text-xs"
+                />
+              </div>
+            ) : (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="conn-host">Host</Label>
+                    <Input
+                      id="conn-host"
+                      aria-label="Host"
+                      value={draftHost}
+                      onChange={(e) => setDraftHost(e.target.value)}
+                      placeholder="10.0.0.5"
+                      className="font-mono text-xs"
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="conn-port">Port</Label>
+                    <Input
+                      id="conn-port"
+                      aria-label="Port"
+                      value={draftPort}
+                      onChange={(e) => setDraftPort(e.target.value)}
+                      className="font-mono text-xs"
+                    />
+                  </div>
+                </div>
+                {draftProtocol === 's7' && (
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="conn-controller-type">Controller type</Label>
+                    <ConsoleSelect
+                      id="conn-controller-type"
+                      aria-label="Controller type"
+                      value={draftControllerType}
+                      onChange={(e) => setDraftControllerType(e.target.value)}
+                    >
+                      {S7_CONTROLLER_TYPES.map((type) => (
+                        <option key={type} value={type}>
+                          {type}
+                        </option>
+                      ))}
+                    </ConsoleSelect>
+                  </div>
+                )}
+              </>
+            )}
           </div>
 
+          {draftProtocol === 'opc_ua' && (
           <fieldset className="space-y-2 rounded-md border border-border p-3">
             <legend className="px-1 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
               Security
@@ -564,7 +699,9 @@ export const ConnectivityView: React.FC = () => {
               </>
             )}
           </fieldset>
+          )}
 
+          {draftProtocol === 'opc_ua' && (
           <fieldset className="space-y-2 rounded-md border border-border p-3">
             <legend className="px-1 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
               Authentication
@@ -615,6 +752,7 @@ export const ConnectivityView: React.FC = () => {
               </div>
             )}
           </fieldset>
+          )}
 
           <DialogFooter>
             <Button

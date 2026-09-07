@@ -490,6 +490,7 @@ const CONNECTIVITY_SERVER_FIELDS = `
   certificate
   hasPrivateKey
   serverCertificate
+  protocolConfig
   lastStatus
   lastError
   lastTestedAt
@@ -519,6 +520,29 @@ export const SAVE_CONNECTIVITY_SERVER_MUTATION = `
 export const DELETE_CONNECTIVITY_SERVER_MUTATION = `
   mutation DeleteConnectivityServer($id: String!) {
     deleteConnectivityServer(id: $id)
+  }
+`
+
+export const SAVE_CONNECTIVITY_TAG_MUTATION = `
+  mutation SaveConnectivityTag($serverId: String!, $tag: ConnectivityTagInput!) {
+    saveConnectivityTag(serverId: $serverId, tag: $tag) {
+      serverId
+      nodeId
+      mqttTopic
+      dataType
+      subscribed
+    }
+  }
+`
+
+export const TEST_CONNECTIVITY_SERVER_MUTATION = `
+  mutation TestConnectivityServer($id: String!) {
+    testConnectivityServer(id: $id) {
+      id
+      lastStatus
+      lastError
+      lastTestedAt
+    }
   }
 `
 

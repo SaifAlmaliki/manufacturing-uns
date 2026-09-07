@@ -12,6 +12,7 @@ const saveSignalLabel = vi.hoisted(() => vi.fn());
 const getConnectivityServers = vi.hoisted(() => vi.fn());
 const readOpcUaNodes = vi.hoisted(() => vi.fn());
 const subscribeOpcUaDataChanges = vi.hoisted(() => vi.fn());
+const saveConnectivityTag = vi.hoisted(() => vi.fn());
 
 vi.mock('../../services/graphql/client', () => ({
   unsGraphQLClient: {
@@ -26,6 +27,7 @@ vi.mock('../../services/graphql/client', () => ({
     getConnectivityServers,
     readOpcUaNodes,
     subscribeOpcUaDataChanges,
+    saveConnectivityTag,
   },
 }));
 
@@ -72,6 +74,13 @@ beforeEach(() => {
   ]);
   readOpcUaNodes.mockResolvedValue([]);
   subscribeOpcUaDataChanges.mockReturnValue(() => undefined);
+  saveConnectivityTag.mockResolvedValue({
+    serverId: 's2',
+    nodeId: '%ID103',
+    mqttTopic: 'Acme/Line/Speed',
+    dataType: null,
+    subscribed: true,
+  });
 });
 
 async function saveSignalChanges() {
@@ -418,5 +427,61 @@ describe('SignalsTab', () => {
       expect(unsubscribeConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101'),
     );
     await waitFor(() => expect(screen.queryByText('Level')).toBeNull());
+  });
+
+  it('shows an Add signal control once an S7 server is selected in the Server filter', async () => {
+    getConnectivityServers.mockResolvedValue([
+      {
+        id: 's2',
+        name: 'plc1',
+        protocol: 'S7',
+        endpoint: '10.0.0.5:102',
+        lastStatus: 'pending',
+        lastError: '',
+        tags: [],
+      },
+    ]);
+    render(<SignalsTab />);
+    await waitFor(() => expect(screen.getByLabelText('Server')).toBeTruthy());
+
+    expect(screen.queryByRole('button', { name: /add signal/i })).toBeNull();
+    fireEvent.change(screen.getByLabelText('Server'), { target: { value: 's2' } });
+
+    expect(await screen.findByRole('button', { name: /add signal/i })).toBeTruthy();
+  });
+
+  it('adds a signal for an S7 server via saveConnectivityTag', async () => {
+    getConnectivityServers.mockResolvedValue([
+      {
+        id: 's2',
+        name: 'plc1',
+        protocol: 'S7',
+        endpoint: '10.0.0.5:102',
+        lastStatus: 'pending',
+        lastError: '',
+        tags: [],
+      },
+    ]);
+    render(<SignalsTab />);
+    await waitFor(() => expect(screen.getByLabelText('Server')).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('Server'), { target: { value: 's2' } });
+
+    fireEvent.click(await screen.findByRole('button', { name: /add signal/i }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Address'), { target: { value: '%ID103' } });
+    fireEvent.change(within(dialog).getByLabelText('MQTT topic'), {
+      target: { value: 'Acme/Line/Speed' },
+    });
+    fireEvent.change(within(dialog).getByLabelText('Data type'), {
+      target: { value: 'Integer' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: /^add$/i }));
+
+    await waitFor(() =>
+      expect(saveConnectivityTag).toHaveBeenCalledWith(
+        's2',
+        expect.objectContaining({ nodeId: '%ID103', mqttTopic: 'Acme/Line/Speed' }),
+      ),
+    );
   });
 });

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { unsGraphQLClient } from '../../services/graphql/client';
 import type {
   AccessAssetDto,
@@ -30,6 +30,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   BtnGhost,
   BtnPrimary,
@@ -121,6 +123,7 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
   const [units, setUnits] = useState<GraphqlUnitOfMeasure[]>([]);
   const [labels, setLabels] = useState<string[]>([]);
   const [assets, setAssets] = useState<AccessAssetDto[]>([]);
+  const [servers, setServers] = useState<GraphqlConnectivityServer[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [signalsLoadFailed, setSignalsLoadFailed] = useState(false);
@@ -141,6 +144,13 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [addSignalOpen, setAddSignalOpen] = useState(false);
+  const [newAddress, setNewAddress] = useState('');
+  const [newDisplayName, setNewDisplayName] = useState('');
+  const [newTopic, setNewTopic] = useState('');
+  const [newDataType, setNewDataType] = useState<GraphqlSignalDataType | ''>('');
+  const [addSignalError, setAddSignalError] = useState<string | null>(null);
+  const [addingSignal, setAddingSignal] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -161,10 +171,11 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
       return;
     }
 
-    const [unitResult, labelResult, assetResult] = await Promise.allSettled([
+    const [unitResult, labelResult, assetResult, serverResult] = await Promise.allSettled([
       unsGraphQLClient.unitsOfMeasure(),
       unsGraphQLClient.signalLabels(),
       unsGraphQLClient.getAssets(),
+      unsGraphQLClient.getConnectivityServers(),
     ]);
 
     const catalogErrors: string[] = [];
@@ -196,6 +207,16 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
         assetResult.reason instanceof Error
           ? assetResult.reason.message
           : 'assets could not be loaded',
+      );
+    }
+    if (serverResult.status === 'fulfilled') {
+      setServers(serverResult.value);
+    } else {
+      setServers([]);
+      catalogErrors.push(
+        serverResult.reason instanceof Error
+          ? serverResult.reason.message
+          : 'servers could not be loaded',
       );
     }
 
@@ -301,8 +322,21 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
     for (const row of rows) {
       if (!seen.has(row.serverId)) seen.set(row.serverId, row.serverName);
     }
+    // Include the full catalog too — a fresh S7/EtherNet-IP server has no signals
+    // yet, but still needs to be selectable so Add signal can author its first tag.
+    for (const server of servers) {
+      if (!seen.has(server.id)) seen.set(server.id, server.name);
+    }
     return [...seen.entries()].map(([value, label]) => ({ value, label }));
-  }, [rows]);
+  }, [rows, servers]);
+
+  const selectedServer = useMemo(
+    () => servers.find((server) => server.id === serverId) ?? null,
+    [servers, serverId],
+  );
+  const showAddSignal = Boolean(
+    selectedServer && (selectedServer.protocol === 'S7' || selectedServer.protocol === 'ETHERNET_IP'),
+  );
 
   const applyPatch = async (
     serverIdValue: string,
@@ -415,6 +449,65 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
       setSaveError(null);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Signal label was not saved');
+    }
+  };
+
+  const resetAddSignalDraft = () => {
+    setNewAddress('');
+    setNewDisplayName('');
+    setNewTopic('');
+    setNewDataType('');
+    setAddSignalError(null);
+  };
+
+  /**
+   * S7/EtherNet-IP have no browse discovery, so the engineer authors the tag's address
+   * directly. `ConnectivityTagInput` has no `dataType` field — save the tag first, then
+   * patch `dataType` through the existing `updateConnectivityTag` when one was chosen.
+   */
+  const handleAddSignal = async () => {
+    if (!selectedServer) return;
+    const nodeId = newAddress.trim();
+    const mqttTopic = newTopic.trim();
+    if (!nodeId || !mqttTopic) {
+      setAddSignalError('Address and MQTT topic are required.');
+      return;
+    }
+    setAddingSignal(true);
+    setAddSignalError(null);
+    try {
+      const displayName = newDisplayName.trim() || nodeId;
+      const saved = await unsGraphQLClient.saveConnectivityTag(selectedServer.id, {
+        nodeId,
+        browsePath: '',
+        displayName,
+        mqttTopic,
+        subscribed: true,
+      });
+      let tag: GraphqlSubscribedSignal = {
+        serverId: selectedServer.id,
+        serverName: selectedServer.name,
+        nodeId: saved.nodeId,
+        browsePath: '',
+        displayName,
+        mqttTopic: saved.mqttTopic,
+        subscribed: saved.subscribed,
+        dataType: saved.dataType ?? null,
+        labels: [],
+      };
+      if (newDataType) {
+        const updated = await unsGraphQLClient.updateConnectivityTag(selectedServer.id, nodeId, {
+          dataType: newDataType,
+        });
+        tag = { ...tag, ...updated, serverName: selectedServer.name };
+      }
+      setRows((prev) => [...prev, tag]);
+      setAddSignalOpen(false);
+      resetAddSignalDraft();
+    } catch (err) {
+      setAddSignalError(err instanceof Error ? err.message : 'Signal was not saved');
+    } finally {
+      setAddingSignal(false);
     }
   };
 
@@ -553,6 +646,19 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
     ],
     trailing: (
       <div className="ml-auto flex shrink-0 items-center gap-1">
+        {showAddSignal && (
+          <BtnGhost
+            className="px-2 py-1 text-[11px]"
+            aria-label="Add signal"
+            onClick={() => {
+              resetAddSignalDraft();
+              setAddSignalOpen(true);
+            }}
+          >
+            <Plus className="size-3.5" />
+            Add signal
+          </BtnGhost>
+        )}
         {dirtyCount > 0 ? (
           <BtnGhost
             className="px-2 py-1 text-[11px]"
@@ -1025,6 +1131,96 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
               aria-label="Confirm"
             >
               {deleting ? 'Deleting…' : 'Confirm'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={addSignalOpen}
+        onOpenChange={(open) => {
+          setAddSignalOpen(open);
+          if (!open) resetAddSignalDraft();
+        }}
+      >
+        <DialogContent
+          aria-label="Add signal"
+          showCloseButton={false}
+          className="instrument-panel instrument-grain border-[#FF7A00]/20 sm:max-w-md"
+        >
+          <DialogHeader>
+            <DialogTitle className="font-heading text-lg">Add signal</DialogTitle>
+            <DialogDescription>
+              {selectedServer?.name ?? 'This server'} has no browse discovery — author the
+              tag&apos;s address directly.
+            </DialogDescription>
+          </DialogHeader>
+          {addSignalError && (
+            <div className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+              {addSignalError}
+            </div>
+          )}
+          <div className="grid gap-3">
+            <div className="grid gap-1.5">
+              <Label htmlFor="signal-address">Address</Label>
+              <Input
+                id="signal-address"
+                aria-label="Address"
+                value={newAddress}
+                onChange={(e) => setNewAddress(e.target.value)}
+                placeholder="%ID103"
+                className="font-mono text-xs"
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="signal-display-name">Display name</Label>
+              <Input
+                id="signal-display-name"
+                aria-label="Display name"
+                value={newDisplayName}
+                onChange={(e) => setNewDisplayName(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="signal-topic">MQTT topic</Label>
+              <Input
+                id="signal-topic"
+                aria-label="MQTT topic"
+                value={newTopic}
+                onChange={(e) => setNewTopic(e.target.value)}
+                placeholder="Acme/Line/Speed"
+                className="font-mono text-xs"
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="signal-data-type">Data type</Label>
+              <ConsoleSelect
+                id="signal-data-type"
+                aria-label="Data type"
+                value={newDataType}
+                onChange={(e) => setNewDataType(e.target.value as GraphqlSignalDataType | '')}
+              >
+                <option value="">—</option>
+                {DATA_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </ConsoleSelect>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setAddSignalOpen(false);
+                resetAddSignalDraft();
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={() => void handleAddSignal()} disabled={addingSignal} aria-label="Add">
+              {addingSignal ? 'Adding…' : 'Add'}
             </Button>
           </DialogFooter>
         </DialogContent>
