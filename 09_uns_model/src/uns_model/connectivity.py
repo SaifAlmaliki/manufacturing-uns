@@ -47,6 +47,8 @@ from uns_model.tables import (
     CONNECTIVITY_PROTOCOLS,
     CONNECTIVITY_SECURITY_MODES,
     CONNECTIVITY_SECURITY_POLICIES,
+    PLC_PROTOCOLS,
+    S7_CONTROLLER_TYPES,
     Asset,
     ConnectivityServer,
     ConnectivityTag,
@@ -55,8 +57,21 @@ from uns_model.tables import (
 )
 
 _ENDPOINT = re.compile(r"^opc\.tcp://[^\s/:]+:\d{1,5}(/.*)?$")
+_HOST_PORT = re.compile(r"^([A-Za-z0-9.-]+):(\d{1,5})$")
+
+EDGE_APPLY_ERROR = "Recreate uns_mqtt_broker to apply Edge config"
 
 LOGGER = logging.getLogger(__name__)
+
+
+def parse_host_port(endpoint: str) -> tuple[str, int]:
+    match = _HOST_PORT.fullmatch((endpoint or "").strip())
+    if not match:
+        raise ValueError("Endpoint must be host:port")
+    port = int(match.group(2))
+    if port < 1 or port > 65535:
+        raise ValueError("port must be 1–65535")
+    return match.group(1), port
 
 
 @dataclass(slots=True)
@@ -81,6 +96,7 @@ class ConnectivityServerSpec:
     certificate: str = ""
     private_key: str = ""
     server_certificate: str = ""
+    protocol_config: dict[str, Any] | None = None
 
     def validate(self) -> None:
         """Reject what the vocabularies do not allow, before Postgres does."""
@@ -90,25 +106,31 @@ class ConnectivityServerSpec:
             raise ValueError(f"Connectivity server {self.id!r} needs a name")
         if not self.endpoint:
             raise ValueError(f"Connectivity server {self.id!r} needs an endpoint")
-        if not _ENDPOINT.match(self.endpoint):
-            raise ValueError("Endpoint must be opc.tcp://host:port")
+        if self.protocol in PLC_PROTOCOLS:
+            parse_host_port(self.endpoint)
+            if self.protocol == "s7":
+                controller = (self.protocol_config or {}).get("controllerType", "S7_1500")
+                _require_one_of("controllerType", controller, S7_CONTROLLER_TYPES)
+        else:
+            if not _ENDPOINT.match(self.endpoint):
+                raise ValueError("Endpoint must be opc.tcp://host:port")
+            if self.security_policy == "None" and self.security_mode != "None":
+                raise ValueError("Security mode must be None when the policy is None")
+            if self.security_policy != "None" and self.security_mode == "None":
+                raise ValueError("Choose Sign or SignAndEncrypt when a security policy is set")
+            if self.security_policy != "None" and (not self.certificate or not self.private_key):
+                raise ValueError("Certificate and private key paths are required for a secured channel")
+            if self.auth_mode == "username" and (not self.username or not self.password):
+                raise ValueError("Username and password are required")
+            if self.auth_mode == "x509":
+                if not self.certificate or not self.private_key:
+                    raise ValueError("Certificate and private key paths are required for X509 authentication")
+                if self.security_policy == "None":
+                    raise ValueError("X509 authentication needs a security policy other than None")
         _require_one_of("protocol", self.protocol, CONNECTIVITY_PROTOCOLS)
         _require_one_of("auth_mode", self.auth_mode, CONNECTIVITY_AUTH_MODES)
         _require_one_of("security_policy", self.security_policy, CONNECTIVITY_SECURITY_POLICIES)
         _require_one_of("security_mode", self.security_mode, CONNECTIVITY_SECURITY_MODES)
-        if self.security_policy == "None" and self.security_mode != "None":
-            raise ValueError("Security mode must be None when the policy is None")
-        if self.security_policy != "None" and self.security_mode == "None":
-            raise ValueError("Choose Sign or SignAndEncrypt when a security policy is set")
-        if self.security_policy != "None" and (not self.certificate or not self.private_key):
-            raise ValueError("Certificate and private key paths are required for a secured channel")
-        if self.auth_mode == "username" and (not self.username or not self.password):
-            raise ValueError("Username and password are required")
-        if self.auth_mode == "x509":
-            if not self.certificate or not self.private_key:
-                raise ValueError("Certificate and private key paths are required for X509 authentication")
-            if self.security_policy == "None":
-                raise ValueError("X509 authentication needs a security policy other than None")
 
     def column_values(self) -> dict[str, Any]:
         """The spec as column values."""
@@ -496,6 +518,8 @@ __all__ = [
     "ConnectivityRepository",
     "ConnectivityServerSpec",
     "ConnectivityTagSpec",
+    "EDGE_APPLY_ERROR",
     "merge_discovered",
     "metric_key_for_tag",
+    "parse_host_port",
 ]

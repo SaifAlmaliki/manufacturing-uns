@@ -39,15 +39,106 @@ from sqlalchemy.sql.selectable import Select
 
 from uns_model.connectivity import (
     ConnectivityRepository,
+    ConnectivityServerSpec,
     ConnectivityTagSpec,
+    EDGE_APPLY_ERROR,
     merge_discovered,
     metric_key_for_tag,
+    parse_host_port,
 )
 from uns_model.tables import (
+    CONNECTIVITY_PROTOCOLS,
+    CONNECTIVITY_STATUSES,
+    PLC_PROTOCOLS,
     SEEDED_UNITS_OF_MEASURE,
+    S7_CONTROLLER_TYPES,
     SIGNAL_DATA_TYPES,
     SIGNAL_SEMANTIC_CLASSES,
 )
+
+
+def test_protocols_include_s7_and_ethernet_ip():
+    assert CONNECTIVITY_PROTOCOLS == ("opc_ua", "s7", "ethernet_ip")
+    assert PLC_PROTOCOLS == frozenset({"s7", "ethernet_ip"})
+
+
+def test_statuses_include_pending():
+    assert CONNECTIVITY_STATUSES == ("untested", "pending", "connected", "failed")
+
+
+def test_parse_host_port_splits_ipv4_and_hostname():
+    assert parse_host_port("192.168.1.10:102") == ("192.168.1.10", 102)
+    assert parse_host_port("plc-line1:44818") == ("plc-line1", 44818)
+
+
+def test_parse_host_port_rejects_opc_tcp_and_bad_port():
+    with pytest.raises(ValueError, match="host:port"):
+        parse_host_port("opc.tcp://plc:102")
+    with pytest.raises(ValueError, match="port"):
+        parse_host_port("plc:70000")
+
+
+def test_s7_spec_accepts_host_port_and_controller_type():
+    spec = ConnectivityServerSpec(
+        id="srv_s7",
+        name="Line1 S7",
+        protocol="s7",
+        endpoint="10.0.0.5:102",
+        protocol_config={"controllerType": "S7_1200"},
+    )
+    spec.validate()
+
+
+def test_s7_spec_rejects_opc_tcp_endpoint():
+    spec = ConnectivityServerSpec(
+        id="srv_s7",
+        name="Line1 S7",
+        protocol="s7",
+        endpoint="opc.tcp://10.0.0.5:102",
+    )
+    with pytest.raises(ValueError, match="host:port"):
+        spec.validate()
+
+
+def test_s7_spec_rejects_unknown_controller_type():
+    spec = ConnectivityServerSpec(
+        id="srv_s7",
+        name="Line1 S7",
+        protocol="s7",
+        endpoint="10.0.0.5:102",
+        protocol_config={"controllerType": "LOGO"},
+    )
+    with pytest.raises(ValueError, match="controllerType"):
+        spec.validate()
+
+
+def test_eip_spec_accepts_host_port_without_security():
+    spec = ConnectivityServerSpec(
+        id="srv_eip",
+        name="Pack CIP",
+        protocol="ethernet_ip",
+        endpoint="10.0.0.8:44818",
+    )
+    spec.validate()
+
+
+def test_opc_ua_spec_still_requires_opc_tcp():
+    spec = ConnectivityServerSpec(
+        id="srv_opc",
+        name="opcplc",
+        protocol="opc_ua",
+        endpoint="10.0.0.5:4840",
+    )
+    with pytest.raises(ValueError, match="opc.tcp"):
+        spec.validate()
+
+
+def test_edge_apply_error_copy():
+    assert EDGE_APPLY_ERROR == "Recreate uns_mqtt_broker to apply Edge config"
+
+
+def test_s7_controller_types():
+    assert S7_CONTROLLER_TYPES == ("S7_1500", "S7_1200", "S7_300", "S7_400")
 
 
 def test_seeded_units_include_celsius_and_kwh():

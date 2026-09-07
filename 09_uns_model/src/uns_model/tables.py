@@ -449,9 +449,13 @@ class AlertRuleRole(Base):
 
 # The vocabularies the Connectivity catalog uses. Declared once here so the
 # CHECK constraints, the migration and the GraphQL enums cannot drift apart.
-CONNECTIVITY_PROTOCOLS: tuple[str, ...] = ("opc_ua",)
+CONNECTIVITY_PROTOCOLS: tuple[str, ...] = ("opc_ua", "s7", "ethernet_ip")
 
-CONNECTIVITY_STATUSES: tuple[str, ...] = ("untested", "connected", "failed")
+CONNECTIVITY_STATUSES: tuple[str, ...] = ("untested", "pending", "connected", "failed")
+
+PLC_PROTOCOLS: frozenset[str] = frozenset({"s7", "ethernet_ip"})
+
+S7_CONTROLLER_TYPES: tuple[str, ...] = ("S7_1500", "S7_1200", "S7_300", "S7_400")
 
 CONNECTIVITY_AUTH_MODES: tuple[str, ...] = ("anonymous", "username", "x509")
 
@@ -564,6 +568,7 @@ class ConnectivityServer(Base):
     certificate: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
     private_key: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
     server_certificate: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("''"))
+    protocol_config: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     last_status: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=text("'untested'")
