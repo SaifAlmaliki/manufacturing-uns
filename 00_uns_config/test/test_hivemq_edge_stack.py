@@ -44,9 +44,13 @@ def test_default_config_binds_admin_http_on_8080_all_interfaces():
 
 
 def test_default_config_has_no_protocol_adapters():
+    """The shipped simulation adapter may stay; no catalog or plant PLC/OPC UA adapter may."""
     root = _xml(_HIVEMQ_CONFIG)
     adapters = [el for el in root.iter() if el.tag.endswith("protocol-adapter")]
-    assert adapters == []
+    adapter_ids = {el.find("adapterId").text for el in adapters}
+    protocol_ids = {el.find("protocolId").text for el in adapters}
+    assert not any(adapter_id.startswith("catalog-") for adapter_id in adapter_ids)
+    assert protocol_ids <= {"simulation"}
 
 
 def test_default_config_has_no_southbound_mappings():

@@ -1,4 +1,11 @@
-"""Splice catalog-owned HiveMQ Edge adapters into config.xml without restyling the rest."""
+"""Splice catalog-owned HiveMQ Edge adapters into config.xml without restyling the rest.
+
+Limitation: only whole `<!-- ... -->` comments and `<protocol-adapter>` blocks between
+`<protocol-adapters>` and `</protocol-adapters>` are preserved verbatim (see `_TOKEN`).
+Any other inner text at that level (e.g. stray non-comment text) is dropped, same as
+before this was documented. A comment inside a catalog-owned adapter's own block is
+lost on the next re-render, since that block is fully regenerated from the catalog row.
+"""
 
 from __future__ import annotations
 
@@ -9,8 +16,8 @@ from xml.etree import ElementTree as ET
 
 _DATA_TYPES = {"Integer": "DINT", "Double": "REAL", "Boolean": "BOOL", "String": "STRING"}
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9_]+")
-_ADAPTER_BLOCK = re.compile(
-    r"[ \t]*<protocol-adapter>.*?</protocol-adapter>",
+_TOKEN = re.compile(
+    r"[ \t]*(?:<!--.*?-->|<protocol-adapter>.*?</protocol-adapter>)",
     re.DOTALL,
 )
 
@@ -46,6 +53,23 @@ def tag_xml_name(node_id: str) -> str:
     return cleaned or "tag"
 
 
+def _unique_tag_names(tags: tuple[EdgeTagInput, ...]) -> list[str]:
+    """
+    `tag_xml_name` sanitizes each `node_id` independently, so two distinct
+    node_ids (e.g. `%ID103` and `%ID.103`) can collide on the same `<name>`.
+    HiveMQ Edge needs every tag name in an adapter to be unique, so a
+    collision is suffixed `_2`, `_3`, ... in tag order rather than silently
+    letting the second tag shadow the first.
+    """
+    seen: dict[str, int] = {}
+    names: list[str] = []
+    for tag in tags:
+        base = tag_xml_name(tag.node_id)
+        seen[base] = seen.get(base, 0) + 1
+        names.append(base if seen[base] == 1 else f"{base}_{seen[base]}")
+    return names
+
+
 def render_catalog_adapter(adapter: EdgeAdapterInput) -> str:
     protocol_id = "eip" if adapter.protocol == "ethernet_ip" else "s7"
     aid = adapter_id_for(adapter.server_id)
@@ -65,9 +89,9 @@ def render_catalog_adapter(adapter: EdgeAdapterInput) -> str:
     if not adapter.tags:
         lines.extend(["            <northboundMappings/>", "            <tags/>"])
     else:
+        names = _unique_tag_names(adapter.tags)
         lines.append("            <northboundMappings>")
-        for tag in adapter.tags:
-            name = tag_xml_name(tag.node_id)
+        for tag, name in zip(adapter.tags, names, strict=True):
             lines.extend(
                 [
                     "                <northboundMapping>",
@@ -81,8 +105,7 @@ def render_catalog_adapter(adapter: EdgeAdapterInput) -> str:
         lines.append("            </northboundMappings>")
         lines.append("            <tags>")
         addr_el = "tagAddress" if protocol_id == "s7" else "address"
-        for tag in adapter.tags:
-            name = tag_xml_name(tag.node_id)
+        for tag, name in zip(adapter.tags, names, strict=True):
             desc = tag.display_name or tag.node_id
             lines.extend(
                 [
@@ -101,7 +124,20 @@ def render_catalog_adapter(adapter: EdgeAdapterInput) -> str:
     return "\n".join(lines)
 
 
+def _is_catalog_adapter_block(token: str) -> bool:
+    stripped = token.lstrip()
+    return stripped.startswith("<protocol-adapter>") and "<adapterId>catalog-" in token
+
+
 def apply_catalog_adapters(document: str, adapters: list[EdgeAdapterInput]) -> str:
+    """
+    Return `document` with every `catalog-*` protocol-adapter replaced by `adapters`.
+
+    Re-parses the *result* as XML before returning: a bug in this splice (or an
+    engineer-typed value that breaks well-formedness despite `_esc`) must fail loudly
+    here rather than let `apply_catalog_adapters_file` write a config.xml HiveMQ Edge
+    cannot parse.
+    """
     if "<hivemq" not in document:
         raise ValueError("config.xml is not a HiveMQ document")
     try:
@@ -116,14 +152,15 @@ def apply_catalog_adapters(document: str, adapters: list[EdgeAdapterInput]) -> s
     prefix = document[: start + open_len]
     inner = document[start + open_len : end]
     suffix = document[end:]
-    kept = [
-        block
-        for block in _ADAPTER_BLOCK.findall(inner)
-        if "<adapterId>catalog-" not in block
-    ]
+    kept = [token for token in _TOKEN.findall(inner) if not _is_catalog_adapter_block(token)]
     rendered = [render_catalog_adapter(item) for item in sorted(adapters, key=lambda a: a.server_id)]
     body = "\n".join([*kept, *rendered])
-    return f"{prefix}\n{body}\n    {suffix}" if body else f"{prefix}\n    {suffix}"
+    result = f"{prefix}\n{body}\n    {suffix}" if body else f"{prefix}\n    {suffix}"
+    try:
+        ET.fromstring(result)
+    except ET.ParseError as exc:
+        raise ValueError("apply_catalog_adapters produced invalid XML; not writing it") from exc
+    return result
 
 
 def apply_catalog_adapters_file(path: Path, adapters: list[EdgeAdapterInput]) -> None:

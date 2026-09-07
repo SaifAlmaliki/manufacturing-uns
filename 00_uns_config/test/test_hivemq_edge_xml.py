@@ -183,3 +183,54 @@ def test_broken_xml_is_not_written(tmp_path: Path):
     with pytest.raises(ValueError):
         apply_catalog_adapters_file(path, [_s7()])
     assert path.read_text(encoding="utf-8") == "<not-hivemq>"
+
+
+def test_topic_with_illegal_control_char_does_not_write_a_broken_config(tmp_path: Path):
+    """A raw \\x01 in a topic breaks XML 1.0 well-formedness; the re-parse safety net must catch it."""
+    path = tmp_path / "config.xml"
+    path.write_text(_CONFIG, encoding="utf-8")
+    tags = (EdgeTagInput("%ID103", "Speed", "Acme/Test/Line\x01Speed", "Integer"),)
+    with pytest.raises(ValueError):
+        apply_catalog_adapters_file(path, [_s7(tags=tags)])
+    assert path.read_text(encoding="utf-8") == _CONFIG
+
+
+def test_apply_catalog_adapters_reparses_the_output_and_rejects_a_bad_render():
+    with pytest.raises(ValueError):
+        apply_catalog_adapters(_CONFIG, [_s7(tags=(EdgeTagInput("%ID103", "Speed", "Bad\x01Topic", "Integer"),))])
+
+
+def test_two_node_ids_that_sanitize_to_the_same_name_get_distinct_tag_names():
+    """`ID.103` and `ID_103` both sanitize to `ID_103` — the second must not shadow the first."""
+    tags = (
+        EdgeTagInput("ID.103", "Speed A", "Acme/Line/SpeedA", "Integer"),
+        EdgeTagInput("ID_103", "Speed B", "Acme/Line/SpeedB", "Integer"),
+    )
+    rendered = render_catalog_adapter(_s7(tags=tags))
+    names = re.findall(r"<name>([^<]+)</name>", rendered)
+    assert names == ["ID_103", "ID_103_2"]
+    assert len(set(names)) == len(names)
+    tag_names = re.findall(r"<tagName>([^<]+)</tagName>", rendered)
+    assert tag_names == names
+
+
+def test_comment_between_adapters_is_preserved_across_a_splice(tmp_path: Path):
+    document = (
+        '<?xml version="1.0" encoding="UTF-8" ?>\n'
+        "<hivemq>\n"
+        "    <protocol-adapters>\n"
+        "        <!-- A plant engineer's note about the next adapter. -->\n"
+        "        <protocol-adapter>\n"
+        "            <adapterId>plant-1</adapterId>\n"
+        "            <protocolId>modbus</protocolId>\n"
+        "        </protocol-adapter>\n"
+        "    </protocol-adapters>\n"
+        "</hivemq>\n"
+    )
+    path = tmp_path / "config.xml"
+    path.write_text(document, encoding="utf-8")
+    apply_catalog_adapters_file(path, [_s7(server_id="srv1")])
+    text = path.read_text(encoding="utf-8")
+    assert "A plant engineer's note about the next adapter." in text
+    assert "<adapterId>plant-1</adapterId>" in text
+    assert "<adapterId>catalog-srv1</adapterId>" in text
