@@ -2,22 +2,23 @@
 
 `config.xml` is mounted into `uns_mqtt_broker` at `/opt/hivemq/conf/config.xml`.
 
-Default file: MQTT TCP on `1883`, no protocol adapters. The stack starts with no PLC.
+Default file: MQTT TCP on `1883`, plus the optional `simulation` adapter. The stack
+starts with no plant PLC.
 
-To ingest S7, EtherNet/IP, or OPC UA, copy a `<protocol-adapter>` from
-`fixtures/adapters-unroutable.xml`, point `host` / `uri` at the real device, set
-`topic` to the ISA-95 path, keep `includeTimestamp` true and `maxQos` 1, and
-recreate the broker:
+**S7 and EtherNet/IP:** author host, port, controller type, and signals in Assets &
+Connectivity (`#/connectivity/servers`). GraphQL upserts catalog-owned
+`<protocol-adapter>` blocks (`adapterId` `catalog-<server id>`). Then recreate:
 
 ```bash
 uv run uns_compose up -d --force-recreate uns_mqtt_broker
 ```
 
-Do not add `<southboundMapping>` entries. The Edge console on host port `18080`
-(default login `admin` / `hivemq`) is for inspection; git remains the source of
-truth. Mitsubishi is out of scope.
+Do not hand-edit catalog-owned adapters. Do not add `<southboundMapping>` entries.
+The generator preserves listeners, admin-api, comments, and the `simulation` adapter,
+and writes 4-space indent matching `fixtures/adapters-unroutable.xml`.
 
-**OPC UA via the console catalog:** Engineers add OPC UA servers in the web console
-(Assets & Connectivity). The `opcua_client` Compose service polls that catalog and
-publishes subscribed tags into the UNS. Do not author OPC UA mappings in the Edge
-UI — Edge XML remains the path for S7 and EtherNet/IP only.
+**OPC UA:** engineers add servers in the same console. `opcua_client` polls that
+catalog and publishes subscribed tags. Do not author OPC UA mappings in the Edge UI.
+
+The Edge console on host port `18080` (default login `admin` / `hivemq`) is for
+inspection. Mitsubishi is out of scope.
