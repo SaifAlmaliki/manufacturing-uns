@@ -36,3 +36,7 @@ Read `.agents/skills/<name>/SKILL.md` immediately when the situation matches, th
 | Stress-testing a plan in-chat (and no `/grill-*` skill is already running) | `grilling` |
 
 User-invoked orchestrators stay slash-command only. Do not start them unless the user names them: `/grill-with-docs`, `/grill-me`, `/to-spec`, `/to-tickets`, `/implement`, `/triage`, `/wayfinder`, `/ask-matt`, `/improve-codebase-architecture`, `/handoff`, `/wait-what`.
+
+## Knowledge graph (graphify)
+
+After finishing a feature (or any code change you would commit), run `graphify update .` so new files and calls are linked. A post-commit hook rebuilds the same way on `git commit`. When `graphify-out/graph.json` exists, prefer `graphify query` / `path` / `explain` over raw grep.

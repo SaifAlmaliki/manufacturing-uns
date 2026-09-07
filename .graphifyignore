@@ -1,0 +1,17 @@
+# Keep the graph AST-only (no LLM key). Docs/images need semantic extraction.
+# Drop a pattern here if you later want those files in the graph.
+*.md
+*.mdx
+*.qmd
+*.html
+*.txt
+*.rst
+*.yaml
+*.yml
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+*.svg
+*.pdf

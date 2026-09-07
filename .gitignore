@@ -136,3 +136,6 @@ dmypy.json
 
 # Cygwin / Git Bash crash dumps (Windows)
 *.stackdump
+
+# graphify — commit the graph; keep local cost totals out of git
+graphify-out/cost.json
