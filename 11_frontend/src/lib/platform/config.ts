@@ -10,6 +10,7 @@ export type PlatformSettings = {
   frontendDevPort: number
   frontendComposePort: number
   grafanaProxyTarget: string
+  agentProxyTarget: string
   authRealm: string
   authBaseUrl: string
   authIssuer: string

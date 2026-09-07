@@ -77,6 +77,8 @@ interface AlarmContextType {
   toggleAudioMute: () => void;
   playAlarmChime: (severity: AlarmSeverity) => void;
   clearResolvedAlarms: () => void;
+  focusedAlarmTopic: string;
+  setFocusedAlarmTopic: (topic: string) => void;
 }
 
 const AlarmContext = createContext<AlarmContextType | null>(null);
@@ -115,6 +117,7 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const [activeAlarms, setActiveAlarms] = useState<ActiveAlarm[]>([]);
   const [auditLog, setAuditLog] = useState<AlarmAuditEntry[]>([]);
+  const [focusedAlarmTopic, setFocusedAlarmTopic] = useState<string>('');
 
   const [isMuted, setIsMuted] = useState<boolean>(() => {
     try {
@@ -693,6 +696,8 @@ export const AlarmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         toggleAudioMute,
         playAlarmChime,
         clearResolvedAlarms,
+        focusedAlarmTopic,
+        setFocusedAlarmTopic,
       }}
     >
       {children}

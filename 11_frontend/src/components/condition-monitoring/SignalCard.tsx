@@ -22,7 +22,8 @@ export const SignalCard: React.FC<{
   latest: Sample | undefined;
   fromMs?: number;
   toMs?: number;
-}> = ({ tag, samples, latest, fromMs, toMs }) => {
+  onFocus?: () => void;
+}> = ({ tag, samples, latest, fromMs, toMs, onFocus }) => {
   const [mode, setMode] = useState<'graph' | 'table'>('graph');
   const inferredBoolean = samples.some((s) => s.boolean) || latest?.boolean === true;
   const isBoolean =
@@ -38,7 +39,23 @@ export const SignalCard: React.FC<{
   const rows = useMemo(() => numericTableRows(samples), [samples]);
 
   return (
-    <ConsoleCard padding="sm" className="flex h-[17rem] flex-col gap-2 overflow-hidden">
+    <div
+      className="h-[17rem]"
+      onClick={onFocus}
+      role={onFocus ? 'button' : undefined}
+      tabIndex={onFocus ? 0 : undefined}
+      onKeyDown={
+        onFocus
+          ? (event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                onFocus();
+              }
+            }
+          : undefined
+      }
+    >
+      <ConsoleCard padding="sm" className="flex h-full flex-col gap-2 overflow-hidden">
       <div className="flex shrink-0 items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium text-foreground">{tag.displayName}</p>
@@ -106,5 +123,6 @@ export const SignalCard: React.FC<{
         )}
       </div>
     </ConsoleCard>
+    </div>
   );
 };

@@ -30,6 +30,10 @@ export default defineConfig(() => {
           changeOrigin: true,
           ws: true,
         },
+        '/agent': {
+          target: platform.agentProxyTarget,
+          changeOrigin: true,
+        },
       },
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: process.env.DISABLE_HMR === 'true' ? null : {},

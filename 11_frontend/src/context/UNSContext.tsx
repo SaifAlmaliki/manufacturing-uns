@@ -79,6 +79,8 @@ interface UNSContextType {
   jumpToSparkplug: (metricName: string) => void;
   historianInitialTopic: string;
   sparkplugInitialMetric: string;
+  copilotMetricKey: string;
+  setCopilotMetricKey: (key: string) => void;
 }
 
 const UNSContext = createContext<UNSContextType | null>(null);
@@ -174,6 +176,7 @@ export const UNSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [historianInitialTopic, setHistorianInitialTopic] = useState<string>('');
   const [sparkplugInitialMetric, setSparkplugInitialMetric] = useState<string>('');
+  const [copilotMetricKey, setCopilotMetricKey] = useState<string>('');
 
   const [bookmarks, setBookmarks] = useState<TopicBookmark[]>(() => {
     try {
@@ -437,6 +440,8 @@ export const UNSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         jumpToSparkplug,
         historianInitialTopic,
         sparkplugInitialMetric,
+        copilotMetricKey,
+        setCopilotMetricKey,
       }}
     >
       {children}

@@ -25,7 +25,7 @@ import { SignalCard } from './SignalCard';
 
 export const ConditionMonitoringView: React.FC = () => {
   const { hasPermission } = useAuth();
-  const { selectedNode } = useUNS();
+  const { selectedNode, setCopilotMetricKey } = useUNS();
   const { activeAlarms } = useAlarms();
   const navigate = useNavigate();
   const [servers, setServers] = useState<GraphqlConnectivityServer[]>([]);
@@ -156,6 +156,7 @@ export const ConditionMonitoringView: React.FC = () => {
             latest={latest}
             fromMs={timeWindow.fromMs}
             toMs={timeWindow.toMs}
+            onFocus={() => setCopilotMetricKey(tag.mqttTopic)}
           />
         );
       })}

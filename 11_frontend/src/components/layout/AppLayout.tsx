@@ -3,6 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Header } from '../common/Header';
 import { BookmarksDrawer } from '../system/BookmarksDrawer';
+import { FactoryCopilotDrawer } from '../copilot/FactoryCopilotDrawer';
 import { StaleNodesDrawer } from '../system/StaleNodesDrawer';
 import { useUNS } from '../../context/UNSContext';
 import { useAuth } from '../../context/AuthContext';
@@ -23,6 +24,7 @@ export const AppLayout: React.FC = () => {
 
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isBookmarksOpen, setIsBookmarksOpen] = useState(false);
+  const [isCopilotOpen, setIsCopilotOpen] = useState(false);
   const [isStaleDrawerOpen, setIsStaleDrawerOpen] = useState(false);
 
   const getTabIdFromPath = (path: string): string => {
@@ -70,6 +72,7 @@ export const AppLayout: React.FC = () => {
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Header
+          onOpenCopilot={() => setIsCopilotOpen(true)}
           onOpenBookmarks={() => setIsBookmarksOpen(true)}
           onOpenStaleDrawer={() => setIsStaleDrawerOpen(true)}
           onToggleMobileSidebar={() => setIsMobileOpen((prev) => !prev)}
@@ -127,6 +130,7 @@ export const AppLayout: React.FC = () => {
       </div>
 
       <BookmarksDrawer isOpen={isBookmarksOpen} onClose={() => setIsBookmarksOpen(false)} />
+      <FactoryCopilotDrawer isOpen={isCopilotOpen} onClose={() => setIsCopilotOpen(false)} />
       <StaleNodesDrawer isOpen={isStaleDrawerOpen} onClose={() => setIsStaleDrawerOpen(false)} />
     </div>
   );

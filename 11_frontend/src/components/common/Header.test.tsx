@@ -46,12 +46,21 @@ import { Header } from './Header';
 
 const noop = () => undefined;
 
-function renderHeader() {
+function renderHeader(onOpenCopilot = noop) {
   return render(
     <MemoryRouter>
-      <Header onOpenBookmarks={noop} onOpenStaleDrawer={noop} onToggleMobileSidebar={noop} />
+      <Header
+        onOpenCopilot={onOpenCopilot}
+        onOpenBookmarks={noop}
+        onOpenStaleDrawer={noop}
+        onToggleMobileSidebar={noop}
+      />
     </MemoryRouter>,
   );
+}
+
+function renderHeaderLegacy() {
+  return renderHeader();
 }
 
 beforeEach(() => {
@@ -71,14 +80,19 @@ beforeEach(() => {
 
 describe('Header signed-in name', () => {
   it('shows the logged-in username in the top-right chrome', () => {
-    renderHeader();
+    renderHeaderLegacy();
     expect(screen.getByRole('button', { name: /Ada Admin/ })).toBeTruthy();
   });
 
   it('does not show an account chip when nobody is signed in', () => {
     auth.currentUser = null;
-    renderHeader();
+    renderHeaderLegacy();
     expect(screen.queryByRole('button', { name: /account menu/i })).toBeNull();
     expect(screen.queryByText('Ada Admin')).toBeNull();
+  });
+
+  it('shows the Factory Copilot control', () => {
+    renderHeaderLegacy();
+    expect(screen.getByLabelText('Factory Copilot')).toBeTruthy();
   });
 });

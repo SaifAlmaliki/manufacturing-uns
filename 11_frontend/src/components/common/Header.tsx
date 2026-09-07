@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { FactoryCopilotButton } from '../copilot/FactoryCopilotButton';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Menu,
@@ -15,6 +16,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { UserSessionMenu } from './UserSessionMenu';
 
 interface HeaderProps {
+  onOpenCopilot: () => void;
   onOpenBookmarks: () => void;
   onOpenStaleDrawer: () => void;
   onToggleMobileSidebar: () => void;
@@ -68,6 +70,7 @@ function getPageHeading(
 }
 
 export const Header: React.FC<HeaderProps> = ({
+  onOpenCopilot,
   onOpenBookmarks,
   onOpenStaleDrawer,
   onToggleMobileSidebar,
@@ -131,6 +134,9 @@ export const Header: React.FC<HeaderProps> = ({
           <Calendar className="size-4 text-muted-foreground" />
           <span className="tabular-nums">{todayLabel}</span>
         </button>
+
+        {/* Factory Copilot */}
+        <FactoryCopilotButton onOpen={onOpenCopilot} />
 
         {/* Bookmarks — subtle icon */}
         <button

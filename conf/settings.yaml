@@ -98,6 +98,13 @@ default:
       name: "uns_kafka_mapper"
     sparkplugb_mapper:
       name: "uns_spb_mapper"
+    factory_agent:
+      name: "uns_factory_agent"
+      port: 8010
+
+  factory_agent:
+    model: "gpt-4o"
+    graphql_url: "http://localhost:8000/graphql"
 
   urls:
     graphql_host: "localhost"
@@ -105,6 +112,7 @@ default:
     graphql_path: "/graphql"
     # Vite dev proxies /grafana here. Compose keeps Grafana's 3000 unpublished; nginx on 8088 does.
     grafana_proxy_target: "http://localhost:8088"
+    agent_proxy_target: "http://localhost:8088"
     cors_origins:
     - "http://localhost:5173"
     - "http://127.0.0.1:5173"

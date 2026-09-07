@@ -334,6 +334,32 @@ services:
       uns_kafka_broker:
         condition: service_healthy
 
+  factory_agent:
+    build:
+      context: .
+      dockerfile: ./13_uns_factory_agent/Dockerfile
+    volumes:
+      - ./conf:/app/conf
+    environment:
+      UNS_CONF_DIR: /app/conf
+      UNS_MODULE: 13_uns_factory_agent
+      UNS_historian__hostname: uns_timescale_db
+      UNS_historian__database: "uns_historian"
+      UNS_historian__username: uns_dbuser
+      UNS_historian__password: ${UNS_historian__password}
+      UNS_factory_agent__graphql_url: "http://graphql_server:8000/graphql"
+    depends_on:
+      uns_timescale_db:
+        condition: service_healthy
+      tsdb_setup_script:
+        condition: service_completed_successfully
+      asset_model_setup:
+        condition: service_completed_successfully
+      graphql_server:
+        condition: service_healthy
+      uns_keycloak:
+        condition: service_healthy
+
   # Identity provider for the console and Grafana (ADR-0009). The console proxies /auth
   # on its own origin, so tokens carry exactly one issuer and Grafana's session cookie
   # is same-origin; publishing 8080 would invite a second issuer URL.

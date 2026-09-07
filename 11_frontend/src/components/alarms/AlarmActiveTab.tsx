@@ -20,7 +20,7 @@ import { AlarmOutletContext, AlarmPanel, getStatusBadge } from './alarmUi';
 
 export const AlarmActiveTab: React.FC = () => {
   const { onAcknowledge, onResolve } = useOutletContext<AlarmOutletContext>();
-  const { activeAlarms, myRoleAlarms, isPlatformLive, rulesError } = useAlarms();
+  const { activeAlarms, myRoleAlarms, isPlatformLive, rulesError, setFocusedAlarmTopic } = useAlarms();
   const { currentUser, roles } = useAuth();
   const myRole = currentUser?.role ?? roles[0] ?? 'viewer';
   const { jumpToHistorian, jumpToTopicInTree } = useUNS();
@@ -109,7 +109,19 @@ export const AlarmActiveTab: React.FC = () => {
                     : 'bg-zinc-500';
 
             return (
-              <ConsoleCard key={alarm.id} padding="lg" className="flex flex-col gap-4">
+              <div
+                key={alarm.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => setFocusedAlarmTopic(alarm.topic)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    setFocusedAlarmTopic(alarm.topic);
+                  }
+                }}
+              >
+              <ConsoleCard padding="lg" className="flex flex-col gap-4">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div className="flex min-w-0 flex-1 items-start gap-4">
                     <span className={`mt-2 size-3 shrink-0 rounded-full ${severityColor}`} />
@@ -159,6 +171,7 @@ export const AlarmActiveTab: React.FC = () => {
                   )}
                 </div>
               </ConsoleCard>
+              </div>
             );
           })}
         </div>

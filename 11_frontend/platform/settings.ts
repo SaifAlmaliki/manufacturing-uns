@@ -15,6 +15,7 @@ export type PlatformSettings = {
   frontendDevPort: number
   frontendComposePort: number
   grafanaProxyTarget: string
+  agentProxyTarget: string
   authRealm: string
   authBaseUrl: string
   authIssuer: string
@@ -61,6 +62,7 @@ export function platformSettingsFromConfig(
     frontendDevPort: Number(frontend.dev_port ?? 5173),
     frontendComposePort: Number(frontend.compose_port ?? 8088),
     grafanaProxyTarget: String(urls.grafana_proxy_target ?? 'http://localhost:3000'),
+    agentProxyTarget: String(urls.agent_proxy_target ?? 'http://localhost:8088'),
     authRealm,
     authBaseUrl,
     // Absolute, not a relative path: OIDC discovery hands the browser absolute URLs and the

@@ -29,9 +29,15 @@ vi.mock('../../services/graphql/client', () => ({
 
 const uns = vi.hoisted(() => ({
   selectedNode: null as UnsNode | null,
+  setCopilotMetricKey: vi.fn(),
 }));
 vi.mock('../../context/UNSContext', () => ({ useUNS: () => uns }));
-vi.mock('../../context/AlarmContext', () => ({ useAlarms: () => alarms }));
+vi.mock('../../context/AlarmContext', () => ({
+  useAlarms: () => ({
+    ...alarms,
+    setFocusedAlarmTopic: vi.fn(),
+  }),
+}));
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
   return { ...actual, useNavigate: () => navigate };
