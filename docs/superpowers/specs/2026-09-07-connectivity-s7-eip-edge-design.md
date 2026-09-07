@@ -36,6 +36,7 @@ S7/EIP on broker recreate.
 | Live Edge Management API | Out. Status is not read from Edge’s HTTP API |
 | Auto-recreate | Out. GraphQL does not use the Docker socket |
 | XML ownership | Generator upserts only catalog-owned `<protocol-adapter>` blocks |
+| XML formatting | 4-space indent and element order of `conf/hivemq/config.xml` and `conf/hivemq/fixtures/adapters-unroutable.xml`. Not ElementTree’s default dump. |
 | Form | Protocol switches fields in the existing Add Server dialog |
 | Signals | Manual add on the Signals tab; no S7/EIP browse |
 | Test | OPC UA: existing session probe. S7/EIP: TCP connect to host:port |
@@ -136,6 +137,27 @@ HiveMQ file contract and is a GraphQL dependency.
 - Each subscribed tag: `<northboundMapping>` with `topic` = `mqtt_topic`, `tagName` =
   that tag name, `maxQos` 1, `includeTimestamp` true.
 
+**Serialization (indentation is part of the contract).** Both checked-in HiveMQ files
+use the same style. The generator must write that style, not a minified or 2-space dump.
+
+| Rule | Exact form |
+| --- | --- |
+| Declaration | `<?xml version="1.0" encoding="UTF-8" ?>` (space before `?>`) |
+| Indent | Four spaces per nesting level. Root children at 4 spaces; `<protocol-adapter>` children at 12; mapping/tag fields at 20 |
+| Catalog adapter child order | `adapterId`, `protocolId`, `config`, `northboundMappings`, `tags` — same order as the S7 and EIP blocks in `adapters-unroutable.xml` |
+| S7 `<config>` order | `host`, `port`, `controllerType` |
+| EIP `<config>` order | `host`, `port` |
+| Mapping child order | `topic`, `tagName`, `maxQos`, `includeTimestamp` |
+| Tag child order | `name`, `description`, `definition` with `tagAddress`+`dataType` (S7) or `address`+`dataType` (EIP) |
+| Empty mappings / tags | Self-closing on their own line at 12 spaces: `<northboundMappings/>` and `<tags/>` (same as `<definition/>` / `<southboundMappings/>` in the checked-in files) |
+| Southbound | Omit the element entirely on catalog adapters (do not write an empty `<southboundMappings/>`) |
+| Untouched text | Listeners, admin-api, comments, and non-catalog adapters keep their existing bytes. Do not pretty-print the whole document if that re-indents or strips the simulation comment |
+
+`xml.etree.ElementTree.indent` with `space="    "` is acceptable **only** for newly
+built catalog-owned adapter subtrees that are then spliced in. It is not acceptable as
+“re-indent the entire `hivemq` tree,” because that drops comments and can rewrite the
+`simulation` block.
+
 Catalog → Edge data types:
 
 | Catalog `data_type` | Edge XML |
@@ -235,9 +257,16 @@ enough. Do not add a “mark applied” button and do not try to detect broker r
   rejection.
 - **Generator (temp XML, no Docker).** Start from a copy of `config.xml` that includes the
   `simulation` adapter. Add S7, add EIP, replace the same `adapterId`, delete one server,
-  assert listeners / admin-api / `simulation` unchanged, no southbound, `includeTimestamp`
-  true, `maxQos` 1, `protocolId` `eip` for `ethernet_ip`, host/port/controllerType match,
-  data-type map as in §5. Refuse to write on broken XML.
+  assert listeners / admin-api / `simulation` **bytes** unchanged (comment block still
+  present), no southbound, `includeTimestamp` true, `maxQos` 1, `protocolId` `eip` for
+  `ethernet_ip`, host/port/controllerType match, data-type map as in §5. Refuse to write
+  on broken XML.
+- **Indent.** A generated S7 adapter with one tag must match the fixture S7 block’s
+  whitespace (4-space steps, same child order) except for `adapterId`, host, topic,
+  tag names, and description. Same for EIP vs the fixture EIP block. The written file
+  must start with `<?xml version="1.0" encoding="UTF-8" ?>`. A write that only adds a
+  catalog adapter must not convert the file to 2-space indent or strip blank-line
+  structure around the simulation comment.
 - **GraphQL.** Save S7/EIP persists and updates a temp config path (inject path in tests).
   XML failure rolls back. `subscribeOpcUaVariables` on S7 raises. TCP test uses a mocked
   socket: open → `connected`, refused → `failed`.
