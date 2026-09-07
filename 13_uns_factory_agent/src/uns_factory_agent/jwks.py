@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -8,6 +9,8 @@ import httpx
 from jwt import PyJWK
 
 from uns_factory_agent.auth import UnknownSigningKeyError
+
+LOGGER = logging.getLogger(__name__)
 
 
 async def _fetch_over_http(url: str) -> dict:
@@ -41,12 +44,28 @@ class JwksCache:
         return self._keys[kid]
 
     async def _refresh(self) -> None:
-        document = await self._fetch(self._url)
+        try:
+            document = await self._fetch(self._url)
+        except Exception:
+            LOGGER.warning(
+                "Could not refresh JWKS from %s; keeping %s cached key(s)",
+                self._url,
+                len(self._keys),
+            )
+            return
+
         refreshed: dict[str, Any] = {}
         for jwk in document.get("keys", []):
             kid = jwk.get("kid")
             if not kid:
                 continue
-            refreshed[kid] = PyJWK.from_dict(jwk).key
+            # Keycloak publishes RSA-OAEP encryption keys alongside RS256 signing keys.
+            # PyJWK cannot load the enc key; skip it so the sig key still validates tokens.
+            if jwk.get("use") == "enc":
+                continue
+            try:
+                refreshed[kid] = PyJWK.from_dict(jwk).key
+            except Exception:
+                LOGGER.warning("Skipping unusable JWK %s from the realm", kid)
         if refreshed:
             self._keys = refreshed

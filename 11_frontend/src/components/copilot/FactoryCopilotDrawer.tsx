@@ -4,6 +4,7 @@ import { Loader2, Send, Trash2, X } from 'lucide-react';
 import { useUNS } from '../../context/UNSContext';
 import { useAlarms } from '../../context/AlarmContext';
 import {
+  CopilotAuthError,
   CopilotUnavailableError,
   checkCopilotHealth,
   createConversation,
@@ -130,14 +131,19 @@ export const FactoryCopilotDrawer: React.FC<FactoryCopilotDrawerProps> = ({ isOp
       setUnavailable(false);
       void loadThreads();
     } catch (err) {
-      if (err instanceof CopilotUnavailableError) {
-        setUnavailable(true);
-      }
+      const message =
+        err instanceof CopilotAuthError
+          ? 'Sign in again to use Factory Copilot.'
+          : err instanceof CopilotUnavailableError
+            ? 'Factory Copilot is unavailable.'
+            : err instanceof Error
+              ? err.message
+              : 'Factory Copilot could not send that message.';
       setMessages((prev) => [
         ...prev,
         {
           role: 'assistant',
-          body: 'Factory Copilot is unavailable.',
+          body: message,
           citations: [],
         },
       ]);

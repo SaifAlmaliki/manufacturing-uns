@@ -74,7 +74,7 @@ def _engine() -> AsyncEngine:
 
 @lru_cache(maxsize=1)
 def _jwks() -> JwksCache:
-    return JwksCache(f"{AuthConfig.issuer}/protocol/openid-connect/certs")
+    return JwksCache(AuthConfig.jwks_url())
 
 
 @lru_cache(maxsize=1)
