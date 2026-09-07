@@ -7,7 +7,15 @@ Role each field needs is in `auth/require.py`, not in these resolvers. Repositor
 `subscribeOpcUaVariables` is the discovery path: it discovers every Variable on the
 server's endpoint and folds the result into the catalog via
 `ConnectivityRepository.replace_subscribed_tags`, which keeps an engineer's edited
-`mqtt_topic` and never unsubscribes by omission.
+`mqtt_topic` and never unsubscribes by omission. It only makes sense for OPC UA:
+S7 and EtherNet/IP have no discovery protocol, so the console authors their tags
+one at a time via `saveConnectivityTag`.
+
+Every write that can change what HiveMQ Edge should be running (`saveConnectivityServer`,
+`deleteConnectivityServer`, `saveConnectivityTag`, `updateConnectivityTag`,
+`unsubscribeConnectivityTag`) passes `_sync_edge` as the repository's `after_flush`, so a
+failed XML write rolls the catalog write back with it instead of leaving Postgres and
+HiveMQ Edge's `config.xml` disagreeing.
 """
 
 from __future__ import annotations
@@ -16,17 +24,27 @@ import logging
 from typing import Any
 
 import strawberry
+from uns_config.hivemq_edge_xml import EdgeAdapterInput, apply_catalog_adapters_file
+from uns_config.loader import resolve_conf_dir
 from uns_model.connectivity import (
+    EDGE_APPLY_ERROR,
     ConnectivityRepository,
     ConnectivityServerSpec,
     ConnectivityTagSpec,
+    parse_host_port,
 )
 from uns_model.engine import Database
+from uns_model.tables import ConnectivityServer
 from uns_opcua import browse as opcua_browse
 from uns_opcua.session import open_client
 
 from uns_graphql.auth.require import require
-from uns_graphql.input.connectivity import ConnectivityServerInput, ConnectivityTagUpdateInput
+from uns_graphql.input.connectivity import (
+    ConnectivityServerInput,
+    ConnectivityTagInput,
+    ConnectivityTagUpdateInput,
+)
+from uns_graphql.tcp_probe import probe_tcp
 from uns_graphql.type.connectivity import ConnectivityServerType, ConnectivityTagType, UnitOfMeasureType
 
 LOGGER = logging.getLogger(__name__)
@@ -34,6 +52,11 @@ LOGGER = logging.getLogger(__name__)
 
 def _repository() -> ConnectivityRepository:
     return ConnectivityRepository(Database.shared("graphql"))
+
+
+def _sync_edge(adapters: list[EdgeAdapterInput]) -> None:
+    """Splice the catalog's PLC rows into HiveMQ Edge's `config.xml`. Sync, per `after_flush`'s contract."""
+    apply_catalog_adapters_file(resolve_conf_dir() / "hivemq" / "config.xml", adapters)
 
 
 def _as_int(value: int | str | None) -> int | None:
@@ -73,11 +96,11 @@ def _tag_update_fields(patch: ConnectivityTagUpdateInput) -> dict[str, Any]:
     return fields
 
 
-async def _server_endpoint(server_id: str) -> str | None:
-    """The endpoint of a saved server, or None when no such server is stored."""
-    for server in await _repository().list_servers():
+async def _find_server(repo: ConnectivityRepository, server_id: str) -> ConnectivityServer | None:
+    """The saved server with this id, or None. `list_servers` has no by-id read; this is it."""
+    for server in await repo.list_servers():
         if server.id == server_id:
-            return server.endpoint
+            return server
     return None
 
 
@@ -105,7 +128,9 @@ class Mutation:
                 certificate=server.certificate,
                 private_key=server.private_key,
                 server_certificate=server.server_certificate,
-            )
+                protocol_config=server.protocol_config,
+            ),
+            after_flush=_sync_edge,
         )
         LOGGER.info("Connectivity server %s saved as %s", saved.id, saved.name)
         return ConnectivityServerType.from_server(saved)
@@ -115,7 +140,7 @@ class Mutation:
     )
     async def delete_connectivity_server(self, info: strawberry.Info, id: str) -> bool:  # noqa: A002
         require(info, "deleteConnectivityServer")
-        deleted = await _repository().delete_server(id)
+        deleted = await _repository().delete_server(id, after_flush=_sync_edge)
         if deleted:
             LOGGER.info("Connectivity server %s deleted", id)
         return deleted
@@ -123,7 +148,8 @@ class Mutation:
     @strawberry.mutation(
         description="Discover Variables under nodeId (or the whole Objects tree) and fold "
         "them into the catalog. An engineer's edited mqttTopic survives; nodes missing "
-        "from this discovery stay subscribed until unsubscribeConnectivityTag removes them."
+        "from this discovery stay subscribed until unsubscribeConnectivityTag removes them. "
+        "OPC UA only — S7/EtherNet-IP tags have no discovery protocol."
     )
     async def subscribe_opc_ua_variables(
         self,
@@ -132,11 +158,13 @@ class Mutation:
         node_id: str | None = strawberry.UNSET,
     ) -> list[ConnectivityTagType]:
         require(info, "subscribeOpcUaVariables")
-        endpoint = await _server_endpoint(server_id)
-        if endpoint is None:
+        server = await _find_server(_repository(), server_id)
+        if server is None:
             raise ValueError(f"No Connectivity server with id {server_id!r}")
+        if server.protocol != "opc_ua":
+            raise ValueError("OPC UA browse is only available for OPC UA servers")
         start = node_id if node_id is not strawberry.UNSET else None
-        async with await open_client(endpoint) as client:
+        async with await open_client(server.endpoint) as client:
             discovered = await opcua_browse.discover_variables(client, start)
         tags = [
             ConnectivityTagSpec(
@@ -150,6 +178,28 @@ class Mutation:
         stored = await _repository().replace_subscribed_tags(server_id, tags)
         LOGGER.info("Subscribed %s tag(s) on %s", len(stored), server_id)
         return [ConnectivityTagType.from_tag(tag) for tag in stored]
+
+    @strawberry.mutation(
+        description="Create or replace one tag on a server, authored directly rather than "
+        "discovered. The one way to add a tag on an S7/EtherNet-IP server."
+    )
+    async def save_connectivity_tag(
+        self, info: strawberry.Info, server_id: str, tag: ConnectivityTagInput
+    ) -> ConnectivityTagType:
+        require(info, "saveConnectivityTag")
+        stored = await _repository().save_tag(
+            server_id,
+            ConnectivityTagSpec(
+                node_id=tag.node_id,
+                browse_path=tag.browse_path,
+                display_name=tag.display_name,
+                mqtt_topic=tag.mqtt_topic,
+                subscribed=tag.subscribed,
+            ),
+            after_flush=_sync_edge,
+        )
+        LOGGER.info("Connectivity tag %s saved on %s", tag.node_id, server_id)
+        return ConnectivityTagType.from_tag(stored)
 
     @strawberry.mutation(
         description="Set the MQTT topic an engineer wants this node republished under."
@@ -173,7 +223,7 @@ class Mutation:
         self, info: strawberry.Info, server_id: str, node_id: str
     ) -> bool:
         require(info, "unsubscribeConnectivityTag")
-        tag = await _repository().unsubscribe_tag(server_id, node_id)
+        tag = await _repository().unsubscribe_tag(server_id, node_id, after_flush=_sync_edge)
         if tag is None:
             return False
         LOGGER.info("Unsubscribed %s on %s", node_id, server_id)
@@ -208,12 +258,40 @@ class Mutation:
         patch: ConnectivityTagUpdateInput,
     ) -> ConnectivityTagType:
         require(info, "updateConnectivityTag")
-        tag = await _repository().update_tag(server_id, node_id, **_tag_update_fields(patch))
+        tag = await _repository().update_tag(
+            server_id, node_id, after_flush=_sync_edge, **_tag_update_fields(patch)
+        )
         if tag is None:
             raise ValueError(
                 f"No Connectivity tag for server {server_id!r} node {node_id!r}"
             )
         return ConnectivityTagType.from_tag(tag)
+
+    @strawberry.mutation(
+        description="Test a saved server's connection: OPC UA opens a session and reads the "
+        "server node; S7/EtherNet-IP is a bare TCP connect. Records the outcome against "
+        "the server, same as testOpcUaConnection does for an ad hoc endpoint."
+    )
+    async def test_connectivity_server(self, info: strawberry.Info, id: str) -> ConnectivityServerType:  # noqa: A002
+        require(info, "testConnectivityServer")
+        repo = _repository()
+        server = await _find_server(repo, id)
+        if server is None:
+            raise ValueError(f"No Connectivity server with id {id!r}")
+        was_pending = server.last_status == "pending"
+        if server.protocol == "opc_ua":
+            ok, error, _elapsed_ms = await opcua_browse.test_connection(server.endpoint)
+        else:
+            host, port = parse_host_port(server.endpoint)
+            ok, error = probe_tcp(host, port)
+        if ok and was_pending:
+            # The row was pending its first HiveMQ Edge apply, not actually broken.
+            # A successful TCP probe does not prove Edge itself is happy — keep the
+            # reminder to recreate uns_mqtt_broker rather than clearing it to "connected".
+            error = EDGE_APPLY_ERROR
+        updated = await repo.record_test(id, ok=ok, error=error)
+        LOGGER.info("Connectivity server %s tested: ok=%s", id, ok)
+        return ConnectivityServerType.from_server(updated)
 
     @classmethod
     async def on_shutdown(cls):

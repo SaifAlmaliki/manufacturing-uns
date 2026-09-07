@@ -51,6 +51,11 @@ MUTATION_ROLES: dict[str, frozenset[str]] = {
     "saveUnitOfMeasure": frozenset({"engineer", "admin"}),
     "saveSignalLabel": frozenset({"engineer", "admin"}),
     "updateConnectivityTag": frozenset({"engineer", "admin"}),
+    # S7/EtherNet-IP (Task 4): authoring a tag directly and testing a server over
+    # the wire are engineering work too. testConnectivityServer is a mutation
+    # (unlike the query-side testOpcUaConnection) because it calls record_test.
+    "saveConnectivityTag": frozenset({"engineer", "admin"}),
+    "testConnectivityServer": frozenset({"engineer", "admin"}),
 }
 
 

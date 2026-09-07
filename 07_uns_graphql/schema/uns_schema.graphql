@@ -201,6 +201,8 @@ enum ConnectivityAuthMode {
 """A connectivity protocol the console can author a server for."""
 enum ConnectivityProtocol {
   OPC_UA
+  S7
+  ETHERNET_IP
 }
 
 """OPC UA channel security mode."""
@@ -234,6 +236,11 @@ input ConnectivityServerInput {
   certificate: String! = ""
   privateKey: String! = ""
   serverCertificate: String! = ""
+
+  """
+  S7/EtherNet-IP knobs, e.g. {"controllerType": "S7_1500"}. Unused for OPC UA.
+  """
+  protocolConfig: JSON = null
 }
 
 """An OPC UA server the console dials, with its subscribed tags."""
@@ -252,10 +259,22 @@ type ConnectivityServerType {
   serverCertificate: String!
   lastStatus: String!
   lastError: String!
+  protocolConfig: JSON
   lastTestedAt: DateTime
   createdAt: DateTime
   updatedAt: DateTime
   tags: [ConnectivityTagType!]!
+}
+
+"""
+One Connectivity tag the console authors directly, without OPC UA discovery.
+"""
+input ConnectivityTagInput {
+  nodeId: String!
+  browsePath: String!
+  displayName: String!
+  mqttTopic: String!
+  subscribed: Boolean! = true
 }
 
 """One OPC UA node the console subscribes to."""
@@ -548,9 +567,14 @@ type Mutation {
   deleteConnectivityServer(id: String!): Boolean!
 
   """
-  Discover Variables under nodeId (or the whole Objects tree) and fold them into the catalog. An engineer's edited mqttTopic survives; nodes missing from this discovery stay subscribed until unsubscribeConnectivityTag removes them.
+  Discover Variables under nodeId (or the whole Objects tree) and fold them into the catalog. An engineer's edited mqttTopic survives; nodes missing from this discovery stay subscribed until unsubscribeConnectivityTag removes them. OPC UA only — S7/EtherNet-IP tags have no discovery protocol.
   """
   subscribeOpcUaVariables(serverId: String!, nodeId: String): [ConnectivityTagType!]!
+
+  """
+  Create or replace one tag on a server, authored directly rather than discovered. The one way to add a tag on an S7/EtherNet-IP server.
+  """
+  saveConnectivityTag(serverId: String!, tag: ConnectivityTagInput!): ConnectivityTagType!
 
   """Set the MQTT topic an engineer wants this node republished under."""
   updateConnectivityTagTopic(serverId: String!, nodeId: String!, mqttTopic: String!): ConnectivityTagType!
@@ -570,6 +594,11 @@ type Mutation {
   Partial-update one Connectivity tag's engineer-authored context and return it as stored.
   """
   updateConnectivityTag(serverId: String!, nodeId: String!, patch: ConnectivityTagUpdateInput!): ConnectivityTagType!
+
+  """
+  Test a saved server's connection: OPC UA opens a session and reads the server node; S7/EtherNet-IP is a bare TCP connect. Records the outcome against the server, same as testOpcUaConnection does for an ad hoc endpoint.
+  """
+  testConnectivityServer(id: String!): ConnectivityServerType!
 }
 
 """One product's counts and rated cycle time within a shift."""

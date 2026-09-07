@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy import inspect
 from uns_model.tables import (
     CONNECTIVITY_AUTH_MODES,
+    CONNECTIVITY_PROTOCOLS,
     CONNECTIVITY_SECURITY_MODES,
     CONNECTIVITY_SECURITY_POLICIES,
     SIGNAL_DATA_TYPES,
@@ -16,6 +17,7 @@ from uns_model.tables import (
 
 from uns_graphql.type.connectivity import (
     ConnectivityAuthMode,
+    ConnectivityProtocol,
     ConnectivitySecurityMode,
     ConnectivitySecurityPolicy,
     ConnectivityTagType,
@@ -28,6 +30,7 @@ from uns_graphql.type.connectivity import (
 @pytest.mark.parametrize(
     "graphql_enum, vocabulary",
     [
+        (ConnectivityProtocol, CONNECTIVITY_PROTOCOLS),
         (ConnectivityAuthMode, CONNECTIVITY_AUTH_MODES),
         (ConnectivitySecurityPolicy, CONNECTIVITY_SECURITY_POLICIES),
         (ConnectivitySecurityMode, CONNECTIVITY_SECURITY_MODES),

@@ -8,6 +8,7 @@ endpoint of a server whose name and protocol I have not read".
 from __future__ import annotations
 
 import strawberry
+from strawberry.scalars import JSON
 
 from uns_graphql.type.connectivity import (
     ConnectivityAuthMode,
@@ -33,6 +34,21 @@ class ConnectivityServerInput:
     certificate: str = ""
     private_key: str = ""
     server_certificate: str = ""
+    protocol_config: JSON | None = strawberry.field(
+        default=None,
+        description='S7/EtherNet-IP knobs, e.g. {"controllerType": "S7_1500"}. Unused for OPC UA.',
+    )
+
+
+@strawberry.input(
+    description="One Connectivity tag the console authors directly, without OPC UA discovery."
+)
+class ConnectivityTagInput:
+    node_id: str
+    browse_path: str
+    display_name: str
+    mqtt_topic: str
+    subscribed: bool = True
 
 
 @strawberry.input(description="Partial update of one Connectivity tag's engineer-authored context.")

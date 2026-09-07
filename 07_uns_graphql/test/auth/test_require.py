@@ -45,6 +45,12 @@ EXPECTED = {
     "saveUnitOfMeasure": {"engineer", "admin"},
     "saveSignalLabel": {"engineer", "admin"},
     "updateConnectivityTag": {"engineer", "admin"},
+    # Task 4: authoring a tag directly and testing a server's connection over the
+    # wire are both engineering work, same as the rest of the catalog writes.
+    # testConnectivityServer is a mutation (not a query like testOpcUaConnection)
+    # so it can record_test.
+    "saveConnectivityTag": {"engineer", "admin"},
+    "testConnectivityServer": {"engineer", "admin"},
 }
 
 

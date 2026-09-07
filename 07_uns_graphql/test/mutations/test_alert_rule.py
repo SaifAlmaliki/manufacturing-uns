@@ -345,11 +345,13 @@ def test_only_alert_rules_are_writable():
         "save_connectivity_server",
         "delete_connectivity_server",
         "subscribe_opc_ua_variables",
+        "save_connectivity_tag",
         "update_connectivity_tag",
         "update_connectivity_tag_topic",
         "unsubscribe_connectivity_tag",
         "save_unit_of_measure",
         "save_signal_label",
+        "test_connectivity_server",
     }
 
 

@@ -5,6 +5,11 @@ The enums are spelled out rather than generated from `uns_model.tables`, mirrori
 enum changes shape without review. The OPC UA row types mirror
 `uns_opcua.browse.BrowseNode` / `DataValueRow` so the bridge and the console
 agree on shape without sharing a class.
+
+S7 and EtherNet/IP are PLC protocols HiveMQ Edge itself dials (via the catalog's
+`after_flush` XML sync), not this service — `protocol_config` is their one
+protocol-specific knob (e.g. S7's `controllerType`), passed through as JSON
+rather than spelled out field by field, since it varies by protocol.
 """
 
 from __future__ import annotations
@@ -18,17 +23,14 @@ from sqlalchemy import inspect as sa_inspect
 from strawberry.scalars import JSON
 from uns_model.tables import ConnectivityServer, ConnectivityTag
 
-# The single protocol the catalog allows today. Spelled out as an enum so adding
-# a second protocol is a schema change a reviewer sees, not a string a typo can
-# slip past a CHECK constraint unnoticed.
-_OPC_UA_PROTOCOL = "opc_ua"
-
 _E = TypeVar("_E", bound=Enum)
 
 
 @strawberry.enum(description="A connectivity protocol the console can author a server for.")
 class ConnectivityProtocol(Enum):
-    OPC_UA = _OPC_UA_PROTOCOL
+    OPC_UA = "opc_ua"
+    S7 = "s7"
+    ETHERNET_IP = "ethernet_ip"
 
 
 @strawberry.enum(description="How the console authenticates to an OPC UA server.")
@@ -241,6 +243,7 @@ class ConnectivityServerType:
     server_certificate: str
     last_status: str
     last_error: str
+    protocol_config: JSON | None = None
     last_tested_at: datetime.datetime | None = None
     created_at: datetime.datetime | None = None
     updated_at: datetime.datetime | None = None
@@ -263,6 +266,7 @@ class ConnectivityServerType:
             certificate=getattr(server, "certificate", None) or "",
             has_private_key=bool(getattr(server, "private_key", None)),
             server_certificate=getattr(server, "server_certificate", None) or "",
+            protocol_config=getattr(server, "protocol_config", None),
             last_status=server.last_status,
             last_error=server.last_error,
             last_tested_at=server.last_tested_at,

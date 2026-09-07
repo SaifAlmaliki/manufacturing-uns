@@ -6,11 +6,13 @@ the bridge helpers return, and who may call them.
 """
 
 from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from uns_model.connectivity import ConnectivityServerSpec, ConnectivityTagSpec
+from uns_config.hivemq_edge_xml import EdgeAdapterInput
+from uns_model.connectivity import EDGE_APPLY_ERROR, ConnectivityServerSpec, ConnectivityTagSpec
 from uns_model.tables import ConnectivityServer, ConnectivityTag
 
 from uns_graphql.auth.context import CONTEXT_KEY
@@ -19,6 +21,8 @@ from uns_graphql.uns_graphql_app import UNSGraphql
 
 REPOSITORY = "uns_graphql.mutations.connectivity._repository"
 QUERY_REPOSITORY = "uns_graphql.queries.connectivity._repository"
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_HIVEMQ_XML = (_REPO_ROOT / "conf" / "hivemq" / "config.xml").read_text(encoding="utf-8")
 
 ADMIN = {
     CONTEXT_KEY: Identity(
@@ -206,7 +210,62 @@ async def test_delete_connectivity_server_reports_whether_there_was_anything_to_
 
     assert result.errors is None
     assert result.data["deleteConnectivityServer"] is deleted
-    repository.delete_server.assert_awaited_once_with("s1")
+    repository.delete_server.assert_awaited_once()
+    call = repository.delete_server.await_args
+    assert call.args == ("s1",)
+    assert call.kwargs["after_flush"] is not None
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_save_connectivity_server_s7_calls_after_flush(monkeypatch, tmp_path):
+    """Saving an S7 server wires the repository's `after_flush` to the HiveMQ Edge XML write."""
+    config_path = tmp_path / "hivemq" / "config.xml"
+    config_path.parent.mkdir()
+    config_path.write_text(_HIVEMQ_XML, encoding="utf-8")
+    monkeypatch.setattr("uns_graphql.mutations.connectivity.resolve_conf_dir", lambda: tmp_path)
+
+    async def _save_server(spec, *, after_flush=None):
+        assert after_flush is not None
+        after_flush(
+            [
+                EdgeAdapterInput(
+                    server_id=spec.id,
+                    protocol=spec.protocol,
+                    host="10.0.0.5",
+                    port=102,
+                    controller_type="S7_1500",
+                    tags=(),
+                )
+            ]
+        )
+        return _server(server_id=spec.id, protocol=spec.protocol, endpoint=spec.endpoint)
+
+    repository = AsyncMock()
+    repository.save_server.side_effect = _save_server
+
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            """
+            mutation Save($server: ConnectivityServerInput!) {
+                saveConnectivityServer(server: $server) { id protocol }
+            }
+            """,
+            variable_values={
+                "server": {
+                    "id": "srv-s7",
+                    "name": "Line1 PLC",
+                    "protocol": "S7",
+                    "endpoint": "10.0.0.5:102",
+                }
+            },
+            context_value=ADMIN,
+        )
+
+    assert result.errors is None
+    assert result.data["saveConnectivityServer"] == {"id": "srv-s7", "protocol": "S7"}
+    text = config_path.read_text(encoding="utf-8")
+    assert "<adapterId>catalog-srv-s7</adapterId>" in text
+    assert "<adapterId>sim</adapterId>" in text
 
 
 # --------------------------------------------------------------- subscribe
@@ -296,6 +355,25 @@ async def test_subscribe_opc_ua_variables_forwards_node_id():
     assert result.errors is None
     discover.assert_awaited_once()
     assert discover.await_args.args[1] == "ns=3;s=WaterTreatmentPlant"
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_subscribe_opc_ua_variables_rejects_s7():
+    """OPC UA browse discovery has no meaning against an S7/EtherNet-IP catalog row."""
+    repository = AsyncMock()
+    repository.list_servers.return_value = [
+        _server(server_id="s1", protocol="s7", endpoint="10.0.0.5:102")
+    ]
+
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            'mutation { subscribeOpcUaVariables(serverId: "s1") { nodeId } }',
+            context_value=ADMIN,
+        )
+
+    assert result.errors
+    assert "OPC UA" in result.errors[0].message
+    repository.replace_subscribed_tags.assert_not_awaited()
 
 
 # --------------------------------------------------------------- catalogs / tag context
@@ -563,7 +641,143 @@ async def test_unsubscribe_connectivity_tag_reports_whether_there_was_anything_t
 
     assert result.errors is None
     assert result.data["unsubscribeConnectivityTag"] is expected
-    repository.unsubscribe_tag.assert_awaited_once_with("s1", "ns=2;s=Temperature")
+    repository.unsubscribe_tag.assert_awaited_once()
+    call = repository.unsubscribe_tag.await_args
+    assert call.args == ("s1", "ns=2;s=Temperature")
+    assert call.kwargs["after_flush"] is not None
+
+
+# --------------------------------------------------------------- saveConnectivityTag
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_save_connectivity_tag_returns_the_tag_as_stored():
+    """An engineer authors a tag directly (no OPC UA discovery), same catalog write as save_tag."""
+    repository = AsyncMock()
+    repository.save_tag.return_value = _tag(mqtt_topic="Acme/Test/Area/Line/Cell/S7/Speed")
+
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            """
+            mutation Save($tag: ConnectivityTagInput!) {
+                saveConnectivityTag(serverId: "s1", tag: $tag) { nodeId mqttTopic subscribed }
+            }
+            """,
+            variable_values={
+                "tag": {
+                    "nodeId": "ns=2;s=Temperature",
+                    "browsePath": "Objects/Temperature",
+                    "displayName": "Temperature",
+                    "mqttTopic": "Acme/Test/Area/Line/Cell/S7/Speed",
+                }
+            },
+            context_value=ADMIN,
+        )
+
+    assert result.errors is None
+    assert result.data["saveConnectivityTag"] == {
+        "nodeId": "ns=2;s=Temperature",
+        "mqttTopic": "Acme/Test/Area/Line/Cell/S7/Speed",
+        "subscribed": True,
+    }
+    spec: ConnectivityTagSpec = repository.save_tag.await_args.args[1]
+    assert spec.node_id == "ns=2;s=Temperature"
+    assert spec.mqtt_topic == "Acme/Test/Area/Line/Cell/S7/Speed"
+    assert repository.save_tag.await_args.kwargs["after_flush"] is not None
+
+
+# --------------------------------------------------------------- testConnectivityServer
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_test_connectivity_server_tcp_success_keeps_pending_error():
+    """A successful TCP probe of a server still `pending` its first Edge apply keeps EDGE_APPLY_ERROR."""
+    repository = AsyncMock()
+    pending = _server(server_id="srv-s7", protocol="s7", endpoint="10.0.0.5:102")
+    pending.last_status = "pending"
+    repository.list_servers.return_value = [pending]
+    tested = _server(server_id="srv-s7", protocol="s7", endpoint="10.0.0.5:102")
+    tested.last_status = "connected"
+    repository.record_test.return_value = tested
+
+    with (
+        patch(REPOSITORY, return_value=repository),
+        patch(
+            "uns_graphql.mutations.connectivity.probe_tcp", return_value=(True, None)
+        ) as probe,
+    ):
+        result = await UNSGraphql.schema.execute(
+            'mutation { testConnectivityServer(id: "srv-s7") { id lastStatus } }',
+            context_value=ADMIN,
+        )
+
+    assert result.errors is None
+    assert result.data["testConnectivityServer"] == {"id": "srv-s7", "lastStatus": "connected"}
+    probe.assert_called_once_with("10.0.0.5", 102)
+    repository.record_test.assert_awaited_once_with("srv-s7", ok=True, error=EDGE_APPLY_ERROR)
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_test_connectivity_server_tcp_failure_records_the_error():
+    repository = AsyncMock()
+    untested = _server(server_id="srv-s7", protocol="s7", endpoint="10.0.0.5:102")
+    repository.list_servers.return_value = [untested]
+    repository.record_test.return_value = untested
+
+    with (
+        patch(REPOSITORY, return_value=repository),
+        patch(
+            "uns_graphql.mutations.connectivity.probe_tcp",
+            return_value=(False, "Connection refused"),
+        ),
+    ):
+        result = await UNSGraphql.schema.execute(
+            'mutation { testConnectivityServer(id: "srv-s7") { id } }',
+            context_value=ADMIN,
+        )
+
+    assert result.errors is None
+    repository.record_test.assert_awaited_once_with(
+        "srv-s7", ok=False, error="Connection refused"
+    )
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_test_connectivity_server_opc_ua_uses_the_probe_not_tcp():
+    repository = AsyncMock()
+    repository.list_servers.return_value = [_server()]
+    repository.record_test.return_value = _server()
+
+    with (
+        patch(REPOSITORY, return_value=repository),
+        patch(
+            "uns_graphql.mutations.connectivity.opcua_browse.test_connection",
+            new=AsyncMock(return_value=(True, None, 12.0)),
+        ) as test_connection,
+        patch("uns_graphql.mutations.connectivity.probe_tcp") as probe,
+    ):
+        result = await UNSGraphql.schema.execute(
+            'mutation { testConnectivityServer(id: "s1") { id } }', context_value=ADMIN
+        )
+
+    assert result.errors is None
+    test_connection.assert_awaited_once_with(ENDPOINT)
+    probe.assert_not_called()
+    repository.record_test.assert_awaited_once_with("s1", ok=True, error=None)
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_test_connectivity_server_fails_when_no_such_server():
+    repository = AsyncMock()
+    repository.list_servers.return_value = []
+
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            'mutation { testConnectivityServer(id: "missing") { id } }', context_value=ADMIN
+        )
+
+    assert result.errors
+    assert "missing" in result.errors[0].message
 
 
 # --------------------------------------------------------------- role gate
