@@ -49,6 +49,11 @@ class ConnectivityTagInput:
     display_name: str
     mqtt_topic: str
     subscribed: bool = True
+    data_type: SignalDataType | None = strawberry.field(
+        default=None,
+        description="Optional scalar type for Condition Monitoring — save in one mutation "
+        "rather than a saveConnectivityTag followed by an updateConnectivityTag patch.",
+    )
 
 
 @strawberry.input(description="Partial update of one Connectivity tag's engineer-authored context.")

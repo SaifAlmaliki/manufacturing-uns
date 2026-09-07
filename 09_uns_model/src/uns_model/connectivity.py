@@ -60,6 +60,7 @@ from uns_model.tables import (
 
 _ENDPOINT = re.compile(r"^opc\.tcp://[^\s/:]+:\d{1,5}(/.*)?$")
 _HOST_PORT = re.compile(r"^([A-Za-z0-9.-]+):(\d{1,5})$")
+_XML_ILLEGAL_CHARS = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F]")
 
 EDGE_APPLY_ERROR = "Recreate uns_mqtt_broker to apply Edge config"
 
@@ -106,6 +107,20 @@ def edge_adapters_from_rows(servers: Sequence[ConnectivityServer]) -> list[EdgeA
             )
         )
     return adapters
+
+
+def assert_xml_safe(what: str, value: str) -> None:
+    """
+    Reject a string XML 1.0 cannot encode, before it reaches HiveMQ Edge's config.xml.
+
+    S7/EtherNet-IP node_id, display_name, and mqtt_topic are engineer-typed and end up
+    as element text in `uns_config.hivemq_edge_xml`. A control character below 0x20
+    (other than tab/newline/CR) is illegal there per the XML 1.0 spec and would produce
+    a config.xml `apply_catalog_adapters` then refuses to write — better to reject it
+    here with a message the console can show directly.
+    """
+    if value and _XML_ILLEGAL_CHARS.search(value):
+        raise ValueError(f"{what} contains a control character XML cannot encode")
 
 
 def assert_unique_mqtt_topic(existing: set[str], topic: str, *, node_id: str) -> None:
@@ -200,10 +215,14 @@ class ConnectivityTagSpec:
     display_name: str
     mqtt_topic: str
     subscribed: bool = True
+    data_type: str | None = None
 
     def validate(self) -> None:
         if not self.node_id:
             raise ValueError("A Connectivity tag needs a node_id")
+        assert_xml_safe("node_id", self.node_id)
+        assert_xml_safe("display_name", self.display_name)
+        assert_xml_safe("mqtt_topic", self.mqtt_topic)
 
 
 def metric_key_for_tag(
@@ -371,6 +390,7 @@ class ConnectivityRepository:
                 "display_name": spec.display_name,
                 "mqtt_topic": spec.mqtt_topic,
                 "subscribed": spec.subscribed,
+                "data_type": spec.data_type,
             }
             await session.execute(
                 insert(ConnectivityTag)
@@ -491,9 +511,16 @@ class ConnectivityRepository:
                 )
             return await self.list_subscribed_tags(server_id)
 
-    async def update_tag_topic(self, server_id: str, node_id: str, mqtt_topic: str) -> ConnectivityTag | None:
+    async def update_tag_topic(
+        self,
+        server_id: str,
+        node_id: str,
+        mqtt_topic: str,
+        *,
+        after_flush: Callable[[list[EdgeAdapterInput]], None] | None = None,
+    ) -> ConnectivityTag | None:
         """Set the MQTT topic an engineer wants this node republished under."""
-        return await self.update_tag(server_id, node_id, mqtt_topic=mqtt_topic)
+        return await self.update_tag(server_id, node_id, after_flush=after_flush, mqtt_topic=mqtt_topic)
 
     _TAG_UPDATE_FIELDS = frozenset(
         {
@@ -520,17 +547,28 @@ class ConnectivityRepository:
 
         `None` for unit_of_measure, asset_id, semantic_class, or data_type clears
         that column. After save, a tag with both an Asset and a Unit of Measure
-        upserts a Metric Definition so Enrichment stays aligned.
+        upserts a Metric Definition so Enrichment stays aligned. A `mqtt_topic` that
+        another subscribed tag already uses is rejected, same rule as `save_tag`, so
+        the Signals grid cannot create a duplicate topic by editing one in place.
         """
         unknown = set(fields) - self._TAG_UPDATE_FIELDS
         if unknown:
             raise ValueError(f"update_tag does not accept {sorted(unknown)}")
+
+        for key in ("display_name", "mqtt_topic"):
+            value = fields.get(key)
+            if isinstance(value, str):
+                assert_xml_safe(key, value)
 
         values: dict[str, Any] = dict(fields)
         values["updated_at"] = func.now()
 
         define: dict[str, Any] | None = None
         async with self._database.session() as session:
+            new_topic = fields.get("mqtt_topic")
+            if new_topic:
+                existing_topics = await self.subscribed_topics(session, exclude=(server_id, node_id))
+                assert_unique_mqtt_topic(existing_topics, new_topic, node_id=node_id)
             await session.execute(
                 update(ConnectivityTag)
                 .where(ConnectivityTag.server_id == server_id, ConnectivityTag.node_id == node_id)
@@ -712,6 +750,7 @@ __all__ = [
     "ConnectivityTagSpec",
     "EDGE_APPLY_ERROR",
     "assert_unique_mqtt_topic",
+    "assert_xml_safe",
     "edge_adapters_from_rows",
     "merge_discovered",
     "metric_key_for_tag",

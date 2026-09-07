@@ -30,7 +30,7 @@ import inspect
 from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlalchemy.dialects import postgresql
@@ -45,6 +45,7 @@ from uns_model.connectivity import (
     ConnectivityTagSpec,
     EDGE_APPLY_ERROR,
     assert_unique_mqtt_topic,
+    assert_xml_safe,
     edge_adapters_from_rows,
     merge_discovered,
     metric_key_for_tag,
@@ -196,6 +197,20 @@ def test_semantic_classes_and_data_types_are_the_spec_vocabularies():
     assert SIGNAL_DATA_TYPES == ("Double", "Boolean", "Integer", "String")
 
 
+def test_tag_spec_has_optional_data_type_defaulting_to_none():
+    spec = ConnectivityTagSpec("%ID103", "", "Speed", "Acme/Line/Speed")
+    assert spec.data_type is None
+    spec2 = ConnectivityTagSpec("%ID103", "", "Speed", "Acme/Line/Speed", True, "Integer")
+    assert spec2.data_type == "Integer"
+
+
+def test_save_tag_persists_data_type():
+    """`save_tag` must write `data_type` so a one-mutation save can set it, no second patch call."""
+    source = inspect.getsource(ConnectivityRepository.save_tag)
+    values_block = source.split("values: dict[str, Any] = {", 1)[1].split("}", 1)[0]
+    assert '"data_type": spec.data_type' in values_block
+
+
 def test_merge_keeps_edited_topic():
     existing = [ConnectivityTagSpec("ns=3;s=WTP_T101_Level", "RawWater/T101/Level", "Level", "Plant/T101/Level", True)]
     discovered = [ConnectivityTagSpec("ns=3;s=WTP_T101_Level", "RawWater/T101/Level", "Level", "RawWater/T101/Level", True)]
@@ -326,6 +341,39 @@ def test_edge_adapters_from_rows_returns_empty_for_no_servers():
     assert edge_adapters_from_rows([]) == []
 
 
+def test_assert_xml_safe_rejects_a_control_character():
+    with pytest.raises(ValueError, match="control character"):
+        assert_xml_safe("mqtt_topic", "Acme/Line\x01Speed")
+
+
+def test_assert_xml_safe_allows_tab_newline_cr_and_blank():
+    assert_xml_safe("mqtt_topic", "Acme/Line\tSpeed\n\r")
+    assert_xml_safe("mqtt_topic", "")
+
+
+def test_tag_spec_rejects_illegal_xml_control_char_in_topic():
+    spec = ConnectivityTagSpec("%ID103", "", "Speed", "Acme/Line\x01Speed")
+    with pytest.raises(ValueError, match="control character"):
+        spec.validate()
+
+
+def test_tag_spec_rejects_illegal_xml_control_char_in_display_name():
+    spec = ConnectivityTagSpec("%ID103", "", "Speed\x02", "Acme/Line/Speed")
+    with pytest.raises(ValueError, match="control character"):
+        spec.validate()
+
+
+def test_tag_spec_rejects_illegal_xml_control_char_in_node_id():
+    spec = ConnectivityTagSpec("%ID\x03103", "", "Speed", "Acme/Line/Speed")
+    with pytest.raises(ValueError, match="control character"):
+        spec.validate()
+
+
+def test_tag_spec_accepts_ordinary_text():
+    spec = ConnectivityTagSpec("%ID103", "", "Speed", "Acme/Line/Speed")
+    spec.validate()
+
+
 def test_assert_unique_mqtt_topic_rejects_when_topic_is_already_subscribed():
     with pytest.raises(ValueError, match="mqtt_topic"):
         assert_unique_mqtt_topic({"Plant/A"}, "Plant/A", node_id="%ID2")
@@ -402,11 +450,23 @@ class _ScalarResult:
             return self._value
         return [self._value]
 
+    def all(self) -> list[object]:
+        return self._value if isinstance(self._value, list) else []
+
 
 class _FakeSession:
-    def __init__(self, *, tag: object | None = None, asset_path: str | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        tag: object | None = None,
+        asset_path: str | None = None,
+        topic_rows: list[tuple[str, str, str]] | None = None,
+        protocol: str | None = None,
+    ) -> None:
         self.tag = tag
         self.asset_path = asset_path
+        self.topic_rows = topic_rows or []
+        self.protocol = protocol
         self.statements: list[object] = []
         self.update_values: dict[str, object] | None = None
 
@@ -422,6 +482,10 @@ class _FakeSession:
         selected = [column.key for column in stmt.selected_columns]
         if selected == ["path"] or (len(selected) == 1 and selected[0] == "path"):
             return _ScalarResult(self.asset_path)
+        if selected == ["server_id", "node_id", "mqtt_topic"]:
+            return _ScalarResult(self.topic_rows)
+        if selected == ["protocol"]:
+            return _ScalarResult(self.protocol)
         return _ScalarResult(self.tag)
 
 
@@ -568,6 +632,95 @@ async def test_update_tag_none_clears_unit_asset_class_and_type():
 
 
 @pytest.mark.asyncio
+async def test_update_tag_rejects_a_topic_already_subscribed_by_another_tag():
+    tag = SimpleNamespace(
+        server_id="s1",
+        node_id="ns=3;s=A",
+        browse_path="Heater/Temp",
+        display_name="Temp",
+        mqtt_topic="Plant/A",
+        asset_id=None,
+        unit_of_measure=None,
+    )
+    session = _FakeSession(tag=tag, topic_rows=[("s1", "ns=3;s=B", "Plant/Taken")])
+    repo = ConnectivityRepository(_FakeDatabase(session))
+    with pytest.raises(ValueError, match="mqtt_topic"):
+        await repo.update_tag("s1", "ns=3;s=A", mqtt_topic="Plant/Taken")
+    assert session.update_values is None
+
+
+@pytest.mark.asyncio
+async def test_update_tag_allows_a_distinct_topic():
+    tag = SimpleNamespace(
+        server_id="s1",
+        node_id="ns=3;s=A",
+        browse_path="Heater/Temp",
+        display_name="Temp",
+        mqtt_topic="Plant/A",
+        asset_id=None,
+        unit_of_measure=None,
+    )
+    session = _FakeSession(tag=tag, topic_rows=[("s1", "ns=3;s=B", "Plant/Taken")])
+    repo = ConnectivityRepository(_FakeDatabase(session))
+    result = await repo.update_tag("s1", "ns=3;s=A", mqtt_topic="Plant/New")
+    assert result is tag
+    assert session.update_values["mqtt_topic"] == "Plant/New"
+
+
+@pytest.mark.asyncio
+async def test_update_tag_rejects_a_control_character_in_the_topic_before_touching_the_database():
+    repo = ConnectivityRepository(database=None)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="control character"):
+        await repo.update_tag("s1", "ns=3;s=A", mqtt_topic="Plant/A\x01")
+
+
+@pytest.mark.asyncio
+async def test_update_tag_calls_sync_edge_when_after_flush_is_given():
+    """`after_flush` is optional on `update_tag`; when given, it must reach `_sync_edge`."""
+    tag = SimpleNamespace(
+        server_id="s1",
+        node_id="ns=3;s=A",
+        browse_path="Heater/Temp",
+        display_name="Temp",
+        mqtt_topic="Plant/A",
+        asset_id=None,
+        unit_of_measure=None,
+    )
+    session = _FakeSession(tag=tag)
+    repo = ConnectivityRepository(_FakeDatabase(session))
+    sentinel = object()
+    calls: list[object] = []
+
+    async def fake_sync_edge(self, session_arg, after_flush):  # noqa: ARG001
+        calls.append(after_flush)
+
+    with patch.object(ConnectivityRepository, "_sync_edge", fake_sync_edge):
+        await repo.update_tag("s1", "ns=3;s=A", after_flush=sentinel, mqtt_topic="Plant/B")
+
+    assert calls == [sentinel]
+
+
+@pytest.mark.asyncio
+async def test_update_tag_topic_forwards_after_flush_and_mqtt_topic_to_update_tag():
+    """`updateConnectivityTagTopic` must regenerate Edge XML, same as `updateConnectivityTag`."""
+    repo = ConnectivityRepository(database=None)  # type: ignore[arg-type]
+    sentinel = object()
+    with patch.object(ConnectivityRepository, "update_tag", new=AsyncMock(return_value="stored")) as mocked:
+        result = await repo.update_tag_topic("s1", "ns=3;s=A", "Plant/B", after_flush=sentinel)
+    assert result == "stored"
+    mocked.assert_awaited_once_with("s1", "ns=3;s=A", after_flush=sentinel, mqtt_topic="Plant/B")
+
+
+@pytest.mark.asyncio
+async def test_update_tag_topic_without_after_flush_still_works():
+    repo = ConnectivityRepository(database=None)  # type: ignore[arg-type]
+    with patch.object(ConnectivityRepository, "update_tag", new=AsyncMock(return_value="stored")) as mocked:
+        result = await repo.update_tag_topic("s1", "ns=3;s=A", "Plant/B")
+    assert result == "stored"
+    mocked.assert_awaited_once_with("s1", "ns=3;s=A", after_flush=None, mqtt_topic="Plant/B")
+
+
+@pytest.mark.asyncio
 async def test_update_tag_upserts_metric_when_asset_and_unit_are_set():
     tag = SimpleNamespace(
         server_id="s1",
@@ -630,5 +783,6 @@ async def test_update_tag_eager_loads_asset_on_returned_row():
     session = _FakeSession(tag=tag)
     repo = ConnectivityRepository(_FakeDatabase(session))
     await repo.update_tag("s1", "ns=3;s=A", mqtt_topic="Plant/T101/Level")
-    blob = _loader_blob(_selects(session)[0])
+    # index 0 is the subscribed_topics uniqueness check select; the tag read follows it.
+    blob = _loader_blob(_selects(session)[1])
     assert "asset" in blob

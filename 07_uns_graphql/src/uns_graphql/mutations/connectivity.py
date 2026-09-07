@@ -13,9 +13,9 @@ one at a time via `saveConnectivityTag`.
 
 Every write that can change what HiveMQ Edge should be running (`saveConnectivityServer`,
 `deleteConnectivityServer`, `saveConnectivityTag`, `updateConnectivityTag`,
-`unsubscribeConnectivityTag`) passes `_sync_edge` as the repository's `after_flush`, so a
-failed XML write rolls the catalog write back with it instead of leaving Postgres and
-HiveMQ Edge's `config.xml` disagreeing.
+`updateConnectivityTagTopic`, `unsubscribeConnectivityTag`) passes `_sync_edge` as the
+repository's `after_flush`, so a failed XML write rolls the catalog write back with it
+instead of leaving Postgres and HiveMQ Edge's `config.xml` disagreeing.
 """
 
 from __future__ import annotations
@@ -195,6 +195,7 @@ class Mutation:
                 display_name=tag.display_name,
                 mqtt_topic=tag.mqtt_topic,
                 subscribed=tag.subscribed,
+                data_type=tag.data_type.value if tag.data_type is not None else None,
             ),
             after_flush=_sync_edge,
         )
@@ -208,7 +209,9 @@ class Mutation:
         self, info: strawberry.Info, server_id: str, node_id: str, mqtt_topic: str
     ) -> ConnectivityTagType:
         require(info, "updateConnectivityTagTopic")
-        tag = await _repository().update_tag_topic(server_id, node_id, mqtt_topic)
+        tag = await _repository().update_tag_topic(
+            server_id, node_id, mqtt_topic, after_flush=_sync_edge
+        )
         if tag is None:
             raise ValueError(
                 f"No Connectivity tag for server {server_id!r} node {node_id!r}"

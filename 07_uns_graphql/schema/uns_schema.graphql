@@ -275,6 +275,11 @@ input ConnectivityTagInput {
   displayName: String!
   mqttTopic: String!
   subscribed: Boolean! = true
+
+  """
+  Optional scalar type for Condition Monitoring — save in one mutation rather than a saveConnectivityTag followed by an updateConnectivityTag patch.
+  """
+  dataType: SignalDataType = null
 }
 
 """One OPC UA node the console subscribes to."""

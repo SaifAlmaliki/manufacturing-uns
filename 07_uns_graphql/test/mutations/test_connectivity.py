@@ -600,9 +600,49 @@ async def test_update_connectivity_tag_topic_sets_the_topic():
         "nodeId": "ns=2;s=Temperature",
         "mqttTopic": "enterprise/site/temp",
     }
-    repository.update_tag_topic.assert_awaited_once_with(
-        "s1", "ns=2;s=Temperature", "enterprise/site/temp"
-    )
+    repository.update_tag_topic.assert_awaited_once()
+    call = repository.update_tag_topic.await_args
+    assert call.args == ("s1", "ns=2;s=Temperature", "enterprise/site/temp")
+    assert call.kwargs["after_flush"] is not None
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_update_connectivity_tag_topic_syncs_edge_xml(monkeypatch, tmp_path):
+    """A topic-only edit must regenerate HiveMQ Edge's config.xml, same as updateConnectivityTag."""
+    config_path = tmp_path / "hivemq" / "config.xml"
+    config_path.parent.mkdir()
+    config_path.write_text(_HIVEMQ_XML, encoding="utf-8")
+    monkeypatch.setattr("uns_graphql.mutations.connectivity.resolve_conf_dir", lambda: tmp_path)
+
+    async def _update_tag_topic(server_id, node_id, mqtt_topic, *, after_flush=None):
+        assert after_flush is not None
+        after_flush(
+            [
+                EdgeAdapterInput(
+                    server_id=server_id,
+                    protocol="s7",
+                    host="10.0.0.5",
+                    port=102,
+                    controller_type="S7_1500",
+                    tags=(),
+                )
+            ]
+        )
+        return _tag(server_id=server_id, node_id=node_id, mqtt_topic=mqtt_topic)
+
+    repository = AsyncMock()
+    repository.update_tag_topic.side_effect = _update_tag_topic
+
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            'mutation { updateConnectivityTagTopic(serverId: "srv-s7", '
+            'nodeId: "%ID103", mqttTopic: "Acme/Line/Speed") { nodeId } }',
+            context_value=ADMIN,
+        )
+
+    assert result.errors is None
+    text = config_path.read_text(encoding="utf-8")
+    assert "<adapterId>catalog-srv-s7</adapterId>" in text
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -684,6 +724,64 @@ async def test_save_connectivity_tag_returns_the_tag_as_stored():
     assert spec.node_id == "ns=2;s=Temperature"
     assert spec.mqtt_topic == "Acme/Test/Area/Line/Cell/S7/Speed"
     assert repository.save_tag.await_args.kwargs["after_flush"] is not None
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_save_connectivity_tag_passes_data_type_in_one_mutation():
+    """`dataType` on `ConnectivityTagInput` lets the console save address, topic, and type together."""
+    repository = AsyncMock()
+    repository.save_tag.return_value = _tag(mqtt_topic="Acme/Line/Speed")
+
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            """
+            mutation Save($tag: ConnectivityTagInput!) {
+                saveConnectivityTag(serverId: "s2", tag: $tag) { nodeId }
+            }
+            """,
+            variable_values={
+                "tag": {
+                    "nodeId": "%ID103",
+                    "browsePath": "",
+                    "displayName": "Speed",
+                    "mqttTopic": "Acme/Line/Speed",
+                    "dataType": "Integer",
+                }
+            },
+            context_value=ADMIN,
+        )
+
+    assert result.errors is None
+    spec: ConnectivityTagSpec = repository.save_tag.await_args.args[1]
+    assert spec.data_type == "Integer"
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_save_connectivity_tag_defaults_data_type_to_none():
+    repository = AsyncMock()
+    repository.save_tag.return_value = _tag()
+
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            """
+            mutation Save($tag: ConnectivityTagInput!) {
+                saveConnectivityTag(serverId: "s1", tag: $tag) { nodeId }
+            }
+            """,
+            variable_values={
+                "tag": {
+                    "nodeId": "ns=2;s=Temperature",
+                    "browsePath": "Objects/Temperature",
+                    "displayName": "Temperature",
+                    "mqttTopic": "enterprise/site/temperature",
+                }
+            },
+            context_value=ADMIN,
+        )
+
+    assert result.errors is None
+    spec: ConnectivityTagSpec = repository.save_tag.await_args.args[1]
+    assert spec.data_type is None
 
 
 # --------------------------------------------------------------- testConnectivityServer
