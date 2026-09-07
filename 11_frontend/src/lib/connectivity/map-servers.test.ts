@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest'
 import {
   CONNECTIVITY_SERVERS_PATH,
   CONNECTIVITY_SIGNALS_PATH,
+  PROTOCOLS_IN_SLICE,
   connectivityTabFromPath,
   formatBrowseClock,
   formatLastTestedAt,
   formatOpcUaValue,
+  statusDotClass,
 } from './map-servers'
 
 describe('formatBrowseClock', () => {
@@ -42,5 +44,17 @@ describe('formatOpcUaValue', () => {
     expect(formatOpcUaValue(12.5)).toBe('12.5')
     expect(formatOpcUaValue(null)).toBe('—')
     expect(formatOpcUaValue(undefined)).toBe('—')
+  })
+})
+
+describe('PROTOCOLS_IN_SLICE', () => {
+  it('enables opc_ua, s7, and ethernet_ip', () => {
+    expect(PROTOCOLS_IN_SLICE).toEqual(['opc_ua', 's7', 'ethernet_ip'])
+  })
+})
+
+describe('statusDotClass', () => {
+  it('paints pending amber', () => {
+    expect(statusDotClass('pending')).toMatch(/amber|yellow/)
   })
 })

@@ -79,3 +79,57 @@ describe('GraphQL vocabulary maps', () => {
     expect(Object.keys(SECURITY_MODE_TO_GQL)).toEqual(['None', 'Sign', 'SignAndEncrypt'])
   })
 })
+
+describe('validateConnectivityServer — S7 and EtherNet/IP', () => {
+  it('accepts S7 host:port', () => {
+    expect(
+      validateConnectivityServer(
+        draft({ protocol: 's7', endpoint: '10.0.0.5:102', controllerType: 'S7_1500' }),
+      ),
+    ).toBeNull()
+  })
+
+  it('rejects S7 opc.tcp endpoint', () => {
+    expect(
+      validateConnectivityServer(draft({ protocol: 's7', endpoint: 'opc.tcp://10.0.0.5:102' })),
+    ).toMatch(/host:port/i)
+  })
+
+  it('rejects ethernet_ip without a port', () => {
+    expect(
+      validateConnectivityServer(draft({ protocol: 'ethernet_ip', endpoint: '10.0.0.8' })),
+    ).toMatch(/host:port/i)
+  })
+
+  it('accepts EtherNet/IP host:port', () => {
+    expect(
+      validateConnectivityServer(draft({ protocol: 'ethernet_ip', endpoint: '10.0.0.8:44818' })),
+    ).toBeNull()
+  })
+
+  it('rejects a missing name for S7', () => {
+    expect(
+      validateConnectivityServer(
+        draft({ protocol: 's7', name: '  ', endpoint: '10.0.0.5:102' }),
+      ),
+    ).toMatch(/name/i)
+  })
+
+  it('rejects an unknown S7 controller type', () => {
+    expect(
+      validateConnectivityServer(
+        draft({ protocol: 's7', endpoint: '10.0.0.5:102', controllerType: 'S7_9999' }),
+      ),
+    ).toMatch(/controller/i)
+  })
+
+  it('defaults the S7 controller type to S7_1500 when missing', () => {
+    expect(
+      validateConnectivityServer(draft({ protocol: 's7', endpoint: '10.0.0.5:102' })),
+    ).toBeNull()
+  })
+
+  it('still rejects protocols outside this slice', () => {
+    expect(validateConnectivityServer(draft({ protocol: 'modbus_tcp' }))).toMatch(/later/i)
+  })
+})

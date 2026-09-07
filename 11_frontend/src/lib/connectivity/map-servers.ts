@@ -47,7 +47,17 @@ export const PROTOCOL_TABS: { id: ConnectivityTabId; label: string }[] = [
   { id: 'sql', label: 'SQL' },
 ]
 
-export const PROTOCOLS_IN_SLICE: ConnectivityTabId[] = ['opc_ua']
+export const PROTOCOLS_IN_SLICE: ConnectivityTabId[] = ['opc_ua', 's7', 'ethernet_ip']
+
+/** GraphQL `ConnectivityProtocol` enum name for each tab in this slice. */
+export const PROTOCOL_TO_GQL = {
+  opc_ua: 'OPC_UA',
+  s7: 'S7',
+  ethernet_ip: 'ETHERNET_IP',
+} as const
+
+/** `Siemens7ControllerType` enum on the server, for the S7 protocol config. */
+export const S7_CONTROLLER_TYPES = ['S7_1500', 'S7_1200', 'S7_300', 'S7_400'] as const
 
 export function isProtocolInSlice(tab: ConnectivityTabId): boolean {
   return PROTOCOLS_IN_SLICE.includes(tab)
@@ -57,6 +67,7 @@ const STATUS_DOT: Record<string, string> = {
   connected: 'bg-emerald-500',
   failed: 'bg-rose-500',
   untested: 'bg-zinc-500',
+  pending: 'bg-amber-500',
 }
 
 export function statusDotClass(lastStatus: string): string {

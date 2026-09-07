@@ -1,7 +1,10 @@
 /**
- * Client-side checks for an OPC UA server draft, before GraphQL is called.
+ * Client-side checks for a Connectivity server draft, before GraphQL is called.
  * The catalog repeats the same rules in ConnectivityServerSpec.validate.
  */
+
+import { isHostPort } from './host-port'
+import { S7_CONTROLLER_TYPES } from './map-servers'
 
 export const CONNECTIVITY_AUTH_MODES = ['anonymous', 'username', 'x509'] as const
 export const CONNECTIVITY_SECURITY_POLICIES = [
@@ -48,11 +51,25 @@ export type ConnectivityServerDraft = {
   certificate: string
   privateKey: string
   serverCertificate?: string
+  controllerType?: string
 }
 
 const ENDPOINT = /^opc\.tcp:\/\/[^\s\/:]+:\d{1,5}(\/.*)?$/
 
 export function validateConnectivityServer(draft: ConnectivityServerDraft): string | null {
+  if (draft.protocol === 's7' || draft.protocol === 'ethernet_ip') {
+    if (!draft.name.trim()) return 'Name is required.'
+    if (!isHostPort(draft.endpoint)) {
+      return 'Endpoint must be host:port'
+    }
+    if (draft.protocol === 's7') {
+      const controllerType = draft.controllerType ?? 'S7_1500'
+      if (!S7_CONTROLLER_TYPES.includes(controllerType as (typeof S7_CONTROLLER_TYPES)[number])) {
+        return 'Choose a supported controller type.'
+      }
+    }
+    return null
+  }
   if (draft.protocol !== 'opc_ua') {
     return 'OPC UA is the only protocol this slice serves. The others land later.'
   }

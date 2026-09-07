@@ -80,6 +80,7 @@ import type {
   AccessGroupDto,
   GraphqlAlertRule,
   GraphqlAssetNode,
+  GraphqlConnectivityProtocol,
   GraphqlConnectivityServer,
   GraphqlConnectivityServerInput,
   GraphqlConnectivityTag,
@@ -735,7 +736,7 @@ export class UnsGraphQLClient {
    * plant with no servers, not a transport problem.
    */
   public async getConnectivityServers(
-    protocol?: 'OPC_UA',
+    protocol?: GraphqlConnectivityProtocol,
   ): Promise<GraphqlConnectivityServer[]> {
     const res = await this.executeQuery<{ getConnectivityServers: GraphqlConnectivityServer[] }>(
       GET_CONNECTIVITY_SERVERS_QUERY,

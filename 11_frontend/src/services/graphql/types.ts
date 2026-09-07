@@ -221,8 +221,8 @@ export type GraphqlPrefixRenameInput = {
   newPrefix: string
 }
 
-/** `ConnectivityProtocol` enum on the server. Only OPC_UA is in this slice. */
-export type GraphqlConnectivityProtocol = 'OPC_UA'
+/** `ConnectivityProtocol` enum on the server. */
+export type GraphqlConnectivityProtocol = 'OPC_UA' | 'S7' | 'ETHERNET_IP'
 export type GraphqlConnectivityAuthMode = 'ANONYMOUS' | 'USERNAME' | 'X509'
 export type GraphqlConnectivitySecurityPolicy =
   | 'NONE'
@@ -296,6 +296,7 @@ export type GraphqlConnectivityServer = {
   certificate?: string
   hasPrivateKey?: boolean
   serverCertificate?: string
+  protocolConfig?: { controllerType?: string } | null
   lastStatus: string
   lastError: string
   lastTestedAt?: string | null
@@ -318,6 +319,7 @@ export type GraphqlConnectivityServerInput = {
   certificate?: string
   privateKey?: string
   serverCertificate?: string
+  protocolConfig?: { controllerType?: string } | null
 }
 
 /** `ConnectivityTestResultType`: the outcome of a probe against one OPC UA endpoint. */
