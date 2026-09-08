@@ -55,15 +55,17 @@ jobs:
 
     services:
       uns_mqtt:
-        image: "emqx/emqx:latest"
+        # Same image as Compose uns_mqtt_broker. GHA services start before checkout,
+        # so conf/hivemq/config.xml is not mounted; stock Edge still listens on 1883.
+        image: "hivemq/hivemq-edge:latest"
         ports:
-          # MQTT Ports
-          # MQTT Ports
           - "1883:1883" # MQTT, unencrypted, unauthenticated
-          - "1884:1884" # MQTT, unencrypted, authenticated
-          # WebSocket Ports
-          - "8080:8080" # MQTT over WebSockets, unencrypted, unauthenticated
-          - "8090:8090" # MQTT over WebSockets, unencrypted, authenticated
+        options: >
+          --health-cmd="timeout 2 bash -c 'echo > /dev/tcp/127.0.0.1/1883' || exit 1"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+          --health-start-period=90s
 
     steps:
       - uses: actions/checkout@v7

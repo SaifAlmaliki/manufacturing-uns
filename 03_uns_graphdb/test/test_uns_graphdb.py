@@ -19,6 +19,8 @@ Tests for Uns_MQTT_GraphDb
 """
 
 import json
+import threading
+import time
 
 import pytest
 import test_graphdb_handler
@@ -30,6 +32,38 @@ from uns_sparkplugb.uns_spb_helper import convert_spb_bytes_payload_to_dict
 
 from uns_graphdb.graphdb_config import GraphDBConfig
 from uns_graphdb.uns_mqtt_graphdb import UnsMqttGraphDb
+
+# loop_forever has no deadline; a missed echo used to block each case for 300s.
+_MQTT_WAIT_S = 30.0
+
+
+def _rejected_subscribe_codes(reason_codes) -> list[str]:
+    codes = reason_codes if isinstance(reason_codes, list) else [reason_codes]
+    rejected: list[str] = []
+    for rc in codes:
+        failed = bool(getattr(rc, "is_failure", False))
+        if not failed:
+            value = int(getattr(rc, "value", rc) or 0)
+            failed = value >= 128
+        if failed:
+            rejected.append(str(rc))
+    return rejected
+
+
+def test_rejected_subscribe_codes_accepts_granted_qos():
+    assert _rejected_subscribe_codes([0, 1, 2]) == []
+
+
+def test_rejected_subscribe_codes_flags_not_authorized():
+    assert _rejected_subscribe_codes([135]) == ["135"]
+
+
+def _loop_until(client, predicate, timeout_s: float, fail_message: str) -> None:
+    deadline = time.monotonic() + timeout_s
+    while not predicate():
+        if time.monotonic() > deadline:
+            pytest.fail(fail_message)
+        client.loop(timeout=0.5)
 
 
 @pytest.mark.integrationtest()
@@ -124,30 +158,32 @@ def test_mqtt_graphdb_persistence(topic: str, message: dict):
     Test the persistence of message (UNS & SpB) to the database
     """
     uns_mqtt_graphdb = None
+    received = threading.Event()
+    subscribe_rejected: list[str] = []
     try:
         uns_mqtt_graphdb = UnsMqttGraphDb()
-        uns_mqtt_graphdb.uns_client.loop()
 
         def on_message_decorator(client, userdata, msg):
-            old_on_message(client, userdata, msg)
-            if topic.startswith("spBv1.0/"):
-                message_dict: dict = convert_spb_bytes_payload_to_dict(message)
-                node_type = GraphDBConfig.spb_node_types
-            else:
-                message_dict = message
-                node_type = GraphDBConfig.uns_node_types
-
-            attr_nd_typ: str = GraphDBConfig.nested_attributes_node_type
-
             try:
-                with uns_mqtt_graphdb.graph_db_handler.connect().session(
-                    database=uns_mqtt_graphdb.graph_db_handler.database,
-                ) as session:
-                    session.execute_read(
-                        test_graphdb_handler.read_topic_nodes, node_type, attr_nd_typ, topic, message_dict)
-            except (exceptions.TransientError, exceptions.TransactionError) as ex:
-                pytest.fail(
-                    "Connection to either the MQTT Broker or " f"the Graph DB did not happen: Exception {ex}")
+                old_on_message(client, userdata, msg)
+                if topic.startswith("spBv1.0/"):
+                    message_dict: dict = convert_spb_bytes_payload_to_dict(message)
+                    node_type = GraphDBConfig.spb_node_types
+                else:
+                    message_dict = message
+                    node_type = GraphDBConfig.uns_node_types
+
+                attr_nd_typ: str = GraphDBConfig.nested_attributes_node_type
+
+                try:
+                    with uns_mqtt_graphdb.graph_db_handler.connect().session(
+                        database=uns_mqtt_graphdb.graph_db_handler.database,
+                    ) as session:
+                        session.execute_read(
+                            test_graphdb_handler.read_topic_nodes, node_type, attr_nd_typ, topic, message_dict)
+                except (exceptions.TransientError, exceptions.TransactionError) as ex:
+                    pytest.fail(
+                        "Connection to either the MQTT Broker or " f"the Graph DB did not happen: Exception {ex}")
             finally:
                 # After successfully validating the data run a new transaction to delete
                 with uns_mqtt_graphdb.graph_db_handler.connect().session(
@@ -156,6 +192,7 @@ def test_mqtt_graphdb_persistence(topic: str, message: dict):
                     session.execute_write(
                         test_graphdb_handler.cleanup_test_data, topic.split("/")[0], node_type[0])
                 uns_mqtt_graphdb.uns_client.disconnect()
+                received.set()
 
         # --- end of function
 
@@ -171,7 +208,25 @@ def test_mqtt_graphdb_persistence(topic: str, message: dict):
         # Overriding on_message is more reliable that on_publish because some times
         # on_publish was called before on_message
         old_on_message = uns_mqtt_graphdb.uns_client.on_message
+        old_on_subscribe = uns_mqtt_graphdb.uns_client.on_subscribe
+        subscribed = threading.Event()
+
+        def on_subscribe_decorator(client, userdata, mid, reason_codes, properties=None):
+            old_on_subscribe(client, userdata, mid, reason_codes, properties)
+            subscribe_rejected.extend(_rejected_subscribe_codes(reason_codes))
+            subscribed.set()
+
         uns_mqtt_graphdb.uns_client.on_message = on_message_decorator
+        uns_mqtt_graphdb.uns_client.on_subscribe = on_subscribe_decorator
+
+        _loop_until(
+            uns_mqtt_graphdb.uns_client,
+            lambda: uns_mqtt_graphdb.uns_client.is_connected() and subscribed.is_set(),
+            _MQTT_WAIT_S,
+            "MQTT client did not connect and subscribe",
+        )
+        if subscribe_rejected:
+            pytest.fail(f"MQTT subscribe was rejected: {subscribe_rejected}")
 
         # publish the messages as non-persistent to allow the tests to be
         # idempotent across multiple runs
@@ -179,8 +234,16 @@ def test_mqtt_graphdb_persistence(topic: str, message: dict):
             topic=topic, payload=payload, qos=uns_mqtt_graphdb.uns_client.qos, retain=False, properties=publish_properties
         )
 
-        uns_mqtt_graphdb.uns_client.loop_forever(retry_first_connection=True)
+        _loop_until(
+            uns_mqtt_graphdb.uns_client,
+            received.is_set,
+            _MQTT_WAIT_S,
+            f"Timed out waiting for MQTT echo on {topic}. "
+            "Subscribe to graphdb.mqtt.topics may have been rejected or the broker never echoed the publish.",
+        )
     except Exception as ex:
+        if type(ex).__name__ == "Failed":
+            raise
         pytest.fail(
             f"Connection to either the MQTT Broker or the Graph DB did not happen: Exception {ex}",
         )

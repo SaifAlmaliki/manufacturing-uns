@@ -16,6 +16,14 @@ _DEV_COMPOSE_FILE = _REPO_ROOT / "docker-compose.dev.yml"
 _PROMETHEUS_FILE = (
     _REPO_ROOT / "08_uns_observability" / "prometheus" / "prometheus.yml"
 )
+_WORKFLOWS_DIR = _REPO_ROOT / ".github" / "workflows"
+_MQTT_SERVICE_WORKFLOWS = (
+    "uns_graphdb-app.yml",
+    "uns_historian-app.yml",
+    "uns_kafka-app.yml",
+    "uns_graphql-app.yml",
+    "uns_sparkplugb-app.yml",
+)
 
 
 def _xml(path: Path) -> ET.Element:
@@ -107,6 +115,41 @@ def test_broker_healthcheck_does_not_call_emqx():
     joined = " ".join(check)
     assert "emqx" not in joined
     assert "1883" in joined
+
+
+def _workflow_mqtt_services(name: str) -> list[dict]:
+    data = yaml.safe_load((_WORKFLOWS_DIR / name).read_text(encoding="utf-8"))
+    found: list[dict] = []
+    for job in data["jobs"].values():
+        mqtt = (job.get("services") or {}).get("uns_mqtt")
+        if mqtt is not None:
+            found.append(mqtt)
+    return found
+
+
+def test_github_actions_mqtt_service_is_hivemq_edge():
+    """GHA cannot mount conf/hivemq; the stock Edge image still listens on 1883 and allows '#'."""
+    for name in _MQTT_SERVICE_WORKFLOWS:
+        services = _workflow_mqtt_services(name)
+        assert services, f"{name} has no uns_mqtt service"
+        for mqtt in services:
+            assert mqtt["image"] == "hivemq/hivemq-edge:latest", name
+            ports = mqtt["ports"]
+            assert "1883:1883" in ports
+            assert "8080:8080" not in ports
+            assert "1884:1884" not in ports
+            env = mqtt.get("env") or {}
+            assert "EMQX_AUTHORIZATION__NO_MATCH" not in env
+            options = mqtt.get("options") or ""
+            assert "emqx" not in options.lower()
+            assert "1883" in options
+
+
+def test_github_actions_workflows_do_not_use_emqx_image():
+    for path in _WORKFLOWS_DIR.glob("*.yml"):
+        text = path.read_text(encoding="utf-8")
+        assert "emqx/emqx" not in text, path.name
+        assert "emqx_docker-compose.yaml" not in text, path.name
 
 
 def _dev_compose() -> dict:

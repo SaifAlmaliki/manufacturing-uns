@@ -21,6 +21,7 @@ Test cases for uns_historian
 import asyncio
 import json
 import random
+import threading
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -84,6 +85,52 @@ def test_on_message_skips_platform_observability(  # noqa: ARG001
     msg.payload = b'{"status":"ok"}'
     uns_mqtt_historian.on_message(uns_mqtt_historian.uns_client, None, msg)
     uns_mqtt_historian.uns_client.get_payload_as_dict.assert_not_called()
+
+
+def test_on_message_persists_historic_topic(mock_uns_client, mock_historian_handler):  # noqa: ARG001
+    """on_message must actually run persist on the historian loop, as main() does via run_forever."""
+    loop = asyncio.new_event_loop()
+    handler_instance = mock_historian_handler.return_value
+    handler_instance.__aenter__ = AsyncMock(return_value=handler_instance)
+    handler_instance.__aexit__ = AsyncMock(return_value=False)
+    handler_instance.persist_mqtt_msg = AsyncMock()
+    topic_binder = MagicMock()
+    topic_binder.observe = AsyncMock()
+    listener = MagicMock()
+    listener.start = AsyncMock()
+    listener.stop = AsyncMock()
+
+    payload = {"timestamp": 1486144502122, "TestMetric1": "TestUNS"}
+    started = threading.Event()
+
+    def _run_loop() -> None:
+        loop.call_soon(started.set)
+        loop.run_forever()
+
+    with (
+        patch("uns_historian.uns_mqtt_historian.Database.shared", return_value=MagicMock()),
+        patch("uns_historian.uns_mqtt_historian.TopicBinder", return_value=topic_binder),
+        patch("uns_historian.uns_mqtt_historian.AssetModelChangeListener", return_value=listener),
+    ):
+        uns_mqtt_historian = UnsMqttHistorian(loop=loop)
+        uns_mqtt_historian.uns_client.get_payload_as_dict.return_value = payload
+        uns_mqtt_historian.uns_client._client_id = b"historian-unit"
+
+        thread = threading.Thread(target=_run_loop, name="historian-unit-loop", daemon=True)
+        thread.start()
+        try:
+            assert started.wait(timeout=5), "Historian unit-test loop did not start"
+            msg = MagicMock()
+            msg.topic = "test/uns/ar1/ln2"
+            msg.payload = json.dumps(payload).encode()
+            uns_mqtt_historian.on_message(uns_mqtt_historian.uns_client, None, msg)
+            assert _wait_until(lambda: handler_instance.persist_mqtt_msg.await_count >= 1), (
+                "persist_mqtt_msg was not awaited; on_message schedules it on the historian loop"
+            )
+            handler_instance.persist_mqtt_msg.assert_awaited()
+            topic_binder.observe.assert_awaited_with("test/uns/ar1/ln2")
+        finally:
+            _stop_loop(loop, thread)
 
 
 def test_uns_mqtt_disconnect_historian_close_pool(  # noqa: ARG001
@@ -190,14 +237,74 @@ def create_publisher() -> UnsMQTTClient:
     return uns_publisher
 
 
-def _wait_until(loop, condition, *, timeout_s: float = 5.0, sleep_s: float = 0.1) -> bool:
-    """Pump the historian event loop until condition() is true or timeout."""
+def _wait_until(condition, *, timeout_s: float = 5.0, sleep_s: float = 0.1) -> bool:
+    """Poll until condition() is true. The historian loop must already be running in another thread."""
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         if condition():
             return True
-        loop.run_until_complete(asyncio.sleep(sleep_s))
+        time.sleep(sleep_s)
     return condition()
+
+
+def test_rejected_subscribe_codes_accepts_granted_qos():
+    assert _rejected_subscribe_codes([0, 1, 2]) == []
+
+
+def test_rejected_subscribe_codes_flags_not_authorized():
+    assert _rejected_subscribe_codes([135]) == ["135"]
+
+
+def _rejected_subscribe_codes(reason_codes) -> list[str]:
+    codes = reason_codes if isinstance(reason_codes, list) else [reason_codes]
+    rejected: list[str] = []
+    for rc in codes:
+        failed = bool(getattr(rc, "is_failure", False))
+        if not failed:
+            value = int(getattr(rc, "value", rc) or 0)
+            failed = value >= 128
+        if failed:
+            rejected.append(str(rc))
+    return rejected
+
+
+def _run_on_loop(loop: asyncio.AbstractEventLoop, coro, *, timeout_s: float = 10):
+    return asyncio.run_coroutine_threadsafe(coro, loop).result(timeout=timeout_s)
+
+
+def _close_shared_database() -> None:
+    """Dispose any engine bound to pytest-asyncio's loop before creating the historian loop."""
+
+    async def _close() -> None:
+        await HistorianHandler.close()
+
+    try:
+        existing = asyncio.get_event_loop()
+    except RuntimeError:
+        existing = None
+    if existing is not None and not existing.is_closed() and not existing.is_running():
+        existing.run_until_complete(_close())
+        return
+    tmp = asyncio.new_event_loop()
+    try:
+        tmp.run_until_complete(_close())
+    finally:
+        tmp.close()
+
+
+def _stop_loop(loop: asyncio.AbstractEventLoop, thread: threading.Thread) -> None:
+    if loop.is_running():
+        loop.call_soon_threadsafe(loop.stop)
+    thread.join(timeout=5)
+    if loop.is_closed():
+        return
+    pending = asyncio.all_tasks(loop)
+    for task in pending:
+        task.cancel()
+    if pending:
+        loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+    loop.run_until_complete(HistorianHandler.close())
+    loop.close()
 
 
 @pytest_asyncio.fixture(loop_scope="session", scope="session")
@@ -228,30 +335,72 @@ def test_uns_mqtt_historian(clean_up_database, topic: str, messages: list):  # n
     uns_mqtt_historian = None
     uns_publisher = None
     publish_properties = None
+    loop: asyncio.AbstractEventLoop | None = None
+    loop_thread: threading.Thread | None = None
     try:
-        # 1. Start the historian listener in a new thread
-        loop = asyncio.get_event_loop()
+        # main() runs this loop forever so MQTT-thread persist tasks execute.
+        # pytest-asyncio's session loop is not running during this sync test.
+        _close_shared_database()
+        loop = asyncio.new_event_loop()
         uns_mqtt_historian = UnsMqttHistorian(loop=loop)
+
+        subscribed = threading.Event()
+        subscribe_rejected: list[str] = []
+        persist_errors: list[BaseException] = []
+        received_count = 0
+        old_on_subscribe = uns_mqtt_historian.uns_client.on_subscribe
+        old_on_message = uns_mqtt_historian.on_message
+
+        def on_subscribe(client, userdata, mid, reason_codes, properties=None):
+            old_on_subscribe(client, userdata, mid, reason_codes, properties)
+            subscribe_rejected.extend(_rejected_subscribe_codes(reason_codes))
+            subscribed.set()
+
+        def on_message(client, userdata, msg):
+            nonlocal received_count
+            received_count += 1
+            old_on_message(client, userdata, msg)
+
+        def on_persist_done(future: asyncio.Future) -> None:
+            try:
+                future.result()
+            except Exception as ex:  # noqa: BLE001 - surface persist failures in the assertion
+                persist_errors.append(ex)
+            UnsMqttHistorian._on_persist_done(future)
+
+        uns_mqtt_historian.uns_client.on_subscribe = on_subscribe
+        uns_mqtt_historian.uns_client.on_message = on_message
+        uns_mqtt_historian._on_persist_done = on_persist_done
+
+        started = threading.Event()
+
+        def _run_loop() -> None:
+            loop.call_soon(started.set)
+            loop.run_forever()
+
+        loop_thread = threading.Thread(target=_run_loop, name="uns-mqtt-historian-loop", daemon=True)
+        loop_thread.start()
+        assert started.wait(timeout=5), "Historian asyncio loop did not start"
+
         uns_mqtt_historian.uns_client.loop_start()
-        assert _wait_until(loop, uns_mqtt_historian.uns_client.is_connected), (
-            "Historian MQTT client did not connect before publish"
+        assert _wait_until(lambda: uns_mqtt_historian.uns_client.is_connected() and subscribed.is_set()), (
+            "Historian MQTT client did not connect and subscribe before publish"
+        )
+        assert not subscribe_rejected, (
+            f"MQTT subscribe was rejected: {subscribe_rejected}. "
+            "Stock EMQX acl.conf denies the exact filter '#'; CI must set "
+            "EMQX_AUTHORIZATION__SOURCES=[] and EMQX_AUTHORIZATION__NO_MATCH=allow."
         )
 
-        # 2. Create an MQTT publisher
-        uns_publisher: UnsMQTTClient = create_publisher()
+        uns_publisher = create_publisher()
         uns_publisher.loop_start()
-        assert _wait_until(loop, uns_publisher.is_connected), "Publisher MQTT client did not connect before publish"
+        assert _wait_until(uns_publisher.is_connected), "Publisher MQTT client did not connect before publish"
 
         if MQTTConfig.version == MQTTVersion.MQTTv5:
             publish_properties = Properties(PacketTypes.PUBLISH)
         for message in messages:
-            if type(message) is dict or type(message) is str:
-                message = json.dumps(message)
-            # publish multiple message as non-persistent
-            # to allow the tests to be idempotent across multiple runs
-            uns_publisher.publish(topic=topic, payload=message, qos=2, retain=True, properties=publish_properties)
-            # Pump the loop so persist_mqtt_msg tasks scheduled from on_message can run
-            loop.run_until_complete(asyncio.sleep(0.1))
+            payload = json.dumps(message) if type(message) is dict or type(message) is str else message
+            uns_publisher.publish(topic=topic, payload=payload, qos=2, retain=True, properties=publish_properties)
 
         select_query = f""" SELECT * FROM {HistorianConfig.table} WHERE
                                topic = $1 AND
@@ -266,7 +415,6 @@ def test_uns_mqtt_historian(clean_up_database, topic: str, messages: list):  # n
             convert_spb_bytes_payload_to_dict(message) if type(message) is bytes else message for message in messages
         ]
 
-        # on_message only schedules persist_mqtt_msg; wait for the rows, not MQTT receipt
         persisted: dict[str, list] = {}
 
         def _all_persisted() -> bool:
@@ -274,18 +422,18 @@ def test_uns_mqtt_historian(clean_up_database, topic: str, messages: list):  # n
                 key = json.dumps(message)
                 if key in persisted:
                     continue
-                result = loop.run_until_complete(
-                    execute_prepared_async(select_query, topic, message, uns_mqtt_historian.client_id)
+                result = _run_on_loop(
+                    loop, execute_prepared_async(select_query, topic, message, uns_mqtt_historian.client_id)
                 )
                 if result:
                     persisted[key] = result
             return len(persisted) == len(normalized_messages)
 
-        assert _wait_until(loop, _all_persisted, timeout_s=15.0), (
-            f"Historian did not persist {len(normalized_messages)} message(s) for topic {topic}"
+        assert _wait_until(_all_persisted, timeout_s=15.0), (
+            f"Historian did not persist {len(normalized_messages)} message(s) for topic {topic}; "
+            f"mqtt_received={received_count}, persist_errors={persist_errors!r}"
         )
 
-        # disconnect the historian listener after persistence completed
         uns_mqtt_historian.uns_client.disconnect()
         uns_mqtt_historian.uns_client.loop_stop()
 
@@ -295,9 +443,14 @@ def test_uns_mqtt_historian(clean_up_database, topic: str, messages: list):  # n
             assert len(result) == 1, "Should have gotten only one record because we inserted only one record"
 
     finally:
-        # clean up the topic and disconnect the publisher
         if uns_publisher is not None:
             uns_publisher.publish(topic=topic, payload=b"", qos=2, retain=True, properties=publish_properties)
             uns_publisher.disconnect()
+            uns_publisher.loop_stop()
         if uns_mqtt_historian is not None:
             uns_mqtt_historian.uns_client.disconnect()
+            uns_mqtt_historian.uns_client.loop_stop()
+        if loop is not None and loop_thread is not None:
+            _stop_loop(loop, loop_thread)
+        elif loop is not None and not loop.is_closed():
+            loop.close()
