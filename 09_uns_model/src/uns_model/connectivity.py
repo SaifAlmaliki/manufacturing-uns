@@ -62,7 +62,7 @@ _ENDPOINT = re.compile(r"^opc\.tcp://[^\s/:]+:\d{1,5}(/.*)?$")
 _HOST_PORT = re.compile(r"^([A-Za-z0-9.-]+):(\d{1,5})$")
 _XML_ILLEGAL_CHARS = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F]")
 
-EDGE_APPLY_ERROR = "Recreate uns_mqtt_broker to apply Edge config"
+EDGE_APPLY_ERROR = "Waiting for HiveMQ Edge to apply"
 
 LOGGER = logging.getLogger(__name__)
 
@@ -313,8 +313,8 @@ class ConnectivityRepository:
         before this transaction commits, so a HiveMQ Edge XML write failure rolls
         back the catalog write instead of leaving them out of sync. The console
         always passes it for S7/EtherNet/IP, which is also when this sets
-        `last_status="pending"` / `last_error=EDGE_APPLY_ERROR`: the row is not
-        actually live until `testConnectivityServer` confirms the Edge apply.
+        `last_status="pending"` / `last_error=EDGE_APPLY_ERROR`: the row is saved but
+        HiveMQ Edge has not confirmed the live apply yet.
         """
         spec.validate()
         if not spec.password:
@@ -695,6 +695,30 @@ class ConnectivityRepository:
                     select(ConnectivityServer).where(ConnectivityServer.id == server_id)
                 )
             ).scalar_one_or_none()
+
+    async def record_live_apply(self, server_ids: list[str], *, ok: bool) -> None:
+        """Record whether HiveMQ Edge accepted the catalog adapters.
+
+        Success is `untested` with an empty error: live apply is not a PLC probe.
+        Failure is `pending` plus EDGE_APPLY_ERROR. Unknown ids are ignored.
+        """
+        if not server_ids:
+            return
+        values = (
+            {"last_status": "untested", "last_error": "", "updated_at": func.now()}
+            if ok
+            else {
+                "last_status": "pending",
+                "last_error": EDGE_APPLY_ERROR,
+                "updated_at": func.now(),
+            }
+        )
+        async with self._database.session() as session:
+            await session.execute(
+                update(ConnectivityServer)
+                .where(ConnectivityServer.id.in_(server_ids))
+                .values(**values)
+            )
 
     # ------------------------------------------------------------------- reads
 

@@ -139,7 +139,39 @@ def test_opc_ua_spec_still_requires_opc_tcp():
 
 
 def test_edge_apply_error_copy():
-    assert EDGE_APPLY_ERROR == "Recreate uns_mqtt_broker to apply Edge config"
+    assert EDGE_APPLY_ERROR == "Waiting for HiveMQ Edge to apply"
+
+
+@pytest.mark.asyncio
+async def test_record_live_apply_success_clears_pending():
+    session = _FakeSession()
+    repo = ConnectivityRepository(_FakeDatabase(session))
+    await repo.record_live_apply(["srv_s7"], ok=True)
+    assert session.update_values == {
+        "last_status": "untested",
+        "last_error": "",
+        "updated_at": session.update_values["updated_at"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_record_live_apply_failure_sets_pending():
+    session = _FakeSession()
+    repo = ConnectivityRepository(_FakeDatabase(session))
+    await repo.record_live_apply(["srv_s7"], ok=False)
+    assert session.update_values == {
+        "last_status": "pending",
+        "last_error": EDGE_APPLY_ERROR,
+        "updated_at": session.update_values["updated_at"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_record_live_apply_ignores_empty_server_ids():
+    session = _FakeSession()
+    repo = ConnectivityRepository(_FakeDatabase(session))
+    await repo.record_live_apply([], ok=True)
+    assert session.statements == []
 
 
 def test_s7_controller_types():
