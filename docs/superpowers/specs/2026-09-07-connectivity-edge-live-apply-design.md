@@ -5,6 +5,10 @@ Modules: `00_uns_config`, `07_uns_graphql`, `09_uns_model`, `11_frontend`,
 `conf/hivemq/`, `docker-compose.yml`
 Status: Approved
 
+**Extended by** [2026-09-08-uns-edge-opcua-datalake-design.md](./2026-09-08-uns-edge-opcua-datalake-design.md):
+OPC UA joins this live-apply path; MQTT publish leaves default `opcua_client`.
+Rows below that say OPC UA never touches Edge are **superseded**.
+
 Related:
 [2026-09-07-connectivity-s7-eip-edge-design.md](./2026-09-07-connectivity-s7-eip-edge-design.md)
 (catalog, XML generator, TCP Test — this spec replaces only that document’s
@@ -37,7 +41,7 @@ every S7/EIP Save.
 | Test | Unchanged: TCP reachability. Does not push to Edge |
 | Retry worker | Out. Next Save is the retry |
 | Docker recreate | Out of the Save path. Ops only (image upgrade). Restart loads the file |
-| OPC UA | Unchanged. `opcua_client` still polls the catalog |
+| OPC UA | **Superseded 2026-09-08:** Edge publishes subscribed OPC UA tags. Browse/Test stay on `uns_opcua`. |
 | Southbound | Never sent to Edge |
 | Edge status polling | Out. Console does not read Edge’s adapter connected lamp |
 
@@ -133,8 +137,8 @@ HTTP details are logged server-side, not shown in `last_error`.
 
 This runs for the same mutations as today’s XML sync: `saveConnectivityServer`,
 `deleteConnectivityServer`, `saveConnectivityTag`, `updateConnectivityTag`,
-`updateConnectivityTagTopic`, `unsubscribeConnectivityTag`. OPC UA mutations do
-not call the Edge client.
+`updateConnectivityTagTopic`, `unsubscribeConnectivityTag`. **OPC UA is included**
+(see 2026-09-08 spec).
 
 `testConnectivityServer` stays a TCP probe. If the server is still `pending`, a
 successful Test keeps `last_error` as `Waiting for HiveMQ Edge to apply` (same
@@ -163,9 +167,10 @@ and disaster recovery. Do not hand-edit catalog-owned adapters.
 7. Unsubscribe: that tag is omitted from the next replace; Edge stops publishing it.
 8. Delete server: row gone, `catalog-*` block removed from the file, Edge DELETE
    that adapter. If Edge is down, the file is already without the adapter; a later
-   broker restart drops it. A later successful Save of any other S7/EIP row also
-   deletes leftover `catalog-*` ids not in the list.
-9. OPC UA Save / Browse / Subscribe never touches Edge.
+   broker restart drops it. A later successful Save of any other catalog Edge
+   protocol also deletes leftover `catalog-*` ids not in the list.
+9. Browse / Test still never call Edge. OPC UA **Save / Subscribe / topic edit**
+   do (2026-09-08 spec).
 
 A server with zero subscribed tags still has an adapter (config only), same as the
 XML contract. Edge attaches to the PLC; nothing publishes until a subscribed tag
@@ -192,8 +197,9 @@ exists.
   Connection refused and 4xx/5xx are errors the caller can swallow.
 - **Save path.** Existing XML tests stay. New: Edge accepted → pending/waiting text
   cleared, status `untested`; Edge down → Save succeeds, status `pending`, next
-  Save calls the client again. OPC UA Save does not call the client. XML failure
-  still rolls back and does not call Edge.
+  Save calls the client again. XML failure
+  still rolls back and does not call Edge. OPC UA Save **does** call the client
+  (2026-09-08 spec).
 - **Console.** Pending sentence is `Waiting for HiveMQ Edge to apply`.
 - **Manual on this stack.** Add one S7 or EIP signal. Do not recreate the broker.
   Subscribe to that MQTT topic. If the PLC or sim is up, a value arrives.
@@ -206,7 +212,7 @@ exists.
 
 ## 10. What this is not
 
-Not a background retry loop. Not GraphQL using the Docker socket. Not moving OPC UA
-onto Edge. Not Modbus, MQTT, or SQL catalog apply. Not southbound writes. Not
+Not a background retry loop. Not GraphQL using the Docker socket. Not Modbus, MQTT, or SQL catalog apply. Not southbound writes. Not
 reading Edge’s live connection state into the lamp. Not changing MQTT payload
-shape (`timestamp` + `value`, QoS 1).
+shape (`timestamp` + `value`, QoS 1). OPC UA MQTT on Edge is
+[2026-09-08-uns-edge-opcua-datalake-design.md](./2026-09-08-uns-edge-opcua-datalake-design.md).

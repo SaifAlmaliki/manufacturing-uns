@@ -7,9 +7,13 @@ Status: Approved
 
 Related:
 [2026-09-03-hivemq-edge-uns-broker-design.md](./2026-09-03-hivemq-edge-uns-broker-design.md)
-(git XML is Edge’s runtime config; recreate is the supported apply path),
+(git XML is Edge’s runtime config),
+[2026-09-07-connectivity-edge-live-apply-design.md](./2026-09-07-connectivity-edge-live-apply-design.md)
+(Save applies live; recreate is ops-only),
+[2026-09-08-uns-edge-opcua-datalake-design.md](./2026-09-08-uns-edge-opcua-datalake-design.md)
+(OPC UA MQTT on Edge; Browse stays `uns_opcua`),
 [2026-09-01-opcua-edge-connector-design.md](./2026-09-01-opcua-edge-connector-design.md)
-(OPC UA catalog → `opcua_client`).
+(Browse/Test library).
 
 ## 1. Problem
 
@@ -32,7 +36,7 @@ S7/EIP on broker recreate.
 | --- | --- |
 | Authoring | One Connectivity catalog for OPC UA, S7, and EtherNet/IP |
 | Apply this slice | Two backends: OPC UA → `opcua_client`; S7/EIP → generate Edge XML + operator recreate |
-| Next slice (out) | Move OPC UA onto Edge so the broker is the only plant ingest |
+| Next slice | [2026-09-08-uns-edge-opcua-datalake-design.md](./2026-09-08-uns-edge-opcua-datalake-design.md): OPC UA MQTT on Edge; Browse stays `uns_opcua` |
 | Live Edge Management API | Out. Status is not read from Edge’s HTTP API |
 | Auto-recreate | Out. GraphQL does not use the Docker socket |
 | XML ownership | Generator upserts only catalog-owned `<protocol-adapter>` blocks |
