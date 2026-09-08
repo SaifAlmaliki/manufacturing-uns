@@ -207,11 +207,14 @@ graphql:
 
 graphdb:
   mqtt:
-    topics: [test/uns/#, HalabjaWTP/#, spBv1.0/uns_group/#]
+    # The broker is the Unified Namespace. Persist every plant topic; drop
+    # uns/platform/... in uns_config.is_historic_event_topic (ADR-0007).
+    topics: ["#"]
 
 historian:
   mqtt:
-    topics: [test/uns/#, HalabjaWTP/#, spBv1.0/#]
+    # Same ingest policy as graphdb and kafka_mapper — one Unified Namespace.
+    topics: ["#"]
 
 opcua:
   opcua:
@@ -221,7 +224,7 @@ opcua:
 
 kafka_mapper:
   mqtt:
-    topics: [test/uns/#, HalabjaWTP/#]
+    topics: ["#"]
   kafka:
     config:
       client.id: "uns_kafka_client"

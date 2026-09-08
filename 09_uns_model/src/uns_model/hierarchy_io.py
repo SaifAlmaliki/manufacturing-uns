@@ -20,6 +20,7 @@ from typing import Any
 
 import yaml
 from ruamel.yaml import YAML
+from uns_config.uns_ingest import MAPPER_ENVS, UNS_WILDCARD
 
 from uns_model.hierarchy import (
     HierarchyTree,
@@ -147,10 +148,10 @@ def apply_enterprise_to_settings(settings_text: str, enterprise: str) -> str:
     """Return `settings_text` with branding and mapper filters derived from `enterprise`.
 
     Sets `default.platform.organization_name` to `enterprise` and
-    `default.platform.display_name` to `f"{enterprise} UNS"`. In the `graphdb`,
-    `historian`, and `kafka_mapper` environments, any `mqtt.topics` entry of the
-    form `Something/#` that is not `test/uns/#` and not Sparkplug
-    (`spBv1.0...`) is replaced with `f"{enterprise}/#"`. `test/uns/#` and
+    `default.platform.display_name` to `f"{enterprise} UNS"`. In the mapper
+    environments, any `mqtt.topics` entry of the form `Something/#` that is not
+    the Unified Namespace wildcard `#`, not `test/uns/#`, and not Sparkplug
+    (`spBv1.0...`) is replaced with `f"{enterprise}/#"`. `#`, `test/uns/#`, and
     Sparkplug entries are kept; duplicate replaced filters collapse to one.
     """
     yaml_rt = _rt_yaml()
@@ -168,7 +169,7 @@ def apply_enterprise_to_settings(settings_text: str, enterprise: str) -> str:
         platform["display_name"] = f"{enterprise} UNS"
 
     new_filter = f"{enterprise}/#"
-    for env in ("graphdb", "historian", "kafka_mapper"):
+    for env in MAPPER_ENVS:
         env_block = doc.get(env)
         if not isinstance(env_block, dict):
             continue
@@ -200,7 +201,7 @@ def _rewrite_topic_filters(topics: list[Any], new_filter: str) -> list[str]:
     rewritten: list[str] = []
     for topic in topics:
         topic_str = str(topic)
-        if topic_str == _TEST_UNS_FILTER or topic_str.startswith(_SPARKPLUG_PREFIX):
+        if topic_str == UNS_WILDCARD or topic_str == _TEST_UNS_FILTER or topic_str.startswith(_SPARKPLUG_PREFIX):
             rewritten.append(topic_str)
         elif topic_str.endswith("/#"):
             rewritten.append(new_filter)

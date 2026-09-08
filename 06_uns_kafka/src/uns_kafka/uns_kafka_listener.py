@@ -22,6 +22,7 @@ import logging
 import random
 import time
 
+from uns_config.uns_ingest import is_historic_event_topic
 from uns_mqtt.mqtt_listener import UnsMQTTClient
 
 from uns_kafka.kafka_handler import KafkaHandler
@@ -75,6 +76,10 @@ class UNSKafkaMapper:
         """
         LOGGER.debug("{" "Client: %s," "Userdata: %s," "Message: %s," "}",
                      client, userdata, msg)
+
+        if not is_historic_event_topic(msg.topic):
+            LOGGER.debug("Skipping Platform Observability topic %s", msg.topic)
+            return
 
         # Connect to Kafka, convert the MQTT topic to Kafka topic and send the message
         self.kafka_handler.publish(

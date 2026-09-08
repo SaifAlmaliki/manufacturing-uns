@@ -22,6 +22,7 @@ import logging
 import random
 import time
 
+from uns_config.uns_ingest import is_historic_event_topic
 from uns_mqtt.mqtt_listener import UnsMQTTClient
 
 from uns_graphdb.graphdb_config import GraphDBConfig, MQTTConfig
@@ -84,6 +85,9 @@ class UnsMqttGraphDb:
         LOGGER.debug("{" "Client: %s," "Userdata: %s," "Message: %s," "}",
                      client, userdata, msg)
         try:
+            if not is_historic_event_topic(msg.topic):
+                LOGGER.debug("Skipping Platform Observability topic %s", msg.topic)
+                return
             if msg.topic.startswith(UnsMQTTClient.SPARKPLUG_NS):
                 node_types = GraphDBConfig.spb_node_types
             else:

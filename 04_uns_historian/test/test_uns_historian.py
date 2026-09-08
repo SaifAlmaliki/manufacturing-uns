@@ -75,6 +75,17 @@ def mock_asset_model_deps():
         yield
 
 
+def test_on_message_skips_platform_observability(  # noqa: ARG001
+    mock_uns_client, mock_historian_handler, mock_asset_model_deps
+):
+    uns_mqtt_historian = UnsMqttHistorian()
+    msg = MagicMock()
+    msg.topic = "uns/platform/simulator/Instance01/status"
+    msg.payload = b'{"status":"ok"}'
+    uns_mqtt_historian.on_message(uns_mqtt_historian.uns_client, None, msg)
+    uns_mqtt_historian.uns_client.get_payload_as_dict.assert_not_called()
+
+
 def test_uns_mqtt_disconnect_historian_close_pool(  # noqa: ARG001
     mock_uns_client, mock_historian_handler, mock_asset_model_deps
 ):

@@ -23,6 +23,7 @@ import logging
 import random
 import time
 
+from uns_config.uns_ingest import is_historic_event_topic
 from uns_model.engine import Database
 from uns_model.notifications import AssetModelChangeListener
 from uns_model.repositories import AssetModelRepository
@@ -90,6 +91,10 @@ class UnsMqttHistorian:
         LOGGER.debug("{Client: %s,Userdata: %s,Message: %s,}", client, userdata, msg)
 
         try:
+            if not is_historic_event_topic(msg.topic):
+                LOGGER.debug("Skipping Platform Observability topic %s", msg.topic)
+                return
+
             # get the payload as a dict object
             filtered_message = self.uns_client.get_payload_as_dict(
                 topic=msg.topic, payload=msg.payload, mqtt_ignored_attributes=MQTTConfig.ignored_attributes
