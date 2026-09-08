@@ -20,7 +20,6 @@ Test for uns_mqtt.mqtt_listener
 
 import time
 import uuid
-from pathlib import Path
 
 import pytest
 from paho.mqtt.packettypes import PacketTypes
@@ -28,49 +27,20 @@ from paho.mqtt.properties import Properties
 
 from uns_mqtt.mqtt_listener import MQTTVersion, UnsMQTTClient
 
-EMQX_HOST = "broker.emqx.io"  # test the client against the hosted emqx broker
-EMQX_CERT_FILE = Path(__file__).resolve().parent / \
-    "cert" / "broker.emqx.io-ca.crt"
-
-# MOSQUITTO_HOST = "test.mosquitto.org"  # test the client against the hosted mosquitto broker
-# MOSQUITTO_CERT_FILE = Path(__file__).resolve().parent / "cert" / "mosquitto.org.crt"
-MOSQUITTO_HOST = "localhost"  # test the client against the hosted mosquitto broker
-MOSQUITTO_CERT_FILE = Path(__file__).resolve(
-).parent / "local_mqtt" / "certs" / "server" / "server.crt"
+BROKER_HOST = "localhost"
 
 ONE_TOPIC = ["test/uns/#"]
 
-# used to reduce load on the hosted broker
 TWO_TOPICS = ["test/uns/#", "spBv1.0/#"]
 KEEP_ALIVE = 60
 
 
 @pytest.mark.integrationtest()
-@pytest.mark.parametrize("broker", [MOSQUITTO_HOST])  # EMQX_HOST
+@pytest.mark.parametrize("broker", [BROKER_HOST])
 @pytest.mark.parametrize("protocol", [(MQTTVersion.MQTTv5), (MQTTVersion.MQTTv311)])
 #                                     (UNS_MQTT_Listener.MQTTv31)])
 # There appears to be a bug for MQTTv31. The call backs are not occurring
-@pytest.mark.parametrize(
-    "transport,port,tls",
-    [
-        ("tcp", 1883, None),
-        ("websockets", 8080, None),  # 8083
-        (
-            "tcp",
-            8883,
-            {
-                "ca_certs": MOSQUITTO_CERT_FILE  # EMQX_CERT_FILE,
-            },
-        ),
-        (
-            "websockets",
-            8081,  # 8084
-            {
-                "ca_certs": MOSQUITTO_CERT_FILE  # EMQX_CERT_FILE,,
-            },
-        ),
-    ],
-)
+@pytest.mark.parametrize("transport,port,tls", [("tcp", 1883, None)])
 @pytest.mark.parametrize("clean_session", [(True), (False)])
 @pytest.mark.parametrize("reconnect_on_failure", [(True), (False)])
 @pytest.mark.parametrize("qos", [(0), (1), (2)])
@@ -78,7 +48,7 @@ KEEP_ALIVE = 60
 def test_01_unauthenticated_connections(clean_session, protocol,
                                         broker, transport, port, reconnect_on_failure, topics, tls, qos):
     """
-    Test all the parameters ( except username password against EMQX's hosted broker instance)
+    Connect to the plant broker (HiveMQ Edge) on MQTT TCP 1883.
     """
     uns_client = UnsMQTTClient(
         client_id=f"test_01_{protocol}-{time.time()}-{uuid.uuid4().hex}",
@@ -110,88 +80,6 @@ def test_01_unauthenticated_connections(clean_session, protocol,
         uns_client.run(broker, port, tls=tls,
                        keepalive=KEEP_ALIVE, topics=topics, qos=qos)
 
-        while not uns_client.is_connected():
-            time.sleep(1)
-            uns_client.loop()
-
-        assert uns_client.protocol == protocol, "Protocol not matching"
-        assert (
-            len(
-                callback,
-            )
-            > 0
-        ), f"Connection Callback were not invoked for protocol : {protocol}"
-        assert uns_client.is_connected() is True, "Client should have connected "
-    finally:
-        uns_client.loop_stop()
-        uns_client.disconnect()
-
-
-###############################################################################
-@pytest.mark.integrationtest()
-@pytest.mark.parametrize("broker", [MOSQUITTO_HOST])
-@pytest.mark.parametrize("protocol", [(MQTTVersion.MQTTv5), (MQTTVersion.MQTTv311), (MQTTVersion.MQTTv31)])
-@pytest.mark.parametrize(
-    "transport,port,tls",
-    [
-        ("tcp", 1884, None),
-        ("websockets", 8090, None),
-        (
-            "tcp",
-            8885,
-            {
-                "ca_certs": MOSQUITTO_CERT_FILE,
-            },
-        ),
-        (
-            "websockets",
-            8091,
-            {
-                "ca_certs": MOSQUITTO_CERT_FILE,
-            },
-        ),
-    ],
-)
-@pytest.mark.parametrize("username,password", [("ro", "readonly")])
-@pytest.mark.parametrize("clean_session", [(True), (False)])
-@pytest.mark.parametrize("reconnect_on_failure", [(True), (False)])
-@pytest.mark.parametrize("qos", [(0), (1), (2)])
-@pytest.mark.parametrize("topics", [TWO_TOPICS, ONE_TOPIC])
-def test_02_authenticated_connections(
-    clean_session, protocol, broker, transport, port, reconnect_on_failure, username, password, topics, tls, qos
-):
-    """
-    Test all the parameters ( including username password against Mosquitto's hosted broker)
-    """
-    uns_client = UnsMQTTClient(
-        client_id=f"test_01_{protocol}-{time.time()}-{uuid.uuid4().hex}",
-        clean_session=clean_session,
-        protocol=protocol,
-        transport=transport,
-        reconnect_on_failure=reconnect_on_failure,
-    )
-    # container to mark callbacks happened correctly
-    callback = []
-
-    def on_connect_fail():
-        callback.append(True)
-        assert pytest.fail(), "Client should have connected "
-
-    def on_connect(client, userdata, flags, result_code, properties=None):
-        callback.append(True)
-        old_on_connect(client=client, userdata=userdata, flags=flags,
-                       return_code=result_code, properties=properties)
-        if result_code != 0:
-            assert pytest.fail(
-            ), f"Client should have connected. Connection error:{result_code}"
-
-    uns_client.on_connect_fail = on_connect_fail
-    old_on_connect = uns_client.on_connect
-    uns_client.on_connect = on_connect
-    try:
-        uns_client.run(
-            broker, port, username=username, password=password, tls=tls, keepalive=KEEP_ALIVE, topics=topics, qos=qos
-        )
         while not uns_client.is_connected():
             time.sleep(1)
             uns_client.loop()

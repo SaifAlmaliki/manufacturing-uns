@@ -23,6 +23,7 @@ _MQTT_SERVICE_WORKFLOWS = (
     "uns_kafka-app.yml",
     "uns_graphql-app.yml",
     "uns_sparkplugb-app.yml",
+    "uns_mqtt-app.yml",
 )
 
 
@@ -150,6 +151,14 @@ def test_github_actions_workflows_do_not_use_emqx_image():
         text = path.read_text(encoding="utf-8")
         assert "emqx/emqx" not in text, path.name
         assert "emqx_docker-compose.yaml" not in text, path.name
+        assert "eclipse-mosquitto" not in text, path.name
+        assert "mosquitto_docker-compose.yaml" not in text, path.name
+
+
+def test_mqtt_client_module_has_no_sideline_broker_fixture():
+    """Client library CI uses the same Edge service as mappers, not Mosquitto/EMQX extras."""
+    fixture = _REPO_ROOT / "02_mqtt-cluster" / "test" / "local_mqtt"
+    assert not fixture.exists()
 
 
 def _dev_compose() -> dict:

@@ -288,7 +288,7 @@ class SPBBasicDataTypes(_SPBAbstractDataTypes):
         None,
         lambda spb_object, value: _GetAndSetValueInSparkPlugObject.unknown_value(
             spb_object=spb_object, value=value),
-        lambda _spb_object: None,
+        lambda **_: None,
     )
 
     Int8 = (

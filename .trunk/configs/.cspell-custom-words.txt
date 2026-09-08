@@ -79,7 +79,6 @@ metallb
 microk8s
 mikefarah
 mkashwin
-MOSQUITTO
 mqtt
 NBIRTH
 NCMD

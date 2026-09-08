@@ -38,6 +38,20 @@ jobs:
     runs-on: ubuntu-latest
     environment: dev
 
+    services:
+      uns_mqtt:
+        # Same image as Compose uns_mqtt_broker. GHA services start before checkout,
+        # so conf/hivemq/config.xml is not mounted; stock Edge still listens on 1883.
+        image: "hivemq/hivemq-edge:latest"
+        ports:
+          - "1883:1883" # MQTT, unencrypted, unauthenticated
+        options: >
+          --health-cmd="timeout 2 bash -c 'echo > /dev/tcp/127.0.0.1/1883' || exit 1"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+          --health-start-period=90s
+
     steps:
       - uses: actions/checkout@v7
 
@@ -46,13 +60,6 @@ jobs:
         with:
           module: 02_mqtt-cluster
 
-      - name: Setup MQTT Broker for Integration Tests
-        shell: bash
-        run: |
-          cd ./02_mqtt-cluster/test/local_mqtt
-          # Listener-matrix tests (TLS, WS, auth) use Mosquitto, not the plant broker.
-          docker compose  -f mosquitto_docker-compose.yaml up -d --wait
-
       - name: Run all type of tests
         uses: ./.github/include/execute_tests/
         with:
@@ -60,9 +67,3 @@ jobs:
           integration_tests: true
           SAFETY_API_KEY: ${{ secrets.SAFETY_API_KEY }}
           pytest_flags: ${{ inputs.pytest_add_opts }}
-
-      - name: Shutdown  MQTT Broker for Integration Tests
-        shell: bash
-        run: |
-          cd ./02_mqtt-cluster/test/local_mqtt
-          docker compose  -f mosquitto_docker-compose.yaml down
