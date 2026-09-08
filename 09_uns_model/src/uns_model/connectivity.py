@@ -764,6 +764,26 @@ class ConnectivityRepository:
 
     # ------------------------------------------------------------------- reads
 
+    async def asset_path_for_mqtt_topic(self, topic: str) -> str | None:
+        """Asset path for a subscribed tag's ``mqtt_topic``, when the catalog binds one.
+
+        Browse-path topics such as ``Server/OpcPlc/...`` usually do not prefix-match an
+        Asset path, so historian and MQTT scope checks use this binding instead.
+        """
+        async with self._database.session() as session:
+            return (
+                await session.execute(
+                    select(Asset.path)
+                    .join(ConnectivityTag, ConnectivityTag.asset_id == Asset.id)
+                    .where(
+                        ConnectivityTag.mqtt_topic == topic,
+                        ConnectivityTag.subscribed.is_(True),
+                        ConnectivityTag.asset_id.is_not(None),
+                    )
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+
     async def list_servers(self, *, protocol: str | None = None) -> list[ConnectivityServer]:
         """Every server, newest edit last, so the console renders a stable order."""
         statement = (

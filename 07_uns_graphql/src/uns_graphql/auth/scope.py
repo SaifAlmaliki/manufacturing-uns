@@ -70,14 +70,25 @@ def filter_by_path(scope: AccessScope, items: list[T], path_of: Callable[[T], st
     return [item for item in items if scope.covers_path(path_of(item))]
 
 
+async def _connectivity_asset_path(topic: str) -> str | None:
+    from uns_model.connectivity import ConnectivityRepository
+    from uns_model.engine import Database
+
+    return await ConnectivityRepository(Database.shared("graphql")).asset_path_for_mqtt_topic(topic)
+
+
 async def allowed_topic(scope: AccessScope, topic: str, resolver: Any) -> bool:
     """True when the caller may see this topic.
 
     Unrestricted callers skip binding. Everyone else resolves the topic to an Asset
-    path; unmodelled topics are hidden.
+    path. Browse-path MQTT topics that do not prefix-match the Asset tree may still
+    be visible when a subscribed Connectivity tag binds them to an in-scope Asset.
     """
     if scope.unrestricted:
         return True
     context = await resolver.resolve(topic)
     bound = None if context is None else context.asset_path
-    return visible_topic(scope, bound)
+    if visible_topic(scope, bound):
+        return True
+    connectivity_bound = await _connectivity_asset_path(topic)
+    return visible_topic(scope, connectivity_bound)

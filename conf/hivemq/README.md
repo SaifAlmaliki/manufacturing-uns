@@ -10,10 +10,17 @@ Assets & Connectivity (`#/connectivity/servers`). GraphQL upserts catalog-owned
 `<protocol-adapter>` blocks (`adapterId` `catalog-<server id>`) and pushes the
 same adapters to the running broker over the Edge Management API. MQTT can start
 on Save. Browse and Test for OPC UA still use GraphQL → `uns_opcua`; they do
-not talk to Edge. Recreate the broker only for an image upgrade or disaster
-recovery:
+not talk to Edge.
 
-    uv run uns_compose up -d --force-recreate uns_mqtt_broker
+OPC UA servers on the host (e.g. `opc.tcp://desktop-h4hdql2:50000/` or
+`opc.tcp://host.docker.internal:50001/`) need `extra_hosts` on `uns_mqtt_broker`.
+The local dev overlay (`docker-compose.dev.yml`) adds those aliases; recreate
+the broker after changing them:
+
+    uv run uns_compose -f docker-compose.yml -f docker-compose.dev.yml up -d --force-recreate uns_mqtt_broker
+
+Recreate the broker only for an image upgrade, host-mapping change, or disaster
+recovery.
 
 The Compose service `opcua_client` is not a default publisher. Start it only
 with profile `legacy-opcua` if you must roll back to the old forwarder:

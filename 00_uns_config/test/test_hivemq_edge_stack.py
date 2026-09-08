@@ -205,3 +205,11 @@ def test_prometheus_scrapes_opcua_client():
     assert "uns_opcua" in jobs
     targets = jobs["uns_opcua"]["static_configs"][0]["targets"]
     assert "opcua_client:9093" in targets
+
+
+def test_dev_overlay_maps_host_opc_servers_for_edge_adapters():
+    """Edge OPC UA adapters poll PLCs on the host; the broker container needs the same DNS
+    aliases as graphql_server for desktop NetBIOS names and host.docker.internal."""
+    hosts = _dev_compose()["services"]["uns_mqtt_broker"]["extra_hosts"]
+    assert "desktop-h4hdql2:host-gateway" in hosts
+    assert "host.docker.internal:host-gateway" in hosts
