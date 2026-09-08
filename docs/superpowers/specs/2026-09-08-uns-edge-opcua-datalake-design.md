@@ -5,6 +5,11 @@ Modules: `00_uns_config`, `07_uns_graphql`, `09_uns_model`, `10_uns_opcua`,
 `11_frontend`, `conf/hivemq/`, `docker-compose.yml`
 Status: Approved (pending written review)
 
+**Lake runtime:** superseded by
+[2026-09-08-uns-datalake-mapper-design.md](./2026-09-08-uns-datalake-mapper-design.md)
+(envelope topic, Compose Mapper, MinIO / S3 / ADLS). Rows below that say the
+lake is types-only and Kafka is unchanged are **superseded** for that Mapper.
+
 Related:
 [2026-09-07-connectivity-edge-live-apply-design.md](./2026-09-07-connectivity-edge-live-apply-design.md)
 (Save → XML → Edge Management API; this spec **adds OPC UA** to that path and
@@ -43,8 +48,8 @@ we do not invent a second MQTT ingest for the lake.
 | Edge OPC UA auth | **Anonymous** URI from catalog endpoint. Catalog credentials unused by Edge this slice |
 | MQTT payload | **Edge native** (`includeTimestamp` true). No rewrite to look like `uns_opcua` (`source` / `equipment`) |
 | Live apply | Same as 2026-09-07: XML `after_flush` rolls back Save; Edge HTTP never rolls back Save |
-| Lake this slice | **Types and tests only.** Object-store port, date-partitioned Parquet layout, S3 and ADLS adapter **signatures**. No Compose sink, no cloud calls |
-| Kafka | Unchanged (one Kafka topic per MQTT topic). Spec requires a later envelope topic before a real lake sink |
+| Lake this slice | **Superseded 2026-09-08 mapper spec:** running Mapper + MinIO/S3/ADLS. This document still forbids MQTT ingest and Enrichment-in-Parquet. |
+| Kafka | **Superseded 2026-09-08 mapper spec:** keep 1:1 dotted topics **and** produce envelope `uns.historic-events` |
 | Enrichment | Read-time. Not written into Parquet or historian JSONB |
 | Southbound | Never |
 
@@ -127,17 +132,11 @@ Subscribe must still succeed.
 
 ### Datalake Mapper port (`00_uns_config`)
 
-New small types, no runtime sink:
-
-- Layout: `dt=YYYY-MM-DD/` (UTC) plus a topic-safe remainder defined in tests.
-- Record: Historic Event `time`, `topic`, JSON payload (as published).
-- `ObjectStore.put(path, parquet_bytes)` with **S3** and **ADLS** adapter
-  classes that are not constructed against real clouds in this slice.
-- Tests: fake filesystem; layout and column names locked.
-
-Document in the same tests/module docstring: a real sink must consume a **single
-Kafka envelope topic** later (`uns.historic-events` with MQTT topic inside the
-value). Do not change `kafka_mapper` in this slice.
+**Runtime Mapper:** [2026-09-08-uns-datalake-mapper-design.md](./2026-09-08-uns-datalake-mapper-design.md).
+This section only named the port. Layout (`dt=YYYY-MM-DD/`), Historic Event
+columns (`time`, `topic`, `payload`), no Enrichment in Parquet, and no MQTT
+ingest still apply. Envelope topic, Compose, and real S3/ADLS `put` live in
+that spec.
 
 ## 6. Data flow
 
@@ -148,7 +147,7 @@ value). Do not change `kafka_mapper` in this slice.
    Events → Condition Monitoring lookback + live work.
 3. Later the engineer sets `mqttTopic` to an Asset path. Catalog + historian
    rewrite commit together. Edge is told the new mapping. CM keeps the line.
-4. Lake code in this slice is unused in Compose.
+4. Lake objects: [2026-09-08-uns-datalake-mapper-design.md](./2026-09-08-uns-datalake-mapper-design.md).
 
 ## 7. Error handling
 
@@ -172,8 +171,9 @@ value). Do not change `kafka_mapper` in this slice.
 - Remap: rewrite called; Timescale failure rolls back catalog topic (mocked
   historian).
 - Compose: `opcua_client` only under `legacy-opcua`.
-- Lake: layout + fake store tests only.
-- No live broker in pytest (mock HTTP). No live S3/ADLS.
+- Lake layout/columns: still tested in `00_uns_config`; the running Mapper is
+  [2026-09-08-uns-datalake-mapper-design.md](./2026-09-08-uns-datalake-mapper-design.md).
+- No live broker in pytest (mock HTTP). No live S3/ADLS in the Edge slice.
 
 ## 9. Docs to update in the same change
 
@@ -190,6 +190,7 @@ value). Do not change `kafka_mapper` in this slice.
 ## 10. What this is not
 
 Not Edge browse. Not deleting `10_uns_opcua`. Not Edge OPC UA credentials.
-Not a running datalake Compose service. Not Kafka envelope migration. Not
-Iceberg/Delta. Not southbound. Not requiring ISA-95 before Subscribe. Not
+Not Iceberg/Delta. Not southbound. Not requiring ISA-95 before Subscribe. Not
 rolling back Save when Edge is down. Not a background rewrite/retry worker.
+A running lake Mapper is
+[2026-09-08-uns-datalake-mapper-design.md](./2026-09-08-uns-datalake-mapper-design.md).
