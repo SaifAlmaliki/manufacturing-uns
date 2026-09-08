@@ -10,7 +10,7 @@ Related:
 (named the object-store port, envelope topic, and “types only”; **this spec
 runs** the Mapper and implements S3/ADLS),
 [2026-09-07-connectivity-edge-live-apply-design.md](./2026-09-07-connectivity-edge-live-apply-design.md)
-(live apply; lake Task 7 in that plan is types-only and is superseded here),
+(live apply; lake work is out of scope for that plan),
 [2026-09-05-condition-monitoring-design.md](./2026-09-05-condition-monitoring-design.md)
 (lookback stays on the historian, not the lake).
 
@@ -224,9 +224,9 @@ object under `dt=` in MinIO.
   — “Lake this slice = types only” and “Kafka unchanged” are superseded by
   this document for the running lake.
 - Live-apply plan
-  `docs/superpowers/plans/2026-09-07-connectivity-edge-live-apply.md` Task 7
-  — do not ship `NotImplemented` cloud `put` if this slice implements the
-  real adapters; keep layout/column tests in `00_uns_config`.
+  `docs/superpowers/plans/2026-09-07-connectivity-edge-live-apply.md` — lake
+  work is not in that plan; layout/column tests live in `00_uns_config` via
+  this plan’s Task 1.
 - `06_uns_kafka` README — second produce to `uns.historic-events`.
 - Root or `13_uns_datalake` README — MinIO default, how to point at AWS/ADLS.
 

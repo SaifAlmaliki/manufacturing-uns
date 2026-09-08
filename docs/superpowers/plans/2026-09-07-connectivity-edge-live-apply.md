@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Save on S7, EtherNet/IP, **and OPC UA** writes `config.xml` and live-applies HiveMQ Edge so MQTT starts without recreating the broker. Browse/Test stay on `uns_opcua`. Remap of `mqttTopic` rewrites historian. A datalake object-store port is types/tests only.
+**Goal:** Save on S7, EtherNet/IP, **and OPC UA** writes `config.xml` and live-applies HiveMQ Edge so MQTT starts without recreating the broker. Browse/Test stay on `uns_opcua`. Remap of `mqttTopic` rewrites historian.
 
-**Architecture:** XML `after_flush` still rolls back Save if the file write fails. After the row is stored, GraphQL calls the Edge Management API. Edge down: keep Save, `pending`. Topic remap: catalog + `rewrite_topic_prefix` in one failure domain (restore catalog if rewrite fails), then live apply. Default Compose does not start `opcua_client`.
+**Architecture:** XML `after_flush` still rolls back Save if the file write fails. After the row is stored, GraphQL calls the Edge Management API. Edge down: keep Save, `pending`. Topic remap: catalog + `rewrite_topic_prefix` in one failure domain (restore catalog if rewrite fails), then live apply. Default Compose does not start `opcua_client`. Historic Event lake work lives in `docs/superpowers/plans/2026-09-08-uns-datalake-mapper.md`.
 
 **Tech Stack:** `httpx` in `00_uns_config`, `EdgeAdapterInput`, Strawberry GraphQL, React + Vitest, pytest + `httpx.MockTransport`.
 
@@ -45,11 +45,9 @@
 00_uns_config/pyproject.toml
 00_uns_config/src/uns_config/hivemq_edge_xml.py
 00_uns_config/src/uns_config/hivemq_edge_api.py
-00_uns_config/src/uns_config/datalake.py
 00_uns_config/test/test_hivemq_edge_api.py
 00_uns_config/test/test_hivemq_edge_xml.py
 00_uns_config/test/test_hivemq_edge_stack.py
-00_uns_config/test/test_datalake.py
 conf/settings.yaml
 docker-compose.yml
 docker-compose.dev.yml
@@ -65,7 +63,7 @@ conf/hivemq/README.md
 docs/superpowers/specs/2026-09-07-connectivity-s7-eip-edge-design.md
 ```
 
-**Task order:** 1 → 2 → **2b** → 3 → 4 → 5 → 6 → 7. GraphQL live apply (Task 3) is wrong if OPC UA adapters are still skipped. Do not start Task 3 until 2b is green.
+**Task order:** 1 → 2 → **2b** → 3 → 4 → 5 → 6. GraphQL live apply (Task 3) is wrong if OPC UA adapters are still skipped. Do not start Task 3 until 2b is green.
 
 ---
 
@@ -1228,134 +1226,6 @@ git commit -m "chore(compose): park opcua_client behind the legacy-opcua profile
 
 ---
 
-### Task 7: Datalake object-store port (types and fake-store tests only)
-
-**Files:**
-- Create: `00_uns_config/src/uns_config/datalake.py`
-- Create: `00_uns_config/test/test_datalake.py`
-
-**Interfaces:**
-- Produces: Historic Event record type; `historic_event_object_path`; `ObjectStore.put`; `S3ObjectStore` and `AdlsObjectStore` **signatures** (constructible, `put` not implemented against a cloud); fake filesystem tests lock layout and column names
-- Does **not** produce a Compose sink, Kafka change, or pyarrow/s3/azure dependency. `kafka_mapper` topic shape stays one Kafka topic per MQTT topic. Module docstring must say a real sink later consumes envelope topic `uns.historic-events` (MQTT topic inside the value).
-
-- [ ] **Step 1: Write the failing tests**
-
-Create `00_uns_config/test/test_datalake.py`:
-
-```python
-from datetime import UTC, datetime
-from pathlib import Path
-
-from uns_config.datalake import (
-    HISTORIC_EVENT_COLUMNS,
-    AdlsObjectStore,
-    FakeObjectStore,
-    HistoricEventRecord,
-    S3ObjectStore,
-    historic_event_object_path,
-)
-
-
-def test_object_path_is_date_partitioned_and_topic_safe():
-    when = datetime(2026, 9, 8, 15, 4, tzinfo=UTC)
-    path = historic_event_object_path(event_time=when, topic="Server/OpcPlc/Temp")
-    assert path.startswith("dt=2026-09-08/")
-    assert "Server/OpcPlc/Temp" not in path  # `/` must not create extra directories beyond dt=
-    assert "Server" in path and "Temp" in path
-
-
-def test_columns_are_historic_event_time_topic_payload():
-    assert HISTORIC_EVENT_COLUMNS == ("time", "topic", "payload")
-
-
-def test_fake_store_writes_under_dt_prefix(tmp_path: Path):
-    store = FakeObjectStore(tmp_path)
-    record = HistoricEventRecord(
-        time=datetime(2026, 9, 8, tzinfo=UTC),
-        topic="Acme/Line/Temp",
-        payload={"value": 1.2},
-    )
-    path = historic_event_object_path(event_time=record.time, topic=record.topic)
-    store.put(path, b"PARQUET")
-    written = tmp_path / path
-    assert written.is_file()
-    assert written.read_bytes() == b"PARQUET"
-
-
-def test_s3_and_adls_signatures_do_not_call_the_network():
-    s3 = S3ObjectStore(bucket="lake", region="eu-central-1")
-    adls = AdlsObjectStore(account="acct", container="lake")
-    for store in (s3, adls):
-        try:
-            store.put("dt=2026-09-08/x.parquet", b"x")
-        except NotImplementedError:
-            pass
-        else:
-            raise AssertionError("cloud adapters must not put in this slice")
-```
-
-Topic-safe remainder: replace `/` with `=` or `_` (pick one, lock it in the test). File suffix `.parquet`. No real Parquet bytes required — `b"PARQUET"` is enough. Enrichment is read-time and must **not** appear in `HISTORIC_EVENT_COLUMNS`.
-
-- [ ] **Step 2: Run tests to verify they fail**
-
-Run: `uv run pytest ./00_uns_config/test/test_datalake.py -v`
-
-Expected: FAIL — module missing.
-
-- [ ] **Step 3: Implement**
-
-`datalake.py` module docstring (verbatim idea): Historic Events land in object storage later via a Mapper that reads Kafka envelope topic `uns.historic-events`. This module is the port only. Do not subscribe to MQTT here. Do not change `kafka_mapper`.
-
-Types:
-
-```python
-HISTORIC_EVENT_COLUMNS = ("time", "topic", "payload")
-
-@dataclass(frozen=True, slots=True)
-class HistoricEventRecord:
-    time: datetime
-    topic: str
-    payload: dict[str, Any]
-
-
-class ObjectStore(Protocol):
-    def put(self, path: str, parquet_bytes: bytes) -> None: ...
-
-
-class FakeObjectStore:
-    def __init__(self, root: Path) -> None: ...
-    def put(self, path: str, parquet_bytes: bytes) -> None: ...
-
-
-class S3ObjectStore:
-    def __init__(self, *, bucket: str, region: str, prefix: str = "") -> None: ...
-    def put(self, path: str, parquet_bytes: bytes) -> None:
-        raise NotImplementedError("S3 sink is not in this slice")
-
-
-class AdlsObjectStore:
-    def __init__(self, *, account: str, container: str, prefix: str = "") -> None: ...
-    def put(self, path: str, parquet_bytes: bytes) -> None:
-        raise NotImplementedError("ADLS sink is not in this slice")
-```
-
-Do not add these names to `uns_config/__init__.py` unless a caller outside tests needs them (none does).
-
-- [ ] **Step 4: Run tests**
-
-Run: `uv run pytest ./00_uns_config/test/test_datalake.py ./00_uns_config/test -q --tb=line`
-
-Expected: PASS. No new third-party dependencies.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add 00_uns_config/src/uns_config/datalake.py 00_uns_config/test/test_datalake.py
-git commit -m "feat(config): datalake object-store port types without a running sink."
-```
-
----
-
 ## Self-review
 
 | Spec requirement | Task |
@@ -1374,7 +1244,6 @@ git commit -m "feat(config): datalake object-store port types without a running 
 | Test is TCP (S7/EIP) or session (OPC UA); pending keeps waiting sentence | 3 |
 | No retry worker / Docker socket / Edge status poll | (not added) |
 | `opcua_client` profile `legacy-opcua`; prometheus does not depend on it | 6 |
-| Lake types/tests only; no Compose sink; Kafka unchanged | 7 |
 | No southbound; leave `simulation` | 2, 2b |
 | Pending copy verbatim | 1, 3, 4 |
 | Settings + compose base_url | 2 |

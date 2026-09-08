@@ -26,7 +26,6 @@
 - **No live AWS/Azure/MQTT in pytest.** Stub S3/ADLS clients. Fake Kafka for the Mapper
 - **Module directory is `14_uns_datalake`.** Spec said `13_`; `13_uns_factory_agent` already exists. Compose service remains `datalake_mapper`. Patch the spec in Task 6
 - **Cloud SDKs live in `14_uns_datalake`, not `uns_config`.** `uns_config.datalake` is types/path/fake/envelope so GraphQL does not grow boto3. This is the only intentional spec seam
-- **This plan supersedes live-apply Task 7** (`NotImplemented` cloud `put`). Do not implement that stub
 - **`uns_config` must not import `uns_datalake`**
 - **Do not implement on `main`.** Branch `feat/uns-datalake-mapper` from current `main`
 
@@ -859,38 +858,25 @@ git commit -m "chore(compose): run datalake Mapper and MinIO on the default stac
 - Create: `14_uns_datalake/README.md`
 - Modify: `06_uns_kafka/README.md` — after the mapping-logic section, add: Historic Events are **also** produced to `uns.historic-events` (JSON `{time,topic,payload}`, key = MQTT topic). Dotted topics remain.
 - Modify: `docs/superpowers/specs/2026-09-08-uns-datalake-mapper-design.md` — replace `13_uns_datalake` with `14_uns_datalake`
-- Modify: `docs/superpowers/plans/2026-09-07-connectivity-edge-live-apply.md` Task 7 — replace the body with a pointer: implemented by this plan; do **not** add `NotImplemented` S3/ADLS `put` in live-apply
 
 - [ ] **Step 1: Write README**
 
 `14_uns_datalake/README.md`: this is a **Mapper**. Default `uns_compose up` writes Parquet to MinIO. Point at AWS by clearing `datalake.s3.endpoint_url` and using instance role. Point at ADLS with `datalake.backend: adls`. Condition Monitoring does not read the lake. Manual check: publish one MQTT Historic Event, `docker exec` MinIO/`mc ls local/uns-historic-events/dt=`.
 
-- [ ] **Step 2: Patch live-apply Task 7**
-
-Replace Task 7’s “types and tests only / NotImplemented” with:
-
-```markdown
-### Task 7: Datalake object-store port
-
-**Superseded** by `docs/superpowers/plans/2026-09-08-uns-datalake-mapper.md`.
-Layout and envelope JSON live in `uns_config.datalake`. Real S3/ADLS `put` lives in
-`14_uns_datalake`. Skip this task if that plan is in flight or merged.
-```
-
-- [ ] **Step 3: Spec module number**
+- [ ] **Step 2: Spec module number**
 
 Replace `13_uns_datalake` with `14_uns_datalake` in the mapper spec (and `UNS_MODULE`).
 
-- [ ] **Step 4: Run a quick grep**
+- [ ] **Step 3: Run a quick grep**
 
 Run: `uv run pytest ./14_uns_datalake/test ./00_uns_config/test/test_datalake.py ./06_uns_kafka/test/test_kafka_handler.py::test_produce_raw_does_not_convert_slashes -q --tb=line`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add 14_uns_datalake/README.md 06_uns_kafka/README.md docs/superpowers/specs/2026-09-08-uns-datalake-mapper-design.md docs/superpowers/plans/2026-09-07-connectivity-edge-live-apply.md
+git add 14_uns_datalake/README.md 06_uns_kafka/README.md docs/superpowers/specs/2026-09-08-uns-datalake-mapper-design.md
 git commit -m "docs(datalake): MinIO default and 14_ module path."
 ```
 
@@ -912,5 +898,4 @@ git commit -m "docs(datalake): MinIO default and 14_ module path."
 | Commit after put; poison skip+commit | 4 |
 | No live cloud in pytest | 1–5 |
 | 13_ taken → 14_uns_datalake | 3, 6 |
-| Live-apply Task 7 not stubbed | 6 |
 | Condition Monitoring unchanged | (not touched) |
