@@ -87,7 +87,7 @@ const S7_SERVER = {
   endpoint: '10.0.0.5:102',
   protocolConfig: { controllerType: 'S7_1500' },
   lastStatus: 'pending',
-  lastError: 'Recreate uns_mqtt_broker to apply Edge config',
+  lastError: 'Waiting for HiveMQ Edge to apply',
   lastTestedAt: null,
   tags: [],
 };
@@ -469,7 +469,7 @@ describe('S7 and EtherNet/IP servers', () => {
       ...S7_SERVER,
       ...input,
       lastStatus: 'pending',
-      lastError: 'Recreate uns_mqtt_broker to apply Edge config',
+      lastError: 'Waiting for HiveMQ Edge to apply',
       lastTestedAt: null,
       tags: [],
     }));
@@ -487,7 +487,7 @@ describe('S7 and EtherNet/IP servers', () => {
     expect(testOpcUaConnection).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.getByText('plc1')).toBeTruthy());
     expect(
-      screen.getByText('Recreate uns_mqtt_broker to apply Edge config'),
+      screen.getByText('Waiting for HiveMQ Edge to apply'),
     ).toBeTruthy();
   });
 });
