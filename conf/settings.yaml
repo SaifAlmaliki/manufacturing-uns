@@ -149,6 +149,11 @@ default:
     timestamp_attribute: "timestamp"
     ignored_attributes: {}
 
+  hivemq_edge:
+    base_url: "http://127.0.0.1:18080"
+    username: admin
+    password: hivemq
+
   graphdb:
     url: "bolt://localhost:7687"
     # ISA-95 hierarchy (0–4) plus equipment / parameter-type / parameter leaf levels (5–7).

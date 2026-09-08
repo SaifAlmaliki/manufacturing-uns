@@ -11,6 +11,7 @@ dependencies = [
     # dynaconf parses settings.yaml through pyyaml; until now it arrived transitively
     # via sibling modules, so a module-local env could not load conf at all
     "pyyaml>=6.0.2,<7",
+    "httpx>=0.28.0,<1",
 ]
 
 [project.scripts]

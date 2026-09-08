@@ -309,6 +309,7 @@ services:
       UNS_CONF_DIR: /app/conf
       UNS_MODULE: 07_uns_graphql
       UNS_mqtt__host: uns_mqtt_broker
+      UNS_hivemq_edge__base_url: "http://uns_mqtt_broker:8080"
 
       UNS_graphdb__url: "bolt://uns_neo4j_db:7687"
       UNS_graphdb__username: neo4j
