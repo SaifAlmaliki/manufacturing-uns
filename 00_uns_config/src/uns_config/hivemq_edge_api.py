@@ -28,6 +28,8 @@ class EdgeApplyError(Exception):
 def _protocol_id(protocol: str) -> str:
     if protocol == "ethernet_ip":
         return "eip"
+    if protocol == "opc_ua":
+        return "opcua"
     if protocol == "s7":
         return "s7"
     raise ValueError(f"unsupported Edge protocol: {protocol}")
@@ -35,15 +37,23 @@ def _protocol_id(protocol: str) -> str:
 
 def _adapter_body(adapter: EdgeAdapterInput) -> dict[str, Any]:
     protocol_id = _protocol_id(adapter.protocol)
-    config: dict[str, Any] = {"host": adapter.host, "port": adapter.port}
-    if protocol_id == "s7":
-        config["controllerType"] = adapter.controller_type
+    if protocol_id == "opcua":
+        config: dict[str, Any] = {"uri": adapter.uri}
+    else:
+        config = {"host": adapter.host, "port": adapter.port}
+        if protocol_id == "s7":
+            config["controllerType"] = adapter.controller_type
     return {"id": adapter_id_for(adapter.server_id), "type": protocol_id, "config": config}
 
 
 def _tag_items(adapter: EdgeAdapterInput) -> list[dict[str, Any]]:
     protocol_id = _protocol_id(adapter.protocol)
-    addr_key = "tagAddress" if protocol_id == "s7" else "address"
+    if protocol_id == "s7":
+        addr_key = "tagAddress"
+    elif protocol_id == "eip":
+        addr_key = "address"
+    else:
+        addr_key = "node"
     names = _unique_tag_names(adapter.tags)
     items = []
     for tag, name in zip(adapter.tags, names, strict=True):

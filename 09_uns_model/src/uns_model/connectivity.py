@@ -49,6 +49,7 @@ from uns_model.tables import (
     CONNECTIVITY_PROTOCOLS,
     CONNECTIVITY_SECURITY_MODES,
     CONNECTIVITY_SECURITY_POLICIES,
+    EDGE_PROTOCOLS,
     PLC_PROTOCOLS,
     S7_CONTROLLER_TYPES,
     Asset,
@@ -81,21 +82,32 @@ def edge_adapters_from_rows(servers: Sequence[ConnectivityServer]) -> list[EdgeA
     """
     Map catalog rows to what `uns_config.hivemq_edge_xml` needs to splice HiveMQ Edge.
 
-    Only PLC rows (S7, EtherNet/IP) become adapters: OPC UA is not a HiveMQ Edge
-    protocol adapter, the OPC-UA bridge (`10_uns_opcua`) still owns those. Only
+    S7, EtherNet/IP, and OPC UA catalog rows become Edge protocol adapters. Only
     subscribed tags are republished, same rule as everywhere else in this module.
     """
     adapters: list[EdgeAdapterInput] = []
     for server in servers:
-        if getattr(server, "protocol", None) not in PLC_PROTOCOLS:
+        if getattr(server, "protocol", None) not in EDGE_PROTOCOLS:
             continue
-        host, port = parse_host_port(server.endpoint)
-        controller = (getattr(server, "protocol_config", None) or {}).get("controllerType", "S7_1500")
         tags = tuple(
             EdgeTagInput(tag.node_id, tag.display_name, tag.mqtt_topic, getattr(tag, "data_type", None))
             for tag in getattr(server, "tags", [])
             if tag.subscribed
         )
+        if server.protocol == "opc_ua":
+            adapters.append(
+                EdgeAdapterInput(
+                    server_id=server.id,
+                    protocol=server.protocol,
+                    host="",
+                    port=0,
+                    uri=server.endpoint,
+                    tags=tags,
+                )
+            )
+            continue
+        host, port = parse_host_port(server.endpoint)
+        controller = (getattr(server, "protocol_config", None) or {}).get("controllerType", "S7_1500")
         adapters.append(
             EdgeAdapterInput(
                 server_id=server.id,
@@ -322,7 +334,7 @@ class ConnectivityRepository:
             if existing is not None and existing.password:
                 spec.password = existing.password
         values = spec.column_values()
-        if after_flush is not None and spec.protocol in PLC_PROTOCOLS:
+        if after_flush is not None and spec.protocol in EDGE_PROTOCOLS:
             values = values | {"last_status": "pending", "last_error": EDGE_APPLY_ERROR}
         async with self._database.session() as session:
             statement = (
@@ -402,7 +414,7 @@ class ConnectivityRepository:
                 )
             )
             if after_flush is not None:
-                await self._mark_pending_if_plc(session, server_id)
+                await self._mark_pending_if_edge(session, server_id)
             row = (
                 await session.execute(
                     select(ConnectivityTag)
@@ -435,12 +447,12 @@ class ConnectivityRepository:
             if topic and (exclude is None or (row_server_id, row_node_id) != exclude)
         }
 
-    async def _mark_pending_if_plc(self, session: AsyncSession, server_id: str) -> None:
+    async def _mark_pending_if_edge(self, session: AsyncSession, server_id: str) -> None:
         """Flag the server a tag write touched as needing a HiveMQ Edge re-apply."""
         protocol = (
             await session.execute(select(ConnectivityServer.protocol).where(ConnectivityServer.id == server_id))
         ).scalar_one_or_none()
-        if protocol in PLC_PROTOCOLS:
+        if protocol in EDGE_PROTOCOLS:
             await session.execute(
                 update(ConnectivityServer)
                 .where(ConnectivityServer.id == server_id)
@@ -463,7 +475,11 @@ class ConnectivityRepository:
         after_flush(edge_adapters_from_rows(servers))
 
     async def replace_subscribed_tags(
-        self, server_id: str, tags: Sequence[ConnectivityTagSpec]
+        self,
+        server_id: str,
+        tags: Sequence[ConnectivityTagSpec],
+        *,
+        after_flush: Callable[[list[EdgeAdapterInput]], None] | None = None,
     ) -> list[ConnectivityTag]:
         """
         Fold a freshly discovered set of tags into the catalog for one server.
@@ -509,6 +525,9 @@ class ConnectivityRepository:
                         set_=on_conflict_set,
                     )
                 )
+            if after_flush is not None:
+                await self._mark_pending_if_edge(session, server_id)
+                await self._sync_edge(session, after_flush)
             return await self.list_subscribed_tags(server_id)
 
     async def update_tag_topic(
@@ -587,7 +606,7 @@ class ConnectivityRepository:
             if row is None:
                 return None
             if after_flush is not None:
-                await self._mark_pending_if_plc(session, server_id)
+                await self._mark_pending_if_edge(session, server_id)
                 await self._sync_edge(session, after_flush)
             if row.asset_id is not None and row.unit_of_measure is not None:
                 asset_path = (
@@ -665,7 +684,7 @@ class ConnectivityRepository:
                 )
             ).scalar_one_or_none()
             if after_flush is not None:
-                await self._mark_pending_if_plc(session, server_id)
+                await self._mark_pending_if_edge(session, server_id)
                 await self._sync_edge(session, after_flush)
             return row
 

@@ -54,6 +54,7 @@ from uns_model.connectivity import (
 from uns_model.tables import (
     CONNECTIVITY_PROTOCOLS,
     CONNECTIVITY_STATUSES,
+    EDGE_PROTOCOLS,
     PLC_PROTOCOLS,
     SEEDED_UNITS_OF_MEASURE,
     S7_CONTROLLER_TYPES,
@@ -64,6 +65,11 @@ from uns_model.tables import (
 
 def test_protocols_include_s7_and_ethernet_ip():
     assert CONNECTIVITY_PROTOCOLS == ("opc_ua", "s7", "ethernet_ip")
+    assert PLC_PROTOCOLS == frozenset({"s7", "ethernet_ip"})
+
+
+def test_edge_protocols_include_opc_ua():
+    assert EDGE_PROTOCOLS == frozenset({"s7", "ethernet_ip", "opc_ua"})
     assert PLC_PROTOCOLS == frozenset({"s7", "ethernet_ip"})
 
 
@@ -325,7 +331,7 @@ def test_metric_key_uses_display_name_when_topic_equals_asset_path():
     )
 
 
-def test_edge_adapters_from_rows_maps_s7_and_skips_opc_ua():
+def test_edge_adapters_from_rows_maps_s7_and_opc_ua():
     s7 = SimpleNamespace(
         id="srv_s7",
         protocol="s7",
@@ -348,9 +354,23 @@ def test_edge_adapters_from_rows_maps_s7_and_skips_opc_ua():
             ),
         ],
     )
-    opc = SimpleNamespace(id="srv_opc", protocol="opc_ua", endpoint="opc.tcp://h:4840", tags=[])
+    opc = SimpleNamespace(
+        id="srv_opc",
+        protocol="opc_ua",
+        endpoint="opc.tcp://h:4840",
+        protocol_config=None,
+        tags=[
+            SimpleNamespace(
+                node_id="ns=1;i=1004",
+                display_name="Temp",
+                mqtt_topic="Server/OpcPlc/Temp",
+                data_type="Double",
+                subscribed=True,
+            )
+        ],
+    )
     adapters = edge_adapters_from_rows([s7, opc])
-    assert len(adapters) == 1
+    assert len(adapters) == 2
     assert adapters[0] == EdgeAdapterInput(
         server_id="srv_s7",
         protocol="s7",
@@ -358,6 +378,14 @@ def test_edge_adapters_from_rows_maps_s7_and_skips_opc_ua():
         port=102,
         controller_type="S7_1200",
         tags=(EdgeTagInput("%ID103", "Speed", "Acme/Line/Speed", "Integer"),),
+    )
+    assert adapters[1] == EdgeAdapterInput(
+        server_id="srv_opc",
+        protocol="opc_ua",
+        host="",
+        port=0,
+        uri="opc.tcp://h:4840",
+        tags=(EdgeTagInput("ns=1;i=1004", "Temp", "Server/OpcPlc/Temp", "Double"),),
     )
 
 
@@ -463,6 +491,26 @@ def test_replace_subscribed_tags_on_conflict_omits_display_name_and_context():
         "labels",
     ):
         assert column not in conflict_block, f"{column} must not be updated on rediscovery"
+
+
+@pytest.mark.asyncio
+async def test_replace_subscribed_tags_calls_after_flush():
+    session = _FakeSession(tag=[], protocol="opc_ua")
+    repo = ConnectivityRepository(_FakeDatabase(session))
+    sentinel = object()
+    calls: list[object] = []
+
+    async def fake_sync_edge(self, session_arg, after_flush):  # noqa: ARG001
+        calls.append(after_flush)
+
+    with patch.object(ConnectivityRepository, "_sync_edge", fake_sync_edge):
+        await repo.replace_subscribed_tags(
+            "srv_opc",
+            [ConnectivityTagSpec("ns=1;i=1", "Server/A", "A", "Server/A")],
+            after_flush=sentinel,
+        )
+
+    assert calls == [sentinel]
 
 
 class _ScalarResult:
