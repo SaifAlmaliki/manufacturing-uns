@@ -388,8 +388,7 @@ def test_uns_mqtt_historian(clean_up_database, topic: str, messages: list):  # n
         )
         assert not subscribe_rejected, (
             f"MQTT subscribe was rejected: {subscribe_rejected}. "
-            "Stock EMQX acl.conf denies the exact filter '#'; CI must set "
-            "EMQX_AUTHORIZATION__SOURCES=[] and EMQX_AUTHORIZATION__NO_MATCH=allow."
+            "HiveMQ Edge must allow the historian topic filter before publish."
         )
 
         uns_publisher = create_publisher()

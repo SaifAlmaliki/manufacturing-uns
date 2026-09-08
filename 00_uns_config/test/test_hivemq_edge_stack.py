@@ -161,6 +161,14 @@ def test_mqtt_client_module_has_no_sideline_broker_fixture():
     assert not fixture.exists()
 
 
+def test_devcontainer_starts_hivemq_edge_not_emqx():
+    text = (_REPO_ROOT / ".devcontainer" / "devcontainersetup.sh").read_text(encoding="utf-8")
+    assert "hivemq/hivemq-edge" in text
+    assert "emqx/emqx" not in text
+    assert "local_mqtt" not in text
+    assert "uns_mqtt_broker" in text
+
+
 def _dev_compose() -> dict:
     # Compose merge tags (!reset) are not understood by PyYAML; strip for file contracts.
     text = _DEV_COMPOSE_FILE.read_text(encoding="utf-8").replace(": !reset\n", ":\n")

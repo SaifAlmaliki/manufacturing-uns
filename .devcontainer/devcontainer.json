@@ -51,6 +51,9 @@
     "1883": {
       "label": "MQTT"
     },
+    "18080": {
+      "label": "HiveMQ Edge console"
+    },
     "5432": {
       "label": "Timescaledb"
     },
@@ -65,9 +68,6 @@
     },
     "5173": {
       "label": "UNS Frontend (dev)"
-    },
-    "8080": {
-      "label": "MQTT Websockets"
     },
     "9092": {
       "label": "KAFKA"
