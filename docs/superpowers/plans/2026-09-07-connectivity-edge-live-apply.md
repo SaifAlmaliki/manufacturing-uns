@@ -2,29 +2,36 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** When an engineer Saves an S7 or EtherNet/IP server or signal, GraphQL still writes `config.xml` and also pushes the same catalog adapters to the running HiveMQ Edge so MQTT can start without recreating the broker.
+**Goal:** Save on S7, EtherNet/IP, **and OPC UA** writes `config.xml` and live-applies HiveMQ Edge so MQTT starts without recreating the broker. Browse/Test stay on `uns_opcua`. Remap of `mqttTopic` rewrites historian. A datalake object-store port is types/tests only.
 
-**Architecture:** Keep `after_flush` as the XML write (Save rolls back if the file write fails). After the row is stored, GraphQL calls a new `uns_config` Edge Management API client. If Edge accepts, clear pending (`untested`). If Edge is down, keep the Save and leave `pending`. Next Save retries. No Docker socket. No background worker.
+**Architecture:** XML `after_flush` still rolls back Save if the file write fails. After the row is stored, GraphQL calls the Edge Management API. Edge down: keep Save, `pending`. Topic remap: catalog + `rewrite_topic_prefix` in one failure domain (restore catalog if rewrite fails), then live apply. Default Compose does not start `opcua_client`.
 
-**Tech Stack:** `httpx` in `00_uns_config`, existing `EdgeAdapterInput`, Strawberry GraphQL, React + Vitest, pytest + `httpx.MockTransport`.
+**Tech Stack:** `httpx` in `00_uns_config`, `EdgeAdapterInput`, Strawberry GraphQL, React + Vitest, pytest + `httpx.MockTransport`.
 
-**Spec:** `docs/superpowers/specs/2026-09-07-connectivity-edge-live-apply-design.md`
+**Specs:**
+- `docs/superpowers/specs/2026-09-07-connectivity-edge-live-apply-design.md`
+- `docs/superpowers/specs/2026-09-08-uns-edge-opcua-datalake-design.md`
 
 ## Global Constraints
 
 - **Pending copy (verbatim):** `Waiting for HiveMQ Edge to apply`
 - **`EDGE_APPLY_ERROR` is that sentence.** Model, GraphQL, and frontend tests must match it.
 - **XML write still rolls back the Save.** Live apply never rolls back the Save.
-- **Live apply is S7/EIP only.** OPC UA mutations do not call the Edge client.
+- **Live apply includes S7, EIP, and OPC UA.** Browse/Test never call Edge.
+- **Subscribe is not ISA-95-gated.** Browse-path `mqttTopic` is valid.
+- **Historian rewrite failure on remap rolls back the catalog topic.** Edge down after a successful rewrite keeps the new topic and sets `pending`.
 - **No southbound** on the API payload.
 - **Do not create, update, or delete** `simulation` or any non-`catalog-*` adapter.
-- **Catalog `adapterId`** remains `catalog-<server.id>`. Catalog `ethernet_ip` → Edge type `eip`.
+- **Catalog `adapterId`** remains `catalog-<server.id>`. `ethernet_ip` → `eip`. `opc_ua` → `opcua`.
+- **OPC UA Edge auth is anonymous.** Config is `<uri>` from the catalog endpoint.
+- **Payload is Edge native** (`includeTimestamp` true). Do not mimic `uns_opcua` `source` / `equipment`.
 - **API timeout:** 10 seconds.
-- **Test stays TCP.** It does not push to Edge. If the server is still `pending`, a successful Test keeps `EDGE_APPLY_ERROR`.
+- **S7/EIP Test is TCP. OPC UA Test is the existing session probe.** Test does not push to Edge. If still `pending`, a successful Test keeps `EDGE_APPLY_ERROR`.
 - **`last_error` is NOT NULL.** Cleared means `""`, not SQL NULL.
-- **No live broker in pytest.** Mock HTTP only.
+- **No live broker in pytest.** Mock HTTP only. No live S3/ADLS.
 - **Do not implement on `main`.** Branch `feat/connectivity-edge-live-apply` from current `main`.
 - **`uns_config` must not import `uns_model`.**
+- **Do not delete `10_uns_opcua`.** Do not change `kafka_mapper` topic shape.
 
 ---
 
@@ -32,13 +39,21 @@
 
 ```
 09_uns_model/src/uns_model/connectivity.py
+09_uns_model/src/uns_model/tables.py
 09_uns_model/test/test_connectivity.py
 
 00_uns_config/pyproject.toml
+00_uns_config/src/uns_config/hivemq_edge_xml.py
 00_uns_config/src/uns_config/hivemq_edge_api.py
+00_uns_config/src/uns_config/datalake.py
 00_uns_config/test/test_hivemq_edge_api.py
+00_uns_config/test/test_hivemq_edge_xml.py
+00_uns_config/test/test_hivemq_edge_stack.py
+00_uns_config/test/test_datalake.py
 conf/settings.yaml
 docker-compose.yml
+docker-compose.dev.yml
+08_uns_observability/prometheus/prometheus.yml
 
 07_uns_graphql/src/uns_graphql/mutations/connectivity.py
 07_uns_graphql/test/mutations/test_connectivity.py
@@ -49,6 +64,8 @@ docker-compose.yml
 conf/hivemq/README.md
 docs/superpowers/specs/2026-09-07-connectivity-s7-eip-edge-design.md
 ```
+
+**Task order:** 1 → 2 → **2b** → 3 → 4 → 5 → 6 → 7. GraphQL live apply (Task 3) is wrong if OPC UA adapters are still skipped. Do not start Task 3 until 2b is green.
 
 ---
 
@@ -361,7 +378,13 @@ class EdgeApplyError(Exception):
 
 
 def _protocol_id(protocol: str) -> str:
-    return "eip" if protocol == "ethernet_ip" else "s7"
+    # Task 2b adds `opc_ua` → `opcua`. Do not `else: return "s7"` — that would
+    # POST an OPC UA adapter as type `s7`.
+    if protocol == "ethernet_ip":
+        return "eip"
+    if protocol == "s7":
+        return "s7"
+    raise ValueError(f"unsupported Edge protocol: {protocol}")
 
 
 def _adapter_body(adapter: EdgeAdapterInput) -> dict[str, Any]:
@@ -496,6 +519,186 @@ git commit -m "feat(config): push catalog adapters to HiveMQ Edge over HTTP."
 
 ---
 
+### Task 2b: Catalog OPC UA adapters in XML, rows, and the Edge HTTP client
+
+**Files:**
+- Modify: `09_uns_model/src/uns_model/tables.py` (`EDGE_PROTOCOLS`)
+- Modify: `09_uns_model/src/uns_model/connectivity.py` (`edge_adapters_from_rows`, pending/XML gates, `replace_subscribed_tags`)
+- Modify: `09_uns_model/test/test_connectivity.py`
+- Modify: `00_uns_config/src/uns_config/hivemq_edge_xml.py` (`EdgeAdapterInput.uri`, `render_catalog_adapter`)
+- Modify: `00_uns_config/src/uns_config/hivemq_edge_api.py` (`_protocol_id`, `_adapter_body`, `_tag_items`)
+- Modify: `00_uns_config/test/test_hivemq_edge_xml.py`
+- Modify: `00_uns_config/test/test_hivemq_edge_api.py`
+
+**Interfaces:**
+- Consumes: catalog `protocol="opc_ua"`, `endpoint` as `opc.tcp://…`, subscribed `node_id` as OPC UA NodeId
+- Produces: `EDGE_PROTOCOLS = frozenset({"s7", "ethernet_ip", "opc_ua"})`; `EdgeAdapterInput.uri: str = ""`; XML `<protocolId>opcua</protocolId>` + `<uri>`; HTTP type `opcua` + `config.uri`; tag definition `node` (not `tagAddress`)
+- Keep `PLC_PROTOCOLS` as S7/EIP only. TCP `parse_host_port` and S7/EIP Test stay on `PLC_PROTOCOLS`. XML pending, `after_flush` pending, and `edge_adapters_from_rows` use `EDGE_PROTOCOLS`.
+
+Match `conf/hivemq/fixtures/adapters-unroutable.xml` (the `fixture-opcua` block): config is `<uri>` only; tag definition is `<node>`; northbound is the same `topic` / `tagName` / `maxQos` / `includeTimestamp` as S7. Do not emit `<southboundMappings>` from the catalog renderer (the fixture’s southbound is a non-catalog adapter; catalog splice still must not add southbound).
+
+- [ ] **Step 1: Write the failing tests**
+
+In `09_uns_model/test/test_connectivity.py` next to the existing PLC_PROTOCOLS assertion:
+
+```python
+def test_edge_protocols_include_opc_ua():
+    assert EDGE_PROTOCOLS == frozenset({"s7", "ethernet_ip", "opc_ua"})
+    assert PLC_PROTOCOLS == frozenset({"s7", "ethernet_ip"})
+```
+
+Rename `test_edge_adapters_from_rows_maps_s7_and_skips_opc_ua` to `test_edge_adapters_from_rows_maps_s7_and_opc_ua`. Keep the S7 assertion. Change the OPC UA row to include one subscribed tag and assert a second adapter:
+
+```python
+opc = SimpleNamespace(
+    id="srv_opc",
+    protocol="opc_ua",
+    endpoint="opc.tcp://h:4840",
+    protocol_config=None,
+    tags=[
+        SimpleNamespace(
+            node_id="ns=1;i=1004",
+            display_name="Temp",
+            mqtt_topic="Server/OpcPlc/Temp",
+            data_type="Double",
+            subscribed=True,
+        )
+    ],
+)
+adapters = edge_adapters_from_rows([s7, opc])
+assert len(adapters) == 2
+assert adapters[1] == EdgeAdapterInput(
+    server_id="srv_opc",
+    protocol="opc_ua",
+    host="",
+    port=0,
+    uri="opc.tcp://h:4840",
+    tags=(EdgeTagInput("ns=1;i=1004", "Temp", "Server/OpcPlc/Temp", "Double"),),
+)
+```
+
+If `EdgeAdapterInput` equality fails until `uri` exists, that is the intended red.
+
+Add a test that `replace_subscribed_tags` calls `after_flush` when passed (mirror `save_tag` / `_sync_edge`). Reuse the file’s existing session/repository fixtures. If the current `replace_subscribed_tags` tests have no `after_flush`, add:
+
+```python
+@pytest.mark.asyncio
+async def test_replace_subscribed_tags_calls_after_flush(repository, session):
+    server = await _insert_opc_ua_server(session)  # reuse whatever OPC UA insert helper exists
+    flushed = []
+
+    def _flush(adapters):
+        flushed.append(adapters)
+
+    await repository.replace_subscribed_tags(
+        server.id,
+        [ConnectivityTagSpec(node_id="ns=1;i=1", browse_path="Server/A", display_name="A", mqtt_topic="Server/A")],
+        after_flush=_flush,
+    )
+    assert flushed
+```
+
+Use the same insert helper the file already uses for OPC UA servers. If none exists, copy the S7 insert and set `protocol="opc_ua"`, `endpoint="opc.tcp://h:4840"`.
+
+In `00_uns_config/test/test_hivemq_edge_xml.py` add next to `test_render_s7_structural_indent`:
+
+```python
+def _opcua(**overrides) -> EdgeAdapterInput:
+    tags = overrides.pop("tags", (
+        EdgeTagInput("ns=1;i=1004", "Temp", "Server/OpcPlc/Temp", "Double"),
+    ))
+    return EdgeAdapterInput(
+        server_id=overrides.pop("server_id", "fixture-opc"),
+        protocol="opc_ua",
+        host="",
+        port=0,
+        uri=overrides.pop("uri", "opc.tcp://192.0.2.1:4840"),
+        tags=tags,
+    )
+
+
+def test_render_opcua_uri_and_node():
+    rendered = render_catalog_adapter(_opcua())
+    assert "<protocolId>opcua</protocolId>" in rendered
+    assert "<uri>opc.tcp://192.0.2.1:4840</uri>" in rendered
+    assert "<host>" not in rendered
+    assert "<tagAddress>" not in rendered
+    assert "<node>ns=1;i=1004</node>" in rendered
+    assert "<topic>Server/OpcPlc/Temp</topic>" in rendered
+    assert "southbound" not in rendered.lower()
+```
+
+Also assert `apply_catalog_adapters(_CONFIG, [_opcua()])` still keeps the `sim` adapter bytes (reuse `_simulation_adapter_block`).
+
+In `00_uns_config/test/test_hivemq_edge_api.py` copy `test_apply_creates_adapter_tags_and_mappings` for OPC UA: POST path must end with `/adapters/opcua`; body `config` is `{"uri": "opc.tcp://192.0.2.1:4840"}` with no `host`; tag `definition` is `{"node": "ns=1;i=1004"}` (include `dataType` only if S7 tests include it — match S7’s shape but the address key is `node`). Simulation id `sim` must not be DELETE’d.
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `uv run pytest ./09_uns_model/test/test_connectivity.py::test_edge_protocols_include_opc_ua ./09_uns_model/test/test_connectivity.py::test_edge_adapters_from_rows_maps_s7_and_opc_ua ./00_uns_config/test/test_hivemq_edge_xml.py::test_render_opcua_uri_and_node ./00_uns_config/test/test_hivemq_edge_api.py -k opcua -v`
+
+Expected: FAIL — `EDGE_PROTOCOLS` / `uri` / opcua render missing; `_protocol_id("opc_ua")` raises.
+
+- [ ] **Step 3: Implement**
+
+`tables.py` next to `PLC_PROTOCOLS`:
+
+```python
+EDGE_PROTOCOLS: frozenset[str] = frozenset({"s7", "ethernet_ip", "opc_ua"})
+```
+
+Re-export `EDGE_PROTOCOLS` from `connectivity.py` the same way as `PLC_PROTOCOLS`.
+
+`EdgeAdapterInput`: add `uri: str = ""` after `port` (default keeps every existing S7/EIP constructor valid).
+
+`render_catalog_adapter`: map `opc_ua` → `opcua`. When `protocol == "opc_ua"`, config children are only `<uri>{adapter.uri}</uri>`. Tag definition element is `node` (value `tag.node_id`). S7/EIP branches stay as they are. Still no southbound.
+
+`edge_adapters_from_rows`: iterate `EDGE_PROTOCOLS`. For `opc_ua`, do **not** call `parse_host_port`; set `host=""`, `port=0`, `uri=server.endpoint`. Unsubscribed tags still omitted. Rewrite the function docstring: it currently says OPC UA is not a HiveMQ Edge protocol adapter — that is no longer true.
+
+Pending / XML: every `spec.protocol in PLC_PROTOCOLS` / `protocol in PLC_PROTOCOLS` that gates **Edge apply pending** or **catalog XML** becomes `EDGE_PROTOCOLS`. That includes `save_server` pending values and `_mark_pending_if_plc` (rename to `_mark_pending_if_edge` if the name would otherwise lie). Leave `ConnectivityServerSpec.validate` TCP `parse_host_port` on `PLC_PROTOCOLS` only.
+
+`replace_subscribed_tags`: add `after_flush` with the same type as `save_tag`. After the upserts, if `after_flush is not None`, call `_mark_pending_if_edge` and `_sync_edge` before returning. GraphQL Subscribe has no XML today; this is the seam Task 3 will pass `_sync_edge` into.
+
+`hivemq_edge_api.py`:
+
+```python
+def _protocol_id(protocol: str) -> str:
+    if protocol == "ethernet_ip":
+        return "eip"
+    if protocol == "opc_ua":
+        return "opcua"
+    if protocol == "s7":
+        return "s7"
+    raise ValueError(f"unsupported Edge protocol: {protocol}")
+
+
+def _adapter_body(adapter: EdgeAdapterInput) -> dict[str, Any]:
+    protocol_id = _protocol_id(adapter.protocol)
+    if protocol_id == "opcua":
+        config: dict[str, Any] = {"uri": adapter.uri}
+    else:
+        config = {"host": adapter.host, "port": adapter.port}
+        if protocol_id == "s7":
+            config["controllerType"] = adapter.controller_type
+    return {"id": adapter_id_for(adapter.server_id), "type": protocol_id, "config": config}
+```
+
+`_tag_items`: `addr_key` is `tagAddress` for s7, `address` for eip, `node` for opcua.
+
+- [ ] **Step 4: Run tests**
+
+Run: `uv run pytest ./09_uns_model/test/test_connectivity.py ./00_uns_config/test/test_hivemq_edge_xml.py ./00_uns_config/test/test_hivemq_edge_api.py -q --tb=line`
+
+Expected: PASS. Delete or update any remaining `skips_opc_ua` test name.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add 09_uns_model/src/uns_model/tables.py 09_uns_model/src/uns_model/connectivity.py 09_uns_model/test/test_connectivity.py 00_uns_config/src/uns_config/hivemq_edge_xml.py 00_uns_config/src/uns_config/hivemq_edge_api.py 00_uns_config/test/test_hivemq_edge_xml.py 00_uns_config/test/test_hivemq_edge_api.py
+git commit -m "feat(edge): catalog OPC UA adapters for HiveMQ Edge XML and HTTP."
+```
+
+---
+
 ### Task 3: GraphQL Save calls live apply after the row is stored
 
 **Files:**
@@ -503,8 +706,8 @@ git commit -m "feat(config): push catalog adapters to HiveMQ Edge over HTTP."
 - Modify: `07_uns_graphql/test/mutations/test_connectivity.py`
 
 **Interfaces:**
-- Consumes: `_sync_edge` (XML, unchanged); `apply_catalog_adapters_live`; `EdgeApplyError`; `edge_adapters_from_rows`; `PLC_PROTOCOLS`; `record_live_apply`
-- Produces: `_finish_live_apply(mutated_ids: list[str]) -> None` used only on S7/EIP mutations
+- Consumes: `_sync_edge` (XML, unchanged); `apply_catalog_adapters_live`; `EdgeApplyError`; `edge_adapters_from_rows`; `EDGE_PROTOCOLS`; `record_live_apply`
+- Produces: `_finish_live_apply(mutated_ids: list[str]) -> None` on S7, EIP, **and OPC UA** mutations (Save server, save/update/unsubscribe tag, update topic, delete server, `subscribeOpcUaVariables`)
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -607,12 +810,35 @@ async def test_save_s7_live_apply_failure_keeps_save(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_save_opc_ua_does_not_call_live_apply(monkeypatch):
+async def test_save_opc_ua_live_apply_success_records_untested(monkeypatch, tmp_path):
+    config_path = tmp_path / "hivemq" / "config.xml"
+    config_path.parent.mkdir()
+    config_path.write_text(_HIVEMQ_XML, encoding="utf-8")
+    monkeypatch.setattr("uns_graphql.mutations.connectivity.resolve_conf_dir", lambda: tmp_path)
     live = Mock()
     monkeypatch.setattr("uns_graphql.mutations.connectivity.apply_catalog_adapters_live", live)
     repository = AsyncMock()
     saved = _server(server_id="srv-opc", protocol="opc_ua", endpoint="opc.tcp://h:4840")
-    repository.save_server.return_value = saved
+    saved.last_status = "pending"
+
+    async def _save_server(spec, *, after_flush=None):
+        after_flush(
+            [
+                EdgeAdapterInput(
+                    server_id=spec.id,
+                    protocol="opc_ua",
+                    host="",
+                    port=0,
+                    uri=spec.endpoint,
+                    tags=(),
+                )
+            ]
+        )
+        return saved
+
+    repository.save_server.side_effect = _save_server
+    repository.list_servers.return_value = [saved]
+
     with patch(REPOSITORY, return_value=repository):
         result = await UNSGraphql.schema.execute(
             """
@@ -620,23 +846,27 @@ async def test_save_opc_ua_does_not_call_live_apply(monkeypatch):
               saveConnectivityServer(server: {
                 id: "srv-opc", name: "opc", protocol: OPC_UA,
                 endpoint: "opc.tcp://h:4840"
-              }) { id }
+              }) { id lastStatus }
             }
             """,
             context_value=ADMIN,
         )
+
     assert result.errors is None
-    live.assert_not_called()
-    repository.record_live_apply.assert_not_awaited()
+    live.assert_called_once()
+    repository.record_live_apply.assert_awaited()
+    assert repository.record_live_apply.await_args.kwargs["ok"] is True
 ```
 
 Adapt field names on `ConnectivityServerInput` to whatever `test_save_connectivity_server_s7_calls_after_flush` already sends (copy that mutation document). If `_server` needs extra kwargs, copy from that test.
 
-If XML `after_flush` is not invoked in the OPC UA test because the mock does not call it, that is fine — the assertion is that live apply is not called.
+Add a second OPC UA test next to `test_subscribe_opc_ua_variables_discovers_and_folds_into_catalog`: after subscribe, `apply_catalog_adapters_live` is called and `replace_subscribed_tags` was invoked with `after_flush`. Keep the existing discover/fold assertions.
+
+**Delete** `test_save_opc_ua_does_not_call_live_apply` if it exists in the file from an older draft — do not leave a skip-OPC-UA assertion.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `uv run pytest ./07_uns_graphql/test/mutations/test_connectivity.py::test_save_s7_live_apply_success_records_untested ./07_uns_graphql/test/mutations/test_connectivity.py::test_save_s7_live_apply_failure_keeps_save ./07_uns_graphql/test/mutations/test_connectivity.py::test_save_opc_ua_does_not_call_live_apply -v`
+Run: `uv run pytest ./07_uns_graphql/test/mutations/test_connectivity.py::test_save_s7_live_apply_success_records_untested ./07_uns_graphql/test/mutations/test_connectivity.py::test_save_s7_live_apply_failure_keeps_save ./07_uns_graphql/test/mutations/test_connectivity.py::test_save_opc_ua_live_apply_success_records_untested -v`
 
 Expected: FAIL — `_finish_live_apply` / `record_live_apply` not wired.
 
@@ -648,7 +878,7 @@ In `mutations/connectivity.py`:
 from uns_config.hivemq_edge_api import EdgeApplyError, apply_catalog_adapters_live
 from uns_model.connectivity import (
     EDGE_APPLY_ERROR,
-    PLC_PROTOCOLS,
+    EDGE_PROTOCOLS,
     ConnectivityRepository,
     ConnectivityServerSpec,
     ConnectivityTagSpec,
@@ -670,19 +900,20 @@ async def _finish_live_apply(mutated_ids: list[str]) -> None:
         LOGGER.warning("HiveMQ Edge live apply failed", exc_info=True)
         await repo.record_live_apply(mutated_ids, ok=False)
         return
-    plc_ids = [adapter.server_id for adapter in adapters] or mutated_ids
-    await repo.record_live_apply(plc_ids, ok=True)
+    edge_ids = [adapter.server_id for adapter in adapters] or mutated_ids
+    await repo.record_live_apply(edge_ids, ok=True)
 ```
 
-After each PLC write, call it:
+After each Edge-protocol write, call it:
 
-- `save_connectivity_server`: after `save_server`, if `saved.protocol in PLC_PROTOCOLS`: `await _finish_live_apply([saved.id])`. Return `from_server` of a re-fetched server if you need fresh `lastStatus` (call `list_servers` / `_find_server` after apply). The mutation return should reflect `untested` or `pending` after apply — re-fetch `saved = await _find_server(repo, saved.id)` after `_finish_live_apply`.
-- `delete_connectivity_server`: look up the server **before** delete. If it is PLC and `deleted`, `await _finish_live_apply([])` (empty mutated ids; leftover catalog adapters are deleted by the client). Do not fail the mutation if apply fails.
-- `save_connectivity_tag`, `update_connectivity_tag`, `update_connectivity_tag_topic`, `unsubscribe_connectivity_tag`: after the repository call, if the server protocol is PLC, `await _finish_live_apply([server_id])`. Load protocol with `_find_server` **before** unsubscribe/update if the tag path does not return the server.
+- `save_connectivity_server`: after `save_server`, if `saved.protocol in EDGE_PROTOCOLS`: `await _finish_live_apply([saved.id])`. Return `from_server` of a re-fetched server if you need fresh `lastStatus` (call `list_servers` / `_find_server` after apply). The mutation return should reflect `untested` or `pending` after apply — re-fetch `saved = await _find_server(repo, saved.id)` after `_finish_live_apply`.
+- `delete_connectivity_server`: look up the server **before** delete. If it is in `EDGE_PROTOCOLS` and `deleted`, `await _finish_live_apply([])` (empty mutated ids; leftover catalog adapters are deleted by the client). Do not fail the mutation if apply fails.
+- `save_connectivity_tag`, `update_connectivity_tag`, `update_connectivity_tag_topic`, `unsubscribe_connectivity_tag`: after the repository call, if the server protocol is in `EDGE_PROTOCOLS`, `await _finish_live_apply([server_id])`. Load protocol with `_find_server` **before** unsubscribe/update if the tag path does not return the server.
+- `subscribe_opc_ua_variables`: pass `after_flush=_sync_edge` into `replace_subscribed_tags` (Task 2b added the argument). Then `await _finish_live_apply([server_id])`. Browse (`open_client` / `discover_variables`) stays as it is — do not call Edge for browse.
 
-Do not call `_finish_live_apply` from `subscribe_opc_ua_variables` or OPC UA `save_connectivity_server`.
+Do **not** gate Subscribe on ISA-95. Browse-path `mqttTopic` is valid. TopicBinder may mark Unmodelled elsewhere; this mutation must not reject it.
 
-Update the `test_connectivity_server` comment: keep `EDGE_APPLY_ERROR` on pending TCP success because live apply has not succeeded, not because of recreate.
+Update the `test_connectivity_server` comment: keep `EDGE_APPLY_ERROR` on pending TCP/session success because live apply has not succeeded, not because of recreate. OPC UA Test remains the existing session probe; it does not call `_finish_live_apply`.
 
 - [ ] **Step 4: Run tests**
 
@@ -694,7 +925,7 @@ Expected: PASS.
 
 ```bash
 git add 07_uns_graphql/src/uns_graphql/mutations/connectivity.py 07_uns_graphql/test/mutations/test_connectivity.py
-git commit -m "feat(graphql): apply S7 and EIP catalog rows to live HiveMQ Edge."
+git commit -m "feat(graphql): apply S7, EIP, and OPC UA catalog rows to live HiveMQ Edge."
 ```
 
 ---
@@ -725,25 +956,30 @@ Expected: FAIL if the mock still uses the old sentence in `S7_SERVER` — you ch
 
 - [ ] **Step 3: Docs**
 
-`conf/hivemq/README.md` replace the recreate-first S7/EIP paragraph with:
+`conf/hivemq/README.md` replace the recreate-first S7/EIP paragraph with the following (indent the shell lines; do not nest fenced blocks in the README):
 
-```markdown
-**S7 and EtherNet/IP:** author host, port, controller type, and signals in Assets &
-Connectivity (`#/connectivity/servers`). GraphQL upserts catalog-owned
+**S7, EtherNet/IP, and OPC UA:** author the server and subscribed signals in
+Assets & Connectivity (`#/connectivity/servers`). GraphQL upserts catalog-owned
 `<protocol-adapter>` blocks (`adapterId` `catalog-<server id>`) and pushes the
 same adapters to the running broker over the Edge Management API. MQTT can start
-on Save. Recreate the broker only for an image upgrade or disaster recovery:
+on Save. Browse and Test for OPC UA still use GraphQL → `uns_opcua`; they do
+not talk to Edge. Recreate the broker only for an image upgrade or disaster
+recovery:
 
-```bash
-uv run uns_compose up -d --force-recreate uns_mqtt_broker
-```
-```
+    uv run uns_compose up -d --force-recreate uns_mqtt_broker
 
-At the top of `docs/superpowers/specs/2026-09-07-connectivity-s7-eip-edge-design.md`, immediately after the Related list, add:
+The Compose service `opcua_client` is not a default publisher. Start it only
+with profile `legacy-opcua` if you must roll back to the old forwarder:
+
+    uv run uns_compose --profile legacy-opcua up -d opcua_client
+
+At the top of `docs/superpowers/specs/2026-09-07-connectivity-s7-eip-edge-design.md`, immediately after the Related list, add (skip this edit if that pointer is already present):
 
 ```markdown
 Apply path: superseded by
-[2026-09-07-connectivity-edge-live-apply-design.md](./2026-09-07-connectivity-edge-live-apply-design.md).
+[2026-09-07-connectivity-edge-live-apply-design.md](./2026-09-07-connectivity-edge-live-apply-design.md)
+and OPC UA on Edge by
+[2026-09-08-uns-edge-opcua-datalake-design.md](./2026-09-08-uns-edge-opcua-datalake-design.md).
 Catalog, XML generator, and TCP Test in this document still apply.
 ```
 
@@ -760,7 +996,363 @@ git add 11_frontend/src/components/connectivity/ConnectivityView.test.tsx 11_fro
 git commit -m "docs(hivemq): Save applies Edge adapters; recreate is ops-only."
 ```
 
-**Manual check (not a pytest gate):** with the stack up, add one S7 or EIP signal, do **not** recreate `uns_mqtt_broker`, subscribe to that MQTT topic. If the PLC or sim is reachable from the broker container, a value arrives.
+**Manual check (not a pytest gate):** with the stack up, add one S7 or EIP signal **and** one subscribed OPC UA node, do **not** recreate `uns_mqtt_broker`, subscribe to those MQTT topics. If the PLC/sim/OPC server is reachable from the broker container, a value arrives. Confirm `opcua_client` is not running unless you passed `--profile legacy-opcua`.
+
+---
+
+### Task 5: Remap `mqttTopic` rewrites historian in the same failure domain
+
+**Files:**
+- Modify: `07_uns_graphql/src/uns_graphql/backend/historian.py` (`rewrite_topic_prefix` optional connection)
+- Modify: `07_uns_graphql/test/backend/test_historian_rewrite.py`
+- Modify: `09_uns_model/src/uns_model/connectivity.py` (`update_tag` / `update_tag_topic` rewrite hook)
+- Modify: `09_uns_model/test/test_connectivity.py`
+- Modify: `07_uns_graphql/src/uns_graphql/mutations/connectivity.py`
+- Modify: `07_uns_graphql/test/mutations/test_connectivity.py`
+
+**Interfaces:**
+- Consumes: existing `HistorianRepository.rewrite_topic_prefix(old_prefix, new_prefix) -> int`; `update_tag_topic`
+- Produces: `rewrite_topic_prefix(..., connection: AsyncConnection | None = None)`; `update_tag(..., on_topic_rewrite: Callable[[AsyncSession, str, str], Awaitable[None]] | None = None)` invoked **inside** the catalog session **before** `after_flush`. If the callback raises, the catalog topic change rolls back (same spirit as XML `after_flush`). Live apply still runs **after** commit and never rolls back the topic.
+
+`09_uns_model` must **not** import `uns_graphql`. GraphQL supplies the callback.
+
+- [ ] **Step 1: Write the failing tests**
+
+Historian: extend an existing rewrite test (or add one next to it) that passes an already-open connection from `database.begin()` and still rewrites. A second test: `connection` omitted still opens its own transaction (current behaviour).
+
+Model: in `test_connectivity.py`, `update_tag_topic` with `on_topic_rewrite` that raises must leave `mqtt_topic` unchanged. A success callback must see `(old_topic, new_topic)` and then `after_flush` still runs. Reuse the file’s repository/session fixtures.
+
+GraphQL: next to the live-apply tests:
+
+```python
+@pytest.mark.asyncio(loop_scope="function")
+async def test_update_tag_topic_rewrites_historian_then_live_applies(monkeypatch, tmp_path):
+    # XML fixture same as Task 3 S7 tests
+    rewrite = AsyncMock()
+    monkeypatch.setattr(
+        "uns_graphql.mutations.connectivity.HistorianRepository.rewrite_topic_prefix",
+        rewrite,
+    )
+    live = Mock()
+    monkeypatch.setattr("uns_graphql.mutations.connectivity.apply_catalog_adapters_live", live)
+    repository = AsyncMock()
+    tag = _tag(mqtt_topic="Server/OpcPlc/Temp")  # copy the helper this file already uses
+    # update_tag_topic must be invoked with on_topic_rewrite; the mock should call it
+    # if the mutation passes it through. Prefer asserting the mutation wired the hook:
+    captured = {}
+
+    async def _update(server_id, node_id, mqtt_topic, **kwargs):
+        captured["rewrite"] = kwargs.get("on_topic_rewrite")
+        after = kwargs.get("after_flush")
+        if after:
+            after([])
+        if captured["rewrite"]:
+            await captured["rewrite"](None, "Server/OpcPlc/Temp", mqtt_topic)
+        tag.mqtt_topic = mqtt_topic
+        return tag
+
+    repository.update_tag_topic.side_effect = _update
+    repository.list_servers.return_value = [_server(server_id="srv-opc", protocol="opc_ua", endpoint="opc.tcp://h:4840")]
+
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            """
+            mutation {
+              updateConnectivityTagTopic(serverId: "srv-opc", nodeId: "ns=1;i=1", mqttTopic: "Acme/Line/Temp") {
+                mqttTopic
+              }
+            }
+            """,
+            context_value=ADMIN,
+        )
+
+    assert result.errors is None
+    assert captured["rewrite"] is not None
+    live.assert_called_once()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_update_tag_topic_rewrite_failure_skips_live_apply(monkeypatch):
+    live = Mock()
+    monkeypatch.setattr("uns_graphql.mutations.connectivity.apply_catalog_adapters_live", live)
+    repository = AsyncMock()
+
+    async def _update(server_id, node_id, mqtt_topic, **kwargs):
+        hook = kwargs.get("on_topic_rewrite")
+        if hook:
+            await hook(None, "old/topic", mqtt_topic)
+        return _tag(mqtt_topic=mqtt_topic)
+
+    repository.update_tag_topic.side_effect = _update
+    monkeypatch.setattr(
+        "uns_graphql.mutations.connectivity.HistorianRepository.rewrite_topic_prefix",
+        AsyncMock(side_effect=RuntimeError("timescale down")),
+    )
+
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            """
+            mutation {
+              updateConnectivityTagTopic(serverId: "srv-opc", nodeId: "ns=1;i=1", mqttTopic: "Acme/Line/Temp") {
+                mqttTopic
+              }
+            }
+            """,
+            context_value=ADMIN,
+        )
+
+    assert result.errors
+    live.assert_not_called()
+```
+
+Adapt GraphQL field names and `_tag` / `_server` helpers to this file. Duplicate-topic rejection stays unchanged and must run **before** rewrite.
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `uv run pytest ./07_uns_graphql/test/mutations/test_connectivity.py -k update_tag_topic ./09_uns_model/test/test_connectivity.py -k topic_rewrite ./07_uns_graphql/test/backend/test_historian_rewrite.py -q --tb=line`
+
+Expected: FAIL — `on_topic_rewrite` / optional `connection` missing.
+
+- [ ] **Step 3: Implement**
+
+`rewrite_topic_prefix`: if `connection` is not None, run the existing UPDATE SQL on that connection and return. If None, keep `async with self._database.begin()`. Do not open a nested transaction when a connection is passed.
+
+`update_tag`: before applying `mqtt_topic`, load the current topic. After the UPDATE, if `mqtt_topic` is in `fields` and differs from the old value and `on_topic_rewrite` is not None, `await on_topic_rewrite(session, old_topic, new_topic)`. Then `after_flush` as today. If the hook raises, do not catch it — the session rolls back.
+
+`update_tag_topic`: pass `on_topic_rewrite` through.
+
+GraphQL `update_connectivity_tag_topic`:
+
+```python
+async def _rewrite_topics(session, old_topic: str, new_topic: str) -> None:
+    # Prefer passing the same DB connection as the catalog session when the
+    # engine is shared (Database.shared("graphql")). If session.connection()
+    # is awkward on this SQLAlchemy version, call rewrite_topic_prefix without
+    # connection *only if* tests prove the catalog row is still uncommitted
+    # and a failure still rolls back. The required product behaviour: rewrite
+    # failure ⇒ catalog mqtt_topic unchanged.
+    await HistorianRepository(Database.shared("graphql")).rewrite_topic_prefix(
+        old_topic, new_topic
+    )
+```
+
+Wire `_rewrite_topics` as `on_topic_rewrite`. After a successful `update_tag_topic`, `await _finish_live_apply([server_id])` (Task 3). If `update_tag_topic` raises, do not call live apply.
+
+If a same-connection API is needed: `rewrite_topic_prefix(..., connection=await session.connection())` inside the hook. Match how `hierarchy.py` already calls `rewrite_topic_prefix` so hierarchy remap and tag remap share one method.
+
+Same topic (`old == new`): repository must not call rewrite (`rewrite_topic_prefix` already raises `ValueError` on equal prefixes). Skip the hook when unchanged.
+
+Edge down after a successful rewrite: Task 3 already sets `pending`. Catalog and historian stay on the new topic.
+
+- [ ] **Step 4: Run tests**
+
+Run: `uv run pytest ./07_uns_graphql/test/mutations/test_connectivity.py ./07_uns_graphql/test/backend/test_historian_rewrite.py ./09_uns_model/test/test_connectivity.py ./07_uns_graphql/test/mutations/test_hierarchy.py -q --tb=line`
+
+Expected: PASS. Hierarchy rewrite tests must still pass.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add 07_uns_graphql/src/uns_graphql/backend/historian.py 07_uns_graphql/test/backend/test_historian_rewrite.py 09_uns_model/src/uns_model/connectivity.py 09_uns_model/test/test_connectivity.py 07_uns_graphql/src/uns_graphql/mutations/connectivity.py 07_uns_graphql/test/mutations/test_connectivity.py
+git commit -m "feat(connectivity): rewrite historian when remapping a catalog mqttTopic."
+```
+
+---
+
+### Task 6: Park `opcua_client` behind Compose profile `legacy-opcua`
+
+**Files:**
+- Modify: `docker-compose.yml` (`opcua_client` `profiles`, prometheus `depends_on`)
+- Modify: `docker-compose.dev.yml` (prometheus `depends_on`; keep `opcua_client.extra_hosts` for when the profile is on)
+- Modify: `00_uns_config/test/test_hivemq_edge_stack.py`
+- Optional: `08_uns_observability/prometheus/prometheus.yml` — leave the `opcua_client:9093` scrape job; a missing target is a down scrape, not a Compose dependency. Do not add `depends_on` back.
+
+**Interfaces:**
+- Produces: `opcua_client.profiles: [legacy-opcua]`. Default `uns_compose up` does not start it. Default `uns_prometheus` must **not** `depends_on` `opcua_client`.
+
+- [ ] **Step 1: Write the failing tests**
+
+In `00_uns_config/test/test_hivemq_edge_stack.py`:
+
+Keep `test_opcua_client_is_a_compose_service` (the service still exists).
+
+Replace `test_prometheus_compose_depends_on_opcua_client` with:
+
+```python
+def test_opcua_client_is_legacy_opcua_profile_only():
+    service = _compose()["services"]["opcua_client"]
+    assert service.get("profiles") == ["legacy-opcua"]
+
+
+def test_prometheus_does_not_depend_on_opcua_client():
+    assert "opcua_client" not in _compose()["services"]["uns_prometheus"]["depends_on"]
+    dev_deps = _dev_compose()["services"]["uns_prometheus"]["depends_on"]
+    if isinstance(dev_deps, dict):
+        assert "opcua_client" not in dev_deps
+    else:
+        assert "opcua_client" not in dev_deps
+```
+
+Keep `test_prometheus_scrapes_opcua_client` unless removing the scrape job — default is keep scrape.
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `uv run pytest ./00_uns_config/test/test_hivemq_edge_stack.py::test_opcua_client_is_legacy_opcua_profile_only ./00_uns_config/test/test_hivemq_edge_stack.py::test_prometheus_does_not_depend_on_opcua_client -v`
+
+Expected: FAIL — no `profiles`, prometheus still depends on `opcua_client`.
+
+- [ ] **Step 3: Implement**
+
+On `opcua_client` in `docker-compose.yml` add:
+
+```yaml
+    profiles: ["legacy-opcua"]
+```
+
+Remove `opcua_client` from `uns_prometheus.depends_on` in `docker-compose.yml` and from the `!reset` list in `docker-compose.dev.yml`.
+
+Do not delete the `opcua_client` service, its Dockerfile, or `10_uns_opcua`.
+
+- [ ] **Step 4: Run tests**
+
+Run: `uv run pytest ./00_uns_config/test/test_hivemq_edge_stack.py ./00_uns_config/test/test_compose_env.py -q --tb=line`
+
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add docker-compose.yml docker-compose.dev.yml 00_uns_config/test/test_hivemq_edge_stack.py
+git commit -m "chore(compose): park opcua_client behind the legacy-opcua profile."
+```
+
+---
+
+### Task 7: Datalake object-store port (types and fake-store tests only)
+
+**Files:**
+- Create: `00_uns_config/src/uns_config/datalake.py`
+- Create: `00_uns_config/test/test_datalake.py`
+
+**Interfaces:**
+- Produces: Historic Event record type; `historic_event_object_path`; `ObjectStore.put`; `S3ObjectStore` and `AdlsObjectStore` **signatures** (constructible, `put` not implemented against a cloud); fake filesystem tests lock layout and column names
+- Does **not** produce a Compose sink, Kafka change, or pyarrow/s3/azure dependency. `kafka_mapper` topic shape stays one Kafka topic per MQTT topic. Module docstring must say a real sink later consumes envelope topic `uns.historic-events` (MQTT topic inside the value).
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `00_uns_config/test/test_datalake.py`:
+
+```python
+from datetime import UTC, datetime
+from pathlib import Path
+
+from uns_config.datalake import (
+    HISTORIC_EVENT_COLUMNS,
+    AdlsObjectStore,
+    FakeObjectStore,
+    HistoricEventRecord,
+    S3ObjectStore,
+    historic_event_object_path,
+)
+
+
+def test_object_path_is_date_partitioned_and_topic_safe():
+    when = datetime(2026, 9, 8, 15, 4, tzinfo=UTC)
+    path = historic_event_object_path(event_time=when, topic="Server/OpcPlc/Temp")
+    assert path.startswith("dt=2026-09-08/")
+    assert "Server/OpcPlc/Temp" not in path  # `/` must not create extra directories beyond dt=
+    assert "Server" in path and "Temp" in path
+
+
+def test_columns_are_historic_event_time_topic_payload():
+    assert HISTORIC_EVENT_COLUMNS == ("time", "topic", "payload")
+
+
+def test_fake_store_writes_under_dt_prefix(tmp_path: Path):
+    store = FakeObjectStore(tmp_path)
+    record = HistoricEventRecord(
+        time=datetime(2026, 9, 8, tzinfo=UTC),
+        topic="Acme/Line/Temp",
+        payload={"value": 1.2},
+    )
+    path = historic_event_object_path(event_time=record.time, topic=record.topic)
+    store.put(path, b"PARQUET")
+    written = tmp_path / path
+    assert written.is_file()
+    assert written.read_bytes() == b"PARQUET"
+
+
+def test_s3_and_adls_signatures_do_not_call_the_network():
+    s3 = S3ObjectStore(bucket="lake", region="eu-central-1")
+    adls = AdlsObjectStore(account="acct", container="lake")
+    for store in (s3, adls):
+        try:
+            store.put("dt=2026-09-08/x.parquet", b"x")
+        except NotImplementedError:
+            pass
+        else:
+            raise AssertionError("cloud adapters must not put in this slice")
+```
+
+Topic-safe remainder: replace `/` with `=` or `_` (pick one, lock it in the test). File suffix `.parquet`. No real Parquet bytes required — `b"PARQUET"` is enough. Enrichment is read-time and must **not** appear in `HISTORIC_EVENT_COLUMNS`.
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `uv run pytest ./00_uns_config/test/test_datalake.py -v`
+
+Expected: FAIL — module missing.
+
+- [ ] **Step 3: Implement**
+
+`datalake.py` module docstring (verbatim idea): Historic Events land in object storage later via a Mapper that reads Kafka envelope topic `uns.historic-events`. This module is the port only. Do not subscribe to MQTT here. Do not change `kafka_mapper`.
+
+Types:
+
+```python
+HISTORIC_EVENT_COLUMNS = ("time", "topic", "payload")
+
+@dataclass(frozen=True, slots=True)
+class HistoricEventRecord:
+    time: datetime
+    topic: str
+    payload: dict[str, Any]
+
+
+class ObjectStore(Protocol):
+    def put(self, path: str, parquet_bytes: bytes) -> None: ...
+
+
+class FakeObjectStore:
+    def __init__(self, root: Path) -> None: ...
+    def put(self, path: str, parquet_bytes: bytes) -> None: ...
+
+
+class S3ObjectStore:
+    def __init__(self, *, bucket: str, region: str, prefix: str = "") -> None: ...
+    def put(self, path: str, parquet_bytes: bytes) -> None:
+        raise NotImplementedError("S3 sink is not in this slice")
+
+
+class AdlsObjectStore:
+    def __init__(self, *, account: str, container: str, prefix: str = "") -> None: ...
+    def put(self, path: str, parquet_bytes: bytes) -> None:
+        raise NotImplementedError("ADLS sink is not in this slice")
+```
+
+Do not add these names to `uns_config/__init__.py` unless a caller outside tests needs them (none does).
+
+- [ ] **Step 4: Run tests**
+
+Run: `uv run pytest ./00_uns_config/test/test_datalake.py ./00_uns_config/test -q --tb=line`
+
+Expected: PASS. No new third-party dependencies.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add 00_uns_config/src/uns_config/datalake.py 00_uns_config/test/test_datalake.py
+git commit -m "feat(config): datalake object-store port types without a running sink."
+```
 
 ---
 
@@ -771,13 +1363,19 @@ git commit -m "docs(hivemq): Save applies Edge adapters; recreate is ops-only."
 | Save only; no git/recreate button | 3, 4 |
 | Keep writing `config.xml` | 3 (`_sync_edge` unchanged) |
 | Live Management API | 2, 3 |
+| OPC UA on Edge (XML + HTTP + GraphQL) | 2b, 3 |
+| Browse/Test stay on `uns_opcua` | 3 (browse unchanged; Test does not call Edge) |
+| Subscribe not ISA-95-gated; Subscribe live-applies | 2b (`replace_subscribed_tags`), 3 |
 | Edge down keeps Save, pending, next Save retries | 3 |
 | XML failure rolls back, no Edge call | 3 (after_flush raises before `_finish_live_apply`) |
+| Historian rewrite failure rolls back catalog topic | 5 |
+| Remap then live apply; Edge down keeps new topic | 3, 5 |
 | Edge accepts → `untested`, empty error | 1, 3 |
-| Test is TCP; pending keeps waiting sentence | 3 |
+| Test is TCP (S7/EIP) or session (OPC UA); pending keeps waiting sentence | 3 |
 | No retry worker / Docker socket / Edge status poll | (not added) |
-| OPC UA unchanged | 3 |
-| No southbound; leave `simulation` | 2 |
+| `opcua_client` profile `legacy-opcua`; prometheus does not depend on it | 6 |
+| Lake types/tests only; no Compose sink; Kafka unchanged | 7 |
+| No southbound; leave `simulation` | 2, 2b |
 | Pending copy verbatim | 1, 3, 4 |
 | Settings + compose base_url | 2 |
-| README + old spec pointer | 4 |
+| README + old spec pointer + `legacy-opcua` | 4 |
