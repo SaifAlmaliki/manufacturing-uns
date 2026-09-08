@@ -768,6 +768,7 @@ async def test_update_connectivity_tag_topic_sets_the_topic():
     call = repository.update_tag_topic.await_args
     assert call.args == ("s1", "ns=2;s=Temperature", "enterprise/site/temp")
     assert call.kwargs["after_flush"] is not None
+    assert call.kwargs["on_topic_rewrite"] is not None
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -778,9 +779,9 @@ async def test_update_connectivity_tag_topic_syncs_edge_xml(monkeypatch, tmp_pat
     config_path.write_text(_HIVEMQ_XML, encoding="utf-8")
     monkeypatch.setattr("uns_graphql.mutations.connectivity.resolve_conf_dir", lambda: tmp_path)
 
-    async def _update_tag_topic(server_id, node_id, mqtt_topic, *, after_flush=None):
-        assert after_flush is not None
-        after_flush(
+    async def _update_tag_topic(server_id, node_id, mqtt_topic, **kwargs):
+        assert kwargs.get("after_flush") is not None
+        kwargs["after_flush"](
             [
                 EdgeAdapterInput(
                     server_id=server_id,
@@ -796,6 +797,10 @@ async def test_update_connectivity_tag_topic_syncs_edge_xml(monkeypatch, tmp_pat
 
     repository = AsyncMock()
     repository.update_tag_topic.side_effect = _update_tag_topic
+    repository.list_servers.return_value = [
+        _server(server_id="srv-s7", protocol="s7", endpoint="10.0.0.5:102")
+    ]
+    monkeypatch.setattr("uns_graphql.mutations.connectivity.apply_catalog_adapters_live", Mock())
 
     with patch(REPOSITORY, return_value=repository):
         result = await UNSGraphql.schema.execute(
@@ -807,6 +812,93 @@ async def test_update_connectivity_tag_topic_syncs_edge_xml(monkeypatch, tmp_pat
     assert result.errors is None
     text = config_path.read_text(encoding="utf-8")
     assert "<adapterId>catalog-srv-s7</adapterId>" in text
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_update_tag_topic_rewrites_historian_then_live_applies(monkeypatch, tmp_path):
+    config_path = tmp_path / "hivemq" / "config.xml"
+    config_path.parent.mkdir()
+    config_path.write_text(_HIVEMQ_XML, encoding="utf-8")
+    monkeypatch.setattr("uns_graphql.mutations.connectivity.resolve_conf_dir", lambda: tmp_path)
+    rewrite = AsyncMock()
+
+    async def fake_rewrite(session, old_topic, new_topic):
+        await rewrite(old_topic, new_topic)
+
+    monkeypatch.setattr("uns_graphql.mutations.connectivity._rewrite_topics", fake_rewrite)
+    live = Mock()
+    monkeypatch.setattr("uns_graphql.mutations.connectivity.apply_catalog_adapters_live", live)
+    repository = AsyncMock()
+    tag = _tag(mqtt_topic="Server/OpcPlc/Temp")
+    captured: dict[str, object] = {}
+
+    async def _update(server_id, node_id, mqtt_topic, **kwargs):
+        captured["rewrite"] = kwargs.get("on_topic_rewrite")
+        hook = kwargs.get("on_topic_rewrite")
+        if hook:
+            await hook(None, "Server/OpcPlc/Temp", mqtt_topic)
+        after = kwargs.get("after_flush")
+        if after:
+            after([])
+        tag.mqtt_topic = mqtt_topic
+        return tag
+
+    repository.update_tag_topic.side_effect = _update
+    repository.list_servers.return_value = [
+        _server(server_id="srv-opc", protocol="opc_ua", endpoint="opc.tcp://h:4840")
+    ]
+
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            """
+            mutation {
+              updateConnectivityTagTopic(serverId: "srv-opc", nodeId: "ns=1;i=1", mqttTopic: "Acme/Line/Temp") {
+                mqttTopic
+              }
+            }
+            """,
+            context_value=ADMIN,
+        )
+
+    assert result.errors is None
+    assert captured["rewrite"] is not None
+    rewrite.assert_awaited_once_with("Server/OpcPlc/Temp", "Acme/Line/Temp")
+    live.assert_called_once()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_update_tag_topic_rewrite_failure_skips_live_apply(monkeypatch):
+    live = Mock()
+    monkeypatch.setattr("uns_graphql.mutations.connectivity.apply_catalog_adapters_live", live)
+
+    async def failing_rewrite(session, old_topic, new_topic):
+        raise RuntimeError("timescale down")
+
+    monkeypatch.setattr("uns_graphql.mutations.connectivity._rewrite_topics", failing_rewrite)
+    repository = AsyncMock()
+
+    async def _update(server_id, node_id, mqtt_topic, **kwargs):
+        hook = kwargs.get("on_topic_rewrite")
+        if hook:
+            await hook(None, "old/topic", mqtt_topic)
+        return _tag(mqtt_topic=mqtt_topic)
+
+    repository.update_tag_topic.side_effect = _update
+
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            """
+            mutation {
+              updateConnectivityTagTopic(serverId: "srv-opc", nodeId: "ns=1;i=1", mqttTopic: "Acme/Line/Temp") {
+                mqttTopic
+              }
+            }
+            """,
+            context_value=ADMIN,
+        )
+
+    assert result.errors
+    live.assert_not_called()
 
 
 @pytest.mark.asyncio(loop_scope="function")

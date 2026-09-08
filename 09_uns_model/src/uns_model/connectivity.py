@@ -29,7 +29,7 @@ know which servers to dial and which nodes to subscribe to, and which writes
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, fields
 from datetime import datetime
 from typing import Any
@@ -537,9 +537,16 @@ class ConnectivityRepository:
         mqtt_topic: str,
         *,
         after_flush: Callable[[list[EdgeAdapterInput]], None] | None = None,
+        on_topic_rewrite: Callable[[AsyncSession, str, str], Awaitable[None]] | None = None,
     ) -> ConnectivityTag | None:
         """Set the MQTT topic an engineer wants this node republished under."""
-        return await self.update_tag(server_id, node_id, after_flush=after_flush, mqtt_topic=mqtt_topic)
+        return await self.update_tag(
+            server_id,
+            node_id,
+            after_flush=after_flush,
+            on_topic_rewrite=on_topic_rewrite,
+            mqtt_topic=mqtt_topic,
+        )
 
     _TAG_UPDATE_FIELDS = frozenset(
         {
@@ -559,6 +566,7 @@ class ConnectivityRepository:
         node_id: str,
         *,
         after_flush: Callable[[list[EdgeAdapterInput]], None] | None = None,
+        on_topic_rewrite: Callable[[AsyncSession, str, str], Awaitable[None]] | None = None,
         **fields: Any,
     ) -> ConnectivityTag | None:
         """
@@ -584,6 +592,14 @@ class ConnectivityRepository:
 
         define: dict[str, Any] | None = None
         async with self._database.session() as session:
+            old_topic = (
+                await session.execute(
+                    select(ConnectivityTag.mqtt_topic).where(
+                        ConnectivityTag.server_id == server_id,
+                        ConnectivityTag.node_id == node_id,
+                    )
+                )
+            ).scalar_one_or_none()
             new_topic = fields.get("mqtt_topic")
             if new_topic:
                 existing_topics = await self.subscribed_topics(session, exclude=(server_id, node_id))
@@ -605,6 +621,13 @@ class ConnectivityRepository:
             ).scalar_one_or_none()
             if row is None:
                 return None
+            if (
+                new_topic is not None
+                and old_topic is not None
+                and new_topic != old_topic
+                and on_topic_rewrite is not None
+            ):
+                await on_topic_rewrite(session, old_topic, new_topic)
             if after_flush is not None:
                 await self._mark_pending_if_edge(session, server_id)
                 await self._sync_edge(session, after_flush)

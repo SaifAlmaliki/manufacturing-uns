@@ -42,6 +42,7 @@ from uns_opcua import browse as opcua_browse
 from uns_opcua.session import open_client
 
 from uns_graphql.auth.require import require
+from uns_graphql.backend.historian import HistorianRepository
 from uns_graphql.input.connectivity import (
     ConnectivityServerInput,
     ConnectivityTagInput,
@@ -119,6 +120,13 @@ async def _find_server(repo: ConnectivityRepository, server_id: str) -> Connecti
         if server.id == server_id:
             return server
     return None
+
+
+async def _rewrite_topics(session, old_topic: str, new_topic: str) -> None:
+    connection = await session.connection()
+    await HistorianRepository(Database.shared("graphql")).rewrite_topic_prefix(
+        old_topic, new_topic, connection=connection
+    )
 
 
 @strawberry.type(description="Author the console's Connectivity catalog")
@@ -244,7 +252,11 @@ class Mutation:
         repo = _repository()
         server = await _find_server(repo, server_id)
         tag = await repo.update_tag_topic(
-            server_id, node_id, mqtt_topic, after_flush=_sync_edge
+            server_id,
+            node_id,
+            mqtt_topic,
+            after_flush=_sync_edge,
+            on_topic_rewrite=_rewrite_topics,
         )
         if tag is None:
             raise ValueError(

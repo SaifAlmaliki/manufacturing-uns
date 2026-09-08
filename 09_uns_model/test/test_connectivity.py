@@ -542,11 +542,13 @@ class _FakeSession:
         asset_path: str | None = None,
         topic_rows: list[tuple[str, str, str]] | None = None,
         protocol: str | None = None,
+        mqtt_topic: str | None = None,
     ) -> None:
         self.tag = tag
         self.asset_path = asset_path
         self.topic_rows = topic_rows or []
         self.protocol = protocol
+        self.mqtt_topic = mqtt_topic
         self.statements: list[object] = []
         self.update_values: dict[str, object] | None = None
 
@@ -566,6 +568,8 @@ class _FakeSession:
             return _ScalarResult(self.topic_rows)
         if selected == ["protocol"]:
             return _ScalarResult(self.protocol)
+        if selected == ["mqtt_topic"]:
+            return _ScalarResult(self.mqtt_topic if self.mqtt_topic is not None else getattr(self.tag, "mqtt_topic", None))
         return _ScalarResult(self.tag)
 
 
@@ -781,6 +785,74 @@ async def test_update_tag_calls_sync_edge_when_after_flush_is_given():
 
 
 @pytest.mark.asyncio
+async def test_update_tag_topic_rewrite_failure_skips_after_flush():
+    tag = SimpleNamespace(
+        server_id="s1",
+        node_id="ns=3;s=A",
+        browse_path="Heater/Temp",
+        display_name="Temp",
+        mqtt_topic="Plant/A",
+        asset_id=None,
+        unit_of_measure=None,
+    )
+    session = _FakeSession(tag=tag, mqtt_topic="Plant/A")
+    repo = ConnectivityRepository(_FakeDatabase(session))
+    sync_calls: list[object] = []
+
+    async def fake_sync_edge(self, session_arg, after_flush):  # noqa: ARG001
+        sync_calls.append(after_flush)
+
+    async def failing_rewrite(session_arg, old_topic, new_topic):  # noqa: ARG001
+        raise RuntimeError("timescale down")
+
+    with patch.object(ConnectivityRepository, "_sync_edge", fake_sync_edge):
+        with pytest.raises(RuntimeError, match="timescale down"):
+            await repo.update_tag_topic(
+                "s1",
+                "ns=3;s=A",
+                "Plant/B",
+                after_flush=object(),
+                on_topic_rewrite=failing_rewrite,
+            )
+
+    assert sync_calls == []
+
+
+@pytest.mark.asyncio
+async def test_update_tag_topic_rewrite_success_runs_before_after_flush():
+    tag = SimpleNamespace(
+        server_id="s1",
+        node_id="ns=3;s=A",
+        browse_path="Heater/Temp",
+        display_name="Temp",
+        mqtt_topic="Plant/A",
+        asset_id=None,
+        unit_of_measure=None,
+    )
+    session = _FakeSession(tag=tag, mqtt_topic="Plant/A")
+    repo = ConnectivityRepository(_FakeDatabase(session))
+    order: list[str] = []
+    sentinel = object()
+
+    async def fake_sync_edge(self, session_arg, after_flush):  # noqa: ARG001
+        order.append("sync")
+
+    async def rewrite(session_arg, old_topic, new_topic):
+        order.append(f"rewrite:{old_topic}->{new_topic}")
+
+    with patch.object(ConnectivityRepository, "_sync_edge", fake_sync_edge):
+        await repo.update_tag_topic(
+            "s1",
+            "ns=3;s=A",
+            "Plant/B",
+            after_flush=sentinel,
+            on_topic_rewrite=rewrite,
+        )
+
+    assert order == ["rewrite:Plant/A->Plant/B", "sync"]
+
+
+@pytest.mark.asyncio
 async def test_update_tag_topic_forwards_after_flush_and_mqtt_topic_to_update_tag():
     """`updateConnectivityTagTopic` must regenerate Edge XML, same as `updateConnectivityTag`."""
     repo = ConnectivityRepository(database=None)  # type: ignore[arg-type]
@@ -788,7 +860,9 @@ async def test_update_tag_topic_forwards_after_flush_and_mqtt_topic_to_update_ta
     with patch.object(ConnectivityRepository, "update_tag", new=AsyncMock(return_value="stored")) as mocked:
         result = await repo.update_tag_topic("s1", "ns=3;s=A", "Plant/B", after_flush=sentinel)
     assert result == "stored"
-    mocked.assert_awaited_once_with("s1", "ns=3;s=A", after_flush=sentinel, mqtt_topic="Plant/B")
+    mocked.assert_awaited_once_with(
+        "s1", "ns=3;s=A", after_flush=sentinel, on_topic_rewrite=None, mqtt_topic="Plant/B"
+    )
 
 
 @pytest.mark.asyncio
@@ -797,7 +871,9 @@ async def test_update_tag_topic_without_after_flush_still_works():
     with patch.object(ConnectivityRepository, "update_tag", new=AsyncMock(return_value="stored")) as mocked:
         result = await repo.update_tag_topic("s1", "ns=3;s=A", "Plant/B")
     assert result == "stored"
-    mocked.assert_awaited_once_with("s1", "ns=3;s=A", after_flush=None, mqtt_topic="Plant/B")
+    mocked.assert_awaited_once_with(
+        "s1", "ns=3;s=A", after_flush=None, on_topic_rewrite=None, mqtt_topic="Plant/B"
+    )
 
 
 @pytest.mark.asyncio
@@ -860,9 +936,9 @@ async def test_update_tag_eager_loads_asset_on_returned_row():
         asset_id=None,
         unit_of_measure=None,
     )
-    session = _FakeSession(tag=tag)
+    session = _FakeSession(tag=tag, mqtt_topic="Plant/A")
     repo = ConnectivityRepository(_FakeDatabase(session))
     await repo.update_tag("s1", "ns=3;s=A", mqtt_topic="Plant/T101/Level")
-    # index 0 is the subscribed_topics uniqueness check select; the tag read follows it.
-    blob = _loader_blob(_selects(session)[1])
+    # old topic, subscribed_topics check, then tag read with asset eager load.
+    blob = _loader_blob(_selects(session)[2])
     assert "asset" in blob
