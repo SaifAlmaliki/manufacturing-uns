@@ -3640,7 +3640,7 @@
       "source_location": "L400",
       "_origin": "ast",
       "id": "uns_sparkplugb_uns_spb_enums_spbadditionaldatatypes",
-      "community": 44,
+      "community": 63,
       "norm_label": "spbadditionaldatatypes"
     },
     {
@@ -3760,7 +3760,7 @@
       "source_location": "L401",
       "_origin": "ast",
       "id": "uns_sparkplugb_uns_spb_enums_rationale_401",
-      "community": 44,
+      "community": 63,
       "norm_label": "enumeration of additional datatypes as per sparkplugb specifications     enhanc"
     },
     {
@@ -3820,7 +3820,7 @@
       "source_location": "L103",
       "_origin": "ast",
       "id": "02_mqtt_cluster_src_uns_sparkplugb_uns_spb_helper_py_payload",
-      "community": 15,
+      "community": 44,
       "norm_label": "payload"
     },
     {
@@ -3910,7 +3910,7 @@
       "source_location": "L236",
       "_origin": "ast",
       "id": "uns_sparkplugb_uns_spb_helper_spbmessagegenerator",
-      "community": 15,
+      "community": 44,
       "norm_label": "spbmessagegenerator"
     },
     {
@@ -3920,7 +3920,7 @@
       "source_location": "L253",
       "_origin": "ast",
       "id": "uns_sparkplugb_uns_spb_helper_spbmessagegenerator_get_seq_num",
-      "community": 15,
+      "community": 44,
       "norm_label": ".get_seq_num()"
     },
     {
@@ -3930,7 +3930,7 @@
       "source_location": "L264",
       "_origin": "ast",
       "id": "uns_sparkplugb_uns_spb_helper_spbmessagegenerator_get_birth_seq_num",
-      "community": 15,
+      "community": 44,
       "norm_label": ".get_birth_seq_num()"
     },
     {
@@ -3940,7 +3940,7 @@
       "source_location": "L275",
       "_origin": "ast",
       "id": "uns_sparkplugb_uns_spb_helper_spbmessagegenerator_get_node_death_payload",
-      "community": 15,
+      "community": 44,
       "norm_label": ".get_node_death_payload()"
     },
     {
@@ -3950,7 +3950,7 @@
       "source_location": "L291",
       "_origin": "ast",
       "id": "uns_sparkplugb_uns_spb_helper_spbmessagegenerator_get_node_birth_payload",
-      "community": 15,
+      "community": 44,
       "norm_label": ".get_node_birth_payload()"
     },
     {
@@ -3960,7 +3960,7 @@
       "source_location": "L317",
       "_origin": "ast",
       "id": "uns_sparkplugb_uns_spb_helper_spbmessagegenerator_get_node_data_payload",
-      "community": 15,
+      "community": 44,
       "norm_label": ".get_node_data_payload()"
     },
     {
@@ -3970,7 +3970,7 @@
       "source_location": "L329",
       "_origin": "ast",
       "id": "uns_sparkplugb_uns_spb_helper_spbmessagegenerator_get_device_birth_payload",
-      "community": 15,
+      "community": 44,
       "norm_label": ".get_device_birth_payload()"
     },
     {
@@ -3980,7 +3980,7 @@
       "source_location": "L349",
       "_origin": "ast",
       "id": "uns_sparkplugb_uns_spb_helper_spbmessagegenerator_get_device_data_payload",
-      "community": 15,
+      "community": 44,
       "norm_label": ".get_device_data_payload()"
     },
     {
@@ -4200,7 +4200,7 @@
       "source_location": "L237",
       "_origin": "ast",
       "id": "uns_sparkplugb_uns_spb_helper_rationale_237",
-      "community": 15,
+      "community": 44,
       "norm_label": "helper class to parse & create sparkplugb messages.     state of alias map and"
     },
     {
@@ -4210,7 +4210,7 @@
       "source_location": "L254",
       "_origin": "ast",
       "id": "uns_sparkplugb_uns_spb_helper_rationale_254",
-      "community": 15,
+      "community": 44,
       "norm_label": "helper method for getting the next sequence number"
     },
     {
@@ -4220,7 +4220,7 @@
       "source_location": "L265",
       "_origin": "ast",
       "id": "uns_sparkplugb_uns_spb_helper_rationale_265",
-      "community": 15,
+      "community": 44,
       "norm_label": "helper method for getting the next birth/death sequence number"
     },
     {
@@ -4230,7 +4230,7 @@
       "source_location": "L276",
       "_origin": "ast",
       "id": "uns_sparkplugb_uns_spb_helper_rationale_276",
-      "community": 15,
+      "community": 44,
       "norm_label": "helper to get the death node payload.         sets the bdseq counter in the met"
     },
     {
@@ -4240,7 +4240,7 @@
       "source_location": "L292",
       "_origin": "ast",
       "id": "uns_sparkplugb_uns_spb_helper_rationale_292",
-      "community": 15,
+      "community": 44,
       "norm_label": "helper to get the node birth payload         always request this after requesti"
     },
     {
@@ -4250,7 +4250,7 @@
       "source_location": "L318",
       "_origin": "ast",
       "id": "uns_sparkplugb_uns_spb_helper_rationale_318",
-      "community": 15,
+      "community": 44,
       "norm_label": "get a ndata payload         always request this after requesting the node death"
     },
     {
@@ -4260,7 +4260,7 @@
       "source_location": "L330",
       "_origin": "ast",
       "id": "uns_sparkplugb_uns_spb_helper_rationale_330",
-      "community": 15,
+      "community": 44,
       "norm_label": "get the dbirth payload         you can add additional metrics after calling thi"
     },
     {
@@ -4270,7 +4270,7 @@
       "source_location": "L350",
       "_origin": "ast",
       "id": "uns_sparkplugb_uns_spb_helper_rationale_350",
-      "community": 15,
+      "community": 44,
       "norm_label": "get a ddata payload         you can add additional metrics after calling this f"
     },
     {
@@ -4407,7 +4407,7 @@
       "label": "test_01_unauthenticated_connections()",
       "file_type": "code",
       "source_file": "02_mqtt-cluster/test/test_mqtt_listner.py",
-      "source_location": "L79",
+      "source_location": "L78",
       "_origin": "ast",
       "id": "test_test_mqtt_listner_test_01_unauthenticated_connections",
       "community": 38,
@@ -4417,7 +4417,7 @@
       "label": "test_02_authenticated_connections()",
       "file_type": "code",
       "source_file": "02_mqtt-cluster/test/test_mqtt_listner.py",
-      "source_location": "L161",
+      "source_location": "L160",
       "_origin": "ast",
       "id": "test_test_mqtt_listner_test_02_authenticated_connections",
       "community": 38,
@@ -4427,7 +4427,7 @@
       "label": "test_is_topic_matched()",
       "file_type": "code",
       "source_file": "02_mqtt-cluster/test/test_mqtt_listner.py",
-      "source_location": "L239",
+      "source_location": "L238",
       "_origin": "ast",
       "id": "test_test_mqtt_listner_test_is_topic_matched",
       "community": 38,
@@ -4437,7 +4437,7 @@
       "label": "test_del_key_from_dict()",
       "file_type": "code",
       "source_file": "02_mqtt-cluster/test/test_mqtt_listner.py",
-      "source_location": "L349",
+      "source_location": "L348",
       "_origin": "ast",
       "id": "test_test_mqtt_listner_test_del_key_from_dict",
       "community": 38,
@@ -4447,7 +4447,7 @@
       "label": "test_filter_ignored_attributes()",
       "file_type": "code",
       "source_file": "02_mqtt-cluster/test/test_mqtt_listner.py",
-      "source_location": "L444",
+      "source_location": "L443",
       "_origin": "ast",
       "id": "test_test_mqtt_listner_test_filter_ignored_attributes",
       "community": 38,
@@ -4457,7 +4457,7 @@
       "label": "test_get_payload_as_dict()",
       "file_type": "code",
       "source_file": "02_mqtt-cluster/test/test_mqtt_listner.py",
-      "source_location": "L530",
+      "source_location": "L529",
       "_origin": "ast",
       "id": "test_test_mqtt_listner_test_get_payload_as_dict",
       "community": 38,
@@ -4467,7 +4467,7 @@
       "label": "test_on_connect_subscribe_does_not_reuse_connect_properties()",
       "file_type": "code",
       "source_file": "02_mqtt-cluster/test/test_mqtt_listner.py",
-      "source_location": "L549",
+      "source_location": "L548",
       "_origin": "ast",
       "id": "test_test_mqtt_listner_test_on_connect_subscribe_does_not_reuse_connect_properties",
       "community": 38,
@@ -4487,9 +4487,9 @@
       "label": "Test all the parameters ( except username password against EMQX's hosted broker",
       "file_type": "rationale",
       "source_file": "02_mqtt-cluster/test/test_mqtt_listner.py",
-      "source_location": "L81",
+      "source_location": "L80",
       "_origin": "ast",
-      "id": "test_test_mqtt_listner_rationale_81",
+      "id": "test_test_mqtt_listner_rationale_80",
       "community": 38,
       "norm_label": "test all the parameters ( except username password against emqx's hosted broker"
     },
@@ -4497,9 +4497,9 @@
       "label": "Test all the parameters ( including username password against Mosquitto's hosted",
       "file_type": "rationale",
       "source_file": "02_mqtt-cluster/test/test_mqtt_listner.py",
-      "source_location": "L164",
+      "source_location": "L163",
       "_origin": "ast",
-      "id": "test_test_mqtt_listner_rationale_164",
+      "id": "test_test_mqtt_listner_rationale_163",
       "community": 38,
       "norm_label": "test all the parameters ( including username password against mosquitto's hosted"
     },
@@ -4507,9 +4507,9 @@
       "label": "Test case for function Uns_MQTT_ClientWrapper.isTopicMatching",
       "file_type": "rationale",
       "source_file": "02_mqtt-cluster/test/test_mqtt_listner.py",
-      "source_location": "L240",
+      "source_location": "L239",
       "_origin": "ast",
-      "id": "test_test_mqtt_listner_rationale_240",
+      "id": "test_test_mqtt_listner_rationale_239",
       "community": 38,
       "norm_label": "test case for function uns_mqtt_clientwrapper.istopicmatching"
     },
@@ -4517,9 +4517,9 @@
       "label": "Should remove just the key should it be present.     Test support for nested ke",
       "file_type": "rationale",
       "source_file": "02_mqtt-cluster/test/test_mqtt_listner.py",
-      "source_location": "L350",
+      "source_location": "L349",
       "_origin": "ast",
-      "id": "test_test_mqtt_listner_rationale_350",
+      "id": "test_test_mqtt_listner_rationale_349",
       "community": 38,
       "norm_label": "should remove just the key should it be present.     test support for nested ke"
     },
@@ -4527,9 +4527,9 @@
       "label": "Test case for Uns_MQTT_ClientWrapper.filter_ignored_attributes",
       "file_type": "rationale",
       "source_file": "02_mqtt-cluster/test/test_mqtt_listner.py",
-      "source_location": "L445",
+      "source_location": "L444",
       "_origin": "ast",
-      "id": "test_test_mqtt_listner_rationale_445",
+      "id": "test_test_mqtt_listner_rationale_444",
       "community": 38,
       "norm_label": "test case for uns_mqtt_clientwrapper.filter_ignored_attributes"
     },
@@ -4537,9 +4537,9 @@
       "label": "Test case for Uns_MQTT_ClientWrapper.get_payload_as_dict",
       "file_type": "rationale",
       "source_file": "02_mqtt-cluster/test/test_mqtt_listner.py",
-      "source_location": "L531",
+      "source_location": "L530",
       "_origin": "ast",
-      "id": "test_test_mqtt_listner_rationale_531",
+      "id": "test_test_mqtt_listner_rationale_530",
       "community": 38,
       "norm_label": "test case for uns_mqtt_clientwrapper.get_payload_as_dict"
     },
@@ -4547,9 +4547,9 @@
       "label": "SUBSCRIBE must not carry CONNECT properties; HiveMQ Edge treats that as Malforme",
       "file_type": "rationale",
       "source_file": "02_mqtt-cluster/test/test_mqtt_listner.py",
-      "source_location": "L550",
+      "source_location": "L549",
       "_origin": "ast",
-      "id": "test_test_mqtt_listner_rationale_550",
+      "id": "test_test_mqtt_listner_rationale_549",
       "community": 38,
       "norm_label": "subscribe must not carry connect properties; hivemq edge treats that as malforme"
     },
@@ -4670,7 +4670,7 @@
       "source_location": "L350",
       "_origin": "ast",
       "id": "02_mqtt_cluster_test_test_uns_spb_enums_py_dataset",
-      "community": 44,
+      "community": 63,
       "norm_label": "dataset"
     },
     {
@@ -4700,7 +4700,7 @@
       "source_location": "L407",
       "_origin": "ast",
       "id": "02_mqtt_cluster_test_test_uns_spb_enums_py_propertyset",
-      "community": 44,
+      "community": 63,
       "norm_label": "propertyset"
     },
     {
@@ -4720,7 +4720,7 @@
       "source_location": "L435",
       "_origin": "ast",
       "id": "02_mqtt_cluster_test_test_uns_spb_enums_py_propertysetlist",
-      "community": 44,
+      "community": 63,
       "norm_label": "propertysetlist"
     },
     {
@@ -5010,7 +5010,7 @@
       "source_location": "L696",
       "_origin": "ast",
       "id": "test_test_uns_spb_helper_metrics_test_add_null_metric",
-      "community": 15,
+      "community": 44,
       "norm_label": "test_add_null_metric()"
     },
     {
@@ -5020,7 +5020,7 @@
       "source_location": "L748",
       "_origin": "ast",
       "id": "test_test_uns_spb_helper_metrics_test_get_dataset_metric",
-      "community": 15,
+      "community": 44,
       "norm_label": "test_get_dataset_metric()"
     },
     {
@@ -5030,7 +5030,7 @@
       "source_location": "L748",
       "_origin": "ast",
       "id": "02_mqtt_cluster_test_test_uns_spb_helper_metrics_py_spbdatasetdatatypes",
-      "community": 15,
+      "community": 44,
       "norm_label": "spbdatasetdatatypes"
     },
     {
@@ -5040,7 +5040,7 @@
       "source_location": "L797",
       "_origin": "ast",
       "id": "test_test_uns_spb_helper_metrics_test_add_metadata_to_metric",
-      "community": 15,
+      "community": 44,
       "norm_label": "test_add_metadata_to_metric()"
     },
     {
@@ -5170,7 +5170,7 @@
       "source_location": "L697",
       "_origin": "ast",
       "id": "test_test_uns_spb_helper_metrics_rationale_697",
-      "community": 15,
+      "community": 44,
       "norm_label": "test case for  spbmessagegenerator#add_null_metric"
     },
     {
@@ -5180,7 +5180,7 @@
       "source_location": "L754",
       "_origin": "ast",
       "id": "test_test_uns_spb_helper_metrics_rationale_754",
-      "community": 15,
+      "community": 44,
       "norm_label": "test case for  spbmessagegenerator#get_dataset_metric"
     },
     {
@@ -5430,7 +5430,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "test_test_uns_spb_helper_templates",
-      "community": 15,
+      "community": 44,
       "norm_label": "test_uns_spb_helper_templates.py"
     },
     {
@@ -5440,7 +5440,7 @@
       "source_location": "L29",
       "_origin": "ast",
       "id": "test_test_uns_spb_helper_templates_setup_alias_map",
-      "community": 15,
+      "community": 44,
       "norm_label": "setup_alias_map()"
     },
     {
@@ -5450,7 +5450,7 @@
       "source_location": "L266",
       "_origin": "ast",
       "id": "test_test_uns_spb_helper_templates_test_init_template_metric",
-      "community": 15,
+      "community": 44,
       "norm_label": "test_init_template_metric()"
     },
     {
@@ -5460,7 +5460,7 @@
       "source_location": "L351",
       "_origin": "ast",
       "id": "test_test_uns_spb_helper_templates_test_init_template_with_template",
-      "community": 15,
+      "community": 44,
       "norm_label": "test_init_template_with_template()"
     },
     {
@@ -5470,7 +5470,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "test_test_uns_spb_helper_templates_rationale_1",
-      "community": 15,
+      "community": 44,
       "norm_label": "*******************************************************************************"
     },
     {
@@ -5480,7 +5480,7 @@
       "source_location": "L267",
       "_origin": "ast",
       "id": "test_test_uns_spb_helper_templates_rationale_267",
-      "community": 15,
+      "community": 44,
       "norm_label": "test case for  spbmessagegenerator#init_template_metric"
     },
     {
@@ -5490,7 +5490,7 @@
       "source_location": "L352",
       "_origin": "ast",
       "id": "test_test_uns_spb_helper_templates_rationale_352",
-      "community": 15,
+      "community": 44,
       "norm_label": "tests to add template to template"
     },
     {
@@ -9046,7 +9046,7 @@
       "source_location": "L56",
       "_origin": "ast",
       "id": "uns_kafka_kafka_handler_kafkahandler_delivery_callback",
-      "community": 110,
+      "community": 134,
       "norm_label": ".delivery_callback()"
     },
     {
@@ -9056,7 +9056,7 @@
       "source_location": "L56",
       "_origin": "ast",
       "id": "06_uns_kafka_src_uns_kafka_kafka_handler_py_exception",
-      "community": 110,
+      "community": 134,
       "norm_label": "exception"
     },
     {
@@ -9126,7 +9126,7 @@
       "source_location": "L57",
       "_origin": "ast",
       "id": "uns_kafka_kafka_handler_rationale_57",
-      "community": 110,
+      "community": 134,
       "norm_label": "callback for the kafka producer to deliver the message         err: error messa"
     },
     {
@@ -9896,7 +9896,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "auth_jwks",
-      "community": 110,
+      "community": 134,
       "norm_label": "jwks.py"
     },
     {
@@ -9906,7 +9906,7 @@
       "source_location": "L23",
       "_origin": "ast",
       "id": "auth_jwks_unknownsigningkeyerror",
-      "community": 110,
+      "community": 134,
       "norm_label": "unknownsigningkeyerror"
     },
     {
@@ -9916,7 +9916,7 @@
       "source_location": "L27",
       "_origin": "ast",
       "id": "auth_jwks_fetch_over_http",
-      "community": 110,
+      "community": 134,
       "norm_label": "_fetch_over_http()"
     },
     {
@@ -9996,7 +9996,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "auth_jwks_rationale_1",
-      "community": 110,
+      "community": 134,
       "norm_label": "the realm's signing keys, fetched once and kept.  fetching per request would p"
     },
     {
@@ -10006,7 +10006,7 @@
       "source_location": "L24",
       "_origin": "ast",
       "id": "auth_jwks_rationale_24",
-      "community": 110,
+      "community": 134,
       "norm_label": "no key with that `kid`, and a refetch did not produce one."
     },
     {
@@ -10166,7 +10166,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "auth_scope",
-      "community": 89,
+      "community": 82,
       "norm_label": "scope.py"
     },
     {
@@ -10236,7 +10236,7 @@
       "source_location": "L57",
       "_origin": "ast",
       "id": "auth_scope_visible_topic",
-      "community": 89,
+      "community": 113,
       "norm_label": "visible_topic()"
     },
     {
@@ -10296,7 +10296,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "auth_scope_rationale_1",
-      "community": 89,
+      "community": 82,
       "norm_label": "the caller's view of the asset tree.  one scope per request. admin is unrestri"
     },
     {
@@ -10476,7 +10476,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_historian",
-      "community": 95,
+      "community": 181,
       "norm_label": "historian.py"
     },
     {
@@ -10496,7 +10496,7 @@
       "source_location": "L67",
       "_origin": "ast",
       "id": "backend_historian_historianrepository_init",
-      "community": 95,
+      "community": 70,
       "norm_label": ".__init__()"
     },
     {
@@ -10506,7 +10506,7 @@
       "source_location": "L67",
       "_origin": "ast",
       "id": "07_uns_graphql_src_uns_graphql_backend_historian_py_database",
-      "community": 95,
+      "community": 70,
       "norm_label": "database"
     },
     {
@@ -10576,7 +10576,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_historian_rationale_1",
-      "community": 95,
+      "community": 181,
       "norm_label": "*******************************************************************************"
     },
     {
@@ -11266,7 +11266,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "mutations_access_group",
-      "community": 152,
+      "community": 82,
       "norm_label": "access_group.py"
     },
     {
@@ -11276,7 +11276,7 @@
       "source_location": "L21",
       "_origin": "ast",
       "id": "mutations_access_group_repository",
-      "community": 152,
+      "community": 82,
       "norm_label": "_repository()"
     },
     {
@@ -11286,7 +11286,7 @@
       "source_location": "L21",
       "_origin": "ast",
       "id": "07_uns_graphql_src_uns_graphql_mutations_access_group_py_accessgrouprepository",
-      "community": 152,
+      "community": 82,
       "norm_label": "accessgrouprepository"
     },
     {
@@ -11296,7 +11296,7 @@
       "source_location": "L25",
       "_origin": "ast",
       "id": "mutations_access_group_as_int",
-      "community": 152,
+      "community": 82,
       "norm_label": "_as_int()"
     },
     {
@@ -11306,7 +11306,7 @@
       "source_location": "L31",
       "_origin": "ast",
       "id": "mutations_access_group_mutation",
-      "community": 152,
+      "community": 82,
       "norm_label": "mutation"
     },
     {
@@ -11316,7 +11316,7 @@
       "source_location": "L37",
       "_origin": "ast",
       "id": "mutations_access_group_mutation_save_access_group",
-      "community": 152,
+      "community": 82,
       "norm_label": ".save_access_group()"
     },
     {
@@ -11326,7 +11326,7 @@
       "source_location": "L37",
       "_origin": "ast",
       "id": "07_uns_graphql_src_uns_graphql_mutations_access_group_py_info",
-      "community": 152,
+      "community": 82,
       "norm_label": "info"
     },
     {
@@ -11336,7 +11336,7 @@
       "source_location": "L37",
       "_origin": "ast",
       "id": "07_uns_graphql_src_uns_graphql_mutations_access_group_py_accessgrouptype",
-      "community": 152,
+      "community": 82,
       "norm_label": "accessgrouptype"
     },
     {
@@ -11346,7 +11346,7 @@
       "source_location": "L54",
       "_origin": "ast",
       "id": "mutations_access_group_mutation_delete_access_group",
-      "community": 152,
+      "community": 82,
       "norm_label": ".delete_access_group()"
     },
     {
@@ -11356,7 +11356,7 @@
       "source_location": "L65",
       "_origin": "ast",
       "id": "mutations_access_group_mutation_set_access_group_members",
-      "community": 152,
+      "community": 82,
       "norm_label": ".set_access_group_members()"
     },
     {
@@ -11366,7 +11366,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "mutations_access_group_rationale_1",
-      "community": 152,
+      "community": 82,
       "norm_label": "admin writes for access groups.  role each field needs is in auth/require.py,"
     },
     {
@@ -11376,7 +11376,7 @@
       "source_location": "L26",
       "_origin": "ast",
       "id": "mutations_access_group_rationale_26",
-      "community": 152,
+      "community": 82,
       "norm_label": "int64 parses to str; the repository wants an int. same conversion as alertrulein"
     },
     {
@@ -12476,7 +12476,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "queries_access_group",
-      "community": 152,
+      "community": 82,
       "norm_label": "access_group.py"
     },
     {
@@ -12486,7 +12486,7 @@
       "source_location": "L17",
       "_origin": "ast",
       "id": "queries_access_group_repository",
-      "community": 152,
+      "community": 82,
       "norm_label": "_repository()"
     },
     {
@@ -12496,7 +12496,7 @@
       "source_location": "L17",
       "_origin": "ast",
       "id": "07_uns_graphql_src_uns_graphql_queries_access_group_py_accessgrouprepository",
-      "community": 152,
+      "community": 82,
       "norm_label": "accessgrouprepository"
     },
     {
@@ -12506,7 +12506,7 @@
       "source_location": "L21",
       "_origin": "ast",
       "id": "queries_access_group_caller_is_admin",
-      "community": 152,
+      "community": 82,
       "norm_label": "_caller_is_admin()"
     },
     {
@@ -12516,7 +12516,7 @@
       "source_location": "L21",
       "_origin": "ast",
       "id": "07_uns_graphql_src_uns_graphql_queries_access_group_py_info",
-      "community": 152,
+      "community": 82,
       "norm_label": "info"
     },
     {
@@ -12526,7 +12526,7 @@
       "source_location": "L27",
       "_origin": "ast",
       "id": "queries_access_group_query",
-      "community": 152,
+      "community": 82,
       "norm_label": "query"
     },
     {
@@ -12536,7 +12536,7 @@
       "source_location": "L29",
       "_origin": "ast",
       "id": "queries_access_group_query_get_access_groups",
-      "community": 152,
+      "community": 82,
       "norm_label": ".get_access_groups()"
     },
     {
@@ -12546,7 +12546,7 @@
       "source_location": "L29",
       "_origin": "ast",
       "id": "07_uns_graphql_src_uns_graphql_queries_access_group_py_accessgrouptype",
-      "community": 152,
+      "community": 82,
       "norm_label": "accessgrouptype"
     },
     {
@@ -12556,7 +12556,7 @@
       "source_location": "L36",
       "_origin": "ast",
       "id": "queries_access_group_query_get_access_group",
-      "community": 152,
+      "community": 82,
       "norm_label": ".get_access_group()"
     },
     {
@@ -12566,7 +12566,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "queries_access_group_rationale_1",
-      "community": 152,
+      "community": 82,
       "norm_label": "graphql queries for access groups.  admin-only reads: a non-admin caller gets"
     },
     {
@@ -12576,7 +12576,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "queries_alert_rule",
-      "community": 96,
+      "community": 89,
       "norm_label": "alert_rule.py"
     },
     {
@@ -12586,7 +12586,7 @@
       "source_location": "L38",
       "_origin": "ast",
       "id": "queries_alert_rule_repository",
-      "community": 96,
+      "community": 89,
       "norm_label": "_repository()"
     },
     {
@@ -12596,7 +12596,7 @@
       "source_location": "L38",
       "_origin": "ast",
       "id": "07_uns_graphql_src_uns_graphql_queries_alert_rule_py_alertrulerepository",
-      "community": 96,
+      "community": 89,
       "norm_label": "alertrulerepository"
     },
     {
@@ -12606,7 +12606,7 @@
       "source_location": "L42",
       "_origin": "ast",
       "id": "queries_alert_rule_visible_rules",
-      "community": 96,
+      "community": 89,
       "norm_label": "_visible_rules()"
     },
     {
@@ -12616,7 +12616,7 @@
       "source_location": "L42",
       "_origin": "ast",
       "id": "07_uns_graphql_src_uns_graphql_queries_alert_rule_py_accessscope",
-      "community": 96,
+      "community": 89,
       "norm_label": "accessscope"
     },
     {
@@ -12626,7 +12626,7 @@
       "source_location": "L55",
       "_origin": "ast",
       "id": "queries_alert_rule_query",
-      "community": 96,
+      "community": 89,
       "norm_label": "query"
     },
     {
@@ -12636,7 +12636,7 @@
       "source_location": "L59",
       "_origin": "ast",
       "id": "queries_alert_rule_query_get_alert_rules",
-      "community": 96,
+      "community": 89,
       "norm_label": ".get_alert_rules()"
     },
     {
@@ -12646,7 +12646,7 @@
       "source_location": "L59",
       "_origin": "ast",
       "id": "07_uns_graphql_src_uns_graphql_queries_alert_rule_py_info",
-      "community": 96,
+      "community": 89,
       "norm_label": "info"
     },
     {
@@ -12656,7 +12656,7 @@
       "source_location": "L59",
       "_origin": "ast",
       "id": "07_uns_graphql_src_uns_graphql_queries_alert_rule_py_alertruletype",
-      "community": 96,
+      "community": 89,
       "norm_label": "alertruletype"
     },
     {
@@ -12676,7 +12676,7 @@
       "source_location": "L82",
       "_origin": "ast",
       "id": "queries_alert_rule_query_get_alert_rule_summary",
-      "community": 96,
+      "community": 89,
       "norm_label": ".get_alert_rule_summary()"
     },
     {
@@ -12686,7 +12686,7 @@
       "source_location": "L82",
       "_origin": "ast",
       "id": "alertrulesummary",
-      "community": 96,
+      "community": 89,
       "norm_label": "alertrulesummary"
     },
     {
@@ -12696,7 +12696,7 @@
       "source_location": "L100",
       "_origin": "ast",
       "id": "queries_alert_rule_query_on_shutdown",
-      "community": 96,
+      "community": 89,
       "norm_label": ".on_shutdown()"
     },
     {
@@ -12706,7 +12706,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "queries_alert_rule_rationale_1",
-      "community": 96,
+      "community": 89,
       "norm_label": "*******************************************************************************"
     },
     {
@@ -12716,7 +12716,7 @@
       "source_location": "L43",
       "_origin": "ast",
       "id": "queries_alert_rule_rationale_43",
-      "community": 96,
+      "community": 89,
       "norm_label": "keep rules whose topic the caller may see. unrestricted callers skip binding."
     },
     {
@@ -12726,7 +12726,7 @@
       "source_location": "L56",
       "_origin": "ast",
       "id": "queries_alert_rule_rationale_56",
-      "community": 96,
+      "community": 89,
       "norm_label": "all read access to schema `console`."
     },
     {
@@ -12736,7 +12736,7 @@
       "source_location": "L101",
       "_origin": "ast",
       "id": "queries_alert_rule_rationale_101",
-      "community": 96,
+      "community": 89,
       "norm_label": "nothing to do: the engine is shared with the asset model queries, which"
     },
     {
@@ -16856,7 +16856,7 @@
       "source_location": "L32",
       "_origin": "ast",
       "id": "auth_test_scope_test_unmodelled_topic_is_admin_only",
-      "community": 89,
+      "community": 113,
       "norm_label": "test_unmodelled_topic_is_admin_only()"
     },
     {
@@ -22366,7 +22366,7 @@
       "source_location": "L614",
       "_origin": "ast",
       "id": "type_test_sparkplugb_node_compare_datasets",
-      "community": 136,
+      "community": 16,
       "norm_label": "compare_datasets()"
     },
     {
@@ -23394,7 +23394,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "uns_model_init",
-      "community": 89,
+      "community": 181,
       "norm_label": "__init__.py"
     },
     {
@@ -23404,7 +23404,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "uns_model_init_rationale_1",
-      "community": 89,
+      "community": 181,
       "norm_label": "asset model and enrichment for the unified namespace platform.  a small surfac"
     },
     {
@@ -23904,7 +23904,7 @@
       "source_location": "L227",
       "_origin": "ast",
       "id": "uns_model_alert_rules_alertrulerepository_counts",
-      "community": 82,
+      "community": 5,
       "norm_label": ".counts()"
     },
     {
@@ -23914,7 +23914,7 @@
       "source_location": "L236",
       "_origin": "ast",
       "id": "uns_model_alert_rules_alertrulerepository_last_changed_at",
-      "community": 82,
+      "community": 5,
       "norm_label": ".last_changed_at()"
     },
     {
@@ -24044,7 +24044,7 @@
       "source_location": "L228",
       "_origin": "ast",
       "id": "uns_model_alert_rules_rationale_228",
-      "community": 82,
+      "community": 5,
       "norm_label": "how many rules exist, and how many are armed."
     },
     {
@@ -24054,7 +24054,7 @@
       "source_location": "L237",
       "_origin": "ast",
       "id": "uns_model_alert_rules_rationale_237",
-      "community": 82,
+      "community": 5,
       "norm_label": "when any rule was last edited, for a console deciding whether to refetch."
     },
     {
@@ -24794,7 +24794,7 @@
       "source_location": "L617",
       "_origin": "ast",
       "id": "uns_model_connectivity_connectivityrepository_save_unit_of_measure",
-      "community": 95,
+      "community": 5,
       "norm_label": ".save_unit_of_measure()"
     },
     {
@@ -24814,7 +24814,7 @@
       "source_location": "L634",
       "_origin": "ast",
       "id": "uns_model_connectivity_connectivityrepository_save_signal_label",
-      "community": 95,
+      "community": 5,
       "norm_label": ".save_signal_label()"
     },
     {
@@ -24844,7 +24844,7 @@
       "source_location": "L672",
       "_origin": "ast",
       "id": "uns_model_connectivity_connectivityrepository_record_test",
-      "community": 82,
+      "community": 5,
       "norm_label": ".record_test()"
     },
     {
@@ -25104,7 +25104,7 @@
       "source_location": "L618",
       "_origin": "ast",
       "id": "uns_model_connectivity_rationale_618",
-      "community": 95,
+      "community": 5,
       "norm_label": "insert a unit of measure. duplicate symbols return the existing row."
     },
     {
@@ -25114,7 +25114,7 @@
       "source_location": "L635",
       "_origin": "ast",
       "id": "uns_model_connectivity_rationale_635",
-      "community": 95,
+      "community": 5,
       "norm_label": "insert a signal label. duplicate names return the existing row."
     },
     {
@@ -25134,7 +25134,7 @@
       "source_location": "L675",
       "_origin": "ast",
       "id": "uns_model_connectivity_rationale_675",
-      "community": 82,
+      "community": 5,
       "norm_label": "remember the outcome of a connection test, timestamped by the server."
     },
     {
@@ -25194,7 +25194,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "uns_model_engine",
-      "community": 89,
+      "community": 181,
       "norm_label": "engine.py"
     },
     {
@@ -25334,7 +25334,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "uns_model_engine_rationale_1",
-      "community": 89,
+      "community": 181,
       "norm_label": "*******************************************************************************"
     },
     {
@@ -25474,7 +25474,7 @@
       "source_location": "L59",
       "_origin": "ast",
       "id": "uns_model_hierarchy_site_prefix",
-      "community": 79,
+      "community": 31,
       "norm_label": "_site_prefix()"
     },
     {
@@ -25484,7 +25484,7 @@
       "source_location": "L63",
       "_origin": "ast",
       "id": "uns_model_hierarchy_area_prefix",
-      "community": 79,
+      "community": 31,
       "norm_label": "_area_prefix()"
     },
     {
@@ -25494,7 +25494,7 @@
       "source_location": "L67",
       "_origin": "ast",
       "id": "uns_model_hierarchy_line_prefix",
-      "community": 79,
+      "community": 31,
       "norm_label": "_line_prefix()"
     },
     {
@@ -25504,7 +25504,7 @@
       "source_location": "L71",
       "_origin": "ast",
       "id": "uns_model_hierarchy_cell_prefix",
-      "community": 79,
+      "community": 31,
       "norm_label": "_cell_prefix()"
     },
     {
@@ -25604,7 +25604,7 @@
       "source_location": "L222",
       "_origin": "ast",
       "id": "uns_model_hierarchy_all_prefixes",
-      "community": 79,
+      "community": 31,
       "norm_label": "all_prefixes()"
     },
     {
@@ -25674,7 +25674,7 @@
       "source_location": "L223",
       "_origin": "ast",
       "id": "uns_model_hierarchy_rationale_223",
-      "community": 79,
+      "community": 31,
       "norm_label": "every node path in the tree, from the enterprise down to each machine."
     },
     {
@@ -25954,7 +25954,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "uns_model_model_config",
-      "community": 89,
+      "community": 181,
       "norm_label": "model_config.py"
     },
     {
@@ -26034,7 +26034,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "uns_model_model_config_rationale_1",
-      "community": 89,
+      "community": 181,
       "norm_label": "*******************************************************************************"
     },
     {
@@ -26094,7 +26094,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "uns_model_notifications",
-      "community": 89,
+      "community": 181,
       "norm_label": "notifications.py"
     },
     {
@@ -26194,7 +26194,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "uns_model_notifications_rationale_1",
-      "community": 89,
+      "community": 181,
       "norm_label": "cross-process notice that the authored asset model changed.  writers notify af"
     },
     {
@@ -26694,7 +26694,7 @@
       "source_location": "L496",
       "_origin": "ast",
       "id": "uns_model_oee_master_data_oeemasterdatarepository_counts",
-      "community": 82,
+      "community": 5,
       "norm_label": ".counts()"
     },
     {
@@ -26874,7 +26874,7 @@
       "source_location": "L497",
       "_origin": "ast",
       "id": "uns_model_oee_master_data_rationale_497",
-      "community": 82,
+      "community": 5,
       "norm_label": "row counts, for the importer's closing log line."
     },
     {
@@ -27864,7 +27864,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "uns_model_repositories",
-      "community": 89,
+      "community": 181,
       "norm_label": "repositories.py"
     },
     {
@@ -27994,7 +27994,7 @@
       "source_location": "L291",
       "_origin": "ast",
       "id": "uns_model_repositories_assetmodelrepository_unmodelled_topics",
-      "community": 82,
+      "community": 5,
       "norm_label": ".unmodelled_topics()"
     },
     {
@@ -28074,7 +28074,7 @@
       "source_location": "L381",
       "_origin": "ast",
       "id": "uns_model_repositories_assetmodelrepository_counts",
-      "community": 82,
+      "community": 5,
       "norm_label": ".counts()"
     },
     {
@@ -28084,7 +28084,7 @@
       "source_location": "L404",
       "_origin": "ast",
       "id": "uns_model_repositories_specs_for_path",
-      "community": 95,
+      "community": 181,
       "norm_label": "specs_for_path()"
     },
     {
@@ -28094,7 +28094,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "uns_model_repositories_rationale_1",
-      "community": 89,
+      "community": 181,
       "norm_label": "*******************************************************************************"
     },
     {
@@ -28174,7 +28174,7 @@
       "source_location": "L292",
       "_origin": "ast",
       "id": "uns_model_repositories_rationale_292",
-      "community": 82,
+      "community": 5,
       "norm_label": "topics that have published data but match no asset."
     },
     {
@@ -28234,7 +28234,7 @@
       "source_location": "L382",
       "_origin": "ast",
       "id": "uns_model_repositories_rationale_382",
-      "community": 82,
+      "community": 5,
       "norm_label": "how complete is the asset model? assets, definitions, bound and unmodelled topic"
     },
     {
@@ -28244,7 +28244,7 @@
       "source_location": "L405",
       "_origin": "ast",
       "id": "uns_model_repositories_rationale_405",
-      "community": 95,
+      "community": 181,
       "norm_label": "turn a topic prefix and a level sequence into assetspecs.      convenience for"
     },
     {
@@ -29214,7 +29214,7 @@
       "source_location": "L45",
       "_origin": "ast",
       "id": "uns_model_topic_path_join_segments",
-      "community": 79,
+      "community": 31,
       "norm_label": "join_segments()"
     },
     {
@@ -29314,7 +29314,7 @@
       "source_location": "L46",
       "_origin": "ast",
       "id": "uns_model_topic_path_rationale_46",
-      "community": 79,
+      "community": 31,
       "norm_label": "join non-empty segments with the topic separator."
     },
     {
@@ -30404,7 +30404,7 @@
       "source_location": "L512",
       "_origin": "ast",
       "id": "select",
-      "community": 82,
+      "community": 5,
       "norm_label": "select"
     },
     {
@@ -30714,7 +30714,7 @@
       "source_location": "L19",
       "_origin": "ast",
       "id": "test_test_hierarchy_test_join_and_split_round_trip",
-      "community": 79,
+      "community": 31,
       "norm_label": "test_join_and_split_round_trip()"
     },
     {
@@ -33404,7 +33404,7 @@
       "source_location": "L235",
       "_origin": "ast",
       "id": "test_test_seed_two_cell_tree",
-      "community": 9,
+      "community": 31,
       "norm_label": "_two_cell_tree()"
     },
     {
@@ -33674,7 +33674,7 @@
       "source_location": "L487",
       "_origin": "ast",
       "id": "test_test_seed_test_applying_a_smaller_tree_logs_pruned_paths",
-      "community": 9,
+      "community": 31,
       "norm_label": "test_applying_a_smaller_tree_logs_pruned_paths()"
     },
     {
@@ -34454,7 +34454,7 @@
       "source_location": "L89",
       "_origin": "ast",
       "id": "uns_opcua_collector_subscriptionhandler",
-      "community": 103,
+      "community": 42,
       "norm_label": "subscriptionhandler"
     },
     {
@@ -34604,7 +34604,7 @@
       "source_location": "L90",
       "_origin": "ast",
       "id": "uns_opcua_collector_rationale_90",
-      "community": 103,
+      "community": 42,
       "norm_label": "asyncua's handler protocol. called from the client's task, so it must not block:"
     },
     {
@@ -35504,7 +35504,7 @@
       "source_location": "L26",
       "_origin": "ast",
       "id": "uns_opcua_opcua_config_tagconfig",
-      "community": 42,
+      "community": 133,
       "norm_label": "tagconfig"
     },
     {
@@ -35674,7 +35674,7 @@
       "source_location": "L27",
       "_origin": "ast",
       "id": "uns_opcua_opcua_config_rationale_27",
-      "community": 42,
+      "community": 133,
       "norm_label": "one opc ua node mapped to an asset and the topic segments below it."
     },
     {
@@ -36544,7 +36544,7 @@
       "source_location": "L36",
       "_origin": "ast",
       "id": "test_test_collector_test_request_without_a_deadband_carries_no_filter",
-      "community": 42,
+      "community": 103,
       "norm_label": "test_request_without_a_deadband_carries_no_filter()"
     },
     {
@@ -36554,7 +36554,7 @@
       "source_location": "L55",
       "_origin": "ast",
       "id": "test_test_collector_test_request_with_a_deadband_carries_a_datachange_filter",
-      "community": 42,
+      "community": 103,
       "norm_label": "test_request_with_a_deadband_carries_a_datachange_filter()"
     },
     {
@@ -36614,7 +36614,7 @@
       "source_location": "L154",
       "_origin": "ast",
       "id": "test_test_collector_collector",
-      "community": 42,
+      "community": 103,
       "norm_label": "_collector()"
     },
     {
@@ -36654,7 +36654,7 @@
       "source_location": "L180",
       "_origin": "ast",
       "id": "test_test_collector_test_retry_rejected_counts_only_items_that_had_a_deadband",
-      "community": 42,
+      "community": 103,
       "norm_label": "test_retry_rejected_counts_only_items_that_had_a_deadband()"
     },
     {
@@ -36684,7 +36684,7 @@
       "source_location": "L181",
       "_origin": "ast",
       "id": "test_test_collector_rationale_181",
-      "community": 42,
+      "community": 103,
       "norm_label": "deadband_rejected is for a rejected filter, not for every rejected item."
     },
     {
@@ -36694,7 +36694,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "test_test_collector_integration",
-      "community": 42,
+      "community": 133,
       "norm_label": "test_collector_integration.py"
     },
     {
@@ -36704,7 +36704,7 @@
       "source_location": "L27",
       "_origin": "ast",
       "id": "test_test_collector_integration_opcua_server",
-      "community": 42,
+      "community": 133,
       "norm_label": "opcua_server()"
     },
     {
@@ -36714,7 +36714,7 @@
       "source_location": "L41",
       "_origin": "ast",
       "id": "test_test_collector_integration_server_config",
-      "community": 42,
+      "community": 133,
       "norm_label": "_server_config()"
     },
     {
@@ -36734,7 +36734,7 @@
       "source_location": "L41",
       "_origin": "ast",
       "id": "10_uns_opcua_test_test_collector_integration_py_serverconfig",
-      "community": 42,
+      "community": 133,
       "norm_label": "serverconfig"
     },
     {
@@ -36744,7 +36744,7 @@
       "source_location": "L58",
       "_origin": "ast",
       "id": "test_test_collector_integration_drain",
-      "community": 42,
+      "community": 133,
       "norm_label": "_drain()"
     },
     {
@@ -36754,7 +36754,7 @@
       "source_location": "L58",
       "_origin": "ast",
       "id": "10_uns_opcua_test_test_collector_integration_py_queue",
-      "community": 42,
+      "community": 133,
       "norm_label": "queue"
     },
     {
@@ -36774,7 +36774,7 @@
       "source_location": "L67",
       "_origin": "ast",
       "id": "test_test_collector_integration_collect",
-      "community": 42,
+      "community": 133,
       "norm_label": "_collect()"
     },
     {
@@ -36794,7 +36794,7 @@
       "source_location": "L80",
       "_origin": "ast",
       "id": "test_test_collector_integration_wait_until",
-      "community": 42,
+      "community": 133,
       "norm_label": "_wait_until()"
     },
     {
@@ -36804,7 +36804,7 @@
       "source_location": "L87",
       "_origin": "ast",
       "id": "test_test_collector_integration_start_mixer_server",
-      "community": 42,
+      "community": 133,
       "norm_label": "_start_mixer_server()"
     },
     {
@@ -36814,7 +36814,7 @@
       "source_location": "L100",
       "_origin": "ast",
       "id": "test_test_collector_integration_server_up",
-      "community": 42,
+      "community": 133,
       "norm_label": "_server_up()"
     },
     {
@@ -36824,7 +36824,7 @@
       "source_location": "L104",
       "_origin": "ast",
       "id": "test_test_collector_integration_test_subscribing_delivers_the_current_value_immediately",
-      "community": 42,
+      "community": 133,
       "norm_label": "test_subscribing_delivers_the_current_value_immediately()"
     },
     {
@@ -36834,7 +36834,7 @@
       "source_location": "L124",
       "_origin": "ast",
       "id": "test_test_collector_integration_test_server_side_deadband_suppresses_sub_threshold_changes",
-      "community": 42,
+      "community": 133,
       "norm_label": "test_server_side_deadband_suppresses_sub_threshold_changes()"
     },
     {
@@ -36844,7 +36844,7 @@
       "source_location": "L146",
       "_origin": "ast",
       "id": "test_test_collector_integration_test_collector_reconnects_after_the_opcua_session_is_lost",
-      "community": 42,
+      "community": 133,
       "norm_label": "test_collector_reconnects_after_the_opcua_session_is_lost()"
     },
     {
@@ -36854,7 +36854,7 @@
       "source_location": "L192",
       "_origin": "ast",
       "id": "test_test_collector_integration_test_an_unparsable_node_id_does_not_stop_the_rest_of_the_server",
-      "community": 42,
+      "community": 133,
       "norm_label": "test_an_unparsable_node_id_does_not_stop_the_rest_of_the_server()"
     },
     {
@@ -36864,7 +36864,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "test_test_collector_integration_rationale_1",
-      "community": 42,
+      "community": 133,
       "norm_label": "end-to-end collector tests against an in-process opc ua server.  these assert"
     },
     {
@@ -36874,7 +36874,7 @@
       "source_location": "L28",
       "_origin": "ast",
       "id": "test_test_collector_integration_rationale_28",
-      "community": 42,
+      "community": 133,
       "norm_label": "a minimal server exposing one writable double, with no security."
     },
     {
@@ -36884,7 +36884,7 @@
       "source_location": "L59",
       "_origin": "ast",
       "id": "test_test_collector_integration_rationale_59",
-      "community": 42,
+      "community": 133,
       "norm_label": "collect until `expected` rows arrive or the timeout expires."
     },
     {
@@ -36894,7 +36894,7 @@
       "source_location": "L81",
       "_origin": "ast",
       "id": "test_test_collector_integration_rationale_81",
-      "community": 42,
+      "community": 133,
       "norm_label": "poll until `predicate()` is true, or fail the test by timing out."
     },
     {
@@ -36904,7 +36904,7 @@
       "source_location": "L88",
       "_origin": "ast",
       "id": "test_test_collector_integration_rationale_88",
-      "community": 42,
+      "community": 133,
       "norm_label": "a start/stop-able server so a session-loss test can kill and revive it."
     },
     {
@@ -36914,7 +36914,7 @@
       "source_location": "L105",
       "_origin": "ast",
       "id": "test_test_collector_integration_rationale_105",
-      "community": 42,
+      "community": 133,
       "norm_label": "this is what recovers the gap after a session drop - no explicit read needed."
     },
     {
@@ -36924,7 +36924,7 @@
       "source_location": "L147",
       "_origin": "ast",
       "id": "test_test_collector_integration_rationale_147",
-      "community": 42,
+      "community": 133,
       "norm_label": "a dead transport must drop server_up and the reconnect loop must re-subscribe"
     },
     {
@@ -37354,7 +37354,7 @@
       "source_location": "L36",
       "_origin": "ast",
       "id": "10_uns_opcua_test_test_main_py_spoolconfig",
-      "community": 42,
+      "community": 8,
       "norm_label": "spoolconfig"
     },
     {
@@ -58664,7 +58664,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "uns_factory_agent_auth",
-      "community": 12,
+      "community": 110,
       "norm_label": "auth.py"
     },
     {
@@ -58724,7 +58724,7 @@
       "source_location": "L38",
       "_origin": "ast",
       "id": "uns_factory_agent_auth_jwkscache",
-      "community": 12,
+      "community": 110,
       "norm_label": "jwkscache"
     },
     {
@@ -58734,7 +58734,7 @@
       "source_location": "L39",
       "_origin": "ast",
       "id": "uns_factory_agent_auth_jwkscache_signing_key",
-      "community": 12,
+      "community": 110,
       "norm_label": ".signing_key()"
     },
     {
@@ -58754,7 +58754,7 @@
       "source_location": "L51",
       "_origin": "ast",
       "id": "uns_factory_agent_auth_roles_from_claims",
-      "community": 12,
+      "community": 110,
       "norm_label": "_roles_from_claims()"
     },
     {
@@ -58764,7 +58764,7 @@
       "source_location": "L57",
       "_origin": "ast",
       "id": "uns_factory_agent_auth_identity_from_token",
-      "community": 12,
+      "community": 110,
       "norm_label": "identity_from_token()"
     },
     {
@@ -58774,7 +58774,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "uns_factory_agent_auth_rationale_1",
-      "community": 12,
+      "community": 110,
       "norm_label": "turn a bearer token into an identity, or raise."
     },
     {
@@ -60564,7 +60564,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "test_test_app_auth",
-      "community": 12,
+      "community": 110,
       "norm_label": "test_app_auth.py"
     },
     {
@@ -60574,7 +60574,7 @@
       "source_location": "L13",
       "_origin": "ast",
       "id": "test_test_app_auth_cache",
-      "community": 12,
+      "community": 110,
       "norm_label": "_cache()"
     },
     {
@@ -60594,7 +60594,7 @@
       "source_location": "L22",
       "_origin": "ast",
       "id": "test_test_app_auth_test_missing_bearer_is_401",
-      "community": 12,
+      "community": 110,
       "norm_label": "test_missing_bearer_is_401()"
     },
     {
@@ -60604,7 +60604,7 @@
       "source_location": "L31",
       "_origin": "ast",
       "id": "test_test_app_auth_test_valid_bearer_resolves_identity",
-      "community": 12,
+      "community": 110,
       "norm_label": "test_valid_bearer_resolves_identity()"
     },
     {
@@ -60944,7 +60944,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "test_test_conversations_http",
-      "community": 134,
+      "community": 110,
       "norm_label": "test_conversations_http.py"
     },
     {
@@ -60954,7 +60954,7 @@
       "source_location": "L12",
       "_origin": "ast",
       "id": "test_test_conversations_http_client",
-      "community": 134,
+      "community": 110,
       "norm_label": "_client()"
     },
     {
@@ -60964,7 +60964,7 @@
       "source_location": "L12",
       "_origin": "ast",
       "id": "memoryconversationstore",
-      "community": 134,
+      "community": 110,
       "norm_label": "memoryconversationstore"
     },
     {
@@ -60974,7 +60974,7 @@
       "source_location": "L19",
       "_origin": "ast",
       "id": "test_test_conversations_http_test_list_returns_only_caller_threads",
-      "community": 134,
+      "community": 110,
       "norm_label": "test_list_returns_only_caller_threads()"
     },
     {
@@ -60984,7 +60984,7 @@
       "source_location": "L28",
       "_origin": "ast",
       "id": "test_test_conversations_http_test_post_creates_conversation",
-      "community": 134,
+      "community": 110,
       "norm_label": "test_post_creates_conversation()"
     },
     {
@@ -60994,7 +60994,7 @@
       "source_location": "L36",
       "_origin": "ast",
       "id": "test_test_conversations_http_test_get_foreign_is_404",
-      "community": 134,
+      "community": 110,
       "norm_label": "test_get_foreign_is_404()"
     },
     {
@@ -61004,7 +61004,7 @@
       "source_location": "L43",
       "_origin": "ast",
       "id": "test_test_conversations_http_test_delete_mine_is_204",
-      "community": 134,
+      "community": 110,
       "norm_label": "test_delete_mine_is_204()"
     },
     {
@@ -61014,7 +61014,7 @@
       "source_location": "L50",
       "_origin": "ast",
       "id": "test_test_conversations_http_test_delete_foreign_is_404",
-      "community": 134,
+      "community": 110,
       "norm_label": "test_delete_foreign_is_404()"
     },
     {
@@ -64378,9 +64378,9 @@
       "source_file": "00_uns_config/test/test_hivemq_edge_stack.py",
       "source_location": "L130",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "test_test_hivemq_edge_stack",
-      "target": "test_test_hivemq_edge_stack_test_github_actions_mqtt_service_is_hivemq_edge",
-      "confidence_score": 1.0
+      "target": "test_test_hivemq_edge_stack_test_github_actions_mqtt_service_is_hivemq_edge"
     },
     {
       "relation": "contains",
@@ -64388,9 +64388,9 @@
       "source_file": "00_uns_config/test/test_hivemq_edge_stack.py",
       "source_location": "L148",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "test_test_hivemq_edge_stack",
-      "target": "test_test_hivemq_edge_stack_test_github_actions_workflows_do_not_use_emqx_image",
-      "confidence_score": 1.0
+      "target": "test_test_hivemq_edge_stack_test_github_actions_workflows_do_not_use_emqx_image"
     },
     {
       "relation": "contains",
@@ -64428,9 +64428,9 @@
       "source_file": "00_uns_config/test/test_hivemq_edge_stack.py",
       "source_location": "L120",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "test_test_hivemq_edge_stack",
-      "target": "test_test_hivemq_edge_stack_workflow_mqtt_services",
-      "confidence_score": 1.0
+      "target": "test_test_hivemq_edge_stack_workflow_mqtt_services"
     },
     {
       "relation": "contains",
@@ -64557,9 +64557,9 @@
       "source_file": "00_uns_config/test/test_hivemq_edge_stack.py",
       "source_location": "L55",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "test_test_hivemq_edge_stack_rationale_55",
-      "target": "test_test_hivemq_edge_stack_test_default_config_has_no_protocol_adapters",
-      "confidence_score": 1.0
+      "target": "test_test_hivemq_edge_stack_test_default_config_has_no_protocol_adapters"
     },
     {
       "relation": "calls",
@@ -64634,9 +64634,9 @@
       "source_file": "00_uns_config/test/test_hivemq_edge_stack.py",
       "source_location": "L133",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "test_test_hivemq_edge_stack_test_github_actions_mqtt_service_is_hivemq_edge",
-      "target": "test_test_hivemq_edge_stack_workflow_mqtt_services",
-      "confidence_score": 1.0
+      "target": "test_test_hivemq_edge_stack_workflow_mqtt_services"
     },
     {
       "relation": "rationale_for",
@@ -64644,9 +64644,9 @@
       "source_file": "00_uns_config/test/test_hivemq_edge_stack.py",
       "source_location": "L131",
       "weight": 1.0,
+      "confidence_score": 1.0,
       "source": "test_test_hivemq_edge_stack_rationale_131",
-      "target": "test_test_hivemq_edge_stack_test_github_actions_mqtt_service_is_hivemq_edge",
-      "confidence_score": 1.0
+      "target": "test_test_hivemq_edge_stack_test_github_actions_mqtt_service_is_hivemq_edge"
     },
     {
       "relation": "calls",
@@ -72270,71 +72270,71 @@
       "relation": "rationale_for",
       "confidence": "EXTRACTED",
       "source_file": "02_mqtt-cluster/test/test_mqtt_listner.py",
-      "source_location": "L81",
+      "source_location": "L80",
       "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "test_test_mqtt_listner_rationale_81",
-      "target": "test_test_mqtt_listner_test_01_unauthenticated_connections"
+      "source": "test_test_mqtt_listner_rationale_80",
+      "target": "test_test_mqtt_listner_test_01_unauthenticated_connections",
+      "confidence_score": 1.0
     },
     {
       "relation": "rationale_for",
       "confidence": "EXTRACTED",
       "source_file": "02_mqtt-cluster/test/test_mqtt_listner.py",
-      "source_location": "L164",
+      "source_location": "L163",
       "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "test_test_mqtt_listner_rationale_164",
-      "target": "test_test_mqtt_listner_test_02_authenticated_connections"
+      "source": "test_test_mqtt_listner_rationale_163",
+      "target": "test_test_mqtt_listner_test_02_authenticated_connections",
+      "confidence_score": 1.0
     },
     {
       "relation": "rationale_for",
       "confidence": "EXTRACTED",
       "source_file": "02_mqtt-cluster/test/test_mqtt_listner.py",
-      "source_location": "L240",
+      "source_location": "L239",
       "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "test_test_mqtt_listner_rationale_240",
-      "target": "test_test_mqtt_listner_test_is_topic_matched"
+      "source": "test_test_mqtt_listner_rationale_239",
+      "target": "test_test_mqtt_listner_test_is_topic_matched",
+      "confidence_score": 1.0
     },
     {
       "relation": "rationale_for",
       "confidence": "EXTRACTED",
       "source_file": "02_mqtt-cluster/test/test_mqtt_listner.py",
-      "source_location": "L350",
+      "source_location": "L349",
       "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "test_test_mqtt_listner_rationale_350",
-      "target": "test_test_mqtt_listner_test_del_key_from_dict"
+      "source": "test_test_mqtt_listner_rationale_349",
+      "target": "test_test_mqtt_listner_test_del_key_from_dict",
+      "confidence_score": 1.0
     },
     {
       "relation": "rationale_for",
       "confidence": "EXTRACTED",
       "source_file": "02_mqtt-cluster/test/test_mqtt_listner.py",
-      "source_location": "L445",
+      "source_location": "L444",
       "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "test_test_mqtt_listner_rationale_445",
-      "target": "test_test_mqtt_listner_test_filter_ignored_attributes"
+      "source": "test_test_mqtt_listner_rationale_444",
+      "target": "test_test_mqtt_listner_test_filter_ignored_attributes",
+      "confidence_score": 1.0
     },
     {
       "relation": "rationale_for",
       "confidence": "EXTRACTED",
       "source_file": "02_mqtt-cluster/test/test_mqtt_listner.py",
-      "source_location": "L531",
+      "source_location": "L530",
       "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "test_test_mqtt_listner_rationale_531",
-      "target": "test_test_mqtt_listner_test_get_payload_as_dict"
+      "source": "test_test_mqtt_listner_rationale_530",
+      "target": "test_test_mqtt_listner_test_get_payload_as_dict",
+      "confidence_score": 1.0
     },
     {
       "relation": "rationale_for",
       "confidence": "EXTRACTED",
       "source_file": "02_mqtt-cluster/test/test_mqtt_listner.py",
-      "source_location": "L550",
+      "source_location": "L549",
       "weight": 1.0,
-      "confidence_score": 1.0,
-      "source": "test_test_mqtt_listner_rationale_550",
-      "target": "test_test_mqtt_listner_test_on_connect_subscribe_does_not_reuse_connect_properties"
+      "source": "test_test_mqtt_listner_rationale_549",
+      "target": "test_test_mqtt_listner_test_on_connect_subscribe_does_not_reuse_connect_properties",
+      "confidence_score": 1.0
     },
     {
       "relation": "contains",
@@ -225694,5 +225694,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "9ea472cd85e8eb463d84b7cfadc8a0d8573440e8"
+  "built_at_commit": "4ea845039b48c3a163deaa49003f7c0d078208f6"
 }

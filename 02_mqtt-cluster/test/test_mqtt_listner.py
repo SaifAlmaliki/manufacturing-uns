@@ -18,12 +18,11 @@
 Test for uns_mqtt.mqtt_listener
 """
 
-import random
 import time
+import uuid
 from pathlib import Path
 
 import pytest
-
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
@@ -82,7 +81,7 @@ def test_01_unauthenticated_connections(clean_session, protocol,
     Test all the parameters ( except username password against EMQX's hosted broker instance)
     """
     uns_client = UnsMQTTClient(
-        client_id=f"test_01_{protocol}-{time.time()}-{random.randint(0, 1000)}",  # noqa: S311
+        client_id=f"test_01_{protocol}-{time.time()}-{uuid.uuid4().hex}",
         clean_session=clean_session,
         protocol=protocol,
         transport=transport,
@@ -165,7 +164,7 @@ def test_02_authenticated_connections(
     Test all the parameters ( including username password against Mosquitto's hosted broker)
     """
     uns_client = UnsMQTTClient(
-        client_id=f"test_01_{protocol}-{time.time()}-{random.randint(0, 1000)}",  # noqa: S311
+        client_id=f"test_01_{protocol}-{time.time()}-{uuid.uuid4().hex}",
         clean_session=clean_session,
         protocol=protocol,
         transport=transport,
@@ -534,7 +533,7 @@ def test_get_payload_as_dict(topic: str, payload_msg, expected_result):
     # create a UnsMQTTClient but dont connect to the broker
     # object is needed to test the functions
     uns_client = UnsMQTTClient(
-        client_id=f"test_01_{time.time()}-{random.randint(0, 1000)}",  # noqa: S311
+        client_id=f"test_01_{time.time()}-{uuid.uuid4().hex}",
         clean_session=True,
         protocol=MQTTVersion.MQTTv5,
         transport="tcp",
@@ -549,7 +548,7 @@ def test_get_payload_as_dict(topic: str, payload_msg, expected_result):
 def test_on_connect_subscribe_does_not_reuse_connect_properties():
     """SUBSCRIBE must not carry CONNECT properties; HiveMQ Edge treats that as Malformed packet."""
     uns_client = UnsMQTTClient(
-        client_id=f"test_subscribe_props_{time.time()}-{random.randint(0, 1000)}",  # noqa: S311
+        client_id=f"test_subscribe_props_{time.time()}-{uuid.uuid4().hex}",
         clean_session=True,
         protocol=MQTTVersion.MQTTv5,
         transport="tcp",

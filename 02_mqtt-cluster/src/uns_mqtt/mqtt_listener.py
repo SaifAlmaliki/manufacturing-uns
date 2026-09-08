@@ -133,7 +133,7 @@ class UnsMQTTClient(mqtt_client.Client):
         self.qos: int = 0
 
         # call back methods
-        def on_uns_connect(client, userdata, flags, return_code, properties=None):
+        def on_uns_connect(client, userdata, flags, return_code, _properties=None):
             """
             Call back method when a mqtt connection happens
             """
