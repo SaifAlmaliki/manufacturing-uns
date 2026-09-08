@@ -202,6 +202,7 @@ services:
   # in conf when the catalog is empty. extra_hosts lets it reach OPC servers on
   # the host (e.g. opc.tcp://desktop-h4hdql2:50000/).
   opcua_client:
+    profiles: ["legacy-opcua"]
     build:
       context: .
       dockerfile: ./10_uns_opcua/Dockerfile
@@ -419,7 +420,6 @@ services:
       - historian_client
       - graphdb_client
       - oee_client
-      - opcua_client
 
   uns_grafana:
     image: "grafana/grafana:latest"
