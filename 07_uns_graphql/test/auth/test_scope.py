@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -98,6 +99,18 @@ async def test_allowed_topic_uses_connectivity_asset_when_topic_unmodelled(monke
     monkeypatch.setattr("uns_graphql.auth.scope._connectivity_asset_path", fake_connectivity_path)
     scope = AccessScope(unrestricted=False, root_paths=frozenset({"HalabjaWTP/Halabja/Distribution"}))
     assert await allowed_topic(scope, topic, resolver) is True
+
+
+@pytest.mark.asyncio
+async def test_allowed_topic_rejects_modelled_topic_outside_scope_without_connectivity_lookup(monkeypatch):
+    """A modelled but out-of-scope topic must not open the Connectivity catalog."""
+    topic = "AcmeWater/Site1/RawWater/Train1/temp"
+    resolver = AsyncMock(resolve=AsyncMock(return_value=SimpleNamespace(asset_path="AcmeWater/Site1/RawWater")))
+    connectivity = AsyncMock(side_effect=AssertionError("modelled topics must not query connectivity"))
+    monkeypatch.setattr("uns_graphql.auth.scope._connectivity_asset_path", connectivity)
+    scope = AccessScope(unrestricted=False, root_paths=frozenset({"AcmeWater/Site1/Filtration"}))
+    assert await allowed_topic(scope, topic, resolver) is False
+    connectivity.assert_not_awaited()
 
 
 @pytest.mark.asyncio

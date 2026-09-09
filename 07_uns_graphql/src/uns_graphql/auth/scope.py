@@ -90,5 +90,7 @@ async def allowed_topic(scope: AccessScope, topic: str, resolver: Any) -> bool:
     bound = None if context is None else context.asset_path
     if visible_topic(scope, bound):
         return True
+    if bound is not None:
+        return False
     connectivity_bound = await _connectivity_asset_path(topic)
     return visible_topic(scope, connectivity_bound)
