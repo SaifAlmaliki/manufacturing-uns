@@ -1,5 +1,12 @@
 # Historic Event lake Mapper Implementation Plan
 
+> **Planning update (2026-09-09):** For the coordinated development cutover, use
+> [UNS scalability foundation](./2026-09-09-uns-scalability-foundation.md).
+> The new plan replaces this plan's dotted-topic dual write, three-column event
+> contract, poison-record skipping and per-MQTT-topic object layout. The original
+> steps below remain historical/reference material and must not be executed as a
+> competing implementation of the scalability enhancement.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** `kafka_mapper` also produces envelope topic `uns.historic-events`; a new Mapper writes date-partitioned Parquet to MinIO (default), AWS S3, or Azure ADLS.

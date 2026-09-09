@@ -279,9 +279,12 @@ Use an Alembic migration to:
 - Replace the old JSONB/subscriber unique key with `(time, event_id)`, respecting
   the hypertable time dimension. Source-identified events have invariant `time`;
   ingress receipts freeze it across Kafka retry/replay.
-- Compare an immutable content hash on conflict. A reused identity with different
-  source content is quarantined, not silently accepted as a duplicate. Exclude
-  receive time and other delivery metadata from that comparison.
+- Compare an immutable content hash on `(time, event_id)` conflict. Different
+  source content at that key is quarantined, not silently accepted as a duplicate.
+  Exclude receive time and other delivery metadata from that comparison. This
+  index does not detect a faulty producer reusing an ID with a different timestamp;
+  source-level deduplication requires the immutable source-time contract. Do not
+  claim a global, unbounded event-ID registry from this time-scoped constraint.
 - Add `event_id` to Metric rows for traceability, without splitting raw/Metric
   atomicity. Historical development rows get deterministic migration-only IDs
   from existing row contents; no false source-ID guarantee for old data.

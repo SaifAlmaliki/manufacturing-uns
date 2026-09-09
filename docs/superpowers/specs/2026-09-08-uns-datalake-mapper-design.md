@@ -1,5 +1,13 @@
 # Historic Event lake Mapper (S3 or ADLS)
 
+> **Scalability enhancement (2026-09-09):** The development-only coordinated
+> cutover is designed in [UNS scalability foundation](./2026-09-09-uns-scalability-foundation-design.md).
+> Its proposed canonical envelope, removal of dotted Kafka topics, durable
+> rejection handling and bounded partition-based file layout replace those parts
+> of this earlier design when the enhancement is implemented. Use the
+> [new plan](../plans/2026-09-09-uns-scalability-foundation.md) for that work;
+> the earlier text below is retained as historical design context.
+
 Date: 2026-09-08
 Modules: `00_uns_config`, `06_uns_kafka`, `14_uns_datalake`,
 `docker-compose.yml`, `conf/settings.yaml`, `08_uns_observability/prometheus/`
