@@ -245,6 +245,7 @@ async def test_get_alert_rule_summary_counts_only_visible_rules():
         patch(REPOSITORY, return_value=repository),
         patch("uns_graphql.auth.scope.scope_for", AsyncMock(return_value=filt_scope)),
         patch("uns_graphql.queries.alert_rule._context_resolver", return_value=resolver),
+        patch("uns_graphql.auth.scope._connectivity_asset_path", AsyncMock(return_value=None)),
     ):
         result = await UNSGraphql.schema.execute(
             """{ getAlertRuleSummary { rules enabledRules lastChangedAt } }""",

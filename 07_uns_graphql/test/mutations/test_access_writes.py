@@ -1,5 +1,6 @@
 """Plant writes refuse Assets and topics outside the caller's Access Groups."""
 
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -19,6 +20,8 @@ RAW_TOPIC = f"{RAW}/x"
 ALERT_REPOSITORY = "uns_graphql.mutations.alert_rule._repository"
 OEE_REPOSITORY = "uns_graphql.mutations.oee._repository"
 CONTEXT_RESOLVER = "uns_graphql.queries.asset._context_resolver"
+ALERT_CONTEXT_RESOLVER = "uns_graphql.mutations.alert_rule.asset_query._context_resolver"
+CONNECTIVITY_ASSET_PATH = "uns_graphql.auth.scope._connectivity_asset_path"
 
 
 def _info(*roles: str) -> SimpleNamespace:
@@ -46,6 +49,18 @@ def _bind_topic():
     return SimpleNamespace(resolve=AsyncMock(side_effect=resolve))
 
 
+@contextmanager
+def _topic_scope_patches():
+    """Unit tests must not open the Asset Model or Connectivity catalog."""
+    resolver = _bind_topic()
+    with (
+        patch(CONTEXT_RESOLVER, return_value=resolver),
+        patch(ALERT_CONTEXT_RESOLVER, return_value=resolver),
+        patch(CONNECTIVITY_ASSET_PATH, AsyncMock(return_value=None)),
+    ):
+        yield
+
+
 @pytest.mark.asyncio
 async def test_save_alert_rule_refuses_a_topic_outside_the_groups():
     """An engineer who may author rules still cannot aim one at another plant."""
@@ -53,10 +68,7 @@ async def test_save_alert_rule_refuses_a_topic_outside_the_groups():
     with (
         patch(ALERT_REPOSITORY, return_value=repository),
         patch("uns_graphql.auth.scope.scope_for", AsyncMock(return_value=_filt_scope())),
-        patch(
-            CONTEXT_RESOLVER,
-            return_value=_bind_topic(),
-        ),
+        _topic_scope_patches(),
         pytest.raises(NotPermittedError, match="outside your Access Groups"),
     ):
         await AlertRuleMutation().save_alert_rule(_info("engineer"), _rule_input())
@@ -72,10 +84,7 @@ async def test_save_alert_rules_refuses_before_any_row_is_written():
     with (
         patch(ALERT_REPOSITORY, return_value=repository),
         patch("uns_graphql.auth.scope.scope_for", AsyncMock(return_value=_filt_scope())),
-        patch(
-            CONTEXT_RESOLVER,
-            return_value=_bind_topic(),
-        ),
+        _topic_scope_patches(),
         pytest.raises(NotPermittedError, match=RAW_TOPIC),
     ):
         await AlertRuleMutation().save_alert_rules(_info("engineer"), rules)
@@ -103,10 +112,7 @@ async def test_delete_alert_rule_refuses_a_topic_outside_the_groups():
     with (
         patch(ALERT_REPOSITORY, return_value=repository),
         patch("uns_graphql.auth.scope.scope_for", AsyncMock(return_value=_filt_scope())),
-        patch(
-            CONTEXT_RESOLVER,
-            return_value=_bind_topic(),
-        ),
+        _topic_scope_patches(),
         pytest.raises(NotPermittedError, match="outside your Access Groups"),
     ):
         await AlertRuleMutation().delete_alert_rule(_info("engineer"), "rule-1")
@@ -134,10 +140,7 @@ async def test_record_alert_rule_evaluation_refuses_a_topic_outside_the_groups()
     with (
         patch(ALERT_REPOSITORY, return_value=repository),
         patch("uns_graphql.auth.scope.scope_for", AsyncMock(return_value=_filt_scope())),
-        patch(
-            CONTEXT_RESOLVER,
-            return_value=_bind_topic(),
-        ),
+        _topic_scope_patches(),
         pytest.raises(NotPermittedError, match="outside your Access Groups"),
     ):
         await AlertRuleMutation().record_alert_rule_evaluation(

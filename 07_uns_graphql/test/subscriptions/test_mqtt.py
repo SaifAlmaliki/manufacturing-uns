@@ -231,6 +231,7 @@ async def test_get_mqtt_messages_drops_out_of_scope_topics():
             patch("uns_graphql.subscriptions.mqtt.Client", return_value=AsyncContextManagerMock(mock_client)),
             patch("uns_graphql.auth.scope.scope_for", AsyncMock(return_value=filt_scope)),
             patch("uns_graphql.subscriptions.mqtt._context_resolver", return_value=resolver),
+            patch("uns_graphql.auth.scope._connectivity_asset_path", AsyncMock(return_value=None)),
         ):
             async_message_list = subscription.get_mqtt_messages(info, [MQTTTopicInput(topic="#")])
             received = [message async for message in async_message_list]
