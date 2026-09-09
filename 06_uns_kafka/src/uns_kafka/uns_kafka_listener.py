@@ -18,10 +18,13 @@
 MQTT listener that listens to UNS namespace for messages and publishes to corresponding Kafka topic
 """
 
+import json
 import logging
 import random
 import time
+from datetime import UTC, datetime
 
+from uns_config.datalake import build_envelope
 from uns_config.uns_ingest import is_historic_event_topic
 from uns_mqtt.mqtt_listener import UnsMQTTClient
 
@@ -81,12 +84,15 @@ class UNSKafkaMapper:
             LOGGER.debug("Skipping Platform Observability topic %s", msg.topic)
             return
 
-        # Connect to Kafka, convert the MQTT topic to Kafka topic and send the message
-        self.kafka_handler.publish(
-            msg.topic,
-            str(self.uns_client.get_payload_as_dict(
-                topic=msg.topic, payload=msg.payload, mqtt_ignored_attributes=MQTTConfig.ignored_attributes
-            )),
+        payload = self.uns_client.get_payload_as_dict(
+            topic=msg.topic, payload=msg.payload, mqtt_ignored_attributes=MQTTConfig.ignored_attributes
+        )
+        self.kafka_handler.publish(msg.topic, str(payload))
+        envelope = build_envelope(
+            msg.topic, payload, timestamp_key=MQTTConfig.timestamp_key, now=datetime.now(UTC)
+        )
+        self.kafka_handler.produce_raw(
+            KAFKAConfig.envelope_topic, json.dumps(envelope), key=msg.topic
         )
 
     def on_disconnect(

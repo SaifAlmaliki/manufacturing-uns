@@ -194,6 +194,23 @@ default:
   kafka:
     bootstrap_servers: "localhost:9092"
 
+  datalake:
+    backend: s3
+    kafka:
+      topic: uns.historic-events
+      group_id: uns_datalake
+    flush:
+      interval_seconds: 60
+      max_bytes: 8388608
+    s3:
+      bucket: uns-historic-events
+      region: us-east-1
+      endpoint_url: http://uns-minio:9000
+    adls:
+      account: ""
+      container: ""
+    metrics_port: 9096
+
 graphql:
   mqtt:
     topics: ["#"]
@@ -226,6 +243,7 @@ kafka_mapper:
   mqtt:
     topics: ["#"]
   kafka:
+    envelope_topic: uns.historic-events
     config:
       client.id: "uns_kafka_client"
       bootstrap.servers: "localhost:9092"

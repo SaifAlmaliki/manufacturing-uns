@@ -50,58 +50,5 @@
                 </tag>
             </tags>
         </protocol-adapter>
-        <protocol-adapter>
-            <adapterId>catalog-srv_mtrnvz29_q0b171</adapterId>
-            <protocolId>s7</protocolId>
-            <config>
-                <host>10.0.0.6</host>
-                <port>103</port>
-                <controllerType>S7_300</controllerType>
-            </config>
-            <northboundMappings>
-                <northboundMapping>
-                    <topic>Acme/Line/Speed</topic>
-                    <tagName>ID103</tagName>
-                    <maxQos>1</maxQos>
-                    <includeTimestamp>true</includeTimestamp>
-                </northboundMapping>
-            </northboundMappings>
-            <tags>
-                <tag>
-                    <name>ID103</name>
-                    <description>Speed from S7</description>
-                    <definition>
-                        <tagAddress>%ID103</tagAddress>
-                        <dataType>DINT</dataType>
-                    </definition>
-                </tag>
-            </tags>
-        </protocol-adapter>
-        <protocol-adapter>
-            <adapterId>catalog-srv_mtrnx3r2_f5smo2</adapterId>
-            <protocolId>eip</protocolId>
-            <config>
-                <host>10.0.0.8</host>
-                <port>44818</port>
-            </config>
-            <northboundMappings>
-                <northboundMapping>
-                    <topic>Acme/Line1/Temperature</topic>
-                    <tagName>ID103</tagName>
-                    <maxQos>1</maxQos>
-                    <includeTimestamp>true</includeTimestamp>
-                </northboundMapping>
-            </northboundMappings>
-            <tags>
-                <tag>
-                    <name>ID103</name>
-                    <description>Temperature from Ethernet-IP PLC</description>
-                    <definition>
-                        <address>%ID103</address>
-                        <dataType>DINT</dataType>
-                    </definition>
-                </tag>
-            </tags>
-        </protocol-adapter>
     </protocol-adapters>
 </hivemq>

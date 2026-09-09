@@ -53,6 +53,13 @@ class KafkaHandler:
         self.producer.produce(KafkaHandler.convert_mqtt_kafka_topic(topic), message, callback=self.delivery_callback)
         self.producer.poll(0)
 
+    def produce_raw(self, kafka_topic: str, message: str, *, key: str | None = None) -> None:
+        """Produce to a Kafka topic name as given. Do not convert MQTT slashes."""
+        if self.producer is None:
+            self.producer = Producer(self.config)
+        self.producer.produce(kafka_topic, message, key=key, callback=self.delivery_callback)
+        self.producer.poll(0)
+
     def delivery_callback(self, err: Exception, msg: dict):
         """
         Callback for the kafka producer to deliver the message

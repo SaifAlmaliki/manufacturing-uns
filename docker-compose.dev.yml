@@ -31,3 +31,4 @@ services:
       - graphdb_client
       - oee_client
       - opcua_client
+      - datalake_mapper

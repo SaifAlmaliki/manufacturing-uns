@@ -13,6 +13,12 @@ Valid characters for MQTT topics are similar to above with the exception that **
 Since **`/`** is not allowed for Kafka topics, we replace all occurrences of **`/`** in the MQTT topic name with **`_`**
 see [kafka_handler.py.convert_MQTT_KAFKA_topic()](./src/uns_kafka/kafka_handler.py#convert_MQTT_KAFKA_topic)
 
+## Historic Event envelope
+
+Historic Events are **also** produced to `uns.historic-events` as JSON `{time, topic, payload}`
+with Kafka message key = MQTT topic. Dotted 1:1 topics (`/` → `.`) remain for existing
+consumers.
+
 **IMPORTANT NOTE:** The Kafka broker must be configured to allow producer clients to create topics in order to ease the operation of converting new MQTT topics to Kafka
 
 ## Architectural options and choices

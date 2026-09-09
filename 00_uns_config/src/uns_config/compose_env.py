@@ -21,6 +21,8 @@ COMPOSE_ENV_KEYS = (
     "PGPASSWORD",
     "UNS_keycloak__admin_password",
     "UNS_keycloak__grafana_client_secret",
+    "UNS_minio__root_user",
+    "UNS_minio__root_password",
 )
 
 _PLACEHOLDER_PREFIX = "#<"
@@ -44,6 +46,11 @@ def compose_environment(settings=None) -> dict[str, str]:
     different users; Python never connects as the superuser. The keycloak
     values feed the realm import: the Grafana client secret must match what
     Keycloak imports from conf/keycloak/realm.json.
+
+    ``minio.root_user`` / ``minio.root_password`` initialize the always-on local
+    MinIO service only. Production AWS can use its default credential chain even
+    while local Compose still requires the MinIO pair. Mapper S3 credentials are
+    not exported here.
     """
     settings = settings or get_settings("default")
     graphdb_password = _secret(settings, "graphdb.password")
@@ -51,6 +58,8 @@ def compose_environment(settings=None) -> dict[str, str]:
     postgres_password = _secret(settings, "postgres.password")
     keycloak_admin_password = _secret(settings, "keycloak.admin_password")
     keycloak_grafana_secret = _secret(settings, "keycloak.grafana_client_secret")
+    minio_root_user = _secret(settings, "minio.root_user")
+    minio_root_password = _secret(settings, "minio.root_password")
 
     missing: list[str] = []
     if graphdb_password is None:
@@ -63,6 +72,10 @@ def compose_environment(settings=None) -> dict[str, str]:
         missing.append("keycloak.admin_password")
     if keycloak_grafana_secret is None:
         missing.append("keycloak.grafana_client_secret")
+    if minio_root_user is None:
+        missing.append("minio.root_user")
+    if minio_root_password is None:
+        missing.append("minio.root_password")
     if missing:
         raise ValueError(
             "conf/.secrets.yaml is missing " + ", ".join(missing) + ". "
@@ -78,6 +91,8 @@ def compose_environment(settings=None) -> dict[str, str]:
         "PGPASSWORD": postgres_password,
         "UNS_keycloak__admin_password": keycloak_admin_password,
         "UNS_keycloak__grafana_client_secret": keycloak_grafana_secret,
+        "UNS_minio__root_user": minio_root_user,
+        "UNS_minio__root_password": minio_root_password,
     }
 
 

@@ -20,6 +20,13 @@ _KEYCLOAK_SECRETS = {
     }
 }
 
+_MINIO_SECRETS = {
+    "minio": {
+        "root_user": "minioadmin",
+        "root_password": "minioadmin123",
+    }
+}
+
 
 def _write_conf(tmp_path: Path, secrets: dict) -> Path:
     conf = tmp_path / "conf"
@@ -43,6 +50,7 @@ def test_compose_environment_reads_secrets_yaml(monkeypatch, tmp_path: Path):
             "historian": {"password": "hist-secret"},
             "postgres": {"password": "super-secret"},
             **_KEYCLOAK_SECRETS,
+            **_MINIO_SECRETS,
         },
     )
     monkeypatch.setenv("UNS_CONF_DIR", str(conf))
@@ -58,6 +66,8 @@ def test_compose_environment_reads_secrets_yaml(monkeypatch, tmp_path: Path):
         "PGPASSWORD": "super-secret",
         "UNS_keycloak__admin_password": "kc-admin-secret",
         "UNS_keycloak__grafana_client_secret": "kc-grafana-secret",
+        "UNS_minio__root_user": "minioadmin",
+        "UNS_minio__root_password": "minioadmin123",
     }
 
 
@@ -69,6 +79,7 @@ def test_compose_environment_rejects_missing_postgres_password(monkeypatch, tmp_
             "graphdb": {"password": "neo-secret"},
             "historian": {"password": "hist-secret"},
             **_KEYCLOAK_SECRETS,
+            **_MINIO_SECRETS,
         },
     )
     monkeypatch.setenv("UNS_CONF_DIR", str(conf))
@@ -89,6 +100,7 @@ def test_compose_environment_rejects_placeholder_passwords(monkeypatch, tmp_path
             "historian": {"password": "hist-secret"},
             "postgres": {"password": "super-secret"},
             **_KEYCLOAK_SECRETS,
+            **_MINIO_SECRETS,
         },
     )
     monkeypatch.setenv("UNS_CONF_DIR", str(conf))
@@ -109,6 +121,7 @@ def test_compose_environment_rejects_missing_keycloak_secrets(monkeypatch, tmp_p
             "graphdb": {"password": "neo-secret"},
             "historian": {"password": "hist-secret"},
             "postgres": {"password": "super-secret"},
+            **_MINIO_SECRETS,
         },
     )
     monkeypatch.setenv("UNS_CONF_DIR", str(conf))
@@ -135,6 +148,49 @@ def test_compose_file_interpolations_match_helper():
     )
 
 
+def test_compose_environment_rejects_missing_minio_root_user(monkeypatch, tmp_path: Path):
+    conf = _write_conf(
+        tmp_path,
+        {
+            "graphdb": {"password": "neo-secret"},
+            "historian": {"password": "hist-secret"},
+            "postgres": {"password": "super-secret"},
+            **_KEYCLOAK_SECRETS,
+            "minio": {"root_password": "minioadmin123"},
+        },
+    )
+    monkeypatch.setenv("UNS_CONF_DIR", str(conf))
+    get_settings.cache_clear()
+    try:
+        with pytest.raises(ValueError, match="minio.root_user"):
+            compose_environment()
+    finally:
+        get_settings.cache_clear()
+
+
+def test_compose_environment_rejects_placeholder_minio_password(monkeypatch, tmp_path: Path):
+    conf = _write_conf(
+        tmp_path,
+        {
+            "graphdb": {"password": "neo-secret"},
+            "historian": {"password": "hist-secret"},
+            "postgres": {"password": "super-secret"},
+            **_KEYCLOAK_SECRETS,
+            "minio": {
+                "root_user": "minioadmin",
+                "root_password": "#<local minio root password, at least 8 characters>",
+            },
+        },
+    )
+    monkeypatch.setenv("UNS_CONF_DIR", str(conf))
+    get_settings.cache_clear()
+    try:
+        with pytest.raises(ValueError, match="minio.root_password"):
+            compose_environment()
+    finally:
+        get_settings.cache_clear()
+
+
 def test_secrets_template_covers_every_required_key():
     """The template is the checklist a new deployment follows. If a key is required
     but absent from it, a fresh copy of the template cannot start the stack."""
@@ -142,3 +198,6 @@ def test_secrets_template_covers_every_required_key():
     keycloak = template["default"]["keycloak"]
     for key in ("admin_password", "grafana_client_secret"):
         assert key in keycloak, f".secrets_template.yaml is missing keycloak.{key}"
+    minio = template["default"]["minio"]
+    for key in ("root_user", "root_password"):
+        assert key in minio, f".secrets_template.yaml is missing minio.{key}"

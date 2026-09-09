@@ -71,3 +71,4 @@ class KAFKAConfig:
     """
 
     kafka_config_map: dict = sanitize_kafka_config(settings.get("kafka.config"))
+    envelope_topic: str = settings.get("kafka.envelope_topic", "uns.historic-events")

@@ -1,7 +1,7 @@
 # Historic Event lake Mapper (S3 or ADLS)
 
 Date: 2026-09-08
-Modules: `00_uns_config`, `06_uns_kafka`, `13_uns_datalake`,
+Modules: `00_uns_config`, `06_uns_kafka`, `14_uns_datalake`,
 `docker-compose.yml`, `conf/settings.yaml`, `08_uns_observability/prometheus/`
 Status: Approved (pending written review)
 
@@ -59,7 +59,7 @@ HiveMQ Edge ── MQTT Historic Events
                              value = { time, topic, payload }
                                    │
                                    ▼
-                      datalake_mapper  (13_uns_datalake)
+                      datalake_mapper  (14_uns_datalake)
                            batch → Parquet → ObjectStore.put
                                    │
                           datalake.backend: s3 | adls
@@ -68,7 +68,7 @@ HiveMQ Edge ── MQTT Historic Events
                      MinIO (always on)      AWS S3  or  Azure ADLS
 ```
 
-`13_uns_datalake` does not import MQTT. Platform Observability never reaches
+`14_uns_datalake` does not import MQTT. Platform Observability never reaches
 the envelope: `kafka_mapper` already drops `uns/platform/` via
 `is_historic_event_topic`.
 
@@ -116,7 +116,7 @@ on `uns.historic-events`). Dotted-topic `publish` stays as it is.
 Do not add these names to `uns_config/__init__.py` unless a caller outside the
 Mapper needs them.
 
-### Lake Mapper (`13_uns_datalake`)
+### Lake Mapper (`14_uns_datalake`)
 
 Compose service `datalake_mapper`. confluent-kafka **consumer**, group
 `uns_datalake`, `enable.auto.commit: false`. Buffer `HistoricEventRecord`s.
@@ -136,10 +136,10 @@ skip metric, **commit** that offset, do not `put`.
 
 Default `uns_compose up` adds:
 
-- `uns_minio` — S3 API on the compose network (`9000`). Host ports unpublished.
+- `uns-minio` — S3 API on the compose network (`9000`). Host ports unpublished. Service name uses a hyphen because `mc` rejects underscore hostnames.
 - A oneshot that creates bucket `uns-historic-events`.
 - `datalake_mapper` — depends on Kafka healthy and MinIO/bucket ready.
-  `UNS_MODULE: 13_uns_datalake`.
+  `UNS_MODULE: 14_uns_datalake`.
 
 Azurite is **not** a default service.
 
@@ -157,7 +157,7 @@ datalake:
   s3:
     bucket: uns-historic-events
     region: us-east-1
-    endpoint_url: http://uns_minio:9000
+    endpoint_url: http://uns-minio:9000
   adls:
     account: ""
     container: ""
@@ -211,7 +211,7 @@ No live AWS, Azure, or MQTT broker in pytest.
   neither; existing dotted-topic tests still pass.
 - Mapper: fake Kafka + fake store; commit after `put`; `put` failure does not
   commit; poison skip; time and size flush; two flushes → two object keys.
-- Compose: `uns_minio` and `datalake_mapper` have **no** `profiles` key.
+- Compose: `uns-minio` and `datalake_mapper` have **no** `profiles` key.
   Default `backend` is `s3` with MinIO `endpoint_url`. Azurite absent.
   Prometheus scrapes `datalake_mapper:9096`.
 
@@ -228,7 +228,7 @@ object under `dt=` in MinIO.
   work is not in that plan; layout/column tests live in `00_uns_config` via
   this plan’s Task 1.
 - `06_uns_kafka` README — second produce to `uns.historic-events`.
-- Root or `13_uns_datalake` README — MinIO default, how to point at AWS/ADLS.
+- Root or `14_uns_datalake` README — MinIO default, how to point at AWS/ADLS.
 
 ## 10. What this is not
 
