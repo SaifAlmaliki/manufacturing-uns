@@ -11,6 +11,7 @@ async def _reset_asset_model_singletons():
     import uns_graphql.queries.asset as asset_module
 
     asset_module._resolver = None
+    await Database.close_shared()
     yield
     asset_module._resolver = None
     await Database.close_shared()
