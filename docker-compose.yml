@@ -41,6 +41,22 @@ services:
       retries: 12
       start_period: 90s
 
+  # OEE demo publisher (HiveMQ-Simulator.sh). Opt-in via profile oee-demo.
+  # Host-side: npm run simulator. In-stack: npm run simulator:stack
+  oee_mqtt_simulator:
+    profiles: ["oee-demo"]
+    image: "hivemq/hivemq-edge:latest"
+    entrypoint: ["/bin/bash", "/simulator/HiveMQ-Simulator.sh"]
+    environment:
+      H: uns_mqtt_broker
+      P: "1883"
+    volumes:
+      - ./HiveMQ-Simulator.sh:/simulator/HiveMQ-Simulator.sh:ro
+    depends_on:
+      uns_mqtt_broker:
+        condition: service_healthy
+    restart: unless-stopped
+
   uns_timescale_db:
     image: "timescale/timescaledb:latest-pg16"
     ports:
@@ -77,7 +93,7 @@ services:
       start_period: 120s
 
   uns_kafka_broker:
-    image: "apache/kafka:latest"
+    image: "apache/kafka:3.9.0"
     ports:
       - "9092:9092"
     environment:
@@ -94,14 +110,68 @@ services:
       KAFKA_LISTENERS: "PLAINTEXT://uns_kafka_broker:29092,CONTROLLER://uns_kafka_broker:29093,PLAINTEXT_HOST://0.0.0.0:9092"
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
       CLUSTER_ID: "L6kX4b2SR9O-3p8k0b5V7w" # Generated using "kafka-storage.sh random-uuid"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
     healthcheck:
       test: "/opt/kafka/bin/kafka-topics.sh --list --bootstrap-server localhost:9092 || exit 1"
       start_period: 40s
       interval: 5s
       timeout: 10s
       retries: 8
+
+  kafka_topic_init:
+    build:
+      context: .
+      dockerfile: ./06_uns_kafka/Dockerfile
+    volumes:
+      - ./conf:/app/conf
+    environment:
+      UNS_CONF_DIR: /app/conf
+      UNS_MODULE: 06_uns_kafka
+      UNS_kafka_bootstrap__config: '@json {"bootstrap.servers": "uns_kafka_broker:29092"}'
+    entrypoint: ["uv", "run", "uns_kafka_bootstrap"]
+    depends_on:
+      uns_kafka_broker:
+        condition: service_healthy
+    restart: "no"
+
+  uns_minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: ["server", "/data"]
+    environment:
+      MINIO_ROOT_USER: ${UNS_minio__root_user}
+      MINIO_ROOT_PASSWORD: ${UNS_minio__root_password}
+    volumes:
+      - uns_minio_data:/data
+    # MinIO clients reject underscores in hostnames; keep the compose service name,
+    # expose a hyphenated DNS alias on the default network.
+    networks:
+      default:
+        aliases:
+          - uns-minio
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--max-time", "2", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  minio_init:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    depends_on:
+      uns_minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${UNS_minio__root_user}
+      MINIO_ROOT_PASSWORD: ${UNS_minio__root_password}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - mc alias set local http://uns-minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" && mc mb --ignore-existing local/uns-historic-events
+    restart: "no"
 
   tsdb_setup_script:
     image: "postgres:12"
@@ -176,20 +246,24 @@ services:
       - ./conf:/app/conf
     ports:
       - "9091:9091"
+    restart: on-failure
     environment:
       UNS_CONF_DIR: /app/conf
       UNS_MODULE: 04_uns_historian
-      UNS_mqtt__host: uns_mqtt_broker
       UNS_historian__hostname: uns_timescale_db
       UNS_historian__database: "uns_historian"
       UNS_historian__table: "unifiednamespace"
       UNS_historian__metrics_table: "uns_metrics"
       UNS_historian__metrics_port: 9091
+      UNS_historian__pipeline_epoch: "1"
       UNS_historian__username: uns_dbuser
       UNS_historian__password: ${UNS_historian__password}
+      UNS_historian__kafka__config: '@json {"client.id": "uns_historian", "group.id": "uns_historian", "bootstrap.servers": "uns_kafka_broker:29092", "enable.auto.commit": false, "auto.offset.reset": "earliest"}'
     depends_on:
-      uns_mqtt_broker:
+      uns_kafka_broker:
         condition: service_healthy
+      kafka_topic_init:
+        condition: service_completed_successfully
       uns_timescale_db:
         condition: service_healthy
       tsdb_setup_script:
@@ -250,10 +324,12 @@ services:
       dockerfile: ./06_uns_kafka/Dockerfile
     volumes:
       - ./conf:/app/conf
+    restart: on-failure
     environment:
       UNS_CONF_DIR: /app/conf
       UNS_MODULE: 06_uns_kafka
       UNS_mqtt__host: uns_mqtt_broker
+      UNS_kafka_mapper__metrics_port: 9094
       # 29092 is the in-network PLAINTEXT listener. 9092 advertises localhost and
       # breaks producers that run inside the compose network.
       UNS_kafka__config: '@json {"client.id": "uns_kafka_client", "bootstrap.servers": "uns_kafka_broker:29092", "enable.idempotence": true, "retries": 10, "compression.type": "gzip"}'
@@ -262,6 +338,28 @@ services:
         condition: service_healthy
       uns_kafka_broker:
         condition: service_healthy
+      kafka_topic_init:
+        condition: service_completed_successfully
+
+  datalake_mapper:
+    restart: on-failure
+    build:
+      context: .
+      dockerfile: ./14_uns_datalake/Dockerfile
+    volumes:
+      - ./conf:/app/conf
+    environment:
+      UNS_CONF_DIR: /app/conf
+      UNS_MODULE: 14_uns_datalake
+      UNS_datalake__s3__endpoint_url: http://uns-minio:9000
+      UNS_kafka__config: '@json {"client.id": "uns_datalake", "group.id": "uns_datalake", "bootstrap.servers": "uns_kafka_broker:29092", "enable.auto.commit": false, "auto.offset.reset": "earliest"}'
+    depends_on:
+      uns_kafka_broker:
+        condition: service_healthy
+      kafka_topic_init:
+        condition: service_completed_successfully
+      minio_init:
+        condition: service_completed_successfully
 
   # Computes OEE for closed shifts and publishes each result to `<line>/KPI/ShiftOee`.
   # Reads the `uns_metrics` hypertable and writes the `oee` schema; it never publishes
@@ -335,6 +433,8 @@ services:
         condition: service_completed_successfully
       uns_kafka_broker:
         condition: service_healthy
+      kafka_topic_init:
+        condition: service_completed_successfully
 
   factory_agent:
     build:
@@ -416,10 +516,13 @@ services:
       - "9090:9090"
     volumes:
       - ./08_uns_observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./08_uns_observability/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
     depends_on:
       - historian_client
       - graphdb_client
       - oee_client
+      - kafka_mapper_client
+      - datalake_mapper
 
   uns_grafana:
     image: "grafana/grafana:latest"
@@ -485,3 +588,5 @@ services:
 volumes:
   opcua_spool:
   timescale_data:
+  kafka_data:
+  uns_minio_data:

@@ -25,6 +25,7 @@ import json
 import logging
 import re
 import ssl
+from dataclasses import dataclass
 from enum import IntEnum
 from os import path
 from typing import Final, Literal
@@ -33,6 +34,7 @@ import paho.mqtt.client as mqtt_client
 import paho.mqtt.enums as paho_mqtt
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
+from paho.mqtt.subscribeoptions import SubscribeOptions
 
 from uns_sparkplugb.uns_spb_helper import convert_spb_bytes_payload_to_dict
 
@@ -44,6 +46,30 @@ class MQTTVersion(IntEnum):
     MQTTv5 = mqtt_client.MQTTv5
     MQTTv311 = mqtt_client.MQTTv311
     MQTTv31 = mqtt_client.MQTTv31
+
+
+SEVEN_DAY_SESSION_EXPIRY_SECONDS = 7 * 24 * 60 * 60
+
+
+@dataclass(frozen=True, slots=True)
+class MqttDeliveryOptions:
+    """Opt-in MQTT 5 delivery controls for durable ingestion shards."""
+
+    stable_session: bool = False
+    session_expiry_seconds: int | None = None
+    receive_maximum: int | None = None
+    manual_ack: bool = False
+    retain_handling: int | None = None
+
+    @classmethod
+    def ingestion(cls) -> MqttDeliveryOptions:
+        return cls(
+            stable_session=True,
+            session_expiry_seconds=SEVEN_DAY_SESSION_EXPIRY_SECONDS,
+            receive_maximum=20,
+            manual_ack=True,
+            retain_handling=2,
+        )
 
 
 class UnsMQTTClient(mqtt_client.Client):
@@ -67,6 +93,8 @@ class UnsMQTTClient(mqtt_client.Client):
                           MQTTVersion.MQTTv31] | None = MQTTVersion.MQTTv5,
         transport: Literal["tcp", "websockets"] | None = "tcp",
         reconnect_on_failure: bool = True,
+        *,
+        delivery_options: MqttDeliveryOptions | None = None,
     ):
         """
         Creates an instance of an MQTT client
@@ -109,12 +137,18 @@ class UnsMQTTClient(mqtt_client.Client):
 
         if protocol not in MQTTVersion.__members__.values():
             raise ValueError(f"Unknown MQTT Protocol Id:{protocol}")
+        self._delivery_options = delivery_options
+        effective_clean_session = clean_session
+        if delivery_options and delivery_options.stable_session and protocol != mqtt_client.MQTTv5:
+            effective_clean_session = False
         # Need these values in the connect operation
-        self.clean_session = clean_session
+        self.clean_session = effective_clean_session
 
         if protocol == mqtt_client.MQTTv5:
             # if MQTT version is v5.0 the ignore clean_session in the constructor
             clean_session = None
+
+        manual_ack = bool(delivery_options and delivery_options.manual_ack)
 
         if transport not in ["tcp", "websockets"]:
             raise ValueError(
@@ -128,6 +162,7 @@ class UnsMQTTClient(mqtt_client.Client):
             protocol=protocol,
             transport=transport,
             reconnect_on_failure=reconnect_on_failure,
+            manual_ack=manual_ack,
         )
         self.topics: list = None
         self.qos: int = 0
@@ -150,8 +185,29 @@ class UnsMQTTClient(mqtt_client.Client):
                 for topic in self.topics:
                     # Do not reuse CONNECT properties on SUBSCRIBE; HiveMQ Edge
                     # 2026.13 disconnects that as a Malformed packet.
-                    self.subscribe(topic, self.qos, options=None,
-                                   properties=None)
+                    subscribe_properties = None
+                    subscribe_options = None
+                    if (
+                        self.protocol == mqtt_client.MQTTv5
+                        and self._delivery_options is not None
+                        and self._delivery_options.retain_handling is not None
+                    ):
+                        subscribe_options = SubscribeOptions(
+                            qos=self.qos,
+                            retainHandling=self._delivery_options.retain_handling,
+                        )
+                    if subscribe_options is not None:
+                        self.subscribe(
+                            topic,
+                            options=subscribe_options,
+                            properties=subscribe_properties,
+                        )
+                    else:
+                        self.subscribe(
+                            topic,
+                            self.qos,
+                            properties=subscribe_properties,
+                        )
 
                 LOGGER.info(
                     "Successfully connected %s to MQTT Broker", self)
@@ -227,19 +283,35 @@ class UnsMQTTClient(mqtt_client.Client):
             self.qos: Literal[0, 1, 2] = qos
 
             properties = None
+            clean_start: bool | int = True
             if self.protocol == mqtt_client.MQTTv5:
                 properties = Properties(PacketTypes.CONNECT)
+                if self._delivery_options and self._delivery_options.stable_session:
+                    clean_start = False
+                    if self._delivery_options.session_expiry_seconds is not None:
+                        properties.SessionExpiryInterval = self._delivery_options.session_expiry_seconds
+                    if self._delivery_options.receive_maximum is not None:
+                        properties.ReceiveMaximum = self._delivery_options.receive_maximum
             self.setup_tls(tls)
 
             # Set username & password only if it was specified
             if username is not None:
                 super().username_pw_set(username, password)
-            self.connect(host=host, port=port,
-                         keepalive=keepalive, properties=properties)
+            self.connect(
+                host=host,
+                port=port,
+                keepalive=keepalive,
+                clean_start=clean_start,
+                properties=properties,
+            )
         except Exception as ex:
             LOGGER.error("Unable to connect to MQTT broker: %s",
                          ex, stack_info=True, exc_info=True)
             raise SystemError(ex) from ex
+
+    def ack_message(self, msg) -> None:
+        """Acknowledge a delivered QoS 1/2 message when manual ack mode is enabled."""
+        msg.ack()
 
     def setup_tls(self, tls):
         """

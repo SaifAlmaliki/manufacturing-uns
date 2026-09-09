@@ -28,6 +28,7 @@ from strawberry.schema.config import StrawberryConfig
 from strawberry.subscriptions import GRAPHQL_TRANSPORT_WS_PROTOCOL, GRAPHQL_WS_PROTOCOL
 
 from uns_graphql.auth.context import AuthenticatedGraphQLRouter, graphql_context
+from uns_graphql.backend.event_stream import start_dispatcher, stop_dispatcher
 from uns_graphql.graphql_config import PlatformConfig
 from uns_graphql.mutations.access_group import Mutation as AccessGroupMutation
 from uns_graphql.mutations.alert_rule import Mutation as AlertRuleMutation
@@ -126,10 +127,14 @@ class UNSGraphql:
         """
         lifespan manager to ensure cleanup
         """
+        import asyncio
+
         await Query.on_startup()
+        await start_dispatcher(asyncio.get_running_loop())
         try:
             yield
         finally:
+            await stop_dispatcher()
             # Mutations first: they share the engine that Query.on_shutdown disposes.
             await Mutation.on_shutdown()
             await Query.on_shutdown()

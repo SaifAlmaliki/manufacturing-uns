@@ -57,14 +57,17 @@ The overall architecture and the deployment setup is as follows
    - Kafka cluster/ K8s / hosted service
    - GraphQL service running and connected to the cloud data stores
    - UNS graphdb client to persist messages to the Graph DB instance
-   - UNS historian client to persist messages to the Graph DB instance
-   - UNS Kafka listener to stream/convert MQTT messages to the Kafka instance
-   - Prometheus scraping mapper metrics, and Grafana for dashboards
+   - UNS Kafka ingestion mapper publishes canonical events to `uns.historic-events`
+   - UNS historian client consumes `uns.historic-events` into TimescaleDB
+   - UNS datalake mapper archives envelopes to object storage (MinIO in development)
+   - Prometheus scraping mapper, historian, lake, and GraphQL metrics; Grafana dashboards
 
 ![Logical Architecture for implementing UNS](./images/UNS-Architecture.png)
 
 The project vocabulary is defined in **[CONTEXT.md](./CONTEXT.md)**, and architectural
 decisions that would otherwise be surprising are recorded in **[docs/adr](./docs/adr)**.
+Phase 1 pipeline qualification is documented in
+**[docs/benchmarks/uns-scalability-foundation.md](./docs/benchmarks/uns-scalability-foundation.md)**.
 
 ---
 
@@ -99,6 +102,24 @@ npm run stack
 | Console UI | Docker (`uns_frontend`) | **http://localhost:8088** (Grafana at `/grafana`) |
 
 Plant signals come from external publishers (OPC UA, Modbus, or any connector) on the MQTT broker (`uns_mqtt_broker`) on **1883**.
+
+#### OEE demo simulator (optional)
+
+[`HiveMQ-Simulator.sh`](./HiveMQ-Simulator.sh) publishes a four-machine OEE demo plant under `DemoCorp/Site01/Production/#` (warm-up, decline, recovery cycle). Use it when you have no real PLCs connected.
+
+| Mode | Command |
+| --- | --- |
+| **Host** (manual, foreground) | `npm run simulator` — needs Git Bash on Windows, or `.\scripts\run-oee-simulator.ps1` |
+| **Stack + simulator** | `npm run stack:demo` — starts the full stack and the simulator container |
+| **Simulator only** (stack already up) | `npm run simulator:stack` |
+| **Stop simulator container** | `npm run simulator:stop` |
+
+Browse live topics in MQTT Explorer on `localhost:1883` or subscribe with:
+
+```bash
+docker exec -i $(docker ps --filter publish=1883 -q | head -1) \
+  /opt/hivemq/tools/mqtt-cli/bin/mqtt sub -t "DemoCorp/Site01/Production/#" -h localhost -p 1883
+```
 
 Tear it down with:
 

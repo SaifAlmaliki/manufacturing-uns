@@ -36,3 +36,5 @@ services:
       - historian_client
       - graphdb_client
       - oee_client
+      - kafka_mapper_client
+      - datalake_mapper

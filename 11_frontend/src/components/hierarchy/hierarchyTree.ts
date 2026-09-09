@@ -234,3 +234,27 @@ export function ancestorKeys(ref: NodeRef): string[] {
       ];
   }
 }
+
+function pathCoversPrefix(path: string, prefix: string): boolean {
+  return path === prefix || path.startsWith(`${prefix}/`);
+}
+
+/** True when a subscribed signal's MQTT topic or Asset path lives at or under `prefix`. */
+export function prefixHasConnectedSignal(
+  prefix: string,
+  signals: ReadonlyArray<{ mqttTopic: string; assetPath?: string | null }>,
+): boolean {
+  return signals.some((signal) => {
+    if (pathCoversPrefix(signal.mqttTopic, prefix)) return true;
+    return Boolean(signal.assetPath && pathCoversPrefix(signal.assetPath, prefix));
+  });
+}
+
+/** Asset Model primary key for an ISA-95 prefix, or null when that node is not modeled yet. */
+export function assetIdForPrefix(
+  assets: ReadonlyArray<{ id: number; path: string }>,
+  prefix: string,
+): number | null {
+  const match = assets.find((asset) => asset.path === prefix);
+  return match ? match.id : null;
+}

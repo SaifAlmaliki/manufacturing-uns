@@ -21,6 +21,8 @@ COMPOSE_ENV_KEYS = (
     "PGPASSWORD",
     "UNS_keycloak__admin_password",
     "UNS_keycloak__grafana_client_secret",
+    "UNS_minio__root_user",
+    "UNS_minio__root_password",
 )
 
 _PLACEHOLDER_PREFIX = "#<"
@@ -51,6 +53,8 @@ def compose_environment(settings=None) -> dict[str, str]:
     postgres_password = _secret(settings, "postgres.password")
     keycloak_admin_password = _secret(settings, "keycloak.admin_password")
     keycloak_grafana_secret = _secret(settings, "keycloak.grafana_client_secret")
+    minio_root_user = _secret(settings, "minio.root_user")
+    minio_root_password = _secret(settings, "minio.root_password")
 
     missing: list[str] = []
     if graphdb_password is None:
@@ -63,13 +67,18 @@ def compose_environment(settings=None) -> dict[str, str]:
         missing.append("keycloak.admin_password")
     if keycloak_grafana_secret is None:
         missing.append("keycloak.grafana_client_secret")
+    if minio_root_user is None:
+        missing.append("minio.root_user")
+    if minio_root_password is None:
+        missing.append("minio.root_password")
     if missing:
         raise ValueError(
             "conf/.secrets.yaml is missing " + ", ".join(missing) + ". "
             "postgres.password is the Timescale/Postgres superuser used only to "
             "initialise the volume; historian.password is uns_dbuser, which every "
             "Python service uses for tables; keycloak.grafana_client_secret must match "
-            "the uns-grafana client in conf/keycloak/realm.json."
+            "the uns-grafana client in conf/keycloak/realm.json; minio.root_user and "
+            "minio.root_password initialise the local MinIO service only."
         )
 
     return {
@@ -78,6 +87,8 @@ def compose_environment(settings=None) -> dict[str, str]:
         "PGPASSWORD": postgres_password,
         "UNS_keycloak__admin_password": keycloak_admin_password,
         "UNS_keycloak__grafana_client_secret": keycloak_grafana_secret,
+        "UNS_minio__root_user": minio_root_user,
+        "UNS_minio__root_password": minio_root_password,
     }
 
 

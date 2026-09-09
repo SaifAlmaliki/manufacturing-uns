@@ -2,10 +2,14 @@
 
 [![MQTT Client for Historian](https://github.com/mkashwin/unifiednamespace/actions/workflows/uns_historian-app.yml/badge.svg)](https://github.com/mkashwin/unifiednamespace/actions/workflows/uns_historian-app.yml)
 
-MQTT listener that persists UNS and SparkplugB traffic to TimescaleDB. Depends on
-[`09_uns_model`](../09_uns_model/README.md) for the shared Postgres engine, topic bindings,
+Kafka consumer that projects canonical historic events from `uns.historic-events` into
+TimescaleDB with atomic raw/Metric/checkpoint writes. The default development stack no
+longer ingests history directly from MQTT.
+
+Depends on [`09_uns_model`](../09_uns_model/README.md) for the shared Postgres engine, topic bindings,
 and enrichment (ADRs [0003](../docs/adr/0003-postgres-asset-model-and-read-time-enrichment.md),
-[0004](../docs/adr/0004-sqlalchemy-orm-for-the-model-core-for-ingest.md)).
+[0004](../docs/adr/0004-sqlalchemy-orm-for-the-model-core-for-ingest.md),
+[0011](../docs/adr/0011-canonical-historic-event-pipeline.md)).
 
 It makes sense to have the historian connect only to the corporate / cloud instance since the factory doesn't necessarily need the history of all messages. The historian should subscribe to '**#**' or the first level **\<enterprise\>/#**' topic wildcard. However if it is needed for your specific scenario you can easily deploy a historian at the factory level.
 If you need to scale and reduce the load on broker multiple instanced of this client can be deployed with separate topic wild cards

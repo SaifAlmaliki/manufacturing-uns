@@ -13,6 +13,15 @@ before persist so simulator self-telemetry never lands in Timescale or Neo4j
 
 from __future__ import annotations
 
+from typing import Literal
+
+EventKind = Literal["telemetry", "sparkplug_raw", "lifecycle", "command"]
+
+SPARKPLUG_PREFIX = "spBv1.0/"
+SPARKPLUG_STATE_PREFIX = "spBv1.0/STATE/"
+_LIFECYCLE_MESSAGE_TYPES = frozenset({"NBIRTH", "DBIRTH", "NDEATH", "DDEATH", "STATE"})
+_COMMAND_MESSAGE_TYPES = frozenset({"NCMD", "DCMD"})
+
 UNS_WILDCARD = "#"
 MAPPER_UNS_TOPICS: list[str] = [UNS_WILDCARD]
 MAPPER_ENVS: tuple[str, ...] = ("graphdb", "historian", "kafka_mapper")
@@ -22,3 +31,19 @@ PLATFORM_OBSERVABILITY_PREFIX = "uns/platform/"
 def is_historic_event_topic(topic: str) -> bool:
     """True when a published topic belongs in Unified Namespace history."""
     return bool(topic) and not topic.startswith(PLATFORM_OBSERVABILITY_PREFIX)
+
+
+def classify_event_kind(topic: str) -> EventKind:
+    """Classify MQTT traffic for the canonical historic event envelope."""
+    if not topic.startswith(SPARKPLUG_PREFIX):
+        return "telemetry"
+    if topic.startswith(SPARKPLUG_STATE_PREFIX):
+        return "lifecycle"
+    parts = topic.split("/")
+    if len(parts) >= 3:
+        message_type = parts[2]
+        if message_type in _COMMAND_MESSAGE_TYPES:
+            return "command"
+        if message_type in _LIFECYCLE_MESSAGE_TYPES:
+            return "lifecycle"
+    return "sparkplug_raw"

@@ -1,13 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, Cog, Factory, GitBranch, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Cog, Factory, GitBranch, Link2, Trash2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useUNS } from '../../context/UNSContext';
 import { joinSegments, validateSegment } from '../../lib/uns/topics';
 import { unsGraphQLClient } from '../../services/graphql/client';
 import type {
+  AccessAssetDto,
   GraphqlHierarchyMigrateJob,
   GraphqlHierarchyTree,
   GraphqlPrefixRenameInput,
+  GraphqlSubscribedSignal,
 } from '../../services/graphql/types';
 import { Button } from '@/components/ui/button';
 import {
@@ -32,6 +34,7 @@ import {
 } from '../ui/console-ui';
 import { ResizableSidebar } from '../ui/resizable-sidebar';
 import { AssetLevelIcon } from './AssetLevelIcon';
+import { AttachSignalsDialog } from './AttachSignalsDialog';
 import { NewAssetMenu } from './NewAssetMenu';
 import { levelDef, type NodeLevel } from './hierarchyLevels';
 import {
@@ -42,6 +45,8 @@ import {
   expandableKeys,
   insertDescendant,
   nodeKey,
+  prefixHasConnectedSignal,
+  assetIdForPrefix,
 } from './hierarchyTree';
 
 function nodeName(tree: GraphqlHierarchyTree, ref: NodeRef): string {
@@ -375,18 +380,23 @@ function TreeNodeButton({
   nodeRef,
   selected,
   expanded,
+  connectedPrefixes,
   onSelect,
   onToggle,
+  onAttach,
 }: {
   tree: GraphqlHierarchyTree;
   nodeRef: NodeRef;
   selected: NodeRef | null;
   expanded: Set<string>;
+  connectedPrefixes: Set<string>;
   onSelect: (ref: NodeRef) => void;
   onToggle: (ref: NodeRef) => void;
+  onAttach: (ref: NodeRef) => void;
 }) {
   const name = nodeName(tree, nodeRef);
   const active = refsEqual(selected, nodeRef);
+  const connected = connectedPrefixes.has(nodePrefix(tree, nodeRef));
   const children = childRefs(tree, nodeRef);
   const hasChildren = children.length > 0;
   const isExpanded = expanded.has(nodeKey(nodeRef));
@@ -426,6 +436,21 @@ function TreeNodeButton({
         )}
         <button
           type="button"
+          aria-label={`Attach signals to ${levelLabel} ${name}`}
+          title="Attach signals"
+          onClick={() => onAttach(nodeRef)}
+          className={`rounded p-0.5 ${
+            connected
+              ? 'text-emerald-500 hover:text-emerald-400'
+              : active
+                ? 'text-white/80 hover:text-white'
+                : 'text-muted-foreground hover:text-[#FF7A00]'
+          }`}
+        >
+          <Link2 className="size-3.5" />
+        </button>
+        <button
+          type="button"
           aria-label={`${levelLabel} ${name}`}
           aria-current={active ? 'true' : undefined}
           onClick={() => onSelect(nodeRef)}
@@ -433,7 +458,9 @@ function TreeNodeButton({
         >
           <AssetLevelIcon
             level={nodeRef.level}
-            className={`size-3.5 shrink-0 ${active ? 'text-white' : 'text-muted-foreground'}`}
+            className={`size-3.5 shrink-0 ${
+              active ? 'text-white' : connected ? 'text-emerald-500' : 'text-muted-foreground'
+            }`}
           />
           <span className={`shrink-0 text-[10px] tracking-wider ${active ? 'text-white/70' : 'text-muted-foreground'}`}>
             {levelLabel}
@@ -444,6 +471,13 @@ function TreeNodeButton({
           <span className="truncate font-medium" title={name}>
             {name}
           </span>
+          {connected && (
+            <span
+              aria-label="Signals connected"
+              title="Signals connected"
+              className={`ml-auto size-2 shrink-0 rounded-full ${active ? 'bg-emerald-300' : 'bg-emerald-500'}`}
+            />
+          )}
         </button>
       </div>
       {hasChildren &&
@@ -455,8 +489,10 @@ function TreeNodeButton({
             nodeRef={child}
             selected={selected}
             expanded={expanded}
+            connectedPrefixes={connectedPrefixes}
             onSelect={onSelect}
             onToggle={onToggle}
+            onAttach={onAttach}
           />
         ))}
     </div>
@@ -482,6 +518,9 @@ export const HierarchyView: React.FC = () => {
   const [retrying, setRetrying] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [signals, setSignals] = useState<GraphqlSubscribedSignal[]>([]);
+  const [assets, setAssets] = useState<AccessAssetDto[]>([]);
+  const [attachTarget, setAttachTarget] = useState<{ label: string; prefix: string } | null>(null);
 
   useEffect(() => {
     if (!canEdit) return;
@@ -500,6 +539,22 @@ export const HierarchyView: React.FC = () => {
       setLoadError(null);
       setExpanded(new Set(expandableKeys(next)));
     });
+    void unsGraphQLClient
+      .getSubscribedSignals()
+      .then((subscribed) => {
+        if (!cancelled) setSignals(subscribed);
+      })
+      .catch(() => {
+        if (!cancelled) setSignals([]);
+      });
+    void unsGraphQLClient
+      .getAssets()
+      .then((next) => {
+        if (!cancelled) setAssets(next);
+      })
+      .catch(() => {
+        if (!cancelled) setAssets([]);
+      });
     return () => {
       cancelled = true;
     };
@@ -647,6 +702,14 @@ export const HierarchyView: React.FC = () => {
   };
 
   const counts = useMemo(() => (tree ? treeCounts(tree) : null), [tree]);
+  const connectedPrefixes = useMemo(() => {
+    if (!tree) return new Set<string>();
+    const next = new Set<string>();
+    for (const prefix of treePrefixes(tree)) {
+      if (prefixHasConnectedSignal(prefix, signals)) next.add(prefix);
+    }
+    return next;
+  }, [tree, signals]);
   const menuParent = selected?.level ?? 'enterprise';
   const jobFailed = job?.status === 'failed';
   const draftDirty = Boolean(tree && selected && draftName.trim() !== nodeName(tree, selected));
@@ -662,8 +725,8 @@ export const HierarchyView: React.FC = () => {
 
   return (
     <PageShell id="hierarchy-view" scroll={false} className="flex flex-col font-mono">
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <PageContent fullWidth className="flex min-h-full flex-col gap-3 pb-4">
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <PageContent fullWidth className="flex h-full min-h-0 flex-col gap-3 pb-2">
           <CompactKpiRow>
             <PageStat compact label="Sites" value={counts?.sites ?? '—'} icon={<Factory className="size-3.5 text-muted-foreground" />} />
             <PageStat compact label="Areas" value={counts?.areas ?? '—'} icon={<GitBranch className="size-3.5 text-muted-foreground" />} />
@@ -725,23 +788,30 @@ export const HierarchyView: React.FC = () => {
                 minWidth={240}
                 maxWidth={800}
                 aria-label="Plant tree"
-                className="min-h-[280px] max-w-full"
+                className="min-h-0 max-w-full self-stretch"
               >
-              <ConsoleCard padding="none" className="h-full min-h-[280px] overflow-visible">
-                <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
+              <ConsoleCard padding="none" className="flex h-full min-h-0 flex-col overflow-visible">
+                <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2">
                   <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                     Plant tree
                   </div>
                   <NewAssetMenu parentLevel={menuParent} onPick={handleAdd} />
                 </div>
-                <div className="max-h-[calc(100vh-22rem)] space-y-0.5 overflow-x-auto overflow-y-auto p-2">
+                <div className="min-h-0 flex-1 space-y-0.5 overflow-x-auto overflow-y-auto px-2 py-1">
                   <TreeNodeButton
                     tree={tree}
                     nodeRef={{ level: 'enterprise' }}
                     selected={selected}
                     expanded={expanded}
+                    connectedPrefixes={connectedPrefixes}
                     onSelect={selectNode}
                     onToggle={toggleExpanded}
+                    onAttach={(ref) => {
+                      setAttachTarget({
+                        label: `${levelDef(ref.level).label} ${nodeName(tree, ref)}`,
+                        prefix: nodePrefix(tree, ref),
+                      });
+                    }}
                   />
                 </div>
               </ConsoleCard>
@@ -803,6 +873,16 @@ export const HierarchyView: React.FC = () => {
           )}
         </PageContent>
       </div>
+
+      <AttachSignalsDialog
+        open={Boolean(attachTarget)}
+        nodeLabel={attachTarget?.label ?? ''}
+        prefix={attachTarget?.prefix ?? ''}
+        assetId={attachTarget ? assetIdForPrefix(assets, attachTarget.prefix) : null}
+        signals={signals}
+        onClose={() => setAttachTarget(null)}
+        onSignalsChange={setSignals}
+      />
 
       <Dialog open={confirmRemove} onOpenChange={(open) => !open && setConfirmRemove(false)}>
         <DialogContent

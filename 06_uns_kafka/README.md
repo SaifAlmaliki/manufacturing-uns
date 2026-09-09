@@ -1,19 +1,38 @@
-# MQTT to Kafka Bridge
+# MQTT to Kafka ingestion mapper
 
 [![Kafka bridge](https://github.com/mkashwin/unifiednamespace/actions/workflows/uns_kafka-app.yml/badge.svg)](https://github.com/mkashwin/unifiednamespace/actions/workflows/uns_kafka-app.yml)
 
-This module provides a bridge between an MQTT (Message Queuing Telemetry Transport) server and a Kafka broker, allowing messages received on the MQTT server to be published to the Kafka broker.
+This module ingests Unified Namespace MQTT traffic and publishes **canonical historic
+event envelopes** to the literal Kafka topic `uns.historic-events`. Invalid payloads
+are durably rejected to `uns.historic-events.dlq`. MQTT QoS 1 messages are acknowledged
+only after Kafka (or DLQ) delivery succeeds.
 
-## Mapping logic for MQTT Topic to Kafka Topic
+See [ADR-0011](../docs/adr/0011-canonical-historic-event-pipeline.md) and the
+[qualification report](../docs/benchmarks/uns-scalability-foundation.md).
+
+## Canonical transport (Phase 1)
+
+| Direction | Contract |
+| --- | --- |
+| MQTT subscribe | Plant topics (`#` by default) with stable session and manual ack |
+| Kafka produce | Literal topic `uns.historic-events`, keyed by canonical event key bytes |
+| Rejections | Literal topic `uns.historic-events.dlq` with bounded rejection records |
+| Bootstrap | `uns_kafka_bootstrap` creates/verifies topics (`kafka_topic_init` in Compose) |
+
+Dotted MQTT-to-Kafka topic conversion is **not** used by the default stack. Older
+documentation describing `_` topic mapping remains for historical context only.
+
+## Legacy dotted-topic note (pre-Phase 1)
 
 Valid characters for Kafka topics are the ASCII alphanumerics, **`.`**, **`_`**, and **`-`** and it is better not to mix `.` and `_` to avoid metric namespace collisions
 
 Valid characters for MQTT topics are similar to above with the exception that **`/`** character is user to denote hierarchy.
 
-Since **`/`** is not allowed for Kafka topics, we replace all occurrences of **`/`** in the MQTT topic name with **`_`**
+Since **`/`** is not allowed for Kafka topics, the legacy bridge replaced **`/`** with **`_`**
 see [kafka_handler.py.convert_MQTT_KAFKA_topic()](./src/uns_kafka/kafka_handler.py#convert_MQTT_KAFKA_topic)
 
-**IMPORTANT NOTE:** The Kafka broker must be configured to allow producer clients to create topics in order to ease the operation of converting new MQTT topics to Kafka
+**IMPORTANT NOTE:** The Phase 1 mapper publishes to `uns.historic-events` only. Topic
+auto-creation is disabled in the development stack; run `uns_kafka_bootstrap` first.
 
 ## Architectural options and choices
 
@@ -126,6 +145,14 @@ After the root `.venv` exists. Point [configuration](../conf/) at an MQTT broker
 
 ```bash
 uv run uns_kafka_mapper
+uv run uns_kafka_bootstrap
+uv run uns_kafka_healthcheck
+```
+
+Qualification load (credentials from `conf/.secrets.yaml` only):
+
+```bash
+uv run python 06_uns_kafka/test/pipeline_load.py --sites 2 --topics 100 --rate 50 --seconds 10 --report /tmp/uns-load-report.json
 ```
 
 ### Running tests

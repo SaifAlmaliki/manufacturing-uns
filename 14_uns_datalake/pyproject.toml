@@ -1,0 +1,81 @@
+[project]
+name = "uns_datalake"
+version = "0.9.38"
+description = "Archives canonical historic events from Kafka to object storage as bounded Parquet files"
+authors = [{ name = "Ashwin Krishnan", email = "mkashwin@gmail.com" }]
+requires-python = ">=3.14, <4"
+readme = "README.md"
+license = { text = "MIT" }
+maintainers = [
+    { name = "Himanshu Dhami", email = "himanshudhami@gmail.com" },
+    { name = "Johan Jeppson", email = "logic4human@gmail.com" },
+]
+keywords = ["uns", "kafka", "datalake", "parquet", "s3", "adls"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Intended Audience :: Manufacturing",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Development Status :: 4 - Beta",
+    "Topic :: Communications",
+]
+dependencies = [
+    "uns_config",
+    "uns_kafka_mapper",
+    "confluent-kafka>=2.14.0,<3",
+    "dynaconf~=3.2",
+    "pyarrow>=22.0.0,<23",
+    "boto3>=1.35,<2",
+    "azure-storage-file-datalake>=12.19.0,<13",
+    "azure-identity>=1.19.0,<2",
+    "prometheus-client>=0.21.0,<1",
+    "psutil>=7.2.2,<8",
+]
+
+[project.urls]
+Repository = "https://github.com/mkashwin/unifiednamespace/tree/main/14_uns_datalake"
+
+[project.scripts]
+uns_datalake = "uns_datalake.main:main"
+uns_datalake_healthcheck = "uns_datalake.health_check:main"
+
+[dependency-groups]
+test = [
+    "pytest>=9.0.3,<10",
+    "pytest-xdist>=3.6.1,<4",
+    "pytest-timeout>=2.3.1,<3",
+    "pytest-asyncio>=1.3.0,<1.5",
+    "pytest-cov>=7.1.0,<8",
+    "safety>=3.7.0,<4",
+    "tzdata>=2024.2",
+]
+
+[tool.uv]
+default-groups = ["test"]
+
+[tool.uv.sources]
+uns_config = { path = "../00_uns_config", editable = true }
+uns_kafka_mapper = { path = "../06_uns_kafka", editable = true }
+
+[tool.hatch.build.targets.sdist]
+include = ["src/uns_datalake"]
+
+[tool.hatch.build.targets.wheel]
+include = ["src/uns_datalake"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src/uns_datalake" = "uns_datalake"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+norecursedirs = [".git", "build", "node_modules", "env*", "tmp*"]
+testpaths = ["test"]
+markers = ["integrationtest: mark a test as an integration test"]
+addopts = "-n 4 --dist loadgroup --timeout=300"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+extend = "../pyproject.toml"

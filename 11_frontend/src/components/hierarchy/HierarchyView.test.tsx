@@ -4,8 +4,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const getHierarchy = vi.hoisted(() => vi.fn());
 const saveHierarchy = vi.hoisted(() => vi.fn());
 const retryHierarchyMigrate = vi.hoisted(() => vi.fn());
+const getSubscribedSignals = vi.hoisted(() => vi.fn());
+const getAssets = vi.hoisted(() => vi.fn());
+const updateConnectivityTag = vi.hoisted(() => vi.fn());
 vi.mock('../../services/graphql/client', () => ({
-  unsGraphQLClient: { getHierarchy, saveHierarchy, retryHierarchyMigrate },
+  unsGraphQLClient: {
+    getHierarchy,
+    saveHierarchy,
+    retryHierarchyMigrate,
+    getSubscribedSignals,
+    getAssets,
+    updateConnectivityTag,
+  },
 }));
 
 const auth = vi.hoisted(() => ({
@@ -43,6 +53,9 @@ beforeEach(() => {
   auth.isAdmin = true;
   auth.roles = ['admin'];
   getHierarchy.mockResolvedValue(TREE);
+  getSubscribedSignals.mockResolvedValue([]);
+  getAssets.mockResolvedValue([]);
+  updateConnectivityTag.mockResolvedValue({});
   saveHierarchy.mockResolvedValue({
     tree: TREE,
     job: { status: 'done', oldPrefix: null, newPrefix: null, rewritten: 0, error: null },
@@ -342,6 +355,172 @@ describe('the plant hierarchy editor', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: /^Cell/ }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Cell Cell' })).toBeTruthy());
     expect(screen.getByRole('button', { name: 'Cell V101' })).toBeTruthy();
+  });
+
+  it('marks plant nodes green when a subscribed signal is connected under them', async () => {
+    getHierarchy.mockResolvedValue({
+      ...TREE,
+      sites: [
+        TREE.sites[0],
+        { name: 'Site2', areas: [{ name: 'Treatment', kind: 'production', lines: [] }] },
+      ],
+    });
+    getSubscribedSignals.mockResolvedValue([
+      {
+        serverId: 's1',
+        serverName: 'opcplc',
+        nodeId: 'ns=3;s=V101',
+        browsePath: 'V101/Level',
+        displayName: 'Level',
+        mqttTopic: 'AcmeWater/Site1/RawWater/Train1/V101/Level',
+        subscribed: true,
+      },
+    ]);
+    render(<HierarchyView />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Cell V101' }).querySelector('[aria-label="Signals connected"]'),
+      ).toBeTruthy(),
+    );
+
+    expect(screen.getByRole('button', { name: 'Site Site1' }).querySelector('[aria-label="Signals connected"]')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Enterprise AcmeWater' }).querySelector('[aria-label="Signals connected"]')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Site Site2' }).querySelector('[aria-label="Signals connected"]')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Area Treatment' }).querySelector('[aria-label="Signals connected"]')).toBeNull();
+  });
+
+  it('lets the plant tree fill the card instead of clipping the last node with reserved bottom space', async () => {
+    render(<HierarchyView />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Enterprise AcmeWater' })).toBeTruthy());
+    const scroller = screen.getByRole('button', { name: 'Enterprise AcmeWater' }).closest('.overflow-y-auto');
+    expect(scroller).toBeTruthy();
+    expect(scroller?.className ?? '').not.toMatch(/max-h-\[calc\(100vh-22rem\)\]/);
+    expect(scroller?.className ?? '').toMatch(/flex-1/);
+    expect(scroller?.className ?? '').not.toMatch(/\bp-2\b/);
+  });
+
+  it('opens a signal picker from the control in front of a tree node without changing selection', async () => {
+    getSubscribedSignals.mockResolvedValue([
+      {
+        serverId: 's1',
+        serverName: 'opcplc',
+        nodeId: 'ns=3;s=T101',
+        browsePath: 'T101/Level',
+        displayName: 'Level',
+        mqttTopic: 'Plant/T101/Level',
+        subscribed: true,
+      },
+    ]);
+    render(<HierarchyView />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Attach signals to Cell V101' })).toBeTruthy());
+    expect(screen.getByLabelText('Name')).toHaveValue('AcmeWater');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Attach signals to Cell V101' }));
+    expect(screen.getByRole('dialog', { name: /attach signals to cell v101/i })).toBeTruthy();
+    expect(screen.getByRole('checkbox', { name: /level/i })).toBeTruthy();
+    expect(screen.getByText('Plant/T101/Level')).toBeTruthy();
+    expect(screen.getByLabelText('Name')).toHaveValue('AcmeWater');
+  });
+
+  it('assigns checked signals to the node Asset without rewriting mqttTopic', async () => {
+    getAssets.mockResolvedValue([
+      { id: 42, path: 'AcmeWater/Site1/RawWater/Train1/V101', segment: 'V101', level: 'WORK_CELL' },
+    ]);
+    getSubscribedSignals.mockResolvedValue([
+      {
+        serverId: 's1',
+        serverName: 'opcplc',
+        nodeId: 'ns=3;s=T101',
+        browsePath: 'T101/Level',
+        displayName: 'Level',
+        mqttTopic: 'Plant/T101/Level',
+        subscribed: true,
+      },
+    ]);
+    updateConnectivityTag.mockResolvedValue({
+      serverId: 's1',
+      nodeId: 'ns=3;s=T101',
+      browsePath: 'T101/Level',
+      displayName: 'Level',
+      mqttTopic: 'Plant/T101/Level',
+      subscribed: true,
+      assetId: 42,
+      assetPath: 'AcmeWater/Site1/RawWater/Train1/V101',
+    });
+    render(<HierarchyView />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Attach signals to Cell V101' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Attach signals to Cell V101' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /level/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Attach' }));
+
+    await waitFor(() =>
+      expect(updateConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101', { assetId: 42 }),
+    );
+    expect(updateConnectivityTag.mock.calls[0][2]).not.toHaveProperty('mqttTopic');
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Cell V101' }).querySelector('[aria-label="Signals connected"]'),
+      ).toBeTruthy(),
+    );
+  });
+
+  it('clears the Asset when an assigned signal is unchecked', async () => {
+    getAssets.mockResolvedValue([
+      { id: 42, path: 'AcmeWater/Site1/RawWater/Train1/V101', segment: 'V101', level: 'WORK_CELL' },
+    ]);
+    getSubscribedSignals.mockResolvedValue([
+      {
+        serverId: 's1',
+        serverName: 'opcplc',
+        nodeId: 'ns=3;s=T101',
+        browsePath: 'T101/Level',
+        displayName: 'Level',
+        mqttTopic: 'Plant/T101/Level',
+        subscribed: true,
+        assetId: 42,
+        assetPath: 'AcmeWater/Site1/RawWater/Train1/V101',
+      },
+    ]);
+    updateConnectivityTag.mockResolvedValue({
+      serverId: 's1',
+      nodeId: 'ns=3;s=T101',
+      mqttTopic: 'Plant/T101/Level',
+      displayName: 'Level',
+      browsePath: 'T101/Level',
+      subscribed: true,
+      assetId: null,
+      assetPath: null,
+    });
+    render(<HierarchyView />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Attach signals to Cell V101' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Attach signals to Cell V101' }));
+    expect(screen.getByRole('checkbox', { name: /level/i })).toBeChecked();
+    fireEvent.click(screen.getByRole('checkbox', { name: /level/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Attach' }));
+
+    await waitFor(() =>
+      expect(updateConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101', { assetId: null }),
+    );
+  });
+
+  it('does not attach when the node is missing from the Asset Model', async () => {
+    getSubscribedSignals.mockResolvedValue([
+      {
+        serverId: 's1',
+        serverName: 'opcplc',
+        nodeId: 'ns=3;s=T101',
+        browsePath: 'T101/Level',
+        displayName: 'Level',
+        mqttTopic: 'Plant/T101/Level',
+        subscribed: true,
+      },
+    ]);
+    render(<HierarchyView />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Attach signals to Cell V101' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'Attach signals to Cell V101' }));
+    expect(screen.getByText(/not in the asset model/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Attach' })).toBeDisabled();
+    expect(updateConnectivityTag).not.toHaveBeenCalled();
   });
 
   it('shows the Machine type word on a Machine row, not M', async () => {

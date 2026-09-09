@@ -108,12 +108,12 @@ beforeEach(() => {
   }));
   deleteConnectivityServer.mockResolvedValue(true);
   testOpcUaConnection.mockResolvedValue({ ok: true, error: null, elapsedMs: 12 });
-  testConnectivityServer.mockResolvedValue({
-    id: 's2',
+  testConnectivityServer.mockImplementation(async (id: string) => ({
+    id,
     lastStatus: 'connected',
     lastError: '',
     lastTestedAt: '2026-09-07T18:00:00.000Z',
-  });
+  }));
   saveConnectivityTag.mockResolvedValue({
     serverId: 's2',
     nodeId: '%ID103',
@@ -330,7 +330,7 @@ describe('the OPC UA server table', () => {
     expect(saveConnectivityServer).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'wtp', endpoint: 'opc.tcp://desktop-h4hdql2:50000/' }),
     );
-    await waitFor(() => expect(testOpcUaConnection).toHaveBeenCalledWith('opc.tcp://desktop-h4hdql2:50000/'));
+    await waitFor(() => expect(testConnectivityServer).toHaveBeenCalled());
     await waitFor(() => expect(screen.getAllByText('Connected').length).toBeGreaterThan(0));
   });
 
@@ -377,12 +377,31 @@ describe('the OPC UA server table', () => {
     expect(saveConnectivityServer).not.toHaveBeenCalled();
   });
 
+  it('auto-tests untested servers when the page loads', async () => {
+    renderView();
+    await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
+    await waitFor(() => expect(testConnectivityServer).toHaveBeenCalledWith('s1'));
+  });
+
+  it('auto-tests pending servers when the page loads', async () => {
+    getConnectivityServers.mockResolvedValue([
+      { ...SERVER, id: 's-pending', name: 'wtp1', lastStatus: 'pending', lastError: 'Waiting for HiveMQ Edge to apply' },
+    ]);
+    renderView();
+    await waitFor(() => expect(screen.getByText('wtp1')).toBeTruthy());
+    await waitFor(() => expect(testConnectivityServer).toHaveBeenCalledWith('s-pending'));
+  });
+
   it('tests a connection and reports the outcome', async () => {
+    getConnectivityServers.mockResolvedValue([
+      { ...SERVER, lastStatus: 'connected', lastTestedAt: '2026-09-07T18:00:00.000Z' },
+    ]);
     renderView();
     await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
 
+    testConnectivityServer.mockClear();
     fireEvent.click(screen.getByRole('button', { name: /test/i }));
-    await waitFor(() => expect(testOpcUaConnection).toHaveBeenCalledWith('opc.tcp://desktop-h4hdql2:50000/'));
+    await waitFor(() => expect(testConnectivityServer).toHaveBeenCalledWith('s1'));
   });
 
   it('deletes a server after confirming', async () => {
@@ -454,17 +473,31 @@ describe('S7 and EtherNet/IP servers', () => {
     expect(screen.queryByRole('button', { name: /browse data/i })).toBeNull();
   });
 
-  it('tests an S7 row with testConnectivityServer, not testOpcUaConnection', async () => {
+  it('auto-tests a pending S7 server on load and uses testConnectivityServer', async () => {
     getConnectivityServers.mockResolvedValue([S7_SERVER]);
     renderView();
     await waitFor(() => expect(screen.getByText('plc1')).toBeTruthy());
+    await waitFor(() => expect(testConnectivityServer).toHaveBeenCalledWith('s2'));
+    expect(testOpcUaConnection).not.toHaveBeenCalled();
+  });
 
+  it('tests an S7 row with testConnectivityServer when Test is clicked', async () => {
+    getConnectivityServers.mockResolvedValue([
+      { ...S7_SERVER, lastStatus: 'connected', lastTestedAt: '2026-09-07T18:00:00.000Z' },
+    ]);
+    renderView();
+    await waitFor(() => expect(screen.getByText('plc1')).toBeTruthy());
+
+    testConnectivityServer.mockClear();
     fireEvent.click(screen.getByRole('button', { name: /^test$/i }));
     await waitFor(() => expect(testConnectivityServer).toHaveBeenCalledWith('s2'));
     expect(testOpcUaConnection).not.toHaveBeenCalled();
   });
 
   it('does not auto-test a newly added S7 server, leaving it pending', async () => {
+    getConnectivityServers.mockResolvedValue([
+      { ...SERVER, lastStatus: 'connected', lastTestedAt: '2026-09-07T18:00:00.000Z' },
+    ]);
     saveConnectivityServer.mockImplementation(async (input) => ({
       ...S7_SERVER,
       ...input,
@@ -475,6 +508,7 @@ describe('S7 and EtherNet/IP servers', () => {
     }));
     renderView();
     await waitFor(() => expect(screen.getByText('opcplc')).toBeTruthy());
+    testConnectivityServer.mockClear();
 
     fireEvent.click(screen.getByRole('button', { name: /add server/i }));
     fireEvent.change(await screen.findByLabelText('Name'), { target: { value: 'plc1' } });

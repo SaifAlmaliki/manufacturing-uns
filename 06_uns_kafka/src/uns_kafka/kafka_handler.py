@@ -18,11 +18,16 @@
 Manages connectivity to Kafka broker and publishes message
 """
 
+from __future__ import annotations
+
 import logging
+from collections.abc import Callable
 
 from confluent_kafka import Producer
 
 LOGGER = logging.getLogger(__name__)
+
+DeliveryCallback = Callable[[Exception | None, object | None], None]
 
 
 class KafkaHandler:
@@ -38,6 +43,8 @@ class KafkaHandler:
         """
         self.config: dict = config
         self.producer: Producer = Producer(config)
+        self.delivered_count = 0
+        self.failed_delivery_count = 0
 
     def publish(self, topic: str, message: str):
         """
@@ -50,7 +57,34 @@ class KafkaHandler:
         if self.producer is None:
             self.producer = Producer(self.config)
 
-        self.producer.produce(KafkaHandler.convert_mqtt_kafka_topic(topic), message, callback=self.delivery_callback)
+        self.producer.produce(
+            KafkaHandler.convert_mqtt_kafka_topic(topic),
+            message,
+            callback=self.delivery_callback,
+        )
+        self.producer.poll(0)
+
+    def publish_event(
+        self,
+        topic: str,
+        key: bytes | None,
+        value: bytes,
+        on_delivery: DeliveryCallback,
+    ) -> None:
+        """Publish a literal Kafka topic/key/value and report broker acceptance via callback."""
+        if self.producer is None:
+            self.producer = Producer(self.config)
+
+        def wrapped_callback(err, msg):
+            self.delivery_callback(err, msg)
+            on_delivery(err, msg)
+
+        self.producer.produce(
+            topic=topic,
+            key=key,
+            value=value,
+            callback=wrapped_callback,
+        )
         self.producer.poll(0)
 
     def delivery_callback(self, err: Exception, msg: dict):
@@ -60,9 +94,15 @@ class KafkaHandler:
         msg: Message to be delivered
         """
         if err:
-            LOGGER.error("Failed to deliver message: %s: %s", err, msg)
+            self.failed_delivery_count += 1
+            LOGGER.debug("Failed to deliver message: %s: %s", err, msg)
         else:
-            LOGGER.info("Message delivered to topic: %s", msg.topic())
+            self.delivered_count += 1
+            LOGGER.debug("Message delivered to topic: %s", msg.topic())
+
+    def poll(self, timeout: float = 0) -> int:
+        """Service producer delivery callbacks."""
+        return self.producer.poll(timeout)
 
     def flush(self, timeout: float = -1) -> int:
         """

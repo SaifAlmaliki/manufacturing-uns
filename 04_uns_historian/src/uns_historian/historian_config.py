@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Literal
 
 from uns_config import get_settings
+from uns_config.kafka import sanitize_kafka_config
 from uns_mqtt.mqtt_listener import MQTTVersion
 
 # Logger
@@ -94,6 +95,18 @@ class HistorianConfig:
     metrics_table: str = settings.get("historian.metrics_table", "uns_metrics")
     metrics_port: int = settings.get("historian.metrics_port", 9091)
 
+    batch_max_events: int = settings.get("historian.batch.max_events", 500)
+    batch_max_bytes: int = settings.get("historian.batch.max_bytes", 4 * 1024 * 1024)
+    batch_max_age_seconds: float = settings.get("historian.batch.max_age_seconds", 0.1)
+    batch_max_metric_rows: int = settings.get("historian.batch.max_metric_rows", 20_000)
+    pipeline_epoch: int = settings.get("historian.pipeline_epoch", 1)
+    historic_kafka_topic: str = settings.get("historian.historic_kafka_topic", "uns.historic-events")
+    consumer_poll_timeout: float = settings.get("historian.consumer_poll_timeout", 0.2)
+    aggregate_refresh_interval_seconds: float = settings.get("historian.aggregate_refresh_interval_seconds", 30.0)
+    aggregate_refresh_min_interval_seconds: float = settings.get(
+        "historian.aggregate_refresh_min_interval_seconds", 5.0
+    )
+
     if hostname is None:
         LOGGER.error(
             "Historian Url not provided. Update key 'historian.hostname' in 'conf/settings.yaml' at the repository root",
@@ -152,3 +165,21 @@ class HistorianConfig:
 
             return ssl_context
         return None
+
+
+def build_consumer_config(raw: dict | None) -> dict:
+    defaults = {
+        "group.id": "uns_historian",
+        "enable.auto.commit": False,
+        "enable.auto.offset.store": False,
+        "auto.offset.reset": "earliest",
+    }
+    return {**defaults, **sanitize_kafka_config(raw)}
+
+
+class KafkaConfig:
+    """Kafka consumer settings for the historian pipeline."""
+
+    consumer_config: dict = build_consumer_config(settings.get("kafka.config"))
+    historic_topic: str = HistorianConfig.historic_kafka_topic
+    consumer_group: str = consumer_config.get("group.id", "uns_historian")

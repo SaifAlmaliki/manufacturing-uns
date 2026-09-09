@@ -30,6 +30,7 @@ classifiers = [
 dependencies = [
     "uns_config",
     "uns_model",
+    "confluent-kafka>=2.14.0,<3",
     "dynaconf~=3.2",
     "psutil>=6.1.1,<8",
     "prometheus-client>=0.21.0,<1",
@@ -39,7 +40,8 @@ dependencies = [
 Repository = "https://github.com/mkashwin/unifiednamespace/tree/main/04_uns_historian"
 
 [project.scripts]
-uns_historian = "uns_historian.uns_mqtt_historian:main"
+uns_historian = "uns_historian.kafka_consumer:main"
+uns_historian_mqtt = "uns_historian.uns_mqtt_historian:main"
 uns_historian_healthcheck = "uns_historian.health_check:main"
 
 [dependency-groups]

@@ -139,6 +139,18 @@ class KAFKAConfig:
     consumer_poll_timeout: float = float(settings.get("kafka.consumer_timeout", 1.0))
 
 
+class EventStreamConfig:
+    """Bounded live canonical event fan-out for GraphQL subscriptions."""
+
+    historic_topic: str = settings.get("event_stream.historic_topic", "uns.historic-events")
+    broadcast_group_prefix: str = settings.get("event_stream.broadcast_group_prefix", "uns_graphql_live")
+    max_clients: int = int(settings.get("event_stream.max_clients", 200))
+    max_topics_per_subscription: int = int(settings.get("event_stream.max_topics_per_subscription", 100))
+    max_client_messages: int = int(settings.get("event_stream.max_client_messages", 100))
+    max_client_bytes: int = int(settings.get("event_stream.max_client_bytes", 1_048_576))
+    consumer_poll_timeout: float = float(settings.get("event_stream.consumer_poll_timeout", 0.2))
+
+
 class HistorianConfig:
     """
     Loads the configurations from the repository root conf/settings.yaml and conf/.secrets.yaml
@@ -213,7 +225,8 @@ REGEX_FOR_MQTT_TOPIC = (
     r"^(?:(?:(?:(?:(?:(?:[.0-9a-zA-Z_-]+)|(?:\+))(?:\/))*)" r"(?:(?:(?:[.0-9a-zA-Z_-]+)|(?:\+)|(?:\#))))|(?:(?:\#)))$"
 )
 
-# This regex matches the following:
-#   - Topic names: A string consisting of alphanumeric characters, hyphens, and periods.
-# TODO add support for wildcards or RegEx
+# Exact MQTT browse paths only — no wildcards, dots, or infrastructure Kafka topic names.
+REGEX_FOR_EXACT_MQTT_TOPIC = r"^(?:[0-9a-zA-Z_-]+(?:\/[0-9a-zA-Z_-]+)*)$"
+
+# This regex matches dotted Kafka-style names retained for legacy tests only.
 REGEX_FOR_KAFKA_TOPIC = r"^[a-zA-Z0-9._-]+$"

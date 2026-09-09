@@ -5,6 +5,7 @@ from uns_config.uns_ingest import (
     MAPPER_ENVS,
     MAPPER_UNS_TOPICS,
     PLATFORM_OBSERVABILITY_PREFIX,
+    classify_event_kind,
     is_historic_event_topic,
 )
 
@@ -32,3 +33,17 @@ def test_shipped_mapper_environments_subscribe_to_the_uns():
         settings = get_settings(env)
         assert settings.get("mqtt.topics") == MAPPER_UNS_TOPICS
     get_settings.cache_clear()
+
+
+def test_classify_event_kind_for_uns_telemetry():
+    assert classify_event_kind("Enterprise/PlantA/Device/Temperature") == "telemetry"
+
+
+def test_classify_event_kind_for_sparkplug_transport_and_control():
+    assert classify_event_kind("spBv1.0/uns_group/NDATA/eon1") == "sparkplug_raw"
+    assert classify_event_kind("spBv1.0/uns_group/DDATA/eon1/device1") == "sparkplug_raw"
+    assert classify_event_kind("spBv1.0/uns_group/NBIRTH/eon1") == "lifecycle"
+    assert classify_event_kind("spBv1.0/uns_group/NDEATH/eon1") == "lifecycle"
+    assert classify_event_kind("spBv1.0/STATE/scada_1") == "lifecycle"
+    assert classify_event_kind("spBv1.0/uns_group/NCMD/eon1") == "command"
+    assert classify_event_kind("spBv1.0/uns_group/DCMD/eon1/device1") == "command"

@@ -1,33 +1,16 @@
-"""*******************************************************************************
-* Copyright (c) 2021 Ashwin Krishnan
-*
-* All rights reserved. This program and the accompanying materials
-* are made available under the terms of MIT and  is provided "as is",
-* without warranty of any kind, express or implied, including but
-* not limited to the warranties of merchantability, fitness for a
-* particular purpose and noninfringement. In no event shall the
-* authors, contributors or copyright holders be liable for any claim,
-* damages or other liability, whether in an action of contract,
-* tort or otherwise, arising from, out of or in connection with the software
-* or the use or other dealings in the software.
-*
-* Contributors:
-*    -
-*******************************************************************************
+"""GraphQL subscription for authorized canonical live events."""
 
-This module contains subscription methods for GraphQL
-It provides asynchronous generators for subscribing to KAFKA topics.
-"""
+from __future__ import annotations
 
 import asyncio
 import logging
 import typing
 
 import strawberry
-from confluent_kafka import OFFSET_BEGINNING, Consumer
 
-from uns_graphql.auth.scope import allowed_topic, scope_from_info
-from uns_graphql.graphql_config import KAFKAConfig
+from uns_graphql.auth.scope import scope_from_info
+from uns_graphql.backend.event_stream import get_dispatcher
+from uns_graphql.graphql_config import EventStreamConfig
 from uns_graphql.input.kafka import KAFKATopicInput
 from uns_graphql.queries.asset import _context_resolver
 from uns_graphql.type.streaming_event import StreamingMessage
@@ -35,82 +18,35 @@ from uns_graphql.type.streaming_event import StreamingMessage
 LOGGER = logging.getLogger(__name__)
 
 
-@strawberry.type(description="Subscribe to all streaming events in the UNS i.e. from KAFKA.")
+@strawberry.type(description="Subscribe to authorized live UNS events from the canonical stream.")
 class KAFKASubscription:
-    """
-    Subscription class providing methods for subscribing to Kafka messages.
-    """
+    """Subscription class providing methods for subscribing to live canonical events."""
 
-    @strawberry.subscription(description="Subscribe to Kafka messages based on provided topics. Wildcards/Regex not supported")
+    @strawberry.subscription(
+        description=(
+            "Subscribe to live events for exact original MQTT topics. "
+            "Infrastructure Kafka topic names and wildcards are not supported."
+        )
+    )
     async def get_kafka_messages(
         self, info: strawberry.Info, topics: list[KAFKATopicInput]
     ) -> typing.AsyncGenerator[StreamingMessage]:
-        """
-        Subscribe to Kafka messages based on provided topics.
+        if len(topics) > EventStreamConfig.max_topics_per_subscription:
+            raise ValueError(
+                f"At most {EventStreamConfig.max_topics_per_subscription} exact MQTT topics are allowed"
+            )
 
-        Args:
-            topics (list[KAFKATopicInput]): List of Kafka topics to subscribe to.
-                                            Does not support wildcards or regex.
-
-        Yields:
-            typing.AsyncGenerator[StreamingMessage, None]: Asynchronously generates UNS event messages.
-        """
-
-        def reset_offset(consumer, partitions):
-            """
-            Inner function to reset the offset of the consumer to the beginning
-            Connect to Kafka broker and subscribe to the specified topic
-            Set up a callback to handle the '--reset' flag.
-            """
-            for part in partitions:
-                part.offset = OFFSET_BEGINNING
-            consumer.assign(partitions)
-
-        # Initialize the Kafka consumer with the configuration
-        consumer: Consumer = Consumer(KAFKAConfig.config_map)
-        consumer.subscribe([x.topic for x in topics], on_assign=reset_offset)
-
-        # Inner async function to poll and yield messages from Kafka
-        async def kafka_listener() -> typing.AsyncGenerator[StreamingMessage]:
-            try:
-                while True:
-                    # Poll for messages with a specified timeout
-                    msg = consumer.poll(
-                        timeout=KAFKAConfig.consumer_poll_timeout)
-                    if msg is None:
-                        await asyncio.sleep(KAFKAConfig.consumer_poll_timeout)
-                        continue
-
-                    if msg.error():
-                        # Log and raise an error if there is an issue with the message
-                        LOGGER.error(
-                            f"Error Message received from Kafka Broker msg: {msg.error()!s}")
-                        raise ValueError(msg.error())
-
-                    # Yield the received message as a StreamingMessage
-                    yield StreamingMessage(topic=msg.topic(), payload=msg.value())
-            except asyncio.CancelledError:
-                LOGGER.info("Kafka listener cancelled.")
-            except Exception as e:
-                LOGGER.error(
-                    f"Unexpected error in Kafka listener: {e!s}", exc_info=True)
-            finally:
-                # Ensure the consumer is closed properly
-                LOGGER.info("Closing Kafka consumer.")
-                consumer.close()
-
-        # Yield messages from the Kafka listener that this caller may see
         scope = await scope_from_info(info)
         resolver = None if scope.unrestricted else _context_resolver()
-        async for message in kafka_listener():
-            if not await allowed_topic(scope, message.topic, resolver):
-                continue
-            yield message
+        topic_names = [topic_input.topic for topic_input in topics]
+        dispatcher = get_dispatcher()
+        try:
+            async for message in dispatcher.subscribe(topic_names, scope, resolver):
+                yield message
+        except asyncio.CancelledError:
+            LOGGER.info("Live event subscription cancelled.")
+            raise
 
     @classmethod
-    async def on_shutdown(cls):
-        """
-        Clean up KAFKA subscription if required
-        """
-        # Not needed as the consumer is closed in #kafka_listener()
-        pass
+    async def on_shutdown(cls) -> None:
+        """Dispatcher lifecycle is owned by the FastAPI app lifespan."""

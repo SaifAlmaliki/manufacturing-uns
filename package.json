@@ -4,6 +4,10 @@
   "description": "Local dev from repo root: npm run stack",
   "scripts": {
     "stack": "uv run uns_compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build",
-    "down": "uv run uns_compose -f docker-compose.yml -f docker-compose.dev.yml down"
+    "stack:demo": "uv run uns_compose -f docker-compose.yml -f docker-compose.dev.yml --profile oee-demo up -d --build",
+    "down": "uv run uns_compose -f docker-compose.yml -f docker-compose.dev.yml down",
+    "simulator": "bash HiveMQ-Simulator.sh",
+    "simulator:stack": "uv run uns_compose -f docker-compose.yml -f docker-compose.dev.yml --profile oee-demo up -d oee_mqtt_simulator",
+    "simulator:stop": "uv run uns_compose -f docker-compose.yml -f docker-compose.dev.yml --profile oee-demo stop oee_mqtt_simulator"
   }
 }

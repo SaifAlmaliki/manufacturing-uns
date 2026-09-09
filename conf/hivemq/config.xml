@@ -58,61 +58,131 @@
             </config>
             <northboundMappings>
                 <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/Storage/T201/Levelll</topic>
-                    <tagName>ns_3_s_WTP_T201_Level</tagName>
+                    <topic>Boilers/Boiler #2/ParameterSet/Overheated</topic>
+                    <tagName>ns_4_i_6214</tagName>
                     <maxQos>1</maxQos>
                     <includeTimestamp>true</includeTimestamp>
                 </northboundMapping>
                 <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/Storage/T201/LevelLo</topic>
-                    <tagName>ns_3_s_WTP_T201_LevelLo</tagName>
+                    <topic>Boilers/Boiler #2/ParameterSet/OverheatedThresholdTemperature</topic>
+                    <tagName>ns_4_i_6215</tagName>
                     <maxQos>1</maxQos>
                     <includeTimestamp>true</includeTimestamp>
                 </northboundMapping>
                 <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/Storage/T201/LevelHi</topic>
-                    <tagName>ns_3_s_WTP_T201_LevelHi</tagName>
+                    <topic>Boilers/Boiler #2/ParameterSet/TargetTemperature</topic>
+                    <tagName>ns_4_i_6217</tagName>
                     <maxQos>1</maxQos>
                     <includeTimestamp>true</includeTimestamp>
                 </northboundMapping>
                 <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/Storage/T201/Volume</topic>
-                    <tagName>ns_3_s_WTP_T201_Volume</tagName>
+                    <topic>Boilers/Boiler #2/ParameterSet/TemperatureChangeSpeed</topic>
+                    <tagName>ns_4_i_6218</tagName>
+                    <maxQos>1</maxQos>
+                    <includeTimestamp>true</includeTimestamp>
+                </northboundMapping>
+                <northboundMapping>
+                    <topic>Boilers/Boiler #2/ParameterSet/CurrentTemperature</topic>
+                    <tagName>ns_4_i_6211</tagName>
+                    <maxQos>1</maxQos>
+                    <includeTimestamp>true</includeTimestamp>
+                </northboundMapping>
+                <northboundMapping>
+                    <topic>Boilers/Boiler #2/ParameterSet/HeaterState</topic>
+                    <tagName>ns_4_i_6212</tagName>
+                    <maxQos>1</maxQos>
+                    <includeTimestamp>true</includeTimestamp>
+                </northboundMapping>
+                <northboundMapping>
+                    <topic>Boilers/Boiler #2/ParameterSet/BaseTemperature</topic>
+                    <tagName>ns_4_i_6210</tagName>
+                    <maxQos>1</maxQos>
+                    <includeTimestamp>true</includeTimestamp>
+                </northboundMapping>
+                <northboundMapping>
+                    <topic>Boilers/Boiler #2/ParameterSet/MaintenanceInterval</topic>
+                    <tagName>ns_4_i_6213</tagName>
+                    <maxQos>1</maxQos>
+                    <includeTimestamp>true</includeTimestamp>
+                </northboundMapping>
+                <northboundMapping>
+                    <topic>Boilers/Boiler #2/ParameterSet/OverheatInterval</topic>
+                    <tagName>ns_4_i_6350</tagName>
                     <maxQos>1</maxQos>
                     <includeTimestamp>true</includeTimestamp>
                 </northboundMapping>
             </northboundMappings>
             <tags>
                 <tag>
-                    <name>ns_3_s_WTP_T201_Level</name>
-                    <description>LevelXX</description>
+                    <name>ns_4_i_6214</name>
+                    <description>Overheated</description>
                     <definition>
-                        <node>ns=3;s=WTP_T201_Level</node>
-                        <dataType>REAL</dataType>
+                        <node>ns=4;i=6214</node>
+                        <dataType>DINT</dataType>
                     </definition>
                 </tag>
                 <tag>
-                    <name>ns_3_s_WTP_T201_LevelLo</name>
-                    <description>LevelLo</description>
+                    <name>ns_4_i_6215</name>
+                    <description>OverheatedThresholdTemperature</description>
                     <definition>
-                        <node>ns=3;s=WTP_T201_LevelLo</node>
-                        <dataType>REAL</dataType>
+                        <node>ns=4;i=6215</node>
+                        <dataType>DINT</dataType>
                     </definition>
                 </tag>
                 <tag>
-                    <name>ns_3_s_WTP_T201_LevelHi</name>
-                    <description>LevelHi</description>
+                    <name>ns_4_i_6217</name>
+                    <description>TargetTemperature</description>
                     <definition>
-                        <node>ns=3;s=WTP_T201_LevelHi</node>
-                        <dataType>REAL</dataType>
+                        <node>ns=4;i=6217</node>
+                        <dataType>DINT</dataType>
                     </definition>
                 </tag>
                 <tag>
-                    <name>ns_3_s_WTP_T201_Volume</name>
-                    <description>Volume</description>
+                    <name>ns_4_i_6218</name>
+                    <description>TemperatureChangeSpeed</description>
                     <definition>
-                        <node>ns=3;s=WTP_T201_Volume</node>
-                        <dataType>REAL</dataType>
+                        <node>ns=4;i=6218</node>
+                        <dataType>DINT</dataType>
+                    </definition>
+                </tag>
+                <tag>
+                    <name>ns_4_i_6211</name>
+                    <description>CurrentTemperature</description>
+                    <definition>
+                        <node>ns=4;i=6211</node>
+                        <dataType>DINT</dataType>
+                    </definition>
+                </tag>
+                <tag>
+                    <name>ns_4_i_6212</name>
+                    <description>HeaterState</description>
+                    <definition>
+                        <node>ns=4;i=6212</node>
+                        <dataType>DINT</dataType>
+                    </definition>
+                </tag>
+                <tag>
+                    <name>ns_4_i_6210</name>
+                    <description>BaseTemperature</description>
+                    <definition>
+                        <node>ns=4;i=6210</node>
+                        <dataType>DINT</dataType>
+                    </definition>
+                </tag>
+                <tag>
+                    <name>ns_4_i_6213</name>
+                    <description>MaintenanceInterval</description>
+                    <definition>
+                        <node>ns=4;i=6213</node>
+                        <dataType>DINT</dataType>
+                    </definition>
+                </tag>
+                <tag>
+                    <name>ns_4_i_6350</name>
+                    <description>OverheatInterval</description>
+                    <definition>
+                        <node>ns=4;i=6350</node>
+                        <dataType>DINT</dataType>
                     </definition>
                 </tag>
             </tags>
@@ -125,369 +195,117 @@
             </config>
             <northboundMappings>
                 <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/RawWater/AIT100/Value</topic>
-                    <tagName>ns_3_s_WTP_AIT100_Value</tagName>
+                    <topic>OpcPlc/Telemetry/WaterTreatmentPlant/Treatment/AIT101/Chlorine</topic>
+                    <tagName>ns_3_s_WTP_AIT101_Chlorine</tagName>
                     <maxQos>1</maxQos>
                     <includeTimestamp>true</includeTimestamp>
                 </northboundMapping>
                 <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/RawWater/FT101/Flow</topic>
-                    <tagName>ns_3_s_WTP_FT101_Flow</tagName>
+                    <topic>OpcPlc/Telemetry/WaterTreatmentPlant/Treatment/AIT101/InSpec</topic>
+                    <tagName>ns_3_s_WTP_AIT101_InSpec</tagName>
                     <maxQos>1</maxQos>
                     <includeTimestamp>true</includeTimestamp>
                 </northboundMapping>
                 <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/RawWater/P101/Speed</topic>
-                    <tagName>ns_3_s_WTP_P101_Speed</tagName>
+                    <topic>OpcPlc/Telemetry/WaterTreatmentPlant/Treatment/AIT101/Value</topic>
+                    <tagName>ns_3_s_WTP_AIT101_Value</tagName>
                     <maxQos>1</maxQos>
                     <includeTimestamp>true</includeTimestamp>
                 </northboundMapping>
                 <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/RawWater/P101/Fault</topic>
-                    <tagName>ns_3_s_WTP_P101_Fault</tagName>
+                    <topic>OpcPlc/Telemetry/WaterTreatmentPlant/Treatment/AIT101/pH</topic>
+                    <tagName>ns_3_s_WTP_AIT101_pH</tagName>
                     <maxQos>1</maxQos>
                     <includeTimestamp>true</includeTimestamp>
                 </northboundMapping>
                 <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/RawWater/P101/RunHours</topic>
-                    <tagName>ns_3_s_WTP_P101_RunHours</tagName>
+                    <topic>OpcPlc/Telemetry/WaterTreatmentPlant/Treatment/B101/Running</topic>
+                    <tagName>ns_3_s_WTP_B101_Running</tagName>
                     <maxQos>1</maxQos>
                     <includeTimestamp>true</includeTimestamp>
                 </northboundMapping>
                 <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/RawWater/P101/Starts</topic>
-                    <tagName>ns_3_s_WTP_P101_Starts</tagName>
+                    <topic>OpcPlc/Telemetry/WaterTreatmentPlant/Treatment/B101/Speed</topic>
+                    <tagName>ns_3_s_WTP_B101_Speed</tagName>
                     <maxQos>1</maxQos>
                     <includeTimestamp>true</includeTimestamp>
                 </northboundMapping>
                 <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/RawWater/P102/Available</topic>
-                    <tagName>ns_3_s_WTP_P102_Available</tagName>
+                    <topic>OpcPlc/Telemetry/WaterTreatmentPlant/Treatment/DP101/DoseRate</topic>
+                    <tagName>ns_3_s_WTP_DP101_DoseRate</tagName>
                     <maxQos>1</maxQos>
                     <includeTimestamp>true</includeTimestamp>
                 </northboundMapping>
                 <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/RawWater/P102/Current</topic>
-                    <tagName>ns_3_s_WTP_P102_Current</tagName>
-                    <maxQos>1</maxQos>
-                    <includeTimestamp>true</includeTimestamp>
-                </northboundMapping>
-                <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/RawWater/P102/Fault</topic>
-                    <tagName>ns_3_s_WTP_P102_Fault</tagName>
-                    <maxQos>1</maxQos>
-                    <includeTimestamp>true</includeTimestamp>
-                </northboundMapping>
-                <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/RawWater/P102/Running</topic>
-                    <tagName>ns_3_s_WTP_P102_Running</tagName>
-                    <maxQos>1</maxQos>
-                    <includeTimestamp>true</includeTimestamp>
-                </northboundMapping>
-                <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/RawWater/P102/Speed</topic>
-                    <tagName>ns_3_s_WTP_P102_Speed</tagName>
-                    <maxQos>1</maxQos>
-                    <includeTimestamp>true</includeTimestamp>
-                </northboundMapping>
-                <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/RawWater/P102/Starts</topic>
-                    <tagName>ns_3_s_WTP_P102_Starts</tagName>
-                    <maxQos>1</maxQos>
-                    <includeTimestamp>true</includeTimestamp>
-                </northboundMapping>
-                <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/RawWater/P103/Current</topic>
-                    <tagName>ns_3_s_WTP_P103_Current</tagName>
-                    <maxQos>1</maxQos>
-                    <includeTimestamp>true</includeTimestamp>
-                </northboundMapping>
-                <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/RawWater/P103/Speed</topic>
-                    <tagName>ns_3_s_WTP_P103_Speed</tagName>
-                    <maxQos>1</maxQos>
-                    <includeTimestamp>true</includeTimestamp>
-                </northboundMapping>
-                <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/RawWater/P103/Starts</topic>
-                    <tagName>ns_3_s_WTP_P103_Starts</tagName>
-                    <maxQos>1</maxQos>
-                    <includeTimestamp>true</includeTimestamp>
-                </northboundMapping>
-                <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/RawWater/PT101/Pressure</topic>
-                    <tagName>ns_3_s_WTP_PT101_Pressure</tagName>
-                    <maxQos>1</maxQos>
-                    <includeTimestamp>true</includeTimestamp>
-                </northboundMapping>
-                <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/RawWater/T101/Level</topic>
-                    <tagName>ns_3_s_WTP_T101_Level</tagName>
-                    <maxQos>1</maxQos>
-                    <includeTimestamp>true</includeTimestamp>
-                </northboundMapping>
-                <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/RawWater/T101/LevelHi</topic>
-                    <tagName>ns_3_s_WTP_T101_LevelHi</tagName>
-                    <maxQos>1</maxQos>
-                    <includeTimestamp>true</includeTimestamp>
-                </northboundMapping>
-                <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/RawWater/T101/LevelLo</topic>
-                    <tagName>ns_3_s_WTP_T101_LevelLo</tagName>
-                    <maxQos>1</maxQos>
-                    <includeTimestamp>true</includeTimestamp>
-                </northboundMapping>
-                <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/RawWater/T101/Volume</topic>
-                    <tagName>ns_3_s_WTP_T101_Volume</tagName>
-                    <maxQos>1</maxQos>
-                    <includeTimestamp>true</includeTimestamp>
-                </northboundMapping>
-                <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/RawWater/V101/Open</topic>
-                    <tagName>ns_3_s_WTP_V101_Open</tagName>
-                    <maxQos>1</maxQos>
-                    <includeTimestamp>true</includeTimestamp>
-                </northboundMapping>
-                <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/RawWater/P101/Available</topic>
-                    <tagName>ns_3_s_WTP_P101_Available</tagName>
-                    <maxQos>1</maxQos>
-                    <includeTimestamp>true</includeTimestamp>
-                </northboundMapping>
-                <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/RawWater/P101/Current</topic>
-                    <tagName>ns_3_s_WTP_P101_Current</tagName>
-                    <maxQos>1</maxQos>
-                    <includeTimestamp>true</includeTimestamp>
-                </northboundMapping>
-                <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/RawWater/P101/Running</topic>
-                    <tagName>ns_3_s_WTP_P101_Running</tagName>
-                    <maxQos>1</maxQos>
-                    <includeTimestamp>true</includeTimestamp>
-                </northboundMapping>
-                <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/RawWater/P102/RunHours</topic>
-                    <tagName>ns_3_s_WTP_P102_RunHours</tagName>
-                    <maxQos>1</maxQos>
-                    <includeTimestamp>true</includeTimestamp>
-                </northboundMapping>
-                <northboundMapping>
-                    <topic>Server/OpcPlc/Telemetry/WaterTreatmentPlant/RawWater/P103/Available</topic>
-                    <tagName>ns_3_s_WTP_P103_Available</tagName>
+                    <topic>OpcPlc/Telemetry/WaterTreatmentPlant/Treatment/DP101/Running</topic>
+                    <tagName>ns_3_s_WTP_DP101_Running</tagName>
                     <maxQos>1</maxQos>
                     <includeTimestamp>true</includeTimestamp>
                 </northboundMapping>
             </northboundMappings>
             <tags>
                 <tag>
-                    <name>ns_3_s_WTP_AIT100_Value</name>
+                    <name>ns_3_s_WTP_AIT101_Chlorine</name>
+                    <description>Chlorine</description>
+                    <definition>
+                        <node>ns=3;s=WTP_AIT101_Chlorine</node>
+                        <dataType>DINT</dataType>
+                    </definition>
+                </tag>
+                <tag>
+                    <name>ns_3_s_WTP_AIT101_InSpec</name>
+                    <description>InSpec</description>
+                    <definition>
+                        <node>ns=3;s=WTP_AIT101_InSpec</node>
+                        <dataType>DINT</dataType>
+                    </definition>
+                </tag>
+                <tag>
+                    <name>ns_3_s_WTP_AIT101_Value</name>
                     <description>Value</description>
                     <definition>
-                        <node>ns=3;s=WTP_AIT100_Value</node>
-                        <dataType>REAL</dataType>
+                        <node>ns=3;s=WTP_AIT101_Value</node>
+                        <dataType>DINT</dataType>
                     </definition>
                 </tag>
                 <tag>
-                    <name>ns_3_s_WTP_FT101_Flow</name>
-                    <description>Flow</description>
+                    <name>ns_3_s_WTP_AIT101_pH</name>
+                    <description>pH</description>
                     <definition>
-                        <node>ns=3;s=WTP_FT101_Flow</node>
-                        <dataType>REAL</dataType>
+                        <node>ns=3;s=WTP_AIT101_pH</node>
+                        <dataType>DINT</dataType>
                     </definition>
                 </tag>
                 <tag>
-                    <name>ns_3_s_WTP_P101_Speed</name>
-                    <description>Speed</description>
-                    <definition>
-                        <node>ns=3;s=WTP_P101_Speed</node>
-                        <dataType>REAL</dataType>
-                    </definition>
-                </tag>
-                <tag>
-                    <name>ns_3_s_WTP_P101_Fault</name>
-                    <description>Fault</description>
-                    <definition>
-                        <node>ns=3;s=WTP_P101_Fault</node>
-                        <dataType>REAL</dataType>
-                    </definition>
-                </tag>
-                <tag>
-                    <name>ns_3_s_WTP_P101_RunHours</name>
-                    <description>RunHours</description>
-                    <definition>
-                        <node>ns=3;s=WTP_P101_RunHours</node>
-                        <dataType>REAL</dataType>
-                    </definition>
-                </tag>
-                <tag>
-                    <name>ns_3_s_WTP_P101_Starts</name>
-                    <description>Starts</description>
-                    <definition>
-                        <node>ns=3;s=WTP_P101_Starts</node>
-                        <dataType>REAL</dataType>
-                    </definition>
-                </tag>
-                <tag>
-                    <name>ns_3_s_WTP_P102_Available</name>
-                    <description>Available</description>
-                    <definition>
-                        <node>ns=3;s=WTP_P102_Available</node>
-                        <dataType>REAL</dataType>
-                    </definition>
-                </tag>
-                <tag>
-                    <name>ns_3_s_WTP_P102_Current</name>
-                    <description>Current</description>
-                    <definition>
-                        <node>ns=3;s=WTP_P102_Current</node>
-                        <dataType>REAL</dataType>
-                    </definition>
-                </tag>
-                <tag>
-                    <name>ns_3_s_WTP_P102_Fault</name>
-                    <description>Fault</description>
-                    <definition>
-                        <node>ns=3;s=WTP_P102_Fault</node>
-                        <dataType>REAL</dataType>
-                    </definition>
-                </tag>
-                <tag>
-                    <name>ns_3_s_WTP_P102_Running</name>
+                    <name>ns_3_s_WTP_B101_Running</name>
                     <description>Running</description>
                     <definition>
-                        <node>ns=3;s=WTP_P102_Running</node>
-                        <dataType>REAL</dataType>
+                        <node>ns=3;s=WTP_B101_Running</node>
+                        <dataType>DINT</dataType>
                     </definition>
                 </tag>
                 <tag>
-                    <name>ns_3_s_WTP_P102_Speed</name>
+                    <name>ns_3_s_WTP_B101_Speed</name>
                     <description>Speed</description>
                     <definition>
-                        <node>ns=3;s=WTP_P102_Speed</node>
-                        <dataType>REAL</dataType>
+                        <node>ns=3;s=WTP_B101_Speed</node>
+                        <dataType>DINT</dataType>
                     </definition>
                 </tag>
                 <tag>
-                    <name>ns_3_s_WTP_P102_Starts</name>
-                    <description>Starts</description>
+                    <name>ns_3_s_WTP_DP101_DoseRate</name>
+                    <description>DoseRate</description>
                     <definition>
-                        <node>ns=3;s=WTP_P102_Starts</node>
-                        <dataType>REAL</dataType>
+                        <node>ns=3;s=WTP_DP101_DoseRate</node>
+                        <dataType>DINT</dataType>
                     </definition>
                 </tag>
                 <tag>
-                    <name>ns_3_s_WTP_P103_Current</name>
-                    <description>Current</description>
-                    <definition>
-                        <node>ns=3;s=WTP_P103_Current</node>
-                        <dataType>REAL</dataType>
-                    </definition>
-                </tag>
-                <tag>
-                    <name>ns_3_s_WTP_P103_Speed</name>
-                    <description>Speed</description>
-                    <definition>
-                        <node>ns=3;s=WTP_P103_Speed</node>
-                        <dataType>REAL</dataType>
-                    </definition>
-                </tag>
-                <tag>
-                    <name>ns_3_s_WTP_P103_Starts</name>
-                    <description>Starts</description>
-                    <definition>
-                        <node>ns=3;s=WTP_P103_Starts</node>
-                        <dataType>REAL</dataType>
-                    </definition>
-                </tag>
-                <tag>
-                    <name>ns_3_s_WTP_PT101_Pressure</name>
-                    <description>Pressure</description>
-                    <definition>
-                        <node>ns=3;s=WTP_PT101_Pressure</node>
-                        <dataType>REAL</dataType>
-                    </definition>
-                </tag>
-                <tag>
-                    <name>ns_3_s_WTP_T101_Level</name>
-                    <description>Level</description>
-                    <definition>
-                        <node>ns=3;s=WTP_T101_Level</node>
-                        <dataType>REAL</dataType>
-                    </definition>
-                </tag>
-                <tag>
-                    <name>ns_3_s_WTP_T101_LevelHi</name>
-                    <description>LevelHi</description>
-                    <definition>
-                        <node>ns=3;s=WTP_T101_LevelHi</node>
-                        <dataType>REAL</dataType>
-                    </definition>
-                </tag>
-                <tag>
-                    <name>ns_3_s_WTP_T101_LevelLo</name>
-                    <description>LevelLo</description>
-                    <definition>
-                        <node>ns=3;s=WTP_T101_LevelLo</node>
-                        <dataType>REAL</dataType>
-                    </definition>
-                </tag>
-                <tag>
-                    <name>ns_3_s_WTP_T101_Volume</name>
-                    <description>Volume</description>
-                    <definition>
-                        <node>ns=3;s=WTP_T101_Volume</node>
-                        <dataType>REAL</dataType>
-                    </definition>
-                </tag>
-                <tag>
-                    <name>ns_3_s_WTP_V101_Open</name>
-                    <description>Open</description>
-                    <definition>
-                        <node>ns=3;s=WTP_V101_Open</node>
-                        <dataType>REAL</dataType>
-                    </definition>
-                </tag>
-                <tag>
-                    <name>ns_3_s_WTP_P101_Available</name>
-                    <description>Available</description>
-                    <definition>
-                        <node>ns=3;s=WTP_P101_Available</node>
-                        <dataType>REAL</dataType>
-                    </definition>
-                </tag>
-                <tag>
-                    <name>ns_3_s_WTP_P101_Current</name>
-                    <description>Current</description>
-                    <definition>
-                        <node>ns=3;s=WTP_P101_Current</node>
-                        <dataType>REAL</dataType>
-                    </definition>
-                </tag>
-                <tag>
-                    <name>ns_3_s_WTP_P101_Running</name>
+                    <name>ns_3_s_WTP_DP101_Running</name>
                     <description>Running</description>
                     <definition>
-                        <node>ns=3;s=WTP_P101_Running</node>
-                        <dataType>REAL</dataType>
-                    </definition>
-                </tag>
-                <tag>
-                    <name>ns_3_s_WTP_P102_RunHours</name>
-                    <description>RunHours</description>
-                    <definition>
-                        <node>ns=3;s=WTP_P102_RunHours</node>
-                        <dataType>REAL</dataType>
-                    </definition>
-                </tag>
-                <tag>
-                    <name>ns_3_s_WTP_P103_Available</name>
-                    <description>Available</description>
-                    <definition>
-                        <node>ns=3;s=WTP_P103_Available</node>
-                        <dataType>REAL</dataType>
+                        <node>ns=3;s=WTP_DP101_Running</node>
+                        <dataType>DINT</dataType>
                     </definition>
                 </tag>
             </tags>
@@ -500,24 +318,8 @@
                 <port>103</port>
                 <controllerType>S7_300</controllerType>
             </config>
-            <northboundMappings>
-                <northboundMapping>
-                    <topic>Acme/Line/Speed</topic>
-                    <tagName>ID103</tagName>
-                    <maxQos>1</maxQos>
-                    <includeTimestamp>true</includeTimestamp>
-                </northboundMapping>
-            </northboundMappings>
-            <tags>
-                <tag>
-                    <name>ID103</name>
-                    <description>Speed from S7</description>
-                    <definition>
-                        <tagAddress>%ID103</tagAddress>
-                        <dataType>DINT</dataType>
-                    </definition>
-                </tag>
-            </tags>
+            <northboundMappings/>
+            <tags/>
         </protocol-adapter>
         <protocol-adapter>
             <adapterId>catalog-srv_mtrnx3r2_f5smo2</adapterId>
@@ -526,24 +328,8 @@
                 <host>10.0.0.8</host>
                 <port>44818</port>
             </config>
-            <northboundMappings>
-                <northboundMapping>
-                    <topic>Acme/Line1/Temperature</topic>
-                    <tagName>ID103</tagName>
-                    <maxQos>1</maxQos>
-                    <includeTimestamp>true</includeTimestamp>
-                </northboundMapping>
-            </northboundMappings>
-            <tags>
-                <tag>
-                    <name>ID103</name>
-                    <description>Temperature from Ethernet-IP PLC</description>
-                    <definition>
-                        <address>%ID103</address>
-                        <dataType>DINT</dataType>
-                    </definition>
-                </tag>
-            </tags>
+            <northboundMappings/>
+            <tags/>
         </protocol-adapter>
         <protocol-adapter>
             <adapterId>catalog-srv_mtsv291j_f2hk4z</adapterId>
@@ -553,32 +339,32 @@
             </config>
             <northboundMappings>
                 <northboundMapping>
-                    <topic>OpcPlc/Telemetry/Fast/FastUInt1</topic>
-                    <tagName>ns_3_s_FastUInt1</tagName>
+                    <topic>OpcPlc/SimulatorConfiguration/FastNumberOfUpdates</topic>
+                    <tagName>ns_3_s_FastNumberOfUpdates</tagName>
                     <maxQos>1</maxQos>
                     <includeTimestamp>true</includeTimestamp>
                 </northboundMapping>
                 <northboundMapping>
-                    <topic>OpcPlc/Telemetry/Fast/BadFastUInt1</topic>
-                    <tagName>ns_3_s_BadFastUInt1</tagName>
+                    <topic>OpcPlc/SimulatorConfiguration/SlowNumberOfUpdates</topic>
+                    <tagName>ns_3_s_SlowNumberOfUpdates</tagName>
                     <maxQos>1</maxQos>
                     <includeTimestamp>true</includeTimestamp>
                 </northboundMapping>
             </northboundMappings>
             <tags>
                 <tag>
-                    <name>ns_3_s_FastUInt1</name>
-                    <description>FastUInt1</description>
+                    <name>ns_3_s_FastNumberOfUpdates</name>
+                    <description>FastNumberOfUpdates</description>
                     <definition>
-                        <node>ns=3;s=FastUInt1</node>
+                        <node>ns=3;s=FastNumberOfUpdates</node>
                         <dataType>DINT</dataType>
                     </definition>
                 </tag>
                 <tag>
-                    <name>ns_3_s_BadFastUInt1</name>
-                    <description>BadFastUInt1</description>
+                    <name>ns_3_s_SlowNumberOfUpdates</name>
+                    <description>SlowNumberOfUpdates</description>
                     <definition>
-                        <node>ns=3;s=BadFastUInt1</node>
+                        <node>ns=3;s=SlowNumberOfUpdates</node>
                         <dataType>DINT</dataType>
                     </definition>
                 </tag>

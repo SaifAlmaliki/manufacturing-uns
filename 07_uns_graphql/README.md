@@ -2,8 +2,12 @@
 
 [![UNS GraphQL Client](https://github.com/mkashwin/unifiednamespace/actions/workflows/uns_graphql-app.yml/badge.svg)](https://github.com/mkashwin/unifiednamespace/actions/workflows/uns_graphql-app.yml)
 
-TBD
-_TBD_
+GraphQL queries TimescaleDB, Neo4j, and Postgres model data. Live MQTT subscriptions
+for authorized plant topics are served from a **single process-level Kafka consumer** on
+`uns.historic-events` with bounded client fan-out — not per-browser Kafka consumers on
+dotted topics.
+
+See [ADR-0011](../docs/adr/0011-canonical-historic-event-pipeline.md).
 
 ## Deploying and running GraphQL Server
 
@@ -18,7 +22,7 @@ The full contract is the exported
 | TimescaleDB (historic) | `getHistoricEvents…` |
 | Postgres `model` (authored) | `getAssets`, `getAssetChildren`, `getAsset`, `getTopicContext`, `getUnmodelledTopics`, `getAssetModelSummary` |
 | Postgres `console` | `getAlertRules`, `getAlertRule`, `getAlertRuleSummary` |
-| MQTT / Kafka | the `Subscription` fields |
+| MQTT / Kafka | the `Subscription` fields — live events from `uns.historic-events` |
 
 Everything above is read-only. The **only** mutations are the console's Alert
 Rules — `saveAlertRule`, `saveAlertRules`, `deleteAlertRule`,

@@ -1794,6 +1794,7 @@ name = "uns-historian"
 version = "0.9.38"
 source = { editable = "04_uns_historian" }
 dependencies = [
+    { name = "confluent-kafka" },
     { name = "dynaconf" },
     { name = "prometheus-client" },
     { name = "psutil" },
@@ -1803,6 +1804,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "confluent-kafka", specifier = ">=2.14.0,<3" },
     { name = "dynaconf", specifier = "~=3.2" },
     { name = "prometheus-client", specifier = ">=0.21.0,<1" },
     { name = "psutil", specifier = ">=6.1.1,<8" },
@@ -1828,6 +1830,7 @@ source = { editable = "06_uns_kafka" }
 dependencies = [
     { name = "confluent-kafka" },
     { name = "dynaconf" },
+    { name = "prometheus-client" },
     { name = "psutil" },
     { name = "uns-config" },
 ]
@@ -1836,6 +1839,7 @@ dependencies = [
 requires-dist = [
     { name = "confluent-kafka", specifier = ">=2.14.0,<3" },
     { name = "dynaconf", specifier = "~=3.2" },
+    { name = "prometheus-client", specifier = ">=0.21.0,<1" },
     { name = "psutil", specifier = ">=7.2.2,<8" },
     { name = "uns-config", editable = "00_uns_config" },
 ]

@@ -23,6 +23,14 @@ from typing import Literal
 
 from uns_config import get_settings
 from uns_config.kafka import sanitize_kafka_config
+from uns_kafka.ingest import (
+    HISTORIC_TOPIC,
+    IngestionConfig,
+    OwnershipMapping,
+    validate_ownership_mappings,
+    validate_shard_client_id,
+)
+from uns_kafka.rejections import DLQ_TOPIC
 from uns_mqtt.mqtt_listener import MQTTVersion
 
 # Logger
@@ -65,9 +73,57 @@ class MQTTConfig:
         return cls.host is not None
 
 
+def build_producer_config(raw: dict | None) -> dict:
+    """Merge bounded producer defaults with sanitized deployment settings."""
+    defaults = {
+        "enable.idempotence": True,
+        "acks": "all",
+        "queue.buffering.max.messages": 1000,
+        "queue.buffering.max.kbytes": 16384,
+        "delivery.timeout.ms": 120_000,
+    }
+    return {**defaults, **sanitize_kafka_config(raw)}
+
+
 class KAFKAConfig:
     """
     Read the Kafka configurations required to connect to the Kafka broker
     """
 
-    kafka_config_map: dict = sanitize_kafka_config(settings.get("kafka.config"))
+    kafka_config_map: dict = build_producer_config(settings.get("kafka.config"))
+
+
+def load_ingestion_config() -> IngestionConfig:
+    raw = settings.get("ingestion", {})
+    ownership_raw = raw.get(
+        "ownership",
+        [{"site_id": "default", "source_id": "default/ingress", "topic_prefix": ""}],
+    )
+    mappings = tuple(
+        OwnershipMapping(
+            site_id=entry["site_id"],
+            source_id=entry["source_id"],
+            topic_prefix=entry.get("topic_prefix", ""),
+        )
+        for entry in ownership_raw
+    )
+    validate_ownership_mappings(mappings)
+    client_id = raw.get("client_id") or settings.get("mqtt.client_id")
+    if not client_id:
+        client_id = f"uns_kafka_ingest-{raw.get('shard_id', 'default')}"
+    validate_shard_client_id(client_id)
+    return IngestionConfig(
+        shard_id=raw.get("shard_id", "default"),
+        client_id=client_id,
+        historic_topic=raw.get("historic_topic", HISTORIC_TOPIC),
+        dlq_topic=raw.get("dlq_topic", DLQ_TOPIC),
+        ownership_mappings=mappings,
+        pending_record_limit=int(raw.get("pending_record_limit", 1000)),
+        pending_byte_limit=int(raw.get("pending_byte_limit", 16 * 1024 * 1024)),
+        timestamp_attribute=raw.get("timestamp_attribute", MQTTConfig.timestamp_key),
+    )
+
+
+class IngestionSettings:
+    config: IngestionConfig = load_ingestion_config()
+    metrics_port: int | None = settings.get("metrics_port")

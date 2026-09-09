@@ -4,11 +4,13 @@ import psutil
 import pytest
 
 from uns_historian import health_check
-from uns_historian.historian_config import HistorianConfig, MQTTConfig
+from uns_historian.historian_config import HistorianConfig, KafkaConfig
 
-# Get MQTT configuration
-mqtt_host = MQTTConfig.host
-mqtt_port = MQTTConfig.port
+kafka_url = KafkaConfig.consumer_config.get("bootstrap.servers", "localhost:9092")
+if "://" in kafka_url:
+    kafka_url = kafka_url.split("://")[1]
+kafka_host, kafka_port_str = kafka_url.split(":")
+kafka_port = int(kafka_port_str)
 
 # Get Historian configuration
 historian_host: str = HistorianConfig.hostname
@@ -31,10 +33,10 @@ def test_check_process():
 @pytest.mark.parametrize(
     "host_ip, host, port,match_conn",
     [
-        ("127.0.0.1", mqtt_host, mqtt_port, True),
-        ("127.0.0.1", mqtt_host, mqtt_port, False),
-        ("172.0.0.2", "uns_mqtt", mqtt_port, True),
-        ("172.0.0.2", "uns_mqtt", mqtt_port, False),
+        ("127.0.0.1", kafka_host, kafka_port, True),
+        ("127.0.0.1", kafka_host, kafka_port, False),
+        ("172.0.0.2", "uns_kafka_broker", kafka_port, True),
+        ("172.0.0.2", "uns_kafka_broker", kafka_port, False),
         ("127.0.0.1", historian_host, historian_port, True),
         ("127.0.0.1", historian_host, historian_port, False),
         ("172.0.0.4", "uns_historian", historian_port, True),
@@ -63,10 +65,10 @@ def test_check_existing_connection(host_ip: str, host: str | None, port: int, ma
 @pytest.mark.parametrize(
     "process_info, remote_host_port_list,sys_err_ext_count",
     [
-        ({"cmdline": ["python", "uns_historian"]}, [(mqtt_host, mqtt_port), (historian_host, historian_port)], 0),
-        ({"cmdline": ["python", "something else"]}, [(mqtt_host, mqtt_port), (historian_host, historian_port)], 1),
+        ({"cmdline": ["python", "uns_historian"]}, [(kafka_host, kafka_port), (historian_host, historian_port)], 0),
+        ({"cmdline": ["python", "something else"]}, [(kafka_host, kafka_port), (historian_host, historian_port)], 1),
         ({"cmdline": ["python", "uns_historian"]}, [(historian_host, historian_port)], 1),
-        ({"cmdline": ["python", "uns_historian"]}, [(mqtt_host, mqtt_port)], 1),
+        ({"cmdline": ["python", "uns_historian"]}, [(kafka_host, kafka_port)], 1),
         ({"cmdline": ["python", "uns_historian"]}, [], 2),
         ({"cmdline": ["python", "anything"]}, [], 3),
     ],

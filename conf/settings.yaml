@@ -192,6 +192,20 @@ default:
     table: "unifiednamespace"
     metrics_table: "uns_metrics"
     metrics_port: 9091
+    pipeline_epoch: 1
+    historic_kafka_topic: "uns.historic-events"
+    batch:
+      max_events: 500
+      max_bytes: 4194304
+      max_age_seconds: 0.1
+      max_metric_rows: 20000
+    consumer_poll_timeout: 0.2
+    aggregate_refresh_interval_seconds: 30
+    aggregate_refresh_min_interval_seconds: 5
+    kafka:
+      config:
+        client.id: "uns_historian"
+        bootstrap.servers: "localhost:9092"
 
   opcua:
     client_id: "uns_opcua_client"
@@ -213,6 +227,45 @@ default:
   kafka:
     bootstrap_servers: "localhost:9092"
 
+  kafka_bootstrap:
+    pipeline_epoch: 1
+    config:
+      bootstrap.servers: "localhost:9092"
+    historic_topic:
+      name: uns.historic-events
+      partitions: 12
+      replication_factor: 1
+      retention_ms: 604800000
+    dlq_topic:
+      name: uns.historic-events.dlq
+      partitions: 12
+      replication_factor: 1
+      retention_ms: 2592000000
+
+  datalake:
+    backend: s3
+    metrics_port: 9096
+    consumer_poll_timeout: 0.2
+    kafka:
+      topic: uns.historic-events
+      group_id: uns_datalake
+      config:
+        client.id: uns_datalake
+        bootstrap.servers: localhost:9092
+    flush:
+      interval_seconds: 60
+      max_bytes: 8388608
+      max_records: 10000
+      max_record_bytes: 1048576
+      worker_max_buffered_bytes: 33554432
+    s3:
+      bucket: uns-historic-events
+      region: us-east-1
+      endpoint_url: http://uns-minio:9000
+    adls:
+      account: ""
+      container: ""
+
 graphql:
   mqtt:
     topics: ["#"]
@@ -223,6 +276,14 @@ graphql:
       bootstrap.servers: "localhost:9092"
       auto.offset.reset: "earliest"
     consumer_timeout: 0.5
+  event_stream:
+    historic_topic: "uns.historic-events"
+    broadcast_group_prefix: "uns_graphql_live"
+    max_clients: 200
+    max_topics_per_subscription: 100
+    max_client_messages: 100
+    max_client_bytes: 1048576
+    consumer_poll_timeout: 0.2
 
 graphdb:
   mqtt:
@@ -234,6 +295,34 @@ historian:
   mqtt:
     # Same ingest policy as graphdb and kafka_mapper — one Unified Namespace.
     topics: ["#"]
+  kafka:
+    config:
+      client.id: "uns_historian"
+      bootstrap.servers: "localhost:9092"
+
+datalake:
+  backend: s3
+  metrics_port: 9096
+  consumer_poll_timeout: 0.2
+  kafka:
+    topic: uns.historic-events
+    group_id: uns_datalake
+    config:
+      client.id: uns_datalake
+      bootstrap.servers: localhost:9092
+  flush:
+    interval_seconds: 60
+    max_bytes: 8388608
+    max_records: 10000
+    max_record_bytes: 1048576
+    worker_max_buffered_bytes: 33554432
+  s3:
+    bucket: uns-historic-events
+    region: us-east-1
+    endpoint_url: http://uns-minio:9000
+  adls:
+    account: ""
+    container: ""
 
 opcua:
   opcua:
@@ -244,6 +333,15 @@ opcua:
 kafka_mapper:
   mqtt:
     topics: ["#"]
+    client_id: "uns_kafka_ingest-dev"
+  ingestion:
+    shard_id: "dev"
+    client_id: "uns_kafka_ingest-dev"
+    ownership:
+      - site_id: "default"
+        source_id: "default/ingress"
+        topic_prefix: ""
+  metrics_port: 9094
   kafka:
     config:
       client.id: "uns_kafka_client"

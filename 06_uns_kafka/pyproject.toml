@@ -29,6 +29,7 @@ dependencies = [
     "uns_config",
     "dynaconf~=3.2",
     "confluent-kafka>=2.14.0,<3",
+    "prometheus-client>=0.21.0,<1",
     "psutil>=7.2.2,<8",
 ]
 
@@ -37,6 +38,7 @@ Repository = "https://github.com/mkashwin/unifiednamespace/tree/main/06_uns_kafk
 
 [project.scripts]
 uns_kafka_mapper = "uns_kafka.uns_kafka_listener:main"
+uns_kafka_bootstrap = "uns_kafka.bootstrap:main"
 uns_kafka_healthcheck = "uns_kafka.health_check:main"
 
 [dependency-groups]

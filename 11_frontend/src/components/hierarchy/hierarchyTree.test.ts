@@ -4,8 +4,10 @@ import {
   ancestorKeys,
   childRefs,
   expandableKeys,
+  assetIdForPrefix,
   insertDescendant,
   nodeKey,
+  prefixHasConnectedSignal,
 } from './hierarchyTree';
 
 const TREE: GraphqlHierarchyTree = {
@@ -117,5 +119,46 @@ describe('collapse keys', () => {
       'enterprise',
     ]);
     expect(ancestorKeys({ level: 'enterprise' })).toEqual([]);
+  });
+});
+
+describe('prefixHasConnectedSignal', () => {
+  const signals = [
+    { mqttTopic: 'AcmeWater/Site1/RawWater/Train1/V101/Level', assetPath: null },
+    {
+      mqttTopic: 'Server/OpcPlc/Pressure',
+      assetPath: 'AcmeWater/Site1/RawWater',
+    },
+  ];
+
+  it('marks a node connected when a subscribed signal lives under its prefix', () => {
+    expect(prefixHasConnectedSignal('AcmeWater/Site1/RawWater/Train1/V101', signals)).toBe(true);
+    expect(prefixHasConnectedSignal('AcmeWater/Site1', signals)).toBe(true);
+    expect(prefixHasConnectedSignal('AcmeWater', signals)).toBe(true);
+  });
+
+  it('marks a node connected when its Asset path is assigned to a signal', () => {
+    expect(prefixHasConnectedSignal('AcmeWater/Site1/RawWater', signals)).toBe(true);
+  });
+
+  it('does not mark a sibling branch that has no signals', () => {
+    expect(prefixHasConnectedSignal('AcmeWater/Site2', signals)).toBe(false);
+    expect(prefixHasConnectedSignal('AcmeWater/Site1/Treatment', signals)).toBe(false);
+  });
+});
+
+describe('assetIdForPrefix', () => {
+  const assets = [
+    { id: 7, path: 'AcmeWater/Site1' },
+    { id: 42, path: 'AcmeWater/Site1/RawWater/Train1/V101' },
+  ];
+
+  it('returns the Asset Model id for an exact plant-tree prefix', () => {
+    expect(assetIdForPrefix(assets, 'AcmeWater/Site1/RawWater/Train1/V101')).toBe(42);
+    expect(assetIdForPrefix(assets, 'AcmeWater/Site1')).toBe(7);
+  });
+
+  it('returns null when the node is not in the Asset Model', () => {
+    expect(assetIdForPrefix(assets, 'AcmeWater/Site1/Treatment')).toBeNull();
   });
 });

@@ -130,11 +130,42 @@ export const ConnectivityView: React.FC = () => {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [browseServer, setBrowseServer] = useState<GraphqlConnectivityServer | null>(null);
 
+  const testServer = useCallback(async (server: GraphqlConnectivityServer) => {
+    setTestingId(server.id);
+    try {
+      const updated = await unsGraphQLClient.testConnectivityServer(server.id);
+      setServers((prev) => prev.map((s) => (s.id === updated.id ? { ...s, ...updated } : s)));
+      return updated;
+    } catch (err) {
+      setServers((prev) =>
+        prev.map((s) =>
+          s.id === server.id
+            ? { ...s, lastStatus: 'failed', lastError: 'Test failed', lastTestedAt: new Date().toISOString() }
+            : s,
+        ),
+      );
+      if (server.protocol !== 'OPC_UA') {
+        setLoadError(err instanceof Error ? err.message : 'Test failed');
+      }
+      return null;
+    } finally {
+      setTestingId(null);
+    }
+  }, []);
+
   const loadServers = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
     try {
-      setServers(await unsGraphQLClient.getConnectivityServers('OPC_UA'));
+      const fetched = await unsGraphQLClient.getConnectivityServers('OPC_UA');
+      setServers(fetched);
+      setLoading(false);
+      const needingTest = fetched.filter(
+        (s) => s.lastStatus === 'pending' || s.lastStatus === 'untested',
+      );
+      for (const server of needingTest) {
+        await testServer(server);
+      }
     } catch (err) {
       setLoadError(
         err instanceof Error
@@ -142,9 +173,9 @@ export const ConnectivityView: React.FC = () => {
           : 'Connectivity catalog could not be loaded. GraphQL returned an error — not an empty plant.',
       );
       setServers([]);
+      setLoading(false);
     }
-    setLoading(false);
-  }, []);
+  }, [testServer]);
 
   useEffect(() => {
     if (!canMutate) return;
@@ -243,7 +274,7 @@ export const ConnectivityView: React.FC = () => {
       // S7/EtherNet-IP need uns_mqtt_broker recreated before their Edge adapter is live —
       // testing right after Add would just report EDGE_APPLY_ERROR back at the engineer.
       // They stay `pending` until an explicit Test after the broker picks up config.xml.
-      if (!wasEdit && saved.protocol === 'OPC_UA') await handleTest(saved);
+      if (!wasEdit && saved.protocol === 'OPC_UA') await testServer(saved);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Server was not added');
     } finally {
@@ -251,54 +282,8 @@ export const ConnectivityView: React.FC = () => {
     }
   };
 
-  const applyConnectionTest = async (server: GraphqlConnectivityServer) => {
-    setTestingId(server.id);
-    try {
-      const result = await unsGraphQLClient.testOpcUaConnection(server.endpoint);
-      setServers((prev) =>
-        prev.map((s) =>
-          s.id === server.id
-            ? {
-                ...s,
-                lastStatus: result.ok ? 'connected' : 'failed',
-                lastError: result.error ?? '',
-                lastTestedAt: new Date().toISOString(),
-              }
-            : s,
-        ),
-      );
-    } catch {
-      setServers((prev) =>
-        prev.map((s) =>
-          s.id === server.id
-            ? { ...s, lastStatus: 'failed', lastError: 'Test failed', lastTestedAt: new Date().toISOString() }
-            : s,
-        ),
-      );
-    } finally {
-      setTestingId(null);
-    }
-  };
-
-  /** S7/EtherNet-IP have no OPC UA session to probe — `testConnectivityServer` dials a bare TCP connect instead. */
-  const applyPlcConnectionTest = async (server: GraphqlConnectivityServer) => {
-    setTestingId(server.id);
-    try {
-      const updated = await unsGraphQLClient.testConnectivityServer(server.id);
-      setServers((prev) => prev.map((s) => (s.id === updated.id ? { ...s, ...updated } : s)));
-    } catch (err) {
-      setLoadError(err instanceof Error ? err.message : 'Test failed');
-    } finally {
-      setTestingId(null);
-    }
-  };
-
   const handleTest = async (server: GraphqlConnectivityServer) => {
-    if (server.protocol === 'OPC_UA') {
-      await applyConnectionTest(server);
-      return;
-    }
-    await applyPlcConnectionTest(server);
+    await testServer(server);
   };
 
   const handleDelete = async (server: GraphqlConnectivityServer) => {

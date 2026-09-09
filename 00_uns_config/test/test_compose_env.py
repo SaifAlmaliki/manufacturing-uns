@@ -42,6 +42,7 @@ def test_compose_environment_reads_secrets_yaml(monkeypatch, tmp_path: Path):
             "graphdb": {"password": "neo-secret"},
             "historian": {"password": "hist-secret"},
             "postgres": {"password": "super-secret"},
+            "minio": {"root_user": "minioadmin", "root_password": "minioadmin-secret"},
             **_KEYCLOAK_SECRETS,
         },
     )
@@ -58,6 +59,8 @@ def test_compose_environment_reads_secrets_yaml(monkeypatch, tmp_path: Path):
         "PGPASSWORD": "super-secret",
         "UNS_keycloak__admin_password": "kc-admin-secret",
         "UNS_keycloak__grafana_client_secret": "kc-grafana-secret",
+        "UNS_minio__root_user": "minioadmin",
+        "UNS_minio__root_password": "minioadmin-secret",
     }
 
 
@@ -68,6 +71,7 @@ def test_compose_environment_rejects_missing_postgres_password(monkeypatch, tmp_
         {
             "graphdb": {"password": "neo-secret"},
             "historian": {"password": "hist-secret"},
+            "minio": {"root_user": "minioadmin", "root_password": "minioadmin-secret"},
             **_KEYCLOAK_SECRETS,
         },
     )
@@ -88,6 +92,7 @@ def test_compose_environment_rejects_placeholder_passwords(monkeypatch, tmp_path
             "graphdb": {"password": "#<enter the password for the graph database>"},
             "historian": {"password": "hist-secret"},
             "postgres": {"password": "super-secret"},
+            "minio": {"root_user": "minioadmin", "root_password": "minioadmin-secret"},
             **_KEYCLOAK_SECRETS,
         },
     )
@@ -109,6 +114,7 @@ def test_compose_environment_rejects_missing_keycloak_secrets(monkeypatch, tmp_p
             "graphdb": {"password": "neo-secret"},
             "historian": {"password": "hist-secret"},
             "postgres": {"password": "super-secret"},
+            "minio": {"root_user": "minioadmin", "root_password": "minioadmin-secret"},
         },
     )
     monkeypatch.setenv("UNS_CONF_DIR", str(conf))
@@ -142,3 +148,25 @@ def test_secrets_template_covers_every_required_key():
     keycloak = template["default"]["keycloak"]
     for key in ("admin_password", "grafana_client_secret"):
         assert key in keycloak, f".secrets_template.yaml is missing keycloak.{key}"
+    minio = template["default"]["minio"]
+    for key in ("root_user", "root_password"):
+        assert key in minio, f".secrets_template.yaml is missing minio.{key}"
+
+
+def test_compose_environment_rejects_missing_minio_secrets(monkeypatch, tmp_path: Path):
+    conf = _write_conf(
+        tmp_path,
+        {
+            "graphdb": {"password": "neo-secret"},
+            "historian": {"password": "hist-secret"},
+            "postgres": {"password": "super-secret"},
+            **_KEYCLOAK_SECRETS,
+        },
+    )
+    monkeypatch.setenv("UNS_CONF_DIR", str(conf))
+    get_settings.cache_clear()
+    try:
+        with pytest.raises(ValueError, match="minio.root_user"):
+            compose_environment()
+    finally:
+        get_settings.cache_clear()

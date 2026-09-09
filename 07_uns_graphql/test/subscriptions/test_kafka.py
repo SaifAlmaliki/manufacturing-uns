@@ -1,37 +1,41 @@
-"""*******************************************************************************
-* Copyright (c) 2021 Ashwin Krishnan
-*
-* All rights reserved. This program and the accompanying materials
-* are made available under the terms of MIT and  is provided "as is",
-* without warranty of any kind, express or implied, including but
-* not limited to the warranties of merchantability, fitness for a
-* particular purpose and noninfringement. In no event shall the
-* authors, contributors or copyright holders be liable for any claim,
-* damages or other liability, whether in an action of contract,
-* tort or otherwise, arising from, out of or in connection with the software
-* or the use or other dealings in the software.
-*
-* Contributors:
-*    -
-*******************************************************************************
-"""
+"""Tests for the live event GraphQL subscription."""
+
+from __future__ import annotations
 
 import asyncio
-import contextlib
-import uuid
+import json
+from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
 
 import pytest
-from confluent_kafka import Producer
-from confluent_kafka.admin import AdminClient, NewTopic
+import pytest_asyncio
+from uns_config.events import HistoricEventEnvelope, source_event_id
 
 from uns_graphql.auth.context import CONTEXT_KEY
 from uns_graphql.auth.token import Identity
-from uns_graphql.graphql_config import KAFKAConfig
+from uns_graphql.backend import event_stream as event_stream_module
+from uns_graphql.backend.event_stream import DispatchedEvent, LiveEventDispatcher, reset_dispatcher_for_tests
 from uns_graphql.input.kafka import KAFKATopicInput
 from uns_graphql.subscriptions.kafka import KAFKASubscription
 from uns_graphql.type.streaming_event import StreamingMessage
+
+
+class FakeConsumer:
+    def __init__(self) -> None:
+        self.subscribed_topics: list[str] = []
+        self.on_assign = None
+        self.on_revoke = None
+
+    def subscribe(self, topics, on_assign, on_revoke) -> None:
+        self.subscribed_topics = list(topics)
+        self.on_assign = on_assign
+        self.on_revoke = on_revoke
+
+    def poll(self, timeout: float):
+        return None
+
+    def close(self) -> None:
+        pass
 
 
 def _admin_info() -> SimpleNamespace:
@@ -41,30 +45,78 @@ def _admin_info() -> SimpleNamespace:
         }
     )
 
+
+def _source_envelope(topic: str, payload: dict) -> HistoricEventEnvelope:
+    event_time = datetime(2026, 9, 9, 10, 0, 0, tzinfo=UTC)
+    received_at = datetime(2026, 9, 9, 10, 0, 0, 10000, tzinfo=UTC)
+    return HistoricEventEnvelope(
+        schema_version=1,
+        event_id=source_event_id("plant-a", "plant-a/gateway-01", "boot-17", 42),
+        identity_quality="source",
+        source_id="plant-a/gateway-01",
+        source_boot_id="boot-17",
+        source_sequence=42,
+        site_id="plant-a",
+        time=event_time,
+        received_at=received_at,
+        timestamp_quality="source",
+        topic=topic,
+        event_kind="telemetry",
+        is_historical=False,
+        payload=payload,
+        raw_payload_base64=None,
+    )
+
+
+def _dispatched(topic: str, payload: dict) -> DispatchedEvent:
+    envelope = _source_envelope(topic, payload)
+    payload_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return DispatchedEvent(
+        topic=topic,
+        payload_json=payload_json,
+        event_id=envelope.event_id,
+        event_time=envelope.time,
+    )
+
+
+@pytest_asyncio.fixture(loop_scope="function")
+async def dispatcher():
+    reset_dispatcher_for_tests()
+    loop = asyncio.get_running_loop()
+    fake_consumer = FakeConsumer()
+    live_dispatcher = LiveEventDispatcher(loop=loop, consumer=fake_consumer)
+    await live_dispatcher.start()
+    event_stream_module._dispatcher = live_dispatcher
+    yield live_dispatcher
+    await live_dispatcher.stop()
+    reset_dispatcher_for_tests()
+
+
 TWO_TOPICS_MULTIPLE_MSGS = (
-    [KAFKATopicInput(topic="graphql_test_a.b.c"),
-     KAFKATopicInput(topic="graphql_test.abc")],
     [
-        ("graphql_test_a.b.c", b'{"timestamp": 123456, "val1": 1234}'),
-        ("graphql_test.abc", b'{"timestamp": 123987, "val1": 9876}'),
-        ("graphql_test_a.b.c", b'{"timestamp": 234567, "val1": 2345}'),
-        ("graphql_test.abc",
-         b'{"timestamp": 456789, "val2": "test different"}'),
+        KAFKATopicInput(topic="Enterprise/PlantA/Area/Line/Device/Temperature"),
+        KAFKATopicInput(topic="Enterprise/PlantA/Area/Line/Device/Pressure"),
+    ],
+    [
+        ("Enterprise/PlantA/Area/Line/Device/Temperature", {"timestamp": 123456, "val1": 1234}),
+        ("Enterprise/PlantA/Area/Line/Device/Pressure", {"timestamp": 123987, "val1": 9876}),
+        ("Enterprise/PlantA/Area/Line/Device/Temperature", {"timestamp": 234567, "val1": 2345}),
+        ("Enterprise/PlantA/Area/Line/Device/Pressure", {"timestamp": 456789, "val2": "test different"}),
     ],
 )
 
 ONE_TOPIC_MULTIPLE_MSGS = (
-    [KAFKATopicInput(topic="graphql_test_l.m.n")],
+    [KAFKATopicInput(topic="Enterprise/PlantA/Area/Line/Device/Flow")],
     [
-        ("graphql_test_l.m.n", b'{"timestamp": 123456, "val1": 1234}'),
-        ("graphql_test_l.m.n", b'{"timestamp": 123457, "val1": 5678}'),
-        ("graphql_test_l.m.n", b'{"timestamp": 123458, "val1": 9012}'),
+        ("Enterprise/PlantA/Area/Line/Device/Flow", {"timestamp": 123456, "val1": 1234}),
+        ("Enterprise/PlantA/Area/Line/Device/Flow", {"timestamp": 123457, "val1": 5678}),
+        ("Enterprise/PlantA/Area/Line/Device/Flow", {"timestamp": 123458, "val1": 9012}),
     ],
 )
 
 ONE_TOPIC_ONE_MSG = (
-    [KAFKATopicInput(topic="graphql_test_x.y.z")],
-    [("graphql_test_x.y.z", b'{"timestamp": 123456, "val1": 1234}')],
+    [KAFKATopicInput(topic="Enterprise/PlantA/Area/Line/Device/Speed")],
+    [("Enterprise/PlantA/Area/Line/Device/Speed", {"timestamp": 123456, "val1": 1234})],
 )
 
 
@@ -77,162 +129,42 @@ ONE_TOPIC_ONE_MSG = (
         ONE_TOPIC_ONE_MSG,
     ],
 )
-async def test_get_kafka_messages_mock(topics: list[KAFKATopicInput], message_vals: tuple):
-    # create the input for the subscription
-
-    # pick a topic to associate the message with in the mock
-    mock_messages: list[MagicMock] = []
-    for msg_val in message_vals:
-        mock_message = MagicMock()
-        mock_message.value.return_value = msg_val[1]
-        mock_message.error.return_value = False
-        mock_message.topic.return_value = msg_val[0]
-        mock_messages.append(mock_message)
-
-    # Mock the Kafka consumer
-    mock_consumer = MagicMock()
-    mock_consumer.poll.side_effect = mock_messages  # loop through the messages
-    mock_consumer.subscribe.return_value = True
-    mock_consumer.connect.return_value = True
-
-    with patch("uns_graphql.subscriptions.kafka.Consumer", return_value=mock_consumer):
-        subscription = KAFKASubscription()
-        received_messages = []
-        try:
-            index: int = 0
-            async_message_list = subscription.get_kafka_messages(_admin_info(), topics)
-            async for message in async_message_list:
-                assert isinstance(message, StreamingMessage)
-                assert message == StreamingMessage(
-                    message_vals[index][0], message_vals[index][1])
-                received_messages.append(message)
-                index = index + 1
-                if index == len(message_vals):
-                    break
-        except RuntimeError as ex:
-            # That happens when the mock async generator exhausts its content
-            assert str(ex) == "async generator raised StopIteration"
-            pytest.warns(ex)
-
-        finally:
-            await async_message_list.aclose()
-
-        assert index == len(message_vals), "Not all messages were processed"
-        for topic, msg in message_vals:
-            # order of messages may not be same hence check after all messages were provided
-            assert any(
-                StreamingMessage(topic=topic, payload=msg) == received_message for received_message in received_messages
-            )
-
-
-@pytest.fixture(scope="function")
-def kafka_setup_unique(request):
-    """
-    Fixture to setup unique Kafka topics per test to avoid collisions and race conditions.
-    """
-    original_topics, original_messages = request.param
-
-    # Generate unique suffix
-    unique_suffix = str(uuid.uuid4())[:8]
-
-    # Map original topic names to unique topic names
-    topic_map = {t.topic: f"{t.topic}_{unique_suffix}" for t in original_topics}
-
-    # Create new TopicInputs with unique names
-    unique_topics = [KAFKATopicInput(topic=topic_map[t.topic]) for t in original_topics]
-
-    # Create new messages with unique topic names
-    unique_messages = []
-    for topic_name, payload in original_messages:
-        unique_messages.append((topic_map[topic_name], payload))
-
-    # Setup Kafka Admin and Producer
-    admin = AdminClient({
-        "client.id": f"test_admin_{unique_suffix}",
-        "bootstrap.servers": KAFKAConfig.config_map["bootstrap.servers"],
-    })
-
-    topics_to_create = list(topic_map.values())
-
-    # Create new topics
-    new_topics = [NewTopic(topic, num_partitions=1, replication_factor=1) for topic in topics_to_create]
-    fs = admin.create_topics(new_topics)
-    # Wait for creation with timeout
-    for f in fs.values():
-        try:
-            f.result(timeout=10)
-        except Exception:
-            raise
-
-    # Produce messages
-    producer = Producer({
-        "client.id": f"test_producer_{unique_suffix}",
-        "bootstrap.servers": KAFKAConfig.config_map["bootstrap.servers"],
-        "socket.timeout.ms": 5000,
-        "message.timeout.ms": 5000,
-    })
-
-    def delivery_report(err, msg):
-        pass
-
-    for topic, msg in unique_messages:
-        producer.produce(topic, value=msg, callback=delivery_report)
-
-    producer.flush(timeout=10)
-    producer.purge()
-
-    yield unique_topics, unique_messages
-
-    # Cleanup: Delete topics
-    # Skipping cleanup to save time and prevent timeouts in CI
-    # Topics are unique and will be cleaned up when the Kafka container is destroyed
-    # fs = admin.delete_topics(topics_to_create)
-    # for f in fs.values():
-    #     try:
-    #         f.result(timeout=10)
-    #     except Exception:
-    #         pass
-
-
-@pytest.mark.asyncio(loop_scope="function")
-@pytest.mark.integrationtest
-@pytest.mark.xdist_group(name="graphql_graphdb")
-@pytest.mark.timeout(60)
-@pytest.mark.parametrize(
-    "kafka_setup_unique",
-    [
-        # Only run the most complex scenario for integration tests to prevent CI timeouts
-        TWO_TOPICS_MULTIPLE_MSGS,
-    ],
-    indirect=True
-)
-async def test_get_kafka_messages_integration(kafka_setup_unique):
-    kafka_topics, message_vals = kafka_setup_unique
-
-    received_messages = []
+async def test_get_kafka_messages_mock(dispatcher, topics: list[KAFKATopicInput], message_vals: tuple):
     subscription = KAFKASubscription()
-    try:
-        index: int = 0
-        async_message_list = subscription.get_kafka_messages(_admin_info(), kafka_topics)
-        # Use asyncio.timeout (Python 3.11+) or wait_for
-        async with asyncio.timeout(30):
-            async for message in async_message_list:
-                assert isinstance(message, StreamingMessage)
-                received_messages.append(message)
-                index = index + 1
-                if index == len(message_vals):
-                    break
-    finally:
-        with contextlib.suppress(Exception):
-            async with asyncio.timeout(5):
-                await async_message_list.aclose()
+    received_messages: list[StreamingMessage] = []
+    async_message_list = subscription.get_kafka_messages(_admin_info(), topics)
+    consume_task = asyncio.create_task(_collect_messages(async_message_list, received_messages, len(message_vals)))
+    await asyncio.sleep(0)
 
-    # Ensure messages from both topics are received correctly
-    topics_set = {msg.topic for msg in received_messages}
-    expected_topics_set = {topic.topic for topic in kafka_topics}
-    assert topics_set == expected_topics_set, f"Expected topics: {expected_topics_set}, but got: {topics_set}"
-    # Validate that all published messages were received
+    for topic, payload in message_vals:
+        dispatcher._fan_out(_dispatched(topic, payload))
+
+    await asyncio.wait_for(consume_task, timeout=2)
+    await async_message_list.aclose()
+
     assert len(received_messages) == len(message_vals)
-    for topic, msg in message_vals:
-        assert any(StreamingMessage(topic=topic, payload=msg) ==
-                   received_message for received_message in received_messages)
+    for topic, payload in message_vals:
+        expected_payload = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        assert any(
+            message.topic == topic and message.payload.data == expected_payload.decode("utf-8")
+            for message in received_messages
+        )
+
+
+async def _collect_messages(stream, received_messages: list[StreamingMessage], expected_count: int) -> None:
+    index = 0
+    async for message in stream:
+        assert isinstance(message, StreamingMessage)
+        received_messages.append(message)
+        index += 1
+        if index == expected_count:
+            break
+
+
+@pytest.mark.asyncio
+async def test_get_kafka_messages_rejects_excessive_topic_count(dispatcher):
+    topics = [KAFKATopicInput(topic=f"Enterprise/PlantA/Area/Line/Device/Metric{i}") for i in range(101)]
+    subscription = KAFKASubscription()
+    with pytest.raises(ValueError, match="At most 100"):
+        async for _message in subscription.get_kafka_messages(_admin_info(), topics):
+            pass

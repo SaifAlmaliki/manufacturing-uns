@@ -1,6 +1,8 @@
 """Tests for metric flattening into uns_metrics rows."""
 
-from uns_historian.metric_flattener import flatten_payload_to_metrics
+import pytest
+
+from uns_historian.metric_flattener import MetricExpansionLimitError, flatten_payload_to_metrics, iter_payload_metrics
 
 
 def _as_dict(payload):
@@ -36,3 +38,9 @@ def test_flatten_skips_nulls():
 def test_flatten_deeply_nested():
     metrics = _as_dict({"a": {"b": {"c": "leaf"}}})
     assert metrics["a.b.c"] == (None, "leaf")
+
+
+def test_iter_payload_metrics_raises_when_limit_exceeded():
+    payload = {f"metric_{index}": index for index in range(5)}
+    with pytest.raises(MetricExpansionLimitError):
+        list(iter_payload_metrics(payload, limit=3))

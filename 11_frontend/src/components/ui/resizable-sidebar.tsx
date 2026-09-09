@@ -89,11 +89,11 @@ export const ResizableSidebar: React.FC<ResizableSidebarProps> = ({
   }
 
   return (
-    <div className={`flex min-h-0 shrink-0 ${className}`}>
+    <div className={`flex h-full min-h-0 shrink-0 ${className}`}>
       <section
         id={id}
         aria-label={ariaLabel}
-        className="min-h-0 min-w-0 overflow-hidden"
+        className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden"
         style={{ width, flexBasis: width, flexGrow: 0, flexShrink: 0 }}
       >
         {children}

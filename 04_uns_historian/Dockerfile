@@ -35,10 +35,11 @@ ENV UNS_MODULE="04_uns_historian"\
     PYTHONUNBUFFERED=1 \
     PYTHONFAULTHANDLER=1 \
     PYTHONDONTWRITEBYTECODE=1 \
+    LIBRDKAFKA_VER="2.15.0" \
     UNS_CONF_DIR="/app/conf" 
 # spell-checker:enable
 LABEL org.opencontainers.image.source=https://github.com/mkashwin/unifiednamespace/tree/main/04_uns_historian
-LABEL org.opencontainers.image.description="Stores MQTT messages to the historian database. Supports both UNS and SparkplugB"
+LABEL org.opencontainers.image.description="Consumes uns.historic-events and projects batches into TimescaleDB"
 LABEL org.opencontainers.image.licenses=MIT
 
 # Set the working directory in the container to /
@@ -60,11 +61,21 @@ COPY ./09_uns_model/src /09_uns_model/src
 COPY ./${UNS_MODULE}/src ./src/
 COPY ./conf/settings.yaml /app/conf/settings.yaml
 
-# install minimalistic missing packages & security fixes
-RUN apk update && \ 
-    apk add --no-cache libffi-dev libc-dev gcc && \
+# install build deps, security fixes, and librdkafka for confluent-kafka
+RUN apk update && \
+    apk add --no-cache libffi-dev libc-dev gcc bash g++ make && \
     apk upgrade --no-cache libexpat libcrypto3 libssl3 busybox ssl_client && \
-    rm -rf /var/cache/apk/*
+    rm -rf /var/cache/apk/* && \
+    wget -q https://github.com/confluentinc/librdkafka/archive/refs/tags/v${LIBRDKAFKA_VER}.zip && \
+    unzip -o v${LIBRDKAFKA_VER}.zip && \
+    cd librdkafka-${LIBRDKAFKA_VER} && \
+    bash -c "./configure --install-deps --disable-gssapi --disable-lz4-ext --enable-static && \
+    ./configure --prefix /usr && \
+    make && \
+    make install" && \
+    cd .. && \
+    rm v${LIBRDKAFKA_VER}.zip && \
+    rm -rf librdkafka-${LIBRDKAFKA_VER}
 
 # Install pip & uv
 RUN  pip install  --no-cache-dir --upgrade pip uv && \
