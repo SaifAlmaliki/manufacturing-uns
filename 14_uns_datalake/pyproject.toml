@@ -1,0 +1,75 @@
+[project]
+name = "uns_datalake"
+version = "0.9.38"
+description = "Historic Event lake Mapper: consumes uns.historic-events and writes Parquet to S3 or ADLS"
+authors = [{ name = "Ashwin Krishnan", email = "mkashwin@gmail.com" }]
+requires-python = ">=3.14, <4"
+readme = "README.md"
+license = { text = "MIT" }
+maintainers = [
+    { name = "Himanshu Dhami", email = "himanshudhami@gmail.com" },
+    { name = "Johan Jeppson", email = "logic4human@gmail.com" },
+]
+keywords = ["uns", "kafka", "parquet", "s3", "adls", "datalake", "minio"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Intended Audience :: Manufacturing",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Development Status :: 4 - Beta",
+    "Topic :: Communications",
+]
+dependencies = [
+    "uns_config",
+    "confluent-kafka>=2.14.0,<3",
+    "pyarrow>=22,<23",
+    "boto3>=1.35,<2",
+    "azure-storage-file-datalake>=12,<13",
+    "azure-identity>=1.19,<2",
+    "prometheus-client>=0.21.0,<1",
+    "dynaconf~=3.2",
+]
+
+[project.urls]
+Repository = "https://github.com/mkashwin/unifiednamespace/tree/main/14_uns_datalake"
+
+[project.scripts]
+uns_datalake = "uns_datalake.main:main"
+uns_datalake_health = "uns_datalake.health_check:main"
+
+[dependency-groups]
+test = [
+    "pytest>=9.0.3,<10",
+    "pytest-xdist>=3.8.0,<4",
+    "pytest-timeout>=2.4.0,<3",
+    "pyyaml>=6.0.2,<7",
+]
+
+[tool.uv]
+default-groups = ["test"]
+
+[tool.uv.sources]
+uns_config = { path = "../00_uns_config", editable = true }
+
+[tool.hatch.build.targets.sdist]
+include = ["src/uns_datalake"]
+
+[tool.hatch.build.targets.wheel]
+include = ["src/uns_datalake"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src/uns_datalake" = "uns_datalake"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+norecursedirs = [".git", "build", "node_modules", "env*", "tmp*"]
+testpaths = ["test"]
+pythonpath = ["test"]
+markers = ["integrationtest: mark a test as an integration test"]
+addopts = "--timeout=300"
+
+[tool.ruff]
+extend = "../pyproject.toml"

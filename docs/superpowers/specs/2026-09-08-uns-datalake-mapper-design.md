@@ -182,7 +182,7 @@ slice. Production buckets/filesystems must be provisioned before startup.
 
 Default `uns_compose up` adds:
 
-- `uns_minio` — S3 API on the compose network (`9000`). Host ports unpublished.
+- `uns-minio` — S3 API on the compose network (`9000`). Host ports unpublished. Service name uses a hyphen because `mc` rejects underscore hostnames.
 - A oneshot that creates bucket `uns-historic-events`.
 - `datalake_mapper` — depends on Kafka healthy and MinIO/bucket ready.
   `UNS_MODULE: 14_uns_datalake`.
@@ -205,7 +205,7 @@ datalake:
   s3:
     bucket: uns-historic-events
     region: us-east-1
-    endpoint_url: http://uns_minio:9000
+    endpoint_url: http://uns-minio:9000
   adls:
     account: ""
     container: ""
@@ -281,7 +281,7 @@ No live AWS, Azure, or MQTT broker in pytest.
 - Health: liveness sample value and fresh heartbeat required; readiness is
   separate and idle topics remain healthy. Test local MinIO credentials are
   not forwarded when the endpoint is cleared for AWS.
-- Compose: `uns_minio` and `datalake_mapper` have **no** `profiles` key.
+- Compose: `uns-minio` and `datalake_mapper` have **no** `profiles` key.
   Default `backend` is `s3` with MinIO `endpoint_url`. Azurite absent.
   Prometheus scrapes `datalake_mapper:9096`.
 

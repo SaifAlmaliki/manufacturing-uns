@@ -20,13 +20,26 @@ Test cases for uns_kafka.kafka_handler#KafkaHandler
 
 import json
 import uuid
+from unittest.mock import Mock
 
 import pytest
 from confluent_kafka import OFFSET_BEGINNING, Consumer, Producer
 from confluent_kafka.admin import AdminClient
+from uns_config.datalake import ENVELOPE_TOPIC
 
 from uns_kafka.kafka_handler import KafkaHandler
 from uns_kafka.uns_kafka_config import settings
+
+
+def test_produce_raw_does_not_convert_slashes():
+    handler = KafkaHandler.__new__(KafkaHandler)
+    handler.producer = Mock()
+    handler.config = {}
+    handler.produce_raw(ENVELOPE_TOPIC, '{"topic":"Acme/Line/Temp"}', key="Acme/Line/Temp")
+    handler.producer.produce.assert_called_once()
+    args, kwargs = handler.producer.produce.call_args
+    assert args[0] == "uns.historic-events"
+    assert kwargs.get("key") == "Acme/Line/Temp" or (len(args) > 2 and args[2] == "Acme/Line/Temp")
 
 KAFKA_CONFIG: dict = settings.get("kafka.config")
 

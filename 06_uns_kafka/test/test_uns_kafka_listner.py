@@ -19,16 +19,48 @@ Test cases for uns_kafka.uns_kafka_listener
 """
 
 import json
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 from confluent_kafka import OFFSET_END, Consumer
 from confluent_kafka.admin import AdminClient
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
+from uns_config.datalake import ENVELOPE_TOPIC
 from uns_mqtt.mqtt_listener import MQTTVersion
 
 from uns_kafka.uns_kafka_config import KAFKAConfig
 from uns_kafka.uns_kafka_listener import UNSKafkaMapper
+
+
+def test_on_message_produces_dotted_topic_and_envelope():
+    mapper = UNSKafkaMapper.__new__(UNSKafkaMapper)
+    mapper.kafka_handler = Mock()
+    mapper.uns_client = Mock()
+    payload = {"timestamp": 1788868800000, "value": 1.2}
+    mapper.uns_client.get_payload_as_dict.return_value = payload
+    msg = SimpleNamespace(topic="Acme/Line/Temp", payload=b"{}")
+    mapper.on_message(None, None, msg)
+    assert mapper.kafka_handler.publish.call_count == 1
+    mapper.kafka_handler.publish.assert_called_with("Acme/Line/Temp", str(payload))
+    mapper.kafka_handler.produce_raw.assert_called_once()
+    args, kwargs = mapper.kafka_handler.produce_raw.call_args
+    assert args[0] == ENVELOPE_TOPIC
+    body = json.loads(args[1])
+    assert body["topic"] == "Acme/Line/Temp"
+    assert body["payload"] == payload
+    assert kwargs.get("key") == "Acme/Line/Temp"
+
+
+def test_on_message_skips_platform_observability():
+    mapper = UNSKafkaMapper.__new__(UNSKafkaMapper)
+    mapper.kafka_handler = Mock()
+    mapper.uns_client = Mock()
+    msg = SimpleNamespace(topic="uns/platform/sim/x", payload=b"{}")
+    mapper.on_message(None, None, msg)
+    mapper.kafka_handler.publish.assert_not_called()
+    mapper.kafka_handler.produce_raw.assert_not_called()
 
 
 @pytest.mark.integrationtest()
