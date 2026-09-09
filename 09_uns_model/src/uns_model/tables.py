@@ -455,6 +455,8 @@ CONNECTIVITY_STATUSES: tuple[str, ...] = ("untested", "pending", "connected", "f
 
 PLC_PROTOCOLS: frozenset[str] = frozenset({"s7", "ethernet_ip"})
 
+EDGE_PROTOCOLS: frozenset[str] = frozenset({"s7", "ethernet_ip", "opc_ua"})
+
 S7_CONTROLLER_TYPES: tuple[str, ...] = ("S7_1500", "S7_1200", "S7_300", "S7_400")
 
 CONNECTIVITY_AUTH_MODES: tuple[str, ...] = ("anonymous", "username", "x509")

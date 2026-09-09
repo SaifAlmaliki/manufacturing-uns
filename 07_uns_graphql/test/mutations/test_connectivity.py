@@ -8,7 +8,7 @@ the bridge helpers return, and who may call them.
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from uns_config.hivemq_edge_xml import EdgeAdapterInput
@@ -268,12 +268,173 @@ async def test_save_connectivity_server_s7_calls_after_flush(monkeypatch, tmp_pa
     assert "<adapterId>sim</adapterId>" in text
 
 
+@pytest.mark.asyncio(loop_scope="function")
+async def test_save_s7_live_apply_success_records_untested(monkeypatch, tmp_path):
+    config_path = tmp_path / "hivemq" / "config.xml"
+    config_path.parent.mkdir()
+    config_path.write_text(_HIVEMQ_XML, encoding="utf-8")
+    monkeypatch.setattr("uns_graphql.mutations.connectivity.resolve_conf_dir", lambda: tmp_path)
+    live = Mock()
+    monkeypatch.setattr("uns_graphql.mutations.connectivity.apply_catalog_adapters_live", live)
+    repository = AsyncMock()
+    saved = _server(server_id="srv-s7", protocol="s7", endpoint="10.0.0.5:102")
+    saved.last_status = "pending"
+
+    async def _save_server(spec, *, after_flush=None):
+        after_flush(
+            [
+                EdgeAdapterInput(
+                    server_id=spec.id,
+                    protocol="s7",
+                    host="10.0.0.5",
+                    port=102,
+                    controller_type="S7_1500",
+                    tags=(),
+                )
+            ]
+        )
+        return saved
+
+    repository.save_server.side_effect = _save_server
+    repository.list_servers.return_value = [saved]
+
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            """
+            mutation Save($server: ConnectivityServerInput!) {
+                saveConnectivityServer(server: $server) { id lastStatus }
+            }
+            """,
+            variable_values={
+                "server": {
+                    "id": "srv-s7",
+                    "name": "s7",
+                    "protocol": "S7",
+                    "endpoint": "10.0.0.5:102",
+                }
+            },
+            context_value=ADMIN,
+        )
+
+    assert result.errors is None
+    live.assert_called_once()
+    repository.record_live_apply.assert_awaited()
+    kwargs = repository.record_live_apply.await_args
+    assert kwargs.kwargs["ok"] is True
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_save_s7_live_apply_failure_keeps_save(monkeypatch, tmp_path):
+    from uns_config.hivemq_edge_api import EdgeApplyError
+
+    config_path = tmp_path / "hivemq" / "config.xml"
+    config_path.parent.mkdir()
+    config_path.write_text(_HIVEMQ_XML, encoding="utf-8")
+    monkeypatch.setattr("uns_graphql.mutations.connectivity.resolve_conf_dir", lambda: tmp_path)
+    monkeypatch.setattr(
+        "uns_graphql.mutations.connectivity.apply_catalog_adapters_live",
+        Mock(side_effect=EdgeApplyError("down")),
+    )
+    repository = AsyncMock()
+    saved = _server(server_id="srv-s7", protocol="s7", endpoint="10.0.0.5:102")
+
+    async def _save_server(spec, *, after_flush=None):
+        after_flush([])
+        return saved
+
+    repository.save_server.side_effect = _save_server
+    repository.list_servers.return_value = [saved]
+
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            """
+            mutation Save($server: ConnectivityServerInput!) {
+                saveConnectivityServer(server: $server) { id }
+            }
+            """,
+            variable_values={
+                "server": {
+                    "id": "srv-s7",
+                    "name": "s7",
+                    "protocol": "S7",
+                    "endpoint": "10.0.0.5:102",
+                }
+            },
+            context_value=ADMIN,
+        )
+
+    assert result.errors is None
+    assert result.data["saveConnectivityServer"]["id"] == "srv-s7"
+    repository.record_live_apply.assert_awaited()
+    assert repository.record_live_apply.await_args.kwargs["ok"] is False
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_save_opc_ua_live_apply_success_records_untested(monkeypatch, tmp_path):
+    config_path = tmp_path / "hivemq" / "config.xml"
+    config_path.parent.mkdir()
+    config_path.write_text(_HIVEMQ_XML, encoding="utf-8")
+    monkeypatch.setattr("uns_graphql.mutations.connectivity.resolve_conf_dir", lambda: tmp_path)
+    live = Mock()
+    monkeypatch.setattr("uns_graphql.mutations.connectivity.apply_catalog_adapters_live", live)
+    repository = AsyncMock()
+    saved = _server(server_id="srv-opc", protocol="opc_ua", endpoint="opc.tcp://h:4840")
+    saved.last_status = "pending"
+
+    async def _save_server(spec, *, after_flush=None):
+        after_flush(
+            [
+                EdgeAdapterInput(
+                    server_id=spec.id,
+                    protocol="opc_ua",
+                    host="",
+                    port=0,
+                    uri=spec.endpoint,
+                    tags=(),
+                )
+            ]
+        )
+        return saved
+
+    repository.save_server.side_effect = _save_server
+    repository.list_servers.return_value = [saved]
+
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            """
+            mutation Save($server: ConnectivityServerInput!) {
+                saveConnectivityServer(server: $server) { id lastStatus }
+            }
+            """,
+            variable_values={
+                "server": {
+                    "id": "srv-opc",
+                    "name": "opc",
+                    "protocol": "OPC_UA",
+                    "endpoint": "opc.tcp://h:4840",
+                }
+            },
+            context_value=ADMIN,
+        )
+
+    assert result.errors is None
+    live.assert_called_once()
+    repository.record_live_apply.assert_awaited()
+    assert repository.record_live_apply.await_args.kwargs["ok"] is True
+
+
 # --------------------------------------------------------------- subscribe
 
 
 @pytest.mark.asyncio(loop_scope="function")
-async def test_subscribe_opc_ua_variables_discovers_and_folds_into_catalog():
+async def test_subscribe_opc_ua_variables_discovers_and_folds_into_catalog(monkeypatch, tmp_path):
     """Discover every Variable on the endpoint and fold into the catalog via replace_subscribed_tags."""
+    config_path = tmp_path / "hivemq" / "config.xml"
+    config_path.parent.mkdir()
+    config_path.write_text(_HIVEMQ_XML, encoding="utf-8")
+    monkeypatch.setattr("uns_graphql.mutations.connectivity.resolve_conf_dir", lambda: tmp_path)
+    live = Mock()
+    monkeypatch.setattr("uns_graphql.mutations.connectivity.apply_catalog_adapters_live", live)
     repository = AsyncMock()
     repository.list_servers.return_value = [_server()]
     repository.replace_subscribed_tags.return_value = [
@@ -312,6 +473,9 @@ async def test_subscribe_opc_ua_variables_discovers_and_folds_into_catalog():
     tags: list[ConnectivityTagSpec] = repository.replace_subscribed_tags.await_args.args[1]
     assert [tag.node_id for tag in tags] == ["ns=2;s=Temperature", "ns=2;s=Pressure"]
     assert all(tag.subscribed for tag in tags)
+    assert repository.replace_subscribed_tags.await_args.kwargs["after_flush"] is not None
+    live.assert_called_once()
+    repository.record_live_apply.assert_awaited()
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -604,6 +768,7 @@ async def test_update_connectivity_tag_topic_sets_the_topic():
     call = repository.update_tag_topic.await_args
     assert call.args == ("s1", "ns=2;s=Temperature", "enterprise/site/temp")
     assert call.kwargs["after_flush"] is not None
+    assert call.kwargs["on_topic_rewrite"] is not None
 
 
 @pytest.mark.asyncio(loop_scope="function")
@@ -614,9 +779,9 @@ async def test_update_connectivity_tag_topic_syncs_edge_xml(monkeypatch, tmp_pat
     config_path.write_text(_HIVEMQ_XML, encoding="utf-8")
     monkeypatch.setattr("uns_graphql.mutations.connectivity.resolve_conf_dir", lambda: tmp_path)
 
-    async def _update_tag_topic(server_id, node_id, mqtt_topic, *, after_flush=None):
-        assert after_flush is not None
-        after_flush(
+    async def _update_tag_topic(server_id, node_id, mqtt_topic, **kwargs):
+        assert kwargs.get("after_flush") is not None
+        kwargs["after_flush"](
             [
                 EdgeAdapterInput(
                     server_id=server_id,
@@ -632,6 +797,10 @@ async def test_update_connectivity_tag_topic_syncs_edge_xml(monkeypatch, tmp_pat
 
     repository = AsyncMock()
     repository.update_tag_topic.side_effect = _update_tag_topic
+    repository.list_servers.return_value = [
+        _server(server_id="srv-s7", protocol="s7", endpoint="10.0.0.5:102")
+    ]
+    monkeypatch.setattr("uns_graphql.mutations.connectivity.apply_catalog_adapters_live", Mock())
 
     with patch(REPOSITORY, return_value=repository):
         result = await UNSGraphql.schema.execute(
@@ -643,6 +812,93 @@ async def test_update_connectivity_tag_topic_syncs_edge_xml(monkeypatch, tmp_pat
     assert result.errors is None
     text = config_path.read_text(encoding="utf-8")
     assert "<adapterId>catalog-srv-s7</adapterId>" in text
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_update_tag_topic_rewrites_historian_then_live_applies(monkeypatch, tmp_path):
+    config_path = tmp_path / "hivemq" / "config.xml"
+    config_path.parent.mkdir()
+    config_path.write_text(_HIVEMQ_XML, encoding="utf-8")
+    monkeypatch.setattr("uns_graphql.mutations.connectivity.resolve_conf_dir", lambda: tmp_path)
+    rewrite = AsyncMock()
+
+    async def fake_rewrite(session, old_topic, new_topic):
+        await rewrite(old_topic, new_topic)
+
+    monkeypatch.setattr("uns_graphql.mutations.connectivity._rewrite_topics", fake_rewrite)
+    live = Mock()
+    monkeypatch.setattr("uns_graphql.mutations.connectivity.apply_catalog_adapters_live", live)
+    repository = AsyncMock()
+    tag = _tag(mqtt_topic="Server/OpcPlc/Temp")
+    captured: dict[str, object] = {}
+
+    async def _update(server_id, node_id, mqtt_topic, **kwargs):
+        captured["rewrite"] = kwargs.get("on_topic_rewrite")
+        hook = kwargs.get("on_topic_rewrite")
+        if hook:
+            await hook(None, "Server/OpcPlc/Temp", mqtt_topic)
+        after = kwargs.get("after_flush")
+        if after:
+            after([])
+        tag.mqtt_topic = mqtt_topic
+        return tag
+
+    repository.update_tag_topic.side_effect = _update
+    repository.list_servers.return_value = [
+        _server(server_id="srv-opc", protocol="opc_ua", endpoint="opc.tcp://h:4840")
+    ]
+
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            """
+            mutation {
+              updateConnectivityTagTopic(serverId: "srv-opc", nodeId: "ns=1;i=1", mqttTopic: "Acme/Line/Temp") {
+                mqttTopic
+              }
+            }
+            """,
+            context_value=ADMIN,
+        )
+
+    assert result.errors is None
+    assert captured["rewrite"] is not None
+    rewrite.assert_awaited_once_with("Server/OpcPlc/Temp", "Acme/Line/Temp")
+    live.assert_called_once()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_update_tag_topic_rewrite_failure_skips_live_apply(monkeypatch):
+    live = Mock()
+    monkeypatch.setattr("uns_graphql.mutations.connectivity.apply_catalog_adapters_live", live)
+
+    async def failing_rewrite(session, old_topic, new_topic):
+        raise RuntimeError("timescale down")
+
+    monkeypatch.setattr("uns_graphql.mutations.connectivity._rewrite_topics", failing_rewrite)
+    repository = AsyncMock()
+
+    async def _update(server_id, node_id, mqtt_topic, **kwargs):
+        hook = kwargs.get("on_topic_rewrite")
+        if hook:
+            await hook(None, "old/topic", mqtt_topic)
+        return _tag(mqtt_topic=mqtt_topic)
+
+    repository.update_tag_topic.side_effect = _update
+
+    with patch(REPOSITORY, return_value=repository):
+        result = await UNSGraphql.schema.execute(
+            """
+            mutation {
+              updateConnectivityTagTopic(serverId: "srv-opc", nodeId: "ns=1;i=1", mqttTopic: "Acme/Line/Temp") {
+                mqttTopic
+              }
+            }
+            """,
+            context_value=ADMIN,
+        )
+
+    assert result.errors
+    live.assert_not_called()
 
 
 @pytest.mark.asyncio(loop_scope="function")

@@ -94,6 +94,37 @@ def test_render_s7_structural_indent():
     assert f"<tagName>{tag_xml_name('%ID103')}</tagName>" in rendered
 
 
+def _opcua(**overrides) -> EdgeAdapterInput:
+    tags = overrides.pop("tags", (
+        EdgeTagInput("ns=1;i=1004", "Temp", "Server/OpcPlc/Temp", "Double"),
+    ))
+    return EdgeAdapterInput(
+        server_id=overrides.pop("server_id", "fixture-opc"),
+        protocol="opc_ua",
+        host="",
+        port=0,
+        uri=overrides.pop("uri", "opc.tcp://192.0.2.1:4840"),
+        tags=tags,
+    )
+
+
+def test_render_opcua_uri_and_node():
+    rendered = render_catalog_adapter(_opcua())
+    assert "<protocolId>opcua</protocolId>" in rendered
+    assert "<uri>opc.tcp://192.0.2.1:4840</uri>" in rendered
+    assert "<host>" not in rendered
+    assert "<tagAddress>" not in rendered
+    assert "<node>ns=1;i=1004</node>" in rendered
+    assert "<topic>Server/OpcPlc/Temp</topic>" in rendered
+    assert "southbound" not in rendered.lower()
+
+
+def test_apply_catalog_adapters_keeps_sim_with_opcua(tmp_path: Path):
+    sim_block = _simulation_adapter_block(_CONFIG)
+    once = apply_catalog_adapters(_CONFIG, [_opcua()])
+    assert _simulation_adapter_block(once) == sim_block
+
+
 def _simulation_adapter_block(document: str) -> str:
     match = re.search(
         r"(        <protocol-adapter>.*?<adapterId>sim</adapterId>.*?</protocol-adapter>)",

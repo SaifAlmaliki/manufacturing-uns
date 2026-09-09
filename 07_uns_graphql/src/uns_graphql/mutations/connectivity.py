@@ -24,13 +24,16 @@ import logging
 from typing import Any
 
 import strawberry
+from uns_config.hivemq_edge_api import EdgeApplyError, apply_catalog_adapters_live
 from uns_config.hivemq_edge_xml import EdgeAdapterInput, apply_catalog_adapters_file
 from uns_config.loader import resolve_conf_dir
 from uns_model.connectivity import (
     EDGE_APPLY_ERROR,
+    EDGE_PROTOCOLS,
     ConnectivityRepository,
     ConnectivityServerSpec,
     ConnectivityTagSpec,
+    edge_adapters_from_rows,
     parse_host_port,
 )
 from uns_model.engine import Database
@@ -39,6 +42,7 @@ from uns_opcua import browse as opcua_browse
 from uns_opcua.session import open_client
 
 from uns_graphql.auth.require import require
+from uns_graphql.backend.historian import HistorianRepository
 from uns_graphql.input.connectivity import (
     ConnectivityServerInput,
     ConnectivityTagInput,
@@ -55,8 +59,22 @@ def _repository() -> ConnectivityRepository:
 
 
 def _sync_edge(adapters: list[EdgeAdapterInput]) -> None:
-    """Splice the catalog's PLC rows into HiveMQ Edge's `config.xml`. Sync, per `after_flush`'s contract."""
+    """Splice the catalog's Edge rows into HiveMQ Edge's `config.xml`. Sync, per `after_flush`'s contract."""
     apply_catalog_adapters_file(resolve_conf_dir() / "hivemq" / "config.xml", adapters)
+
+
+async def _finish_live_apply(mutated_ids: list[str]) -> None:
+    """Push catalog adapters to the running broker. Never raises into the mutation."""
+    repo = _repository()
+    adapters = edge_adapters_from_rows(await repo.list_servers())
+    try:
+        apply_catalog_adapters_live(adapters)
+    except EdgeApplyError:
+        LOGGER.warning("HiveMQ Edge live apply failed", exc_info=True)
+        await repo.record_live_apply(mutated_ids, ok=False)
+        return
+    edge_ids = [adapter.server_id for adapter in adapters] or mutated_ids
+    await repo.record_live_apply(edge_ids, ok=True)
 
 
 def _as_int(value: int | str | None) -> int | None:
@@ -104,6 +122,13 @@ async def _find_server(repo: ConnectivityRepository, server_id: str) -> Connecti
     return None
 
 
+async def _rewrite_topics(session, old_topic: str, new_topic: str) -> None:
+    connection = await session.connection()
+    await HistorianRepository(Database.shared("graphql")).rewrite_topic_prefix(
+        old_topic, new_topic, connection=connection
+    )
+
+
 @strawberry.type(description="Author the console's Connectivity catalog")
 class Mutation:
     @strawberry.mutation(
@@ -114,7 +139,8 @@ class Mutation:
         self, info: strawberry.Info, server: ConnectivityServerInput
     ) -> ConnectivityServerType:
         require(info, "saveConnectivityServer")
-        saved = await _repository().save_server(
+        repo = _repository()
+        saved = await repo.save_server(
             ConnectivityServerSpec(
                 id=server.id,
                 name=server.name,
@@ -132,6 +158,11 @@ class Mutation:
             ),
             after_flush=_sync_edge,
         )
+        if saved.protocol in EDGE_PROTOCOLS:
+            await _finish_live_apply([saved.id])
+            refetched = await _find_server(repo, saved.id)
+            if refetched is not None:
+                saved = refetched
         LOGGER.info("Connectivity server %s saved as %s", saved.id, saved.name)
         return ConnectivityServerType.from_server(saved)
 
@@ -140,7 +171,11 @@ class Mutation:
     )
     async def delete_connectivity_server(self, info: strawberry.Info, id: str) -> bool:  # noqa: A002
         require(info, "deleteConnectivityServer")
-        deleted = await _repository().delete_server(id, after_flush=_sync_edge)
+        repo = _repository()
+        existing = await _find_server(repo, id)
+        deleted = await repo.delete_server(id, after_flush=_sync_edge)
+        if deleted and existing is not None and existing.protocol in EDGE_PROTOCOLS:
+            await _finish_live_apply([])
         if deleted:
             LOGGER.info("Connectivity server %s deleted", id)
         return deleted
@@ -175,7 +210,8 @@ class Mutation:
             )
             for row in discovered
         ]
-        stored = await _repository().replace_subscribed_tags(server_id, tags)
+        stored = await _repository().replace_subscribed_tags(server_id, tags, after_flush=_sync_edge)
+        await _finish_live_apply([server_id])
         LOGGER.info("Subscribed %s tag(s) on %s", len(stored), server_id)
         return [ConnectivityTagType.from_tag(tag) for tag in stored]
 
@@ -187,7 +223,8 @@ class Mutation:
         self, info: strawberry.Info, server_id: str, tag: ConnectivityTagInput
     ) -> ConnectivityTagType:
         require(info, "saveConnectivityTag")
-        stored = await _repository().save_tag(
+        repo = _repository()
+        stored = await repo.save_tag(
             server_id,
             ConnectivityTagSpec(
                 node_id=tag.node_id,
@@ -199,6 +236,9 @@ class Mutation:
             ),
             after_flush=_sync_edge,
         )
+        server = await _find_server(repo, server_id)
+        if server is not None and server.protocol in EDGE_PROTOCOLS:
+            await _finish_live_apply([server_id])
         LOGGER.info("Connectivity tag %s saved on %s", tag.node_id, server_id)
         return ConnectivityTagType.from_tag(stored)
 
@@ -209,13 +249,21 @@ class Mutation:
         self, info: strawberry.Info, server_id: str, node_id: str, mqtt_topic: str
     ) -> ConnectivityTagType:
         require(info, "updateConnectivityTagTopic")
-        tag = await _repository().update_tag_topic(
-            server_id, node_id, mqtt_topic, after_flush=_sync_edge
+        repo = _repository()
+        server = await _find_server(repo, server_id)
+        tag = await repo.update_tag_topic(
+            server_id,
+            node_id,
+            mqtt_topic,
+            after_flush=_sync_edge,
+            on_topic_rewrite=_rewrite_topics,
         )
         if tag is None:
             raise ValueError(
                 f"No Connectivity tag for server {server_id!r} node {node_id!r}"
             )
+        if server is not None and server.protocol in EDGE_PROTOCOLS:
+            await _finish_live_apply([server_id])
         return ConnectivityTagType.from_tag(tag)
 
     @strawberry.mutation(
@@ -226,9 +274,13 @@ class Mutation:
         self, info: strawberry.Info, server_id: str, node_id: str
     ) -> bool:
         require(info, "unsubscribeConnectivityTag")
-        tag = await _repository().unsubscribe_tag(server_id, node_id, after_flush=_sync_edge)
+        repo = _repository()
+        server = await _find_server(repo, server_id)
+        tag = await repo.unsubscribe_tag(server_id, node_id, after_flush=_sync_edge)
         if tag is None:
             return False
+        if server is not None and server.protocol in EDGE_PROTOCOLS:
+            await _finish_live_apply([server_id])
         LOGGER.info("Unsubscribed %s on %s", node_id, server_id)
         return True
 
@@ -261,13 +313,17 @@ class Mutation:
         patch: ConnectivityTagUpdateInput,
     ) -> ConnectivityTagType:
         require(info, "updateConnectivityTag")
-        tag = await _repository().update_tag(
+        repo = _repository()
+        server = await _find_server(repo, server_id)
+        tag = await repo.update_tag(
             server_id, node_id, after_flush=_sync_edge, **_tag_update_fields(patch)
         )
         if tag is None:
             raise ValueError(
                 f"No Connectivity tag for server {server_id!r} node {node_id!r}"
             )
+        if server is not None and server.protocol in EDGE_PROTOCOLS:
+            await _finish_live_apply([server_id])
         return ConnectivityTagType.from_tag(tag)
 
     @strawberry.mutation(
@@ -289,8 +345,8 @@ class Mutation:
             ok, error = probe_tcp(host, port)
         if ok and was_pending:
             # The row was pending its first HiveMQ Edge apply, not actually broken.
-            # A successful TCP probe does not prove Edge itself is happy — keep the
-            # reminder to recreate uns_mqtt_broker rather than clearing it to "connected".
+            # A successful probe does not prove Edge accepted the config — keep
+            # EDGE_APPLY_ERROR rather than clearing it to "connected".
             error = EDGE_APPLY_ERROR
         updated = await repo.record_test(id, ok=ok, error=error)
         LOGGER.info("Connectivity server %s tested: ok=%s", id, ok)

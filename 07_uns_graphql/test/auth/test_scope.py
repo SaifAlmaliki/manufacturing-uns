@@ -83,3 +83,26 @@ async def test_scope_for_loads_roots_for_a_member():
     scope = await scope_for(_identity("operator"), roots_for=filt)
     assert scope == FILT
     filt.assert_awaited_once_with("s")
+
+
+@pytest.mark.asyncio
+async def test_allowed_topic_uses_connectivity_asset_when_topic_unmodelled(monkeypatch):
+    """Browse-path MQTT topics are authorized via the Connectivity catalog binding."""
+    topic = "Server/OpcPlc/Telemetry/Plant/RawWater/FT101/Flow"
+    resolver = AsyncMock(resolve=AsyncMock(return_value=None))
+
+    async def fake_connectivity_path(requested: str) -> str | None:
+        assert requested == topic
+        return "HalabjaWTP/Halabja/Distribution/Train1/FT201"
+
+    monkeypatch.setattr("uns_graphql.auth.scope._connectivity_asset_path", fake_connectivity_path)
+    scope = AccessScope(unrestricted=False, root_paths=frozenset({"HalabjaWTP/Halabja/Distribution"}))
+    assert await allowed_topic(scope, topic, resolver) is True
+
+
+@pytest.mark.asyncio
+async def test_allowed_topic_rejects_unbound_browse_path(monkeypatch):
+    resolver = AsyncMock(resolve=AsyncMock(return_value=None))
+    monkeypatch.setattr("uns_graphql.auth.scope._connectivity_asset_path", AsyncMock(return_value=None))
+    scope = AccessScope(unrestricted=False, root_paths=frozenset({"HalabjaWTP/Halabja/Distribution"}))
+    assert await allowed_topic(scope, "Server/OpcPlc/unknown", resolver) is False

@@ -82,6 +82,20 @@ default:
             machines: []
           - name: V301
             machines: []
+    - name: Krabala
+      areas:
+      - name: RawWater
+        kind: production
+        lines: []
+      - name: Treatment
+        kind: production
+        lines: []
+      - name: Storage
+        kind: production
+        lines: []
+      - name: Distrbution
+        kind: production
+        lines: []
   applications:
     graphql:
       name: "uns_graphql_server"
@@ -148,6 +162,11 @@ default:
     transport: "tcp"
     timestamp_attribute: "timestamp"
     ignored_attributes: {}
+
+  hivemq_edge:
+    base_url: "http://127.0.0.1:18080"
+    username: admin
+    password: hivemq
 
   graphdb:
     url: "bolt://localhost:7687"

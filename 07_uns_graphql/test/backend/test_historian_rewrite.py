@@ -68,8 +68,10 @@ class _FakeDatabase:
 
     def __init__(self) -> None:
         self.connection = _FakeConnection()
+        self.begin_calls = 0
 
     def begin(self):
+        self.begin_calls += 1
         connection = self.connection
 
         class _Ctx:
@@ -94,10 +96,22 @@ async def test_rewrite_matches_prefix_with_starts_with_not_like():
     database = _FakeDatabase()
     changed = await HistorianRepository(database).rewrite_topic_prefix("E/S_1", "E/Nord")
     assert changed == 1
+    assert database.begin_calls == 1
     sql, params = database.connection.calls[0]
     assert "starts_with" in sql
     assert " LIKE " not in sql
     assert params == {"old_prefix": "E/S_1", "new_prefix": "E/Nord"}
+
+
+@pytest.mark.asyncio
+async def test_rewrite_topic_prefix_uses_passed_connection_without_begin():
+    database = _FakeDatabase()
+    changed = await HistorianRepository(database).rewrite_topic_prefix(
+        "E/S1", "E/Nord", connection=database.connection
+    )
+    assert changed == 1
+    assert database.begin_calls == 0
+    assert len(database.connection.calls) >= 1
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")

@@ -54,6 +54,7 @@ from uns_model.connectivity import (
 from uns_model.tables import (
     CONNECTIVITY_PROTOCOLS,
     CONNECTIVITY_STATUSES,
+    EDGE_PROTOCOLS,
     PLC_PROTOCOLS,
     SEEDED_UNITS_OF_MEASURE,
     S7_CONTROLLER_TYPES,
@@ -64,6 +65,11 @@ from uns_model.tables import (
 
 def test_protocols_include_s7_and_ethernet_ip():
     assert CONNECTIVITY_PROTOCOLS == ("opc_ua", "s7", "ethernet_ip")
+    assert PLC_PROTOCOLS == frozenset({"s7", "ethernet_ip"})
+
+
+def test_edge_protocols_include_opc_ua():
+    assert EDGE_PROTOCOLS == frozenset({"s7", "ethernet_ip", "opc_ua"})
     assert PLC_PROTOCOLS == frozenset({"s7", "ethernet_ip"})
 
 
@@ -139,7 +145,39 @@ def test_opc_ua_spec_still_requires_opc_tcp():
 
 
 def test_edge_apply_error_copy():
-    assert EDGE_APPLY_ERROR == "Recreate uns_mqtt_broker to apply Edge config"
+    assert EDGE_APPLY_ERROR == "Waiting for HiveMQ Edge to apply"
+
+
+@pytest.mark.asyncio
+async def test_record_live_apply_success_clears_pending():
+    session = _FakeSession()
+    repo = ConnectivityRepository(_FakeDatabase(session))
+    await repo.record_live_apply(["srv_s7"], ok=True)
+    assert session.update_values == {
+        "last_status": "untested",
+        "last_error": "",
+        "updated_at": session.update_values["updated_at"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_record_live_apply_failure_sets_pending():
+    session = _FakeSession()
+    repo = ConnectivityRepository(_FakeDatabase(session))
+    await repo.record_live_apply(["srv_s7"], ok=False)
+    assert session.update_values == {
+        "last_status": "pending",
+        "last_error": EDGE_APPLY_ERROR,
+        "updated_at": session.update_values["updated_at"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_record_live_apply_ignores_empty_server_ids():
+    session = _FakeSession()
+    repo = ConnectivityRepository(_FakeDatabase(session))
+    await repo.record_live_apply([], ok=True)
+    assert session.statements == []
 
 
 def test_s7_controller_types():
@@ -293,7 +331,7 @@ def test_metric_key_uses_display_name_when_topic_equals_asset_path():
     )
 
 
-def test_edge_adapters_from_rows_maps_s7_and_skips_opc_ua():
+def test_edge_adapters_from_rows_maps_s7_and_opc_ua():
     s7 = SimpleNamespace(
         id="srv_s7",
         protocol="s7",
@@ -316,9 +354,23 @@ def test_edge_adapters_from_rows_maps_s7_and_skips_opc_ua():
             ),
         ],
     )
-    opc = SimpleNamespace(id="srv_opc", protocol="opc_ua", endpoint="opc.tcp://h:4840", tags=[])
+    opc = SimpleNamespace(
+        id="srv_opc",
+        protocol="opc_ua",
+        endpoint="opc.tcp://h:4840",
+        protocol_config=None,
+        tags=[
+            SimpleNamespace(
+                node_id="ns=1;i=1004",
+                display_name="Temp",
+                mqtt_topic="Server/OpcPlc/Temp",
+                data_type="Double",
+                subscribed=True,
+            )
+        ],
+    )
     adapters = edge_adapters_from_rows([s7, opc])
-    assert len(adapters) == 1
+    assert len(adapters) == 2
     assert adapters[0] == EdgeAdapterInput(
         server_id="srv_s7",
         protocol="s7",
@@ -326,6 +378,14 @@ def test_edge_adapters_from_rows_maps_s7_and_skips_opc_ua():
         port=102,
         controller_type="S7_1200",
         tags=(EdgeTagInput("%ID103", "Speed", "Acme/Line/Speed", "Integer"),),
+    )
+    assert adapters[1] == EdgeAdapterInput(
+        server_id="srv_opc",
+        protocol="opc_ua",
+        host="",
+        port=0,
+        uri="opc.tcp://h:4840",
+        tags=(EdgeTagInput("ns=1;i=1004", "Temp", "Server/OpcPlc/Temp", "Double"),),
     )
 
 
@@ -433,6 +493,26 @@ def test_replace_subscribed_tags_on_conflict_omits_display_name_and_context():
         assert column not in conflict_block, f"{column} must not be updated on rediscovery"
 
 
+@pytest.mark.asyncio
+async def test_replace_subscribed_tags_calls_after_flush():
+    session = _FakeSession(tag=[], protocol="opc_ua")
+    repo = ConnectivityRepository(_FakeDatabase(session))
+    sentinel = object()
+    calls: list[object] = []
+
+    async def fake_sync_edge(self, session_arg, after_flush):  # noqa: ARG001
+        calls.append(after_flush)
+
+    with patch.object(ConnectivityRepository, "_sync_edge", fake_sync_edge):
+        await repo.replace_subscribed_tags(
+            "srv_opc",
+            [ConnectivityTagSpec("ns=1;i=1", "Server/A", "A", "Server/A")],
+            after_flush=sentinel,
+        )
+
+    assert calls == [sentinel]
+
+
 class _ScalarResult:
     def __init__(self, value: object) -> None:
         self._value = value
@@ -462,11 +542,13 @@ class _FakeSession:
         asset_path: str | None = None,
         topic_rows: list[tuple[str, str, str]] | None = None,
         protocol: str | None = None,
+        mqtt_topic: str | None = None,
     ) -> None:
         self.tag = tag
         self.asset_path = asset_path
         self.topic_rows = topic_rows or []
         self.protocol = protocol
+        self.mqtt_topic = mqtt_topic
         self.statements: list[object] = []
         self.update_values: dict[str, object] | None = None
 
@@ -486,6 +568,8 @@ class _FakeSession:
             return _ScalarResult(self.topic_rows)
         if selected == ["protocol"]:
             return _ScalarResult(self.protocol)
+        if selected == ["mqtt_topic"]:
+            return _ScalarResult(self.mqtt_topic if self.mqtt_topic is not None else getattr(self.tag, "mqtt_topic", None))
         return _ScalarResult(self.tag)
 
 
@@ -701,6 +785,74 @@ async def test_update_tag_calls_sync_edge_when_after_flush_is_given():
 
 
 @pytest.mark.asyncio
+async def test_update_tag_topic_rewrite_failure_skips_after_flush():
+    tag = SimpleNamespace(
+        server_id="s1",
+        node_id="ns=3;s=A",
+        browse_path="Heater/Temp",
+        display_name="Temp",
+        mqtt_topic="Plant/A",
+        asset_id=None,
+        unit_of_measure=None,
+    )
+    session = _FakeSession(tag=tag, mqtt_topic="Plant/A")
+    repo = ConnectivityRepository(_FakeDatabase(session))
+    sync_calls: list[object] = []
+
+    async def fake_sync_edge(self, session_arg, after_flush):  # noqa: ARG001
+        sync_calls.append(after_flush)
+
+    async def failing_rewrite(session_arg, old_topic, new_topic):  # noqa: ARG001
+        raise RuntimeError("timescale down")
+
+    with patch.object(ConnectivityRepository, "_sync_edge", fake_sync_edge):
+        with pytest.raises(RuntimeError, match="timescale down"):
+            await repo.update_tag_topic(
+                "s1",
+                "ns=3;s=A",
+                "Plant/B",
+                after_flush=object(),
+                on_topic_rewrite=failing_rewrite,
+            )
+
+    assert sync_calls == []
+
+
+@pytest.mark.asyncio
+async def test_update_tag_topic_rewrite_success_runs_before_after_flush():
+    tag = SimpleNamespace(
+        server_id="s1",
+        node_id="ns=3;s=A",
+        browse_path="Heater/Temp",
+        display_name="Temp",
+        mqtt_topic="Plant/A",
+        asset_id=None,
+        unit_of_measure=None,
+    )
+    session = _FakeSession(tag=tag, mqtt_topic="Plant/A")
+    repo = ConnectivityRepository(_FakeDatabase(session))
+    order: list[str] = []
+    sentinel = object()
+
+    async def fake_sync_edge(self, session_arg, after_flush):  # noqa: ARG001
+        order.append("sync")
+
+    async def rewrite(session_arg, old_topic, new_topic):
+        order.append(f"rewrite:{old_topic}->{new_topic}")
+
+    with patch.object(ConnectivityRepository, "_sync_edge", fake_sync_edge):
+        await repo.update_tag_topic(
+            "s1",
+            "ns=3;s=A",
+            "Plant/B",
+            after_flush=sentinel,
+            on_topic_rewrite=rewrite,
+        )
+
+    assert order == ["rewrite:Plant/A->Plant/B", "sync"]
+
+
+@pytest.mark.asyncio
 async def test_update_tag_topic_forwards_after_flush_and_mqtt_topic_to_update_tag():
     """`updateConnectivityTagTopic` must regenerate Edge XML, same as `updateConnectivityTag`."""
     repo = ConnectivityRepository(database=None)  # type: ignore[arg-type]
@@ -708,7 +860,9 @@ async def test_update_tag_topic_forwards_after_flush_and_mqtt_topic_to_update_ta
     with patch.object(ConnectivityRepository, "update_tag", new=AsyncMock(return_value="stored")) as mocked:
         result = await repo.update_tag_topic("s1", "ns=3;s=A", "Plant/B", after_flush=sentinel)
     assert result == "stored"
-    mocked.assert_awaited_once_with("s1", "ns=3;s=A", after_flush=sentinel, mqtt_topic="Plant/B")
+    mocked.assert_awaited_once_with(
+        "s1", "ns=3;s=A", after_flush=sentinel, on_topic_rewrite=None, mqtt_topic="Plant/B"
+    )
 
 
 @pytest.mark.asyncio
@@ -717,7 +871,9 @@ async def test_update_tag_topic_without_after_flush_still_works():
     with patch.object(ConnectivityRepository, "update_tag", new=AsyncMock(return_value="stored")) as mocked:
         result = await repo.update_tag_topic("s1", "ns=3;s=A", "Plant/B")
     assert result == "stored"
-    mocked.assert_awaited_once_with("s1", "ns=3;s=A", after_flush=None, mqtt_topic="Plant/B")
+    mocked.assert_awaited_once_with(
+        "s1", "ns=3;s=A", after_flush=None, on_topic_rewrite=None, mqtt_topic="Plant/B"
+    )
 
 
 @pytest.mark.asyncio
@@ -780,9 +936,9 @@ async def test_update_tag_eager_loads_asset_on_returned_row():
         asset_id=None,
         unit_of_measure=None,
     )
-    session = _FakeSession(tag=tag)
+    session = _FakeSession(tag=tag, mqtt_topic="Plant/A")
     repo = ConnectivityRepository(_FakeDatabase(session))
     await repo.update_tag("s1", "ns=3;s=A", mqtt_topic="Plant/T101/Level")
-    # index 0 is the subscribed_topics uniqueness check select; the tag read follows it.
-    blob = _loader_blob(_selects(session)[1])
+    # old topic, subscribed_topics check, then tag read with asset eager load.
+    blob = _loader_blob(_selects(session)[2])
     assert "asset" in blob

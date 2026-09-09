@@ -29,7 +29,7 @@ know which servers to dial and which nodes to subscribe to, and which writes
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, fields
 from datetime import datetime
 from typing import Any
@@ -49,6 +49,7 @@ from uns_model.tables import (
     CONNECTIVITY_PROTOCOLS,
     CONNECTIVITY_SECURITY_MODES,
     CONNECTIVITY_SECURITY_POLICIES,
+    EDGE_PROTOCOLS,
     PLC_PROTOCOLS,
     S7_CONTROLLER_TYPES,
     Asset,
@@ -62,7 +63,7 @@ _ENDPOINT = re.compile(r"^opc\.tcp://[^\s/:]+:\d{1,5}(/.*)?$")
 _HOST_PORT = re.compile(r"^([A-Za-z0-9.-]+):(\d{1,5})$")
 _XML_ILLEGAL_CHARS = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F]")
 
-EDGE_APPLY_ERROR = "Recreate uns_mqtt_broker to apply Edge config"
+EDGE_APPLY_ERROR = "Waiting for HiveMQ Edge to apply"
 
 LOGGER = logging.getLogger(__name__)
 
@@ -81,21 +82,32 @@ def edge_adapters_from_rows(servers: Sequence[ConnectivityServer]) -> list[EdgeA
     """
     Map catalog rows to what `uns_config.hivemq_edge_xml` needs to splice HiveMQ Edge.
 
-    Only PLC rows (S7, EtherNet/IP) become adapters: OPC UA is not a HiveMQ Edge
-    protocol adapter, the OPC-UA bridge (`10_uns_opcua`) still owns those. Only
+    S7, EtherNet/IP, and OPC UA catalog rows become Edge protocol adapters. Only
     subscribed tags are republished, same rule as everywhere else in this module.
     """
     adapters: list[EdgeAdapterInput] = []
     for server in servers:
-        if getattr(server, "protocol", None) not in PLC_PROTOCOLS:
+        if getattr(server, "protocol", None) not in EDGE_PROTOCOLS:
             continue
-        host, port = parse_host_port(server.endpoint)
-        controller = (getattr(server, "protocol_config", None) or {}).get("controllerType", "S7_1500")
         tags = tuple(
             EdgeTagInput(tag.node_id, tag.display_name, tag.mqtt_topic, getattr(tag, "data_type", None))
             for tag in getattr(server, "tags", [])
             if tag.subscribed
         )
+        if server.protocol == "opc_ua":
+            adapters.append(
+                EdgeAdapterInput(
+                    server_id=server.id,
+                    protocol=server.protocol,
+                    host="",
+                    port=0,
+                    uri=server.endpoint,
+                    tags=tags,
+                )
+            )
+            continue
+        host, port = parse_host_port(server.endpoint)
+        controller = (getattr(server, "protocol_config", None) or {}).get("controllerType", "S7_1500")
         adapters.append(
             EdgeAdapterInput(
                 server_id=server.id,
@@ -313,8 +325,8 @@ class ConnectivityRepository:
         before this transaction commits, so a HiveMQ Edge XML write failure rolls
         back the catalog write instead of leaving them out of sync. The console
         always passes it for S7/EtherNet/IP, which is also when this sets
-        `last_status="pending"` / `last_error=EDGE_APPLY_ERROR`: the row is not
-        actually live until `testConnectivityServer` confirms the Edge apply.
+        `last_status="pending"` / `last_error=EDGE_APPLY_ERROR`: the row is saved but
+        HiveMQ Edge has not confirmed the live apply yet.
         """
         spec.validate()
         if not spec.password:
@@ -322,7 +334,7 @@ class ConnectivityRepository:
             if existing is not None and existing.password:
                 spec.password = existing.password
         values = spec.column_values()
-        if after_flush is not None and spec.protocol in PLC_PROTOCOLS:
+        if after_flush is not None and spec.protocol in EDGE_PROTOCOLS:
             values = values | {"last_status": "pending", "last_error": EDGE_APPLY_ERROR}
         async with self._database.session() as session:
             statement = (
@@ -402,7 +414,7 @@ class ConnectivityRepository:
                 )
             )
             if after_flush is not None:
-                await self._mark_pending_if_plc(session, server_id)
+                await self._mark_pending_if_edge(session, server_id)
             row = (
                 await session.execute(
                     select(ConnectivityTag)
@@ -435,12 +447,12 @@ class ConnectivityRepository:
             if topic and (exclude is None or (row_server_id, row_node_id) != exclude)
         }
 
-    async def _mark_pending_if_plc(self, session: AsyncSession, server_id: str) -> None:
+    async def _mark_pending_if_edge(self, session: AsyncSession, server_id: str) -> None:
         """Flag the server a tag write touched as needing a HiveMQ Edge re-apply."""
         protocol = (
             await session.execute(select(ConnectivityServer.protocol).where(ConnectivityServer.id == server_id))
         ).scalar_one_or_none()
-        if protocol in PLC_PROTOCOLS:
+        if protocol in EDGE_PROTOCOLS:
             await session.execute(
                 update(ConnectivityServer)
                 .where(ConnectivityServer.id == server_id)
@@ -463,7 +475,11 @@ class ConnectivityRepository:
         after_flush(edge_adapters_from_rows(servers))
 
     async def replace_subscribed_tags(
-        self, server_id: str, tags: Sequence[ConnectivityTagSpec]
+        self,
+        server_id: str,
+        tags: Sequence[ConnectivityTagSpec],
+        *,
+        after_flush: Callable[[list[EdgeAdapterInput]], None] | None = None,
     ) -> list[ConnectivityTag]:
         """
         Fold a freshly discovered set of tags into the catalog for one server.
@@ -509,6 +525,9 @@ class ConnectivityRepository:
                         set_=on_conflict_set,
                     )
                 )
+            if after_flush is not None:
+                await self._mark_pending_if_edge(session, server_id)
+                await self._sync_edge(session, after_flush)
             return await self.list_subscribed_tags(server_id)
 
     async def update_tag_topic(
@@ -518,9 +537,16 @@ class ConnectivityRepository:
         mqtt_topic: str,
         *,
         after_flush: Callable[[list[EdgeAdapterInput]], None] | None = None,
+        on_topic_rewrite: Callable[[AsyncSession, str, str], Awaitable[None]] | None = None,
     ) -> ConnectivityTag | None:
         """Set the MQTT topic an engineer wants this node republished under."""
-        return await self.update_tag(server_id, node_id, after_flush=after_flush, mqtt_topic=mqtt_topic)
+        return await self.update_tag(
+            server_id,
+            node_id,
+            after_flush=after_flush,
+            on_topic_rewrite=on_topic_rewrite,
+            mqtt_topic=mqtt_topic,
+        )
 
     _TAG_UPDATE_FIELDS = frozenset(
         {
@@ -540,6 +566,7 @@ class ConnectivityRepository:
         node_id: str,
         *,
         after_flush: Callable[[list[EdgeAdapterInput]], None] | None = None,
+        on_topic_rewrite: Callable[[AsyncSession, str, str], Awaitable[None]] | None = None,
         **fields: Any,
     ) -> ConnectivityTag | None:
         """
@@ -565,6 +592,14 @@ class ConnectivityRepository:
 
         define: dict[str, Any] | None = None
         async with self._database.session() as session:
+            old_topic = (
+                await session.execute(
+                    select(ConnectivityTag.mqtt_topic).where(
+                        ConnectivityTag.server_id == server_id,
+                        ConnectivityTag.node_id == node_id,
+                    )
+                )
+            ).scalar_one_or_none()
             new_topic = fields.get("mqtt_topic")
             if new_topic:
                 existing_topics = await self.subscribed_topics(session, exclude=(server_id, node_id))
@@ -586,8 +621,15 @@ class ConnectivityRepository:
             ).scalar_one_or_none()
             if row is None:
                 return None
+            if (
+                new_topic is not None
+                and old_topic is not None
+                and new_topic != old_topic
+                and on_topic_rewrite is not None
+            ):
+                await on_topic_rewrite(session, old_topic, new_topic)
             if after_flush is not None:
-                await self._mark_pending_if_plc(session, server_id)
+                await self._mark_pending_if_edge(session, server_id)
                 await self._sync_edge(session, after_flush)
             if row.asset_id is not None and row.unit_of_measure is not None:
                 asset_path = (
@@ -665,7 +707,7 @@ class ConnectivityRepository:
                 )
             ).scalar_one_or_none()
             if after_flush is not None:
-                await self._mark_pending_if_plc(session, server_id)
+                await self._mark_pending_if_edge(session, server_id)
                 await self._sync_edge(session, after_flush)
             return row
 
@@ -696,7 +738,51 @@ class ConnectivityRepository:
                 )
             ).scalar_one_or_none()
 
+    async def record_live_apply(self, server_ids: list[str], *, ok: bool) -> None:
+        """Record whether HiveMQ Edge accepted the catalog adapters.
+
+        Success is `untested` with an empty error: live apply is not a PLC probe.
+        Failure is `pending` plus EDGE_APPLY_ERROR. Unknown ids are ignored.
+        """
+        if not server_ids:
+            return
+        values = (
+            {"last_status": "untested", "last_error": "", "updated_at": func.now()}
+            if ok
+            else {
+                "last_status": "pending",
+                "last_error": EDGE_APPLY_ERROR,
+                "updated_at": func.now(),
+            }
+        )
+        async with self._database.session() as session:
+            await session.execute(
+                update(ConnectivityServer)
+                .where(ConnectivityServer.id.in_(server_ids))
+                .values(**values)
+            )
+
     # ------------------------------------------------------------------- reads
+
+    async def asset_path_for_mqtt_topic(self, topic: str) -> str | None:
+        """Asset path for a subscribed tag's ``mqtt_topic``, when the catalog binds one.
+
+        Browse-path topics such as ``Server/OpcPlc/...`` usually do not prefix-match an
+        Asset path, so historian and MQTT scope checks use this binding instead.
+        """
+        async with self._database.session() as session:
+            return (
+                await session.execute(
+                    select(Asset.path)
+                    .join(ConnectivityTag, ConnectivityTag.asset_id == Asset.id)
+                    .where(
+                        ConnectivityTag.mqtt_topic == topic,
+                        ConnectivityTag.subscribed.is_(True),
+                        ConnectivityTag.asset_id.is_not(None),
+                    )
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
 
     async def list_servers(self, *, protocol: str | None = None) -> list[ConnectivityServer]:
         """Every server, newest edit last, so the console renders a stable order."""
