@@ -20,9 +20,13 @@ import {
   isNodeStale,
   isStaleCandidate,
 } from '../../lib/uns/node-meta';
+import { tagMatchesNode } from '../../lib/condition-monitoring/match-tags';
+import type { GraphqlConnectivityTag } from '../../services/graphql/types';
 import { consoleTokens } from '../ui/console-ui';
 
-export const UnsTreeView: React.FC = () => {
+export const UnsTreeView: React.FC<{
+  connectedTags?: GraphqlConnectivityTag[];
+}> = ({ connectedTags = [] }) => {
   const {
     rootNodes,
     expandedNodes,
@@ -49,6 +53,7 @@ export const UnsTreeView: React.FC = () => {
     const isSelected = selectedNode?.topic === node.topic;
     const stale = isStale(node);
     const live = hasLiveTelemetry(node.payload);
+    const connected = connectedTags.some((tag) => tagMatchesNode(tag, node));
     const bookmarked = isBookmarked(node.topic);
     const isExpandable =
       !['DEVICE_depth_3', 'NESTED_ATTRIBUTE'].includes(node.nodeType) ||
@@ -111,6 +116,15 @@ export const UnsTreeView: React.FC = () => {
             <span className="truncate" title={node.name}>
               {node.name}
             </span>
+            {connected && (
+              <span
+                aria-label="Signals connected"
+                title="Signals connected"
+                className={`ml-auto size-2 shrink-0 rounded-full ${
+                  isSelected ? 'bg-emerald-400' : 'bg-emerald-500'
+                }`}
+              />
+            )}
           </div>
 
           <button

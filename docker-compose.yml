@@ -45,13 +45,9 @@ services:
   # Host-side: npm run simulator. In-stack: npm run simulator:stack
   oee_mqtt_simulator:
     profiles: ["oee-demo"]
-    image: "hivemq/hivemq-edge:latest"
-    entrypoint: ["/bin/bash", "/simulator/HiveMQ-Simulator.sh"]
-    environment:
-      H: uns_mqtt_broker
-      P: "1883"
-    volumes:
-      - ./HiveMQ-Simulator.sh:/simulator/HiveMQ-Simulator.sh:ro
+    build:
+      context: .
+      dockerfile: ./conf/simulator/Dockerfile
     depends_on:
       uns_mqtt_broker:
         condition: service_healthy

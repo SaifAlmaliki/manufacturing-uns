@@ -5,13 +5,20 @@
 H=${H:-localhost}; P=${P:-1883}; TICK=${TICK:-3}; DEV=${DEV:-40}
 Q="-q 1 -r"; B=${B:-DemoCorp/Site01/Production}
 WARM=${WARM:-600}; DECL=${DECL:-300}; LOW=${LOW:-90}; REC=${REC:-30}; HEAL=${HEAL:-120}
+MQTT_CLI_IMAGE=${MQTT_CLI_IMAGE:-hivemq/mqtt-cli:4.33.0}
+# HiveMQ Edge no longer ships mqtt-cli; reach the compose broker by service name.
+if [ "$H" = "localhost" ] && command -v docker >/dev/null 2>&1; then
+  if docker ps --filter "publish=1883" --format '{{.Names}}' | head -n1 | grep -q .; then
+    H=uns_mqtt_broker
+  fi
+fi
 mqttcli() {
-  if [ -x /opt/hivemq/tools/mqtt-cli/bin/mqtt ]; then
-    /opt/hivemq/tools/mqtt-cli/bin/mqtt "$@"
+  if [ -d /app/classpath ]; then
+    java -cp "/app/classpath/*:/app/libs/*" com.hivemq.cli.MqttCLIMain "$@"
     return
   fi
   if ! command -v docker >/dev/null 2>&1; then
-    echo "mqtt-cli: no in-container binary and docker not available" >&2
+    echo "mqtt-cli: docker not available (start the stack or use npm run simulator:stack)" >&2
     exit 127
   fi
   broker="${MQTT_BROKER_CONTAINER:-}"
@@ -22,7 +29,11 @@ mqttcli() {
     echo "mqtt-cli: no MQTT broker container found (start the stack or set MQTT_BROKER_CONTAINER)" >&2
     exit 127
   fi
-  MSYS_NO_PATHCONV=1 docker exec -i "$broker" /opt/hivemq/tools/mqtt-cli/bin/mqtt "$@"
+  network="${MQTT_DOCKER_NETWORK:-}"
+  if [ -z "$network" ]; then
+    network=$(docker inspect "$broker" --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}' | head -n1)
+  fi
+  MSYS_NO_PATHCONV=1 docker run --rm -i --network "$network" "$MQTT_CLI_IMAGE" "$@"
 }
 n() { v=$(($1 + RANDOM % ($2 - $1 + 1))); printf "%d.%03d" $((v / 1000)) $((v % 1000)); }
 pct() { printf "%d.%d" $(($1 / 10)) $(($1 % 10)); }
@@ -83,7 +94,7 @@ CYCLE=$((DECL + LOW + REC + HEAL))
 echo "40 topics under $B/#  |  Ctrl+C to stop"
 echo "Filler01 publishes percent, Packer01 decimal. OEE holds at 90% for $((WARM / 60)) min so you can build the Calculations, then a $((DECL / 60))-min decline to 80% repeats every $((CYCLE / 60)) min."
 {
-  echo "con -i mqtt-oee-demo -h $H -p $P"
+  echo "con -i mqtt_oee_demo -h $H -p $P"
   ctx Filler01 LineA Filler AST-1001 3.5 1029
   ctx Capper01 LineA Capper AST-1002 3.0 1200
   ctx Mixer01 LineB Mixer AST-2001 5.0 720

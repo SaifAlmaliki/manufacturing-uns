@@ -51,8 +51,12 @@ const auth = vi.hoisted(() => ({
 }));
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => auth }));
 
+const treeProps = vi.hoisted(() => ({ connectedTags: undefined as unknown }));
 vi.mock('../home/UnsTreeView', () => ({
-  UnsTreeView: () => <div>Namespace Tree</div>,
+  UnsTreeView: (props: { connectedTags?: unknown }) => {
+    treeProps.connectedTags = props.connectedTags;
+    return <div>Namespace Tree</div>;
+  },
 }));
 
 import { ConditionMonitoringView } from './ConditionMonitoringView';
@@ -76,6 +80,7 @@ const SPEED = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  treeProps.connectedTags = undefined;
   uns.selectedNode = null;
   alarms.activeAlarms = [];
   auth.hasPermission = (feature: string): boolean => feature === 'uns_tree';
@@ -345,6 +350,12 @@ describe('ConditionMonitoringView historian and live tail', () => {
     unsubscribe.mockClear();
     unmount();
     expect(unsubscribe).toHaveBeenCalled();
+  });
+
+  it('passes subscribed tags to the plant tree for connected-signal dots', async () => {
+    await renderPage();
+    await waitFor(() => expect(screen.getByText('Fault')).toBeTruthy());
+    expect(treeProps.connectedTags).toEqual([FAULT, SPEED]);
   });
 });
 

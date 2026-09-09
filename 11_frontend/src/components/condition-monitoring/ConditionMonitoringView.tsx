@@ -183,7 +183,7 @@ export const ConditionMonitoringView: React.FC = () => {
           aria-label="UNS Hierarchy Tree"
           className="h-[300px] shrink-0 overflow-hidden border-b border-border bg-surface md:hidden"
         >
-          <UnsTreeView />
+          <UnsTreeView connectedTags={subscribed} />
         </section>
         <ResizableSidebar
           storageKey="uns_console_cm_tree_width"
@@ -191,7 +191,7 @@ export const ConditionMonitoringView: React.FC = () => {
           aria-label="UNS Hierarchy Tree"
           className="hidden border-r border-border bg-surface md:flex"
         >
-          <UnsTreeView />
+          <UnsTreeView connectedTags={subscribed} />
         </ResizableSidebar>
         <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
           <PageContent fullWidth className="flex min-h-full flex-col gap-3 pb-4">

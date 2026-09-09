@@ -1,16 +1,16 @@
 # Graph Report - manufacturing-uns  (2026-09-09)
 
 ## Corpus Check
-- 555 files · ~306,964 words
+- 556 files · ~307,370 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 7034 nodes · 18293 edges · 299 communities (267 shown, 32 thin omitted)
+- 7040 nodes · 18306 edges · 282 communities (254 shown, 28 thin omitted)
 - Extraction: 73% EXTRACTED · 27% INFERRED · 0% AMBIGUOUS · INFERRED: 5000 edges (avg confidence: 0.53)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `827c9f69`
+- Built from commit: `1ed6b07e`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -203,7 +203,6 @@
 - [[_COMMUNITY_Community 185|Community 185]]
 - [[_COMMUNITY_Community 186|Community 186]]
 - [[_COMMUNITY_Community 187|Community 187]]
-- [[_COMMUNITY_Community 188|Community 188]]
 - [[_COMMUNITY_Community 189|Community 189]]
 - [[_COMMUNITY_Community 190|Community 190]]
 - [[_COMMUNITY_Community 191|Community 191]]
@@ -215,7 +214,6 @@
 - [[_COMMUNITY_Community 197|Community 197]]
 - [[_COMMUNITY_Community 198|Community 198]]
 - [[_COMMUNITY_Community 199|Community 199]]
-- [[_COMMUNITY_Community 200|Community 200]]
 - [[_COMMUNITY_Community 201|Community 201]]
 - [[_COMMUNITY_Community 202|Community 202]]
 - [[_COMMUNITY_Community 203|Community 203]]
@@ -243,10 +241,7 @@
 - [[_COMMUNITY_Community 264|Community 264]]
 - [[_COMMUNITY_Community 265|Community 265]]
 - [[_COMMUNITY_Community 266|Community 266]]
-- [[_COMMUNITY_Community 267|Community 267]]
 - [[_COMMUNITY_Community 268|Community 268]]
-- [[_COMMUNITY_Community 270|Community 270]]
-- [[_COMMUNITY_Community 271|Community 271]]
 - [[_COMMUNITY_Community 272|Community 272]]
 - [[_COMMUNITY_Community 273|Community 273]]
 - [[_COMMUNITY_Community 274|Community 274]]
@@ -254,25 +249,13 @@
 - [[_COMMUNITY_Community 276|Community 276]]
 - [[_COMMUNITY_Community 277|Community 277]]
 - [[_COMMUNITY_Community 278|Community 278]]
-- [[_COMMUNITY_Community 279|Community 279]]
 - [[_COMMUNITY_Community 280|Community 280]]
-- [[_COMMUNITY_Community 281|Community 281]]
 - [[_COMMUNITY_Community 282|Community 282]]
 - [[_COMMUNITY_Community 283|Community 283]]
 - [[_COMMUNITY_Community 284|Community 284]]
-- [[_COMMUNITY_Community 285|Community 285]]
 - [[_COMMUNITY_Community 286|Community 286]]
-- [[_COMMUNITY_Community 287|Community 287]]
-- [[_COMMUNITY_Community 288|Community 288]]
 - [[_COMMUNITY_Community 289|Community 289]]
-- [[_COMMUNITY_Community 290|Community 290]]
 - [[_COMMUNITY_Community 291|Community 291]]
-- [[_COMMUNITY_Community 293|Community 293]]
-- [[_COMMUNITY_Community 294|Community 294]]
-- [[_COMMUNITY_Community 295|Community 295]]
-- [[_COMMUNITY_Community 296|Community 296]]
-- [[_COMMUNITY_Community 297|Community 297]]
-- [[_COMMUNITY_Community 298|Community 298]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `Database` - 287 edges
@@ -320,179 +303,179 @@
 - 1-file cycle: `07_uns_graphql/src/uns_graphql/type/streaming_event.py -> 07_uns_graphql/src/uns_graphql/type/streaming_event.py`
 - 1-file cycle: `07_uns_graphql/test/queries/test_historian.py -> 07_uns_graphql/test/queries/test_historian.py`
 
-## Communities (299 total, 32 thin omitted)
+## Communities (282 total, 28 thin omitted)
 
 ### Community 0 - "Community 0"
 Cohesion: 0.02
-Nodes (97): alarms, auth, FAULT, getConnectivityServers, getHistoricEvents, navigate, SPEED, subscribeMqttMessages (+89 more)
+Nodes (94): BrowseDataDrawerProps, HistorianTableProps, asInt(), AuthHooks, BinaryOperator, defaultAuthHooks, auth, PLANT (+86 more)
 
 ### Community 1 - "Community 1"
-Cohesion: 0.17
-Nodes (25): Interval, StopInterval, datetime, ReasonResolver, Tests for resolving a machine state into a downtime reason code.  Three behavi, resolver(), stop(), t() (+17 more)
+Cohesion: 0.16
+Nodes (26): Interval, StopInterval, datetime, ReasonResolver, Tests for resolving a machine state into a downtime reason code.  Three behavi, resolver(), stop(), t() (+18 more)
 
 ### Community 2 - "Community 2"
 Cohesion: 0.03
-Nodes (84): BrowseDataDrawer(), mergeRows(), RowState, uniqueDiscovered(), ConnectivityView(), DIALOG_COPY, dialogCopyFor(), TAB_ID_BY_GQL (+76 more)
+Nodes (86): AddressSpaceTreeProps, BrowseDataDrawer(), mergeRows(), RowState, uniqueDiscovered(), ConnectivityView(), DIALOG_COPY, dialogCopyFor() (+78 more)
 
 ### Community 3 - "Community 3"
-Cohesion: 0.05
-Nodes (80): Any, Database, datetime, OeeConfig, OeeMetrics, PassSummary, ResultPublisher, Database (+72 more)
+Cohesion: 0.23
+Nodes (14): Tests for uns_oee.main.  The service is constructed with its scheduler, its me, config(), fake_gauges(), FakeScheduler, Records the timestamps it was passed and can be told to fail., service(), test_a_pass_reads_the_database_gauges_afterwards(), test_a_pass_stamps_the_clock_the_service_was_given() (+6 more)
 
 ### Community 4 - "Community 4"
-Cohesion: 0.03
-Nodes (97): AlarmActiveTab(), AlarmAuditLog(), AlarmManagementLayout(), ALERT_TAB_PATHS, AlertTabId, AlarmRulesTab(), AlarmOutletContext, AlarmPanel() (+89 more)
+Cohesion: 0.05
+Nodes (52): AlarmActiveTab(), AlarmAuditLog(), AlarmManagementLayout(), AlarmRulesTab(), RoleAlertMatrix(), LoginView(), login, grafanaRangeFromPreset() (+44 more)
 
 ### Community 5 - "Community 5"
-Cohesion: 0.08
-Nodes (42): _FakeDatabase, _FakeSession, _loader_blob(), *******************************************************************************, `save_tag` must write `data_type` so a one-mutation save can set it, no second p, Fakes just enough of AsyncSession for `subscribed_topics`: one `execute().all()`, Loader options are not in compiled SQL; inspect `_with_options` instead., `after_flush` is optional on `update_tag`; when given, it must reach `_sync_edge (+34 more)
+Cohesion: 0.06
+Nodes (53): _FakeDatabase, _FakeSession, _loader_blob(), *******************************************************************************, `save_tag` must write `data_type` so a one-mutation save can set it, no second p, Fakes just enough of AsyncSession for `subscribed_topics`: one `execute().all()`, Loader options are not in compiled SQL; inspect `_with_options` instead., `after_flush` is optional on `update_tag`; when given, it must reach `_sync_edge (+45 more)
 
 ### Community 6 - "Community 6"
-Cohesion: 0.08
-Nodes (94): ClassifiedStop, datetime, Interval, ManualReason, MasterDataLoader, MetricSource, ProductSegment, ResultPublisher (+86 more)
+Cohesion: 0.03
+Nodes (161): Any, Database, datetime, OeeConfig, OeeMetrics, PassSummary, ResultPublisher, ClassifiedStop (+153 more)
 
 ### Community 7 - "Community 7"
-Cohesion: 0.05
-Nodes (74): datetime, ShiftWindow, UnitMasterData, ShiftSchedule, days(), FakeConnection, FakeDatabase, FakeMaster (+66 more)
+Cohesion: 0.06
+Nodes (70): datetime, ShiftWindow, UnitMasterData, ShiftSchedule, days(), FakeConnection, FakeDatabase, FakeMaster (+62 more)
 
 ### Community 8 - "Community 8"
-Cohesion: 0.06
-Nodes (41): ServerConfig, SpoolConfig, Tests for the supervisor's wiring and shutdown behaviour., _FakeCatalog, _FakeCatalogUpdatedAt, A cancelled supervisor must not leave orphan tasks holding the spool open., A stand-in for ConnectivityRepository that returns canned specs., A console that is briefly down must not stop a YAML-only connector. (+33 more)
+Cohesion: 0.05
+Nodes (63): ConnectivityRepository, datetime, ServerConfig, ServerConfig, Tests for the supervisor's wiring and shutdown behaviour., ProcessSnapshot, _FakeCatalog, _FakeCatalogUpdatedAt (+55 more)
 
 ### Community 9 - "Community 9"
-Cohesion: 0.07
-Nodes (43): _reseed(), Unit tests for planning a seed. No database: planning is pure, which is the poin, Without these, `.../Cell1/SCADA/Status/...` would bind to the Work Cell instead., Captures AccessGroupRepository calls from apply_plan without a database., Records what a seed would write, at the repository seam., RecordingAccessGroups, RecordingRepository, test_a_machine_branch_ends_at_the_machine_level() (+35 more)
+Cohesion: 0.09
+Nodes (38): Unit tests for planning a seed. No database: planning is pure, which is the poin, Without these, `.../Cell1/SCADA/Status/...` would bind to the Work Cell instead., Records what a seed would write, at the repository seam., RecordingRepository, test_a_machine_branch_ends_at_the_machine_level(), test_a_missing_hierarchy_is_an_error_rather_than_an_empty_model(), test_a_plan_with_two_area_branches_produces_two_area_paths(), test_a_sensor_shared_by_two_plcs_is_defined_once() (+30 more)
 
 ### Community 10 - "Community 10"
-Cohesion: 0.10
-Nodes (26): The joins in `master_data.py`, which no unit test can validate: four tables, two, test_master_data_loader_resolves_every_binding(), FakeConnection, FakeDatabase, FakeResult, Tests for the historian read path.  The SQL is exercised for real in the end-t, Stands in for `uns_model.engine.Database`; only `begin()` is used by MetricSourc, test_a_binding_splits_into_topic_and_metric_name() (+18 more)
+Cohesion: 0.06
+Nodes (51): datetime, Sample, StateSample, FakeConnection, FakeDatabase, FakeResult, Tests for the historian read path.  The SQL is exercised for real in the end-t, Stands in for `uns_model.engine.Database`; only `begin()` is used by MetricSourc (+43 more)
 
 ### Community 11 - "Community 11"
 Cohesion: 0.06
-Nodes (45): AlertRuleEditorModal(), AlertRuleEditorModalProps, CATEGORIES, EditorSection, PREDEFINED_ROLES, SEVERITIES, severityActiveClass, alarms (+37 more)
+Nodes (43): AlertRuleEditorModal(), AlertRuleEditorModalProps, CATEGORIES, EditorSection, PREDEFINED_ROLES, SEVERITIES, severityActiveClass, alarms (+35 more)
 
 ### Community 12 - "Community 12"
-Cohesion: 0.10
+Cohesion: 0.11
 Nodes (43): Any, ConversationStore, FastAPI, Identity, JwksCache, ModelTurn, AbstractAsyncContextManager, BaseModel (+35 more)
 
 ### Community 13 - "Community 13"
-Cohesion: 0.08
-Nodes (34): grafanaTopicFilter(), DEFAULT_APP_SETTINGS, graphqlUrl, STORAGE_KEYS, httpToWs(), loadSettings(), NavigationTab, UNSContext (+26 more)
+Cohesion: 0.07
+Nodes (38): grafanaTopicFilter(), DEFAULT_APP_SETTINGS, graphqlUrl, STORAGE_KEYS, httpToWs(), loadSettings(), NavigationTab, UNSContext (+30 more)
 
 ### Community 14 - "Community 14"
 Cohesion: 0.07
-Nodes (42): GraphqlHierarchyTree, AssetLevelIcon(), AttachSignalsDialog(), addDescription(), DESCRIPTIONS, EDITOR_LEVELS, levelDef, NodeLevel (+34 more)
+Nodes (42): GraphqlHierarchyTree, AssetLevelIcon(), addDescription(), DESCRIPTIONS, EDITOR_LEVELS, levelDef, NodeLevel, ORDER (+34 more)
 
 ### Community 15 - "Community 15"
-Cohesion: 0.12
-Nodes (23): DataSet, PropertySet, PropertySetList, SPBPropertyValueTypes, Template, _convert_to_unsigned_int(), create_dummy_dataset(), create_dummy_template() (+15 more)
+Cohesion: 0.06
+Nodes (45): ALERT_TAB_PATHS, AlertTabId, AlarmOutletContext, AlarmPanel(), getSeverityBadge(), getStatusBadge(), GRAFANA_DASHBOARDS, GrafanaDashboardId (+37 more)
 
 ### Community 16 - "Community 16"
 Cohesion: 0.14
-Nodes (53): SPBDataSetDataTypes, SPBPropertyValueTypes, DataSet, DataSetValue, MetaData, Metric, Parameter, Payload (+45 more)
+Nodes (52): SPBDataSetDataTypes, SPBPropertyValueTypes, DataSet, DataSetValue, MetaData, Metric, Parameter, Payload (+44 more)
 
 ### Community 17 - "Community 17"
-Cohesion: 0.21
-Nodes (31): Citation, ContextPack, ConversationStore, GraphqlPost, Scope, SqlExecutor, Kind, Any (+23 more)
+Cohesion: 0.20
+Nodes (34): Citation, ContextPack, ConversationStore, GraphqlPost, Scope, SqlExecutor, Kind, Any (+26 more)
 
 ### Community 18 - "Community 18"
 Cohesion: 0.07
 Nodes (38): alarmMatchesTag(), conditionKpis, isFaultTag(), assetLeafLabel(), collectLoadedDescendants(), filterTagsBySearch(), pathSegments(), tagInScope() (+30 more)
 
 ### Community 19 - "Community 19"
-Cohesion: 0.10
-Nodes (50): StateSample, StoredResult, FakePublisher, FakeStore, pipeline(), Tests for uns_oee.pipeline - the shift's assembly line.  Two halves. The pure, No sample at or before shift_start. The first in-window report is EXECUTE at 07:, A manual at window.start keeps its own geometry; the unknown prefix is not that (+42 more)
+Cohesion: 0.06
+Nodes (83): StopInterval, datetime, UnitMasterData, datetime, Fingerprint, Sample, ShiftPipeline, StateSample (+75 more)
 
 ### Community 20 - "Community 20"
-Cohesion: 0.11
-Nodes (16): datetime, test_assert_xml_safe_allows_tab_newline_cr_and_blank(), test_assert_xml_safe_rejects_a_control_character(), test_metric_key_falls_back_to_browse_path_when_topic_is_not_under_asset(), test_metric_key_uses_display_name_when_topic_equals_asset_path(), test_metric_key_uses_topic_suffix_under_asset_path(), test_parse_host_port_rejects_opc_tcp_and_bad_port(), test_parse_host_port_splits_ipv4_and_hostname() (+8 more)
+Cohesion: 0.09
+Nodes (20): `AlertRuleSpec.validate()` has the last word, and its message is what the operat, test_save_alert_rule_surfaces_a_repository_rejection(), Neither call raises: a distinct topic is fine, and a blank one is not yet assign, test_assert_unique_mqtt_topic_allows_a_distinct_or_blank_topic(), test_assert_unique_mqtt_topic_rejects_when_topic_is_already_subscribed(), test_assert_xml_safe_allows_tab_newline_cr_and_blank(), test_assert_xml_safe_rejects_a_control_character(), test_parse_host_port_rejects_opc_tcp_and_bad_port() (+12 more)
 
 ### Community 21 - "Community 21"
-Cohesion: 0.06
-Nodes (47): Any, Identity, JwksCache, _connection_params(), graphql_context(), identity_in(), _is_ide_page(), The gate, at the one door this service has.  `uns_graphql_app.py` mounts exact (+39 more)
+Cohesion: 0.07
+Nodes (43): Identity, JwksCache, graphql_context(), identity_in(), _is_ide_page(), The gate, at the one door this service has.  `uns_graphql_app.py` mounts exact, The process-wide key cache, built on first use.      One instance, so the docu, Replace the process-wide cache. Tests only; pass None to clear it. (+35 more)
 
 ### Community 22 - "Community 22"
-Cohesion: 0.09
+Cohesion: 0.08
 Nodes (41): _assignment_database(), bound(), _event(), FakeDatabase, FakeResult, *******************************************************************************, The literal values a statement carries, so an INSERT can be asserted on., A constant the CHECK constraint rejects would fail on every assignment, at runti (+33 more)
 
 ### Community 23 - "Community 23"
 Cohesion: 0.08
-Nodes (36): Any, datetime, ShiftMetrics, ShiftWindow, FakeClient, metrics(), Tests for uns_oee.publisher - the topic, the payload, and one connection.  The, An aiomqtt.Client stand-in: an async context manager with a publish. (+28 more)
+Nodes (34): datetime, Tests for the OEE module's configuration reader., test_defaults_match_the_documented_platform_ports(), test_is_valid_rejects_empty_or_whitespace_mqtt_host(), test_is_valid_requires_an_mqtt_host(), FakeClient, metrics(), Tests for uns_oee.publisher - the topic, the payload, and one connection.  The (+26 more)
 
 ### Community 24 - "Community 24"
 Cohesion: 0.06
-Nodes (37): Any, SpoolConfig, SpoolRow, Connection, _config(), Unit tests for the bounded, disk-backed store-and-forward spool., FIFO depends on ids never being reused, so AUTOINCREMENT is required., Every caller reaches the spool through asyncio.to_thread, which runs on a pool (+29 more)
+Nodes (39): Any, SpoolConfig, SpoolConfig, SpoolRow, Connection, _config(), Unit tests for the bounded, disk-backed store-and-forward spool., FIFO depends on ids never being reused, so AUTOINCREMENT is required. (+31 more)
 
 ### Community 25 - "Community 25"
 Cohesion: 0.13
-Nodes (27): ConnectivityServer, ConnectivityTag, ConnectivityServer, Database, _E, Enum, ConnectivityAuthMode, ConnectivityProtocol (+19 more)
+Nodes (26): ConnectivityServer, ConnectivityTag, Database, _E, Enum, ConnectivityAuthMode, ConnectivityProtocol, ConnectivitySecurityMode (+18 more)
 
 ### Community 26 - "Community 26"
-Cohesion: 0.09
-Nodes (53): Any, HierarchyTree, Path, HierarchyTree, Path, Tests for `hierarchy_io`: read/write `settings.yaml` hierarchy and branding., C1/I8: a hierarchy save must not strip comments or mapper-adjacent blocks., _sample_tree() (+45 more)
+Cohesion: 0.10
+Nodes (48): Any, HierarchyTree, Path, Path, Tests for `hierarchy_io`: read/write `settings.yaml` hierarchy and branding., C1/I8: a hierarchy save must not strip comments or mapper-adjacent blocks., _sample_tree(), test_apply_enterprise_to_settings_dedupes_replaced_filters() (+40 more)
 
 ### Community 27 - "Community 27"
-Cohesion: 0.07
-Nodes (32): Any, AccessGroupRepository, AsyncEngine, JwksCache, SqlExecutor, JwksCache, Signing keys by `kid`, with one refetch on a miss., How many times the document has been fetched. Exists for the caching test. (+24 more)
+Cohesion: 0.12
+Nodes (18): Any, AccessGroupRepository, AsyncEngine, JwksCache, SqlExecutor, JwksCache, Signing keys by `kid`, with one refetch on a miss., How many times the document has been fetched. Exists for the caching test. (+10 more)
 
 ### Community 28 - "Community 28"
-Cohesion: 0.10
-Nodes (27): IngestionConfig, UnsMQTTClient, Any, IngestionConfig, ReceiptToken, Consumer, Path, KafkaHandler (+19 more)
+Cohesion: 0.11
+Nodes (29): IngestionConfig, ReceiptToken, UnsMQTTClient, Any, IngestionConfig, ReceiptToken, Consumer, Path (+21 more)
 
 ### Community 29 - "Community 29"
 Cohesion: 0.08
 Nodes (40): Any, datetime, FakeConnection, FakeDatabase, FakeMaster, FakeResult, FakeUnit, Tests for uns_oee.recompute_cli.  Argument handling is pure and gets tested di (+32 more)
 
 ### Community 30 - "Community 30"
-Cohesion: 0.06
-Nodes (41): Queue, SpoolRow, The behaviour this whole module exists for: a broker outage must delay data, not, SpoolRow, Spool, FlakyPublisher, The spool deletes only after the broker acknowledges, so an interruption replays, A broker that is down until `up` is set. (+33 more)
+Cohesion: 0.07
+Nodes (38): Queue, SpoolRow, SpoolRow, Spool, FlakyPublisher, A broker that is down until `up` is set., test_data_collected_during_an_outage_is_published_when_the_broker_returns(), FakePublisher (+30 more)
 
 ### Community 31 - "Community 31"
-Cohesion: 0.11
-Nodes (47): HierarchyTree, test_get_hierarchy_hides_rawwater_from_filtration_operator(), test_load_plant_tree_reads_settings_hierarchy(), Tests for the ISA-95 hierarchy tree and prefix rename validation., test_a_slash_in_a_segment_is_rejected(), test_all_prefixes_include_machines(), test_cell_mapping_coerces_authored_machines(), test_duplicate_sibling_cells_are_rejected() (+39 more)
+Cohesion: 0.10
+Nodes (50): HierarchyTree, _filter_hierarchy(), Drop sites/areas/lines/cells whose joined path is outside the caller's scope., test_get_hierarchy_hides_rawwater_from_filtration_operator(), test_load_plant_tree_reads_settings_hierarchy(), test_save_defaults_empty_area_kind_to_production(), Tests for the ISA-95 hierarchy tree and prefix rename validation., test_a_slash_in_a_segment_is_rejected() (+42 more)
 
 ### Community 32 - "Community 32"
 Cohesion: 0.06
-Nodes (43): ConnectivityTag, _browse_node(), Connectivity catalog writes and OPC UA probes through the schema.  The reposit, A successful TCP probe of a server still `pending` its first Edge apply keeps ED, Username/password belong in Postgres, not in the payload the console reads back., Saving an S7 server wires the repository's `after_flush` to the HiveMQ Edge XML, Discover every Variable on the endpoint and fold into the catalog via replace_su, OPC UA browse discovery has no meaning against an S7/EtherNet-IP catalog row. (+35 more)
+Nodes (49): SimpleNamespace, _browse_node(), _data_value(), Connectivity catalog writes and OPC UA probes through the schema.  The reposit, A successful TCP probe of a server still `pending` its first Edge apply keeps ED, Username/password belong in Postgres, not in the payload the console reads back., Saving an S7 server wires the repository's `after_flush` to the HiveMQ Edge XML, Discover every Variable on the endpoint and fold into the catalog via replace_su (+41 more)
 
 ### Community 33 - "Community 33"
-Cohesion: 0.14
-Nodes (40): Interval, ClassifiedStop, datetime, Interval, ProductSegment, Tests for the OEE arithmetic.  Spec section 8.1 is a table of six cases in whi, segment(), stop() (+32 more)
+Cohesion: 0.08
+Nodes (72): datetime, Interval, Tests for the OEE arithmetic.  Spec section 8.1 is a table of six cases in whi, segment(), stop(), t(), test_a_calendar_exception_also_leaves_loading_time(), test_a_clean_shift_multiplies_out() (+64 more)
 
 ### Community 34 - "Community 34"
-Cohesion: 0.10
-Nodes (24): datetime, *******************************************************************************, The stored rule, not the submitted one: the console needs the timestamps and the, An unknown severity never reaches the repository: the enum is the guard, so a, `AlertRuleSpec.validate()` has the last word, and its message is what the operat, The migration path off localStorage: one round trip, or the console half-migrate, A rule deleted while an evaluator was mid-cycle is not an error worth waking any, Process data is written by publishing to the broker. Hierarchy writes YAML then (+16 more)
+Cohesion: 0.05
+Nodes (55): AlertRule, AlertRule, AlertRule, AlertRule, Enum, Database, datetime, ******************************************************************************* (+47 more)
 
 ### Community 35 - "Community 35"
-Cohesion: 0.14
-Nodes (33): DowntimeEventRow, ShiftResultRow, DowntimeEventRow, ShiftResultRow, DowntimeEvent, Enum, ShiftResult, DowntimeEvent (+25 more)
+Cohesion: 0.10
+Nodes (44): DowntimeEventRow, ShiftResultRow, DowntimeEvent, Enum, ShiftResult, DowntimeEvent, ShiftResult, ParetoBucket (+36 more)
 
 ### Community 36 - "Community 36"
 Cohesion: 0.04
 Nodes (47): *******************************************************************************, Nodes with different node_name should not be equal, Comparing with non-UNSNode object should return NotImplemented/False, A node should be equal to it, If a == b, then b == a, If a == b and b == c, then a == c, Equal nodes must have the same hash value, Different nodes should (likely) have different hash values (+39 more)
 
 ### Community 37 - "Community 37"
-Cohesion: 0.09
-Nodes (46): _clean(), database(), *******************************************************************************, Remove everything these tests could have written, in FK-safe order., _assign_planned_reason(), _counter(), _insert_samples(), pipeline() (+38 more)
+Cohesion: 0.08
+Nodes (49): Database, _clean(), database(), *******************************************************************************, Remove everything these tests could have written, in FK-safe order., _assign_planned_reason(), _counter(), _insert_samples() (+41 more)
 
 ### Community 38 - "Community 38"
-Cohesion: 0.06
-Nodes (30): any, AsyncConnection, Database, BytesPayload, Info, JSONPayload, Pattern, ******************************************************************************* (+22 more)
+Cohesion: 0.07
+Nodes (22): any, AsyncConnection, Database, BytesPayload, Info, JSONPayload, Rewrite stored topics under ``old_prefix`` to sit under ``new_prefix``., MQTTv31 (+14 more)
 
 ### Community 39 - "Community 39"
-Cohesion: 0.16
-Nodes (33): datetime, Info, MQTTTopicInput, Node, Relationship, SPBNode, UNSNode, Node (+25 more)
+Cohesion: 0.14
+Nodes (34): datetime, Info, MQTTTopicInput, Node, Relationship, SPBNode, UNSNode, Node (+26 more)
 
 ### Community 40 - "Community 40"
-Cohesion: 0.07
-Nodes (34): FastAPI, AuthenticatedGraphQLRouter, A router whose subscriptions need an identity too.      `on_ws_connect` runs a, ConnectivityMutation, GraphQLRouter, HierarchyMutation, HierarchyQuery, OeeMutation (+26 more)
+Cohesion: 0.14
+Nodes (10): FastAPI, HierarchyQuery, OpcUaSubscription, Query, Clean up connections, db pools etc., Clean up connections, db pools etc., lifespan manager to ensure cleanup, Start background tasks for query modules. (+2 more)
 
 ### Community 41 - "Community 41"
 Cohesion: 0.21
-Nodes (20): Any, Client, EdgeAdapterInput, Response, _opcua(), _s7(), test_apply_connection_error_is_edge_apply_error(), test_apply_creates_adapter_tags_and_mappings() (+12 more)
+Nodes (19): Any, Client, EdgeAdapterInput, Response, _opcua(), _s7(), test_apply_connection_error_is_edge_apply_error(), test_apply_creates_adapter_tags_and_mappings() (+11 more)
 
 ### Community 42 - "Community 42"
-Cohesion: 0.11
-Nodes (48): Client, Deadband, MonitoredItemCreateRequest, Queue, ServerConfig, SpoolRow, TagBinding, ConnectivityRepository (+40 more)
+Cohesion: 0.08
+Nodes (65): Client, Deadband, MonitoredItemCreateRequest, Queue, ServerConfig, SpoolRow, TagBinding, SpoolConfig (+57 more)
 
 ### Community 43 - "Community 43"
 Cohesion: 0.10
@@ -500,43 +483,43 @@ Nodes (29): citationTarget(), agentHeaders(), checkCopilotHealth(), CopilotAuthE
 
 ### Community 44 - "Community 44"
 Cohesion: 0.07
-Nodes (39): DataSet, MetaData, Metric, Payload, Template, SPBDataSetDataTypes, SPBParameterTypes, StrEnum (+31 more)
+Nodes (45): Payload, DataSet, PropertySet, PropertySetList, SPBDataSetDataTypes, SPBPropertyValueTypes, Template, _convert_to_unsigned_int() (+37 more)
 
 ### Community 45 - "Community 45"
-Cohesion: 0.29
-Nodes (10): Info, The caller's identity, if their roles allow this mutation.      `KeyError` on, require(), _find_server(), _finish_live_apply(), Mutation, The saved server with this id, or None. `list_servers` has no by-id read; this i, The engine is shared with the Asset Model queries, which dispose it. (+2 more)
+Cohesion: 0.16
+Nodes (34): Any, ConnectivityRepository, ConnectivityServer, ConnectivityServerType, EdgeAdapterInput, Info, UnitOfMeasureType, The caller's identity, if their roles allow this mutation.      `KeyError` on (+26 more)
 
 ### Community 46 - "Community 46"
 Cohesion: 0.11
-Nodes (40): datetime, Tests for state segmentation and interval arithmetic.  Two rules are being pin, t(), test_a_sample_on_the_shift_end_belongs_to_the_next_shift(), test_a_sample_on_the_shift_start_is_the_opening_state_and_is_not_duplicated(), test_a_stop_that_spans_the_whole_shift_is_the_whole_shift(), test_a_zero_length_interval_has_no_duration_and_survives_no_operation(), test_an_inverted_interval_reads_as_empty_rather_than_negative() (+32 more)
+Nodes (43): Interval, datetime, Tests for state segmentation and interval arithmetic.  Two rules are being pin, t(), test_a_sample_on_the_shift_end_belongs_to_the_next_shift(), test_a_sample_on_the_shift_start_is_the_opening_state_and_is_not_duplicated(), test_a_stop_that_spans_the_whole_shift_is_the_whole_shift(), test_a_zero_length_interval_has_no_duration_and_survives_no_operation() (+35 more)
 
 ### Community 47 - "Community 47"
-Cohesion: 0.10
-Nodes (45): Any, datetime, HistoricEventEnvelope, Contract tests for the canonical historic event envelope., _source_envelope(), test_decode_accepts_timezone_offsets_and_normalizes_to_utc(), test_decode_rejects_invalid_json(), test_decode_rejects_missing_required_field() (+37 more)
+Cohesion: 0.12
+Nodes (43): Any, datetime, HistoricEventEnvelope, Contract tests for the canonical historic event envelope., _source_envelope(), test_decode_accepts_timezone_offsets_and_normalizes_to_utc(), test_decode_rejects_invalid_json(), test_decode_rejects_missing_required_field() (+35 more)
 
 ### Community 48 - "Community 48"
-Cohesion: 0.10
-Nodes (27): Empty SASL placeholders in conf/.secrets.yaml must not reach librdkafka., Unit tests for idempotent Kafka topic bootstrap., test_ensure_pipeline_topics_bootstraps_historic_and_dlq_topics(), test_ensure_topic_creates_missing_topic(), test_ensure_topic_verifies_existing_topic_without_recreate(), test_load_topic_specs_uses_settings_defaults(), test_topic_spec_includes_dev_cleanup_and_min_isr(), test_verify_existing_topic_raises_on_config_mismatch() (+19 more)
+Cohesion: 0.09
+Nodes (30): Empty SASL placeholders in conf/.secrets.yaml must not reach librdkafka., Unit tests for idempotent Kafka topic bootstrap., test_ensure_pipeline_topics_bootstraps_historic_and_dlq_topics(), test_ensure_topic_creates_missing_topic(), test_ensure_topic_verifies_existing_topic_without_recreate(), test_load_topic_specs_uses_settings_defaults(), test_topic_spec_includes_dev_cleanup_and_min_isr(), test_verify_existing_topic_raises_on_config_mismatch() (+22 more)
 
 ### Community 49 - "Community 49"
-Cohesion: 0.16
-Nodes (18): bucketMessageActivity(), formatAge(), formatEventValue(), formatTopicShort(), freshnessPct(), isDashboardNoiseTopic(), isProcessMessage(), lastMessageAgeMs() (+10 more)
+Cohesion: 0.13
+Nodes (19): bucketMessageActivity(), formatAge(), formatEventValue(), formatTopicShort(), freshnessPct(), isDashboardNoiseTopic(), isProcessMessage(), lastMessageAgeMs() (+11 more)
 
 ### Community 50 - "Community 50"
-Cohesion: 0.16
-Nodes (25): AbstractEventLoop, AccessScope, Any, StreamingMessage, Info, KAFKATopicInput, StreamingMessage, datetime (+17 more)
+Cohesion: 0.12
+Nodes (31): AbstractEventLoop, AccessScope, Any, StreamingMessage, Info, KAFKATopicInput, StreamingMessage, AccessScope (+23 more)
 
 ### Community 51 - "Community 51"
-Cohesion: 0.14
-Nodes (21): datetime, Role, AsyncEngine, AsyncSession, Citation, datetime, Message, Role (+13 more)
+Cohesion: 0.13
+Nodes (19): datetime, Role, AsyncEngine, AsyncSession, Citation, datetime, Message, Role (+11 more)
 
 ### Community 52 - "Community 52"
 Cohesion: 0.05
 Nodes (40): dependencies, @base-ui/react, class-variance-authority, cn, @fontsource-variable/inter, lucide-react, motion, oidc-client-ts (+32 more)
 
 ### Community 53 - "Community 53"
-Cohesion: 0.08
-Nodes (33): Info, MQTTMessage, MQTTTopicInput, Message, MQTTTopicInput, SimpleNamespace, BytesPayload, JSONPayload (+25 more)
+Cohesion: 0.10
+Nodes (27): Info, MQTTMessage, MQTTTopicInput, Message, MQTTTopicInput, SimpleNamespace, MQTTSubscription, ******************************************************************************* (+19 more)
 
 ### Community 54 - "Community 54"
 Cohesion: 0.11
@@ -547,24 +530,24 @@ Cohesion: 0.08
 Nodes (30): Path, _panels(), _queries(), What the OEE dashboard is not allowed to do.  Grafana fails quietly. A panel n, Spec section 15 asks for a waterfall from Loading Time through the three losses., Duplicated ids make Grafana silently drop a panel on import., Publishing 3000 fails when anything else on the host already bound it., Process Visualization can scan uns_metrics_1m the same way OEE can scan every sh (+22 more)
 
 ### Community 56 - "Community 56"
-Cohesion: 0.10
-Nodes (28): Scope, test_admin_is_unscoped(), test_covers_sql_does_not_use_like(), test_empty_roots_match_nothing(), test_operator_gains_a_prefix_filter(), test_accepts_a_select_on_uns_metrics(), test_accepts_downtime_joined_to_asset_via_oee_unit(), test_accepts_qualified_model_asset() (+20 more)
+Cohesion: 0.14
+Nodes (19): Scope, test_accepts_a_select_on_uns_metrics(), test_accepts_downtime_joined_to_asset_via_oee_unit(), test_accepts_qualified_model_asset(), test_rejects_copilot_schema(), test_rejects_delete(), test_rejects_insert(), test_rejects_second_statement() (+11 more)
 
 ### Community 57 - "Community 57"
-Cohesion: 0.04
-Nodes (51): adminBase(), authHeaders(), DirectoryResult, fetchRealmMembers(), KeycloakUser, RealmMember, rolesOf(), KEYCLOAK_USERS (+43 more)
+Cohesion: 0.05
+Nodes (43): PREDEFINED_ROLES, adminBase(), authHeaders(), DirectoryResult, fetchRealmMembers(), KeycloakUser, RealmMember, rolesOf() (+35 more)
 
 ### Community 58 - "Community 58"
-Cohesion: 0.08
-Nodes (54): ClassifiedStop, datetime, Fingerprint, ManualReason, ShiftMetrics, ShiftWindow, datetime, compile_pg() (+46 more)
+Cohesion: 0.14
+Nodes (23): AlertRuleType, Info, AssetModelRepository, Info, AssetModelSummary, AssetNode, scope_from_info(), Query (+15 more)
 
 ### Community 59 - "Community 59"
-Cohesion: 0.08
+Cohesion: 0.09
 Nodes (64): HierarchyCell, HierarchyTree, PrefixRename, AccessScope, datetime, HierarchyTree, Info, Path (+56 more)
 
 ### Community 60 - "Community 60"
-Cohesion: 0.09
-Nodes (34): AssetModelRepository, _clean(), database(), The historian hypertable, without which the enrichment views do not exist., _binding(), _branch(), metrics_table(), One engine for the whole session: asyncpg connections belong to a loop. (+26 more)
+Cohesion: 0.06
+Nodes (74): AlertRuleRepository, AssetModelRepository, ConnectivityRepository, _clean(), database(), *******************************************************************************, The historian hypertable, without which the enrichment views do not exist., alert_rules() (+66 more)
 
 ### Community 61 - "Community 61"
 Cohesion: 0.13
@@ -579,20 +562,20 @@ Cohesion: 0.10
 Nodes (31): check_other_slots(), *******************************************************************************, Test case for uns_spb_helper#set_long_value_in_spb_object, Test case for setting float value via the ENUMs, Test case for value setting double via the ENUMs, Test case for value setting boolean via the ENUMs, Test case for value setting String via the ENUMs, Test case for value setting boolean via the ENUMs (+23 more)
 
 ### Community 64 - "Community 64"
-Cohesion: 0.12
-Nodes (18): Asset, MetricInfo, TopicContext, AssetModelSummary, AssetNode, MetricDefinitionType, *******************************************************************************, One Asset from the authored Asset Model. (+10 more)
+Cohesion: 0.07
+Nodes (37): Asset, MetricDefinition, MetricInfo, _asset(), FakeRepository, Unit tests for Enrichment. No database: the resolver is handed a fake repository, Stands in for AssetModelRepository at the same seam., test_an_asset_specific_definition_overrides_the_plant_wide_one() (+29 more)
 
 ### Community 65 - "Community 65"
-Cohesion: 0.05
-Nodes (46): SSLContext, AbstractEventLoop, UnsMQTTClient, *******************************************************************************, Future, IntEnum, clean_up_database(), _close_shared_database() (+38 more)
+Cohesion: 0.07
+Nodes (34): clean_up_database(), _close_shared_database(), create_publisher(), mock_asset_model_deps(), *******************************************************************************, utility method to create publisher, Poll until condition() is true. The historian loop must already be running in an, Dispose any engine bound to pytest-asyncio's loop before creating the historian (+26 more)
 
 ### Community 66 - "Community 66"
 Cohesion: 0.15
 Nodes (23): PageContext, test_admin_uses_admin_roots(), test_empty_focus_uses_access_group_roots(), test_focus_wins_over_roots(), test_page_hint_from_route(), BoomGraphql, BoomSql, RecordingGraphql (+15 more)
 
 ### Community 67 - "Community 67"
-Cohesion: 0.12
-Nodes (21): DowntimeEventType, Info, OeeResultRepository, DowntimeEventType, Info, OeeResultRepository, DowntimeParetoBucket, FromArgument (+13 more)
+Cohesion: 0.13
+Nodes (23): DowntimeEventType, Info, OeeResultRepository, DowntimeEventType, Info, OeeResultRepository, DowntimeParetoBucket, FromArgument (+15 more)
 
 ### Community 68 - "Community 68"
 Cohesion: 0.20
@@ -603,36 +586,36 @@ Cohesion: 0.17
 Nodes (19): Any, test_nested_sites_without_enterprise_raise_value_error(), _as_mapping(), _cell_entries(), _cells(), _deduplicate(), _highest_paths(), _machines() (+11 more)
 
 ### Community 70 - "Community 70"
-Cohesion: 0.10
-Nodes (32): Database, datetime, HistorianRepository, Database, HistorianRepository, historian(), historian_database(), prepare_database() (+24 more)
+Cohesion: 0.17
+Nodes (21): Database, HistorianRepository, _cleanup(), _FakeConnection, _FakeDatabase, _FakeResult, historian(), _insert_raw() (+13 more)
 
 ### Community 71 - "Community 71"
-Cohesion: 0.12
-Nodes (25): Any, datetime, TagBinding, Unit tests for OPC UA DataValue -> UNS payload mapping., test_build_payload_falls_back_to_collection_time(), test_build_payload_falls_back_to_server_timestamp(), test_build_payload_never_emits_a_status_field(), test_build_payload_omits_unit_when_not_configured() (+17 more)
+Cohesion: 0.11
+Nodes (26): Any, datetime, TagBinding, binding(), Unit tests for OPC UA DataValue -> UNS payload mapping., test_build_payload_falls_back_to_collection_time(), test_build_payload_falls_back_to_server_timestamp(), test_build_payload_never_emits_a_status_field() (+18 more)
 
 ### Community 72 - "Community 72"
-Cohesion: 0.27
-Nodes (13): assign_live_end(), _admin_scope(), _dispatched(), Tests for the process-scoped canonical live event dispatcher., _source_envelope(), test_access_revocation_drops_later_events(), test_assign_live_end_seeks_to_end(), test_client_does_not_receive_unsubscribed_topic() (+5 more)
+Cohesion: 0.22
+Nodes (15): assign_live_end(), build_broadcast_consumer_config(), _admin_scope(), _dispatched(), Tests for the process-scoped canonical live event dispatcher., _source_envelope(), test_access_revocation_drops_later_events(), test_assign_live_end_seeks_to_end() (+7 more)
 
 ### Community 73 - "Community 73"
 Cohesion: 0.15
 Nodes (27): datetime, datetime, Sample, at(), Tests for monotonic counter differencing.  A PLC production counter is not a m, samples(), test_a_flat_counter_produces_zero_not_none(), test_a_reset_contributes_the_value_after_the_reset() (+19 more)
 
 ### Community 74 - "Community 74"
-Cohesion: 0.07
-Nodes (24): DeliveryCallback, *******************************************************************************, Test conversion of MQTT Topics to Kafka, test_convert_mqtt_kafka_topic(), test_kafka_handler_init(), test_publish(), FakeProducer, Unit tests for literal Kafka event publication without a live broker. (+16 more)
+Cohesion: 0.08
+Nodes (21): DeliveryCallback, *******************************************************************************, Test conversion of MQTT Topics to Kafka, test_convert_mqtt_kafka_topic(), test_kafka_handler_init(), test_publish(), FakeProducer, Unit tests for literal Kafka event publication without a live broker. (+13 more)
 
 ### Community 75 - "Community 75"
-Cohesion: 0.12
-Nodes (35): Any, Exception, HistoricEventEnvelope, Any, datetime, LakeRecord, ObjectStore, Protocol (+27 more)
+Cohesion: 0.11
+Nodes (30): Any, Exception, HistoricEventEnvelope, Any, datetime, RejectionRecord, Tests for DLQ rejection encoding., test_rejection_encode_rejects_unarchivable_original_bytes() (+22 more)
 
 ### Community 76 - "Community 76"
 Cohesion: 0.13
 Nodes (26): Any, Unit tests for the OPC UA connector's configuration parsing., test_parse_deadband(), test_parse_deadband_rejects_unknown_type(), test_parse_deadband_requires_value(), test_parse_security_reports_every_missing_field(), test_parse_server_allows_zero_tags(), test_parse_server_defaults_publishing_interval() (+18 more)
 
 ### Community 77 - "Community 77"
-Cohesion: 0.12
-Nodes (21): test_under_a_path_matches_descendants_not_similarly_named_siblings(), FakeGql, test_alarms_forwards_the_caller_token(), test_live_forwards_the_caller_token(), Static replies for the platform_map and platform_health playbook kinds., _alarms_step(), _Budget, _live_step() (+13 more)
+Cohesion: 0.13
+Nodes (14): Exception, The realm's signing keys, fetched once and kept.  Fetching per request would p, No key with that `kid`, and a refetch did not produce one., UnknownSigningKeyError, Exception, FakeGql, test_alarms_forwards_the_caller_token(), test_live_forwards_the_caller_token() (+6 more)
 
 ### Community 78 - "Community 78"
 Cohesion: 0.13
@@ -640,11 +623,11 @@ Nodes (13): Payload, ***********************************************************
 
 ### Community 79 - "Community 79"
 Cohesion: 0.09
-Nodes (29): Collection, Unit tests for topic path matching. No database involved., Line10 must not be enriched as Line1., Deleting a Site does not make the topic Unmodelled while the Enterprise remains., test_a_topic_still_matches_a_remaining_enterprise_after_its_site_is_gone(), test_ancestor_paths_is_longest_first_and_includes_the_topic_itself(), test_ancestor_paths_of_empty_topic_is_empty(), test_match_is_case_sensitive_because_mqtt_topics_are() (+21 more)
+Nodes (30): Collection, Unit tests for topic path matching. No database involved., Line10 must not be enriched as Line1., Deleting a Site does not make the topic Unmodelled while the Enterprise remains., test_a_topic_still_matches_a_remaining_enterprise_after_its_site_is_gone(), test_ancestor_paths_is_longest_first_and_includes_the_topic_itself(), test_ancestor_paths_of_empty_topic_is_empty(), test_match_is_case_sensitive_because_mqtt_topics_are() (+22 more)
 
 ### Community 80 - "Community 80"
 Cohesion: 0.05
-Nodes (51): Database, Any, datetime, AbstractEventLoop, BatchPersistResult, ConsumedEvent, Event, TopicPartition (+43 more)
+Nodes (55): Database, SSLContext, AbstractEventLoop, BatchPersistResult, ConsumedEvent, Event, TopicPartition, AbstractEventLoop (+47 more)
 
 ### Community 81 - "Community 81"
 Cohesion: 0.22
@@ -652,31 +635,31 @@ Nodes (19): Any, MetricRow, _as_dict(), Tests for metric flattening into uns_met
 
 ### Community 82 - "Community 82"
 Cohesion: 0.03
-Nodes (102): Any, AccessScope, AlertRuleRepository, AlertRuleType, Info, AssetModelRepository, Info, AlertRule (+94 more)
+Nodes (88): AccessScope, AlertRuleRepository, AlertRule, Any, Any, AssetModelRepository, Path, AsyncConnection (+80 more)
 
 ### Community 83 - "Community 83"
-Cohesion: 0.18
-Nodes (15): AccessGroupRepository, AccessGroupType, Info, AccessGroupRepository, AccessGroupType, Info, _as_int(), Mutation (+7 more)
+Cohesion: 0.14
+Nodes (23): Tests for the pure half of master-data loading.  The queries themselves are ex, t(), test_a_prefix_that_is_not_a_path_boundary_does_not_apply(), test_a_unit_with_neither_optional_binding_reads_two_series(), test_a_unit_with_no_product_binding_reads_three_series(), test_a_unit_with_no_reject_binding_reads_three_series(), test_an_exact_product_wins_over_the_asset_default(), test_an_exception_on_a_descendant_does_not_apply() (+15 more)
 
 ### Community 84 - "Community 84"
-Cohesion: 0.06
-Nodes (52): date, datetime, time, datetime, UnitMasterData, datetime, Tests for the pure half of master-data loading.  The queries themselves are ex, t() (+44 more)
+Cohesion: 0.14
+Nodes (23): date, datetime, time, datetime, Tests for shift-window generation.  The DST cases are the point of this module, test_a_plain_shift_is_its_nominal_length(), test_a_shift_is_closed_only_after_the_settle_window(), test_an_unknown_timezone_is_named_in_the_error() (+15 more)
 
 ### Community 85 - "Community 85"
-Cohesion: 0.27
-Nodes (9): FakeRepository, Unit tests for the ingest-side binder. No database: the binder is handed a fake, test_a_database_failure_does_not_reach_the_ingest_loop(), test_a_failed_bind_is_retried_on_the_next_message(), test_a_hot_topic_is_bound_once_no_matter_the_message_rate(), test_a_useless_capacity_is_rejected_at_construction(), test_concurrent_first_messages_on_a_topic_bind_once(), test_forgetting_forces_a_rebind_after_the_asset_model_changed() (+1 more)
+Cohesion: 0.13
+Nodes (17): FakeRepository, Unit tests for the ingest-side binder. No database: the binder is handed a fake, test_a_database_failure_does_not_reach_the_ingest_loop(), test_a_failed_bind_is_retried_on_the_next_message(), test_a_hot_topic_is_bound_once_no_matter_the_message_rate(), test_a_useless_capacity_is_rejected_at_construction(), test_concurrent_first_messages_on_a_topic_bind_once(), test_forgetting_forces_a_rebind_after_the_asset_model_changed() (+9 more)
 
 ### Community 86 - "Community 86"
 Cohesion: 0.12
 Nodes (14): Session, GraphDBHandler, Iterate the topics by '/'. create node for each level & merge the messages to th, This function saves attribute nodes in the graph database.          Parameters, Get the name of the node depending on the depth in the tree, Creates or Merges the MQTT message as a Graph node. Each level of the topic is a, Class responsible for persisting the MQTT message into the Graph Database, Function to transform parameters being sent         - null parameters (+6 more)
 
 ### Community 87 - "Community 87"
-Cohesion: 0.13
-Nodes (20): Who may write what, and who may see which plant path.  One table, because a po, The caller's identity, if `path` sits inside their Access Groups.      Unsigne, require_path(), FakeInfo, _info(), Spec test 4: one case per cell of section 7's table.  Generated from the table, test_a_role_outside_the_row_is_refused(), test_an_allowed_role_is_permitted() (+12 more)
+Cohesion: 0.12
+Nodes (22): Any, Identity, Who may write what, and who may see which plant path.  One table, because a po, The caller's identity, if `path` sits inside their Access Groups.      Unsigne, require_path(), FakeInfo, _info(), Spec test 4: one case per cell of section 7's table.  Generated from the table (+14 more)
 
 ### Community 88 - "Community 88"
-Cohesion: 0.17
-Nodes (16): A node absent from a later discovery stays subscribed until `unsubscribe_tag`., Discovery may correct a browse path or display name without touching the topic., test_merge_adds_newly_discovered_nodes(), test_merge_does_not_need_context_fields_to_keep_identity(), test_merge_does_not_unsubscribe_missing_nodes(), test_merge_keeps_edited_topic(), test_merge_updates_display_and_browse_path_for_existing_nodes(), test_tag_spec_accepts_ordinary_text() (+8 more)
+Cohesion: 0.11
+Nodes (17): A node absent from a later discovery stays subscribed until `unsubscribe_tag`., Discovery may correct a browse path or display name without touching the topic., _ScalarResult, test_merge_adds_newly_discovered_nodes(), test_merge_does_not_need_context_fields_to_keep_identity(), test_merge_does_not_unsubscribe_missing_nodes(), test_merge_keeps_edited_topic(), test_merge_updates_display_and_browse_path_for_existing_nodes() (+9 more)
 
 ### Community 89 - "Community 89"
 Cohesion: 0.14
@@ -687,8 +670,8 @@ Cohesion: 0.09
 Nodes (31): Any, datetime, Path, Client, Namespace, Path, _connect_client(), _current_rate() (+23 more)
 
 ### Community 91 - "Community 91"
-Cohesion: 0.09
-Nodes (17): Client, _BrowseName, _DeniedChild, _DisplayName, _MixedParent, _NodeId, _ReadableVariable, test_bad_endpoint_fails_cleanly() (+9 more)
+Cohesion: 0.11
+Nodes (11): _BrowseName, _DeniedChild, _DisplayName, _MixedParent, _NodeId, _ReadableVariable, test_bad_endpoint_fails_cleanly(), test_discover_skips_nodes_that_require_a_secure_channel() (+3 more)
 
 ### Community 92 - "Community 92"
 Cohesion: 0.13
@@ -703,36 +686,36 @@ Cohesion: 0.14
 Nodes (11): Any, Payload, UnsMQTTClient, Parse the SPBPayload for message types, Extract metric name from metric payload         Encapsulate metric name alias h, Returns a dict of key value pair of the SPB parsed topic, Extracts metrics list  from the SparkplugB payload, Converts SparkplugB payload to a dict (+3 more)
 
 ### Community 95 - "Community 95"
-Cohesion: 0.19
-Nodes (17): datetime, HistorianRepository, HistoricalUNSEvent, Info, MQTTTopicInput, BinaryOperator, Query, ******************************************************************************* (+9 more)
+Cohesion: 0.13
+Nodes (22): datetime, HistoricalUNSEvent, datetime, HistorianRepository, HistoricalUNSEvent, Info, MQTTTopicInput, ******************************************************************************* (+14 more)
 
 ### Community 96 - "Community 96"
-Cohesion: 0.21
-Nodes (12): AlertRule, AlertCategory, AlertCondition, AlertRuleSummary, AlertRuleType, AlertSeverity, ConsoleRole, ******************************************************************************* (+4 more)
+Cohesion: 0.13
+Nodes (14): *******************************************************************************, Test case for function Uns_MQTT_ClientWrapper.isTopicMatching, Should remove just the key should it be present.     Test support for nested ke, Test case for Uns_MQTT_ClientWrapper.filter_ignored_attributes, Test case for Uns_MQTT_ClientWrapper.get_payload_as_dict, SUBSCRIBE must not carry CONNECT properties; HiveMQ Edge treats that as Malforme, Connect to the plant broker (HiveMQ Edge) on MQTT TCP 1883., test_01_unauthenticated_connections() (+6 more)
 
 ### Community 97 - "Community 97"
-Cohesion: 0.07
-Nodes (19): ConnectivityServer, Select, SignalLabel, UnitOfMeasure, How many rules exist, and how many are armed., Create or replace one Connectivity server.          `after_flush`, when given,, Insert a Unit of Measure. Duplicate symbols return the existing row., Insert a signal label. Duplicate names return the existing row. (+11 more)
+Cohesion: 0.05
+Nodes (40): Any, AsyncSession, ConnectivityServer, ConnectivityTag, datetime, EdgeAdapterInput, Select, SignalLabel (+32 more)
 
 ### Community 98 - "Community 98"
 Cohesion: 0.28
 Nodes (15): AccessScope, SimpleNamespace, filter_by_path(), _asset(), _info(), Plant reads hide Assets outside the caller's Access Groups., A Filtration operator must still see AcmeWater so the UNS tree can walk down to, test_filter_by_path_keeps_covered_items_only() (+7 more)
 
 ### Community 99 - "Community 99"
-Cohesion: 0.11
-Nodes (36): ServerConfig, TagConfig, Unit tests for OPC UA node -> UNS topic mapping., The same node_id on two different servers is normal, not a conflict., _server(), _tag(), test_build_bindings_carries_equipment_and_metric_key(), test_build_bindings_preserves_unit_and_deadband() (+28 more)
+Cohesion: 0.21
+Nodes (22): ServerConfig, TagConfig, Unit tests for OPC UA node -> UNS topic mapping., The same node_id on two different servers is normal, not a conflict., _server(), _tag(), test_build_bindings_carries_equipment_and_metric_key(), test_build_bindings_preserves_unit_and_deadband() (+14 more)
 
 ### Community 100 - "Community 100"
-Cohesion: 0.25
-Nodes (16): IngestionOwner, _config(), FakeMqttAck, FakePublisher, _owner(), _payload(), Failure-contract tests for bounded ingestion and manual MQTT acknowledgment., test_buffer_error_on_publish_marks_backpressure_without_ack() (+8 more)
+Cohesion: 0.21
+Nodes (17): _config(), FakeMqttAck, FakePublisher, _owner(), _payload(), Failure-contract tests for bounded ingestion and manual MQTT acknowledgment., test_buffer_error_on_publish_marks_backpressure_without_ack(), test_invalid_json_dlq_failure_does_not_ack() (+9 more)
 
 ### Community 101 - "Community 101"
 Cohesion: 0.10
 Nodes (29): Path, Element, _compose(), _dev_compose(), _prometheus(), File contracts for HiveMQ Edge as uns_mqtt_broker.  Spec: docs/superpowers/spe, GHA cannot mount conf/hivemq; the stock Edge image still listens on 1883 and all, Client library CI uses the same Edge service as mappers, not Mosquitto/EMQX extr (+21 more)
 
 ### Community 102 - "Community 102"
-Cohesion: 0.11
-Nodes (19): DowntimeEventRow, _any_plant_path(), _assigned(), *******************************************************************************, Spec success criterion 4: "a downtime reason reassignment records an identity th, The schema publishes ID, which is a string. The primary key is a BIGINT., None rather than '': the repository omits the column entirely when the note is, The return type is non-null, and an operator whose click did nothing must be tol (+11 more)
+Cohesion: 0.10
+Nodes (17): _any_plant_path(), *******************************************************************************, Spec success criterion 4: "a downtime reason reassignment records an identity th, The schema publishes ID, which is a string. The primary key is a BIGINT., None rather than '': the repository omits the column entirely when the note is, The return type is non-null, and an operator whose click did nothing must be tol, The repository's ValueError, not a driver-level foreign key violation., A shift result is computed, never edited. If a second OEE mutation ever appears, (+9 more)
 
 ### Community 103 - "Community 103"
 Cohesion: 0.15
@@ -743,8 +726,8 @@ Cohesion: 0.09
 Nodes (21): aliases, components, hooks, lib, ui, utils, iconLibrary, menuAccent (+13 more)
 
 ### Community 105 - "Community 105"
-Cohesion: 0.18
-Nodes (14): Info, OpcUaDataValueType, Queue, SimpleNamespace, _DataChangeHandler, OPC UA data-change subscription for the console.  A live probe, not a collecto, asyncua handler that pushes each change onto an asyncio queue.      Called fro, _data() (+6 more)
+Cohesion: 0.13
+Nodes (17): Info, OpcUaDataValueType, Queue, SimpleNamespace, _DataChangeHandler, OPC UA data-change subscription for the console.  A live probe, not a collecto, asyncua handler that pushes each change onto an asyncio queue.      Called fro, Subscriptions own no process-wide resources; each WebSocket closes itself. (+9 more)
 
 ### Community 106 - "Community 106"
 Cohesion: 0.13
@@ -755,24 +738,24 @@ Cohesion: 0.16
 Nodes (13): Any, Tests for uns_oee.health_check.  The opener is injected, so no test binds a po, FakeResponse, opener(), test_a_non_200_answer_is_not_healthy(), test_a_refused_connection_is_not_healthy(), test_an_endpoint_serving_someone_elses_registry_is_not_healthy(), test_an_endpoint_serving_the_engines_registry_is_healthy() (+5 more)
 
 ### Community 108 - "Community 108"
-Cohesion: 0.16
-Nodes (19): MetricDefinition, _asset(), FakeRepository, Unit tests for Enrichment. No database: the resolver is handed a fake repository, Stands in for AssetModelRepository at the same seam., test_an_asset_specific_definition_overrides_the_plant_wide_one(), test_an_unmodelled_topic_resolves_to_none(), test_display_names_are_available_separately_from_topic_segments() (+11 more)
+Cohesion: 0.15
+Nodes (11): alarms, auth, FAULT, getConnectivityServers, getHistoricEvents, navigate, SPEED, subscribeMqttMessages (+3 more)
 
 ### Community 110 - "Community 110"
-Cohesion: 0.08
-Nodes (26): Exception, Any, The realm's signing keys, fetched once and kept.  Fetching per request would p, No key with that `kid`, and a refetch did not produce one., UnknownSigningKeyError, Exception, MemoryConversationStore, _cache() (+18 more)
+Cohesion: 0.09
+Nodes (27): Any, Any, AuthenticatedGraphQLRouter, _connection_params(), A router whose subscriptions need an identity too.      `on_ws_connect` runs a, GraphQLRouter, MemoryConversationStore, _cache() (+19 more)
 
 ### Community 111 - "Community 111"
-Cohesion: 0.15
-Nodes (16): Enum, *******************************************************************************, The console renders the list, and a set that reorders itself reads as an edit., A STALE_TIMEOUT counts seconds, a CONTAINS matches text. The JSON scalar carries, An empty console has no last edit, and that is not an error to report., A value the database accepts must be expressible in the schema, and vice versa., A duplicate would make the set comparison above pass while the CHECK body repeat, A transient AlertRule, i.e. one the database has never seen. (+8 more)
+Cohesion: 0.23
+Nodes (11): Database, datetime, HistorianRepository, historian(), historian_database(), prepare_database(), *******************************************************************************, The one engine this service uses, pointed at the configured historian.      On (+3 more)
 
 ### Community 112 - "Community 112"
 Cohesion: 0.16
-Nodes (6): TopicPartition, FrozenPartitionFlush, may_commit_kafka(), ConsumerPort, DatalakeMapper, PendingRejection
+Nodes (5): LakeRecord, may_commit_kafka(), ConsumerPort, DatalakeMapper, PendingRejection
 
 ### Community 113 - "Community 113"
-Cohesion: 0.08
-Nodes (27): datetime, _event(), *******************************************************************************, Spec section 8.1: a shift with no Loading Time has no Availability. Rendering it, Performance is a sum over products, so a mixed shift's terms have to be readable, Not null: the console iterates it, and a null list is an extra branch for no rea, A value the database accepts must be expressible in the schema, and vice versa., A duplicate would make the set comparison above pass while the CHECK body repeat (+19 more)
+Cohesion: 0.21
+Nodes (8): _event_projection(), _event_rows(), *******************************************************************************, The stops for one Asset that began in `[range_start, range_end)`, oldest first., One stop by id, or None. Read-only, so a caller can refuse before assigning., Attribute a stop to a reason by hand, and queue that shift for recomputation., The five-column event select, shared by the read and the write-then-read., The five-column event projection as dataclasses. One shape, one mapping.
 
 ### Community 114 - "Community 114"
 Cohesion: 0.27
@@ -783,8 +766,8 @@ Cohesion: 0.10
 Nodes (17): The three files that have to agree about port 9095, and the one that has to agre, The one assertion that earns this file. `OeeConfig`'s default is the source of t, Each scrape target is unique. Port numbers may repeat across hosts; colliding, Prometheus scrapes from inside the network. Nothing outside needs to reach 9095., `asset_model_setup` runs the `0003` migration and imports `conf/oee/*.yaml`. Sta, It reads the `uns_metrics` table, not the mapper. A shift with no samples is a, uns_historian is a test-only path dependency. `uv run` without --no-sync still t, Without this, the job resolves to nothing until the engine happens to be up firs (+9 more)
 
 ### Community 116 - "Community 116"
-Cohesion: 0.10
-Nodes (23): AsyncSession, ConnectivityTag, EdgeAdapterInput, Neither call raises: a distinct topic is fine, and a blank one is not yet assign, test_assert_unique_mqtt_topic_allows_a_distinct_or_blank_topic(), test_assert_unique_mqtt_topic_rejects_when_topic_is_already_subscribed(), test_edge_adapters_from_rows_defaults_controller_type_and_handles_empty_tags(), test_edge_adapters_from_rows_maps_s7_and_opc_ua() (+15 more)
+Cohesion: 0.17
+Nodes (7): ConnectivityMutation, HierarchyMutation, OeeMutation, *******************************************************************************, Mutation, *******************************************************************************, The mutations this service exposes.      Deliberately narrow: process data is
 
 ### Community 117 - "Community 117"
 Cohesion: 0.19
@@ -795,8 +778,8 @@ Cohesion: 0.19
 Nodes (18): AlertRuleSpec, *******************************************************************************, RANGE_OUTSIDE with one bound would never fire, which is worse than failing loudl, _spec(), test_a_complete_rule_is_valid(), test_a_negative_delay_is_rejected(), test_a_range_rule_with_both_bounds_is_valid(), test_a_range_rule_without_an_upper_bound_is_rejected() (+10 more)
 
 ### Community 119 - "Community 119"
-Cohesion: 0.14
-Nodes (16): PropertySet, PropertySetList, convert_dict_to_dataset(), convert_dict_to_metric(), convert_dict_to_payload(), convert_dict_to_propertyset(), convert_dict_to_template(), convert_spb_bytes_payload_to_dict() (+8 more)
+Cohesion: 0.24
+Nodes (11): convert_dict_to_dataset(), convert_dict_to_metric(), convert_dict_to_payload(), convert_dict_to_propertyset(), convert_dict_to_template(), convert_spb_bytes_payload_to_dict(), _fix_keys_and_value_types(), ******************************************************************************* (+3 more)
 
 ### Community 120 - "Community 120"
 Cohesion: 0.11
@@ -811,68 +794,68 @@ Cohesion: 0.11
 Nodes (17): *******************************************************************************, Test if the provided configurations for GraphDBHandler are valid and, Test if the historian database configurations are valid, Test if the Kafka configurations are valid, Test if the provided configurations for the MQTT server are valid and     there, Test if the provided configurations to connect to  GraphDB Server are valid and, Test if the provided configurations for the Historian DB Server are valid and, Test if the provided configurations for the Kafka Server are valid and     ther (+9 more)
 
 ### Community 123 - "Community 123"
-Cohesion: 0.06
-Nodes (32): Database, Any, ConsumedEvent, HistoricEventEnvelope, _consumed(), _FakeConnection, _FakeDatabase, _FakeResult (+24 more)
+Cohesion: 0.08
+Nodes (24): Database, Any, ConsumedEvent, HistoricEventEnvelope, _consumed(), _FakeConnection, _FakeDatabase, _FakeResult (+16 more)
 
 ### Community 124 - "Community 124"
-Cohesion: 0.16
-Nodes (11): AlertRule, *******************************************************************************, A console clearing its filter box must not ask for the rules watching topic ''., Null rather than an error: a console polling a rule somebody else deleted is nor, Plant-wide counts must not leak to an operator; hide, do not 403., _rule(), test_get_alert_rule_by_id(), test_get_alert_rule_is_null_for_an_unknown_id() (+3 more)
+Cohesion: 0.18
+Nodes (10): *******************************************************************************, A console clearing its filter box must not ask for the rules watching topic ''., Null rather than an error: a console polling a rule somebody else deleted is nor, Plant-wide counts must not leak to an operator; hide, do not 403., _rule(), test_get_alert_rule_by_id(), test_get_alert_rule_is_null_for_an_unknown_id(), test_get_alert_rule_summary_counts_only_visible_rules() (+2 more)
 
 ### Community 125 - "Community 125"
-Cohesion: 0.11
-Nodes (10): OeeMasterDataRepository, Every write to the OEE master data.      Idempotent by natural key throughout, Upsert the pattern, then replace its slots wholesale.          Replace rather, Insert an exception, skipping an identical one.          Keyed on the whole wi, None path means every Asset, which is stored as a NULL asset_id., _require_non_empty(), _require_one_of(), The reason for `state_value`: unit rule, then plant-wide rule, then unclassified (+2 more)
+Cohesion: 0.27
+Nodes (7): FakeExec, test_admin_roots_empty_when_no_rows(), test_admin_roots_ignores_rows_without_path(), test_admin_roots_returns_paths_from_admin_roots_sql(), test_jwks_cache_uses_internal_keycloak_url(), _admin_roots(), The ENTERPRISE/SITE roots an admin sees, shared by `load_scope` and `chat_handle
 
 ### Community 126 - "Community 126"
-Cohesion: 0.09
-Nodes (23): datetime, test_a_fingerprint_over_no_bindings_is_empty_without_a_query(), test_the_earliest_query_is_a_min_over_the_same_pairs(), test_the_prior_query_is_bounded_at_both_ends_and_takes_one_row(), test_the_window_query_reads_the_column_the_caller_asked_for(), earliest_sql(), fingerprint_sql(), pair_params() (+15 more)
+Cohesion: 0.22
+Nodes (8): auth, fetchRealmMembers, FILTRATION_GROUP, getAccessGroups, getAssets, MEMBERS, saveAccessGroup, setAccessGroupMembers
 
 ### Community 127 - "Community 127"
-Cohesion: 0.12
-Nodes (11): Tests for connector process detection in the health check., ProcessSnapshot, check_existing_connection(), check_process(), _cmdline_has_connector(), main(), Container health check for the OPC UA connector., True when a cmdline token is the connector entry point, not a sibling script. (+3 more)
+Cohesion: 0.13
+Nodes (10): Tests for connector process detection in the health check., check_existing_connection(), check_process(), _cmdline_has_connector(), main(), Container health check for the OPC UA connector., True when a cmdline token is the connector entry point, not a sibling script., Check if the connector process is running.      Excludes ``current_pid`` (defa (+2 more)
 
 ### Community 128 - "Community 128"
 Cohesion: 0.12
 Nodes (16): compilerOptions, allowImportingTsExtensions, allowJs, experimentalDecorators, isolatedModules, jsx, lib, module (+8 more)
 
 ### Community 129 - "Community 129"
-Cohesion: 0.09
-Nodes (13): GraphQL subscription for authorized canonical live events., args: command line params sent to health_check. should either be null of of the, test_main_multiple_scenarios(), *******************************************************************************, *******************************************************************************, check_connection_possible(), check_listening_port(), check_process() (+5 more)
+Cohesion: 0.11
+Nodes (12): GraphQL subscription for authorized canonical live events., args: command line params sent to health_check. should either be null of of the, test_main_multiple_scenarios(), *******************************************************************************, check_connection_possible(), check_listening_port(), check_process(), main() (+4 more)
 
 ### Community 130 - "Community 130"
 Cohesion: 0.14
 Nodes (17): items, type, additionalProperties, properties, type, dataset, items, type (+9 more)
 
 ### Community 131 - "Community 131"
-Cohesion: 0.11
-Nodes (16): build_broadcast_consumer_config(), ConsumerPort, envelope_to_dispatched(), get_dispatcher(), LiveEventDispatcher, Process-scoped canonical live event dispatcher for GraphQL subscriptions., One Kafka consumer per process fanning out to bounded GraphQL client queues., reset_dispatcher_for_tests() (+8 more)
+Cohesion: 0.13
+Nodes (7): reset_dispatcher_for_tests(), stop_dispatcher(), dispatcher(), FakeConsumer, test_start_dispatcher_and_shutdown(), dispatcher(), FakeConsumer
 
 ### Community 132 - "Community 132"
 Cohesion: 0.13
-Nodes (18): _collector(), _notification(), Unit tests for monitored-item construction and the data change handler., DEADBAND_REJECTED is for a rejected filter, not for every rejected item., The shape asyncua hands a handler: data.monitored_item.Value is the DataValue., test_enqueue_drop_oldest_discards_the_oldest_when_full(), test_handler_enqueues_a_serialised_payload(), test_handler_ignores_a_node_it_has_no_binding_for() (+10 more)
+Nodes (17): The behaviour this whole module exists for: a broker outage must delay data, not, bindings(), _notification(), Unit tests for monitored-item construction and the data change handler., The shape asyncua hands a handler: data.monitored_item.Value is the DataValue., test_enqueue_drop_oldest_discards_the_oldest_when_full(), test_handler_enqueues_a_serialised_payload(), test_handler_ignores_a_node_it_has_no_binding_for() (+9 more)
 
 ### Community 133 - "Community 133"
-Cohesion: 0.11
-Nodes (11): Any, _ScalarResult, test_eip_spec_accepts_host_port_without_security(), test_opc_ua_spec_still_requires_opc_tcp(), test_s7_spec_accepts_host_port_and_controller_type(), test_s7_spec_rejects_opc_tcp_endpoint(), test_s7_spec_rejects_unknown_controller_type(), ConnectivityServerSpec (+3 more)
+Cohesion: 0.39
+Nodes (6): test_graphql_unreachable_is_degraded(), test_missing_key_is_degraded(), test_ok_when_key_and_db_present(), health_payload(), main(), _placeholder()
 
 ### Community 134 - "Community 134"
-Cohesion: 0.18
-Nodes (26): ConnectivityRepository, *******************************************************************************, connectivity(), A ConnectivityRepository with no test servers in it, before and after., Re-discovery must not overwrite an `mqtt_topic` an engineer has set., Missing nodes stay subscribed until `unsubscribe_tag` (per the brief)., Two subscribed nodes publishing to the same topic would make one unrecoverable., XML write happens before commit: a bad write must not leave a stray catalog row. (+18 more)
+Cohesion: 0.33
+Nodes (6): BytesPayload, JSONPayload, MQTTMessage, *******************************************************************************, test_resolve_payload(), test_strawberry_type()
 
 ### Community 135 - "Community 135"
-Cohesion: 0.39
-Nodes (8): UnsMQTTClient, _connect_and_subscribe(), Regression tests for opt-in MQTT delivery session controls., test_ack_message_forwards_to_paho_ack(), test_default_client_keeps_manual_ack_disabled(), test_default_client_uses_clean_start_on_mqtt_v5_connect(), test_ingestion_delivery_options_request_stable_session(), test_non_ingestion_callers_do_not_set_session_properties()
+Cohesion: 0.38
+Nodes (6): compose_environment(), main(), Map conf/.secrets.yaml into the env vars docker compose interpolates.  Compose, Return the compose interpolations from Dynaconf secrets.      ``postgres.passw, Run ``docker compose`` with secrets loaded from conf/.secrets.yaml., _secret()
 
 ### Community 136 - "Community 136"
 Cohesion: 0.17
-Nodes (13): compare_metric_metadata(), compare_metrics(), compare_propertyset(), compare_templates(), create_dummy_dataset(), _create_sample_spb_payload(), *******************************************************************************, Test creating SPBNode with binary serialized Payload as well as instantiated Pay (+5 more)
+Nodes (14): compare_datasets(), compare_metric_metadata(), compare_metrics(), compare_propertyset(), compare_templates(), create_dummy_dataset(), _create_sample_spb_payload(), ******************************************************************************* (+6 more)
 
 ### Community 137 - "Community 137"
-Cohesion: 0.15
-Nodes (21): Path, Compose interpolates only dotenv. Secrets live in conf/.secrets.yaml; this maps, The realm import substitutes ${VAR} from the container env; a missing secret, Every ${VAR} in docker-compose.yml must be a name compose_environment provides., The template is the checklist a new deployment follows. If a key is required, postgres.password is the Timescale superuser. historian.password is the app role, An unfilled template value is a missing value, not a password., test_compose_environment_reads_secrets_yaml() (+13 more)
+Cohesion: 0.21
+Nodes (15): Path, Compose interpolates only dotenv. Secrets live in conf/.secrets.yaml; this maps, The realm import substitutes ${VAR} from the container env; a missing secret, Every ${VAR} in docker-compose.yml must be a name compose_environment provides., The template is the checklist a new deployment follows. If a key is required, postgres.password is the Timescale superuser. historian.password is the app role, An unfilled template value is a missing value, not a password., test_compose_environment_reads_secrets_yaml() (+7 more)
 
 ### Community 138 - "Community 138"
-Cohesion: 0.13
-Nodes (18): DispatchedEvent, HistoricEventEnvelope, KAFKATopicInput, SimpleNamespace, StreamingMessage, DispatchedEvent, KAFKATopicInput, KAFKASubscription (+10 more)
+Cohesion: 0.19
+Nodes (16): DispatchedEvent, HistoricEventEnvelope, KAFKATopicInput, SimpleNamespace, StreamingMessage, KAFKATopicInput, KAFKASubscription, Subscription class providing methods for subscribing to live canonical events. (+8 more)
 
 ### Community 139 - "Community 139"
 Cohesion: 0.13
@@ -884,7 +867,7 @@ Nodes (15): $ref, definitions, metadata, metric, parameter, property, propertySe
 
 ### Community 142 - "Community 142"
 Cohesion: 0.07
-Nodes (39): Identity, AccessGroupRecord, Asset, AsyncSession, Database, AccessGroup, scope_for(), DeclarativeBase (+31 more)
+Nodes (43): Identity, AccessGroupRepository, AccessGroupType, Info, AccessGroupRepository, AccessGroupType, Info, AccessGroupRecord (+35 more)
 
 ### Community 143 - "Community 143"
 Cohesion: 0.15
@@ -892,7 +875,7 @@ Nodes (9): Configuration validation tests., test_partial_s3_credentials_are_reje
 
 ### Community 144 - "Community 144"
 Cohesion: 0.12
-Nodes (21): Path, DatalakeMapper, FakeObjectStore, FlushLimits, envelope_bytes(), FakeConsumer, FakeDlq, FakeMessage (+13 more)
+Nodes (22): TopicPartition, Path, DatalakeMapper, FakeObjectStore, FlushLimits, envelope_bytes(), FakeConsumer, FakeDlq (+14 more)
 
 ### Community 145 - "Community 145"
 Cohesion: 0.20
@@ -924,11 +907,7 @@ Nodes (13): ********************************************************************
 
 ### Community 152 - "Community 152"
 Cohesion: 0.11
-Nodes (17): date, datetime, LakeRecord, Batch limit and layout tests., _record(), test_batch_flushes_on_record_limit(), test_flush_id_is_unique(), test_lake_object_path_uses_ingestion_partition_layout() (+9 more)
-
-### Community 153 - "Community 153"
-Cohesion: 0.36
-Nodes (5): datetime, HistoricalUNSEvent, Historic events whose payload contains the given keys at any depth.          `, Run the assembled WHERE clause and map rows to the GraphQL type.          No S, Historic events matching any combination of topics, publishers and a time window
+Nodes (18): date, datetime, LakeRecord, Batch limit and layout tests., _record(), test_batch_flushes_on_record_limit(), test_flush_id_is_unique(), test_lake_object_path_uses_ingestion_partition_layout() (+10 more)
 
 ### Community 154 - "Community 154"
 Cohesion: 0.16
@@ -971,16 +950,16 @@ Cohesion: 0.22
 Nodes (5): Driver, Closes the connection to the graph database, Persists all nodes and the message as attributes to the leaf node         -----, Initialize the GraphDBHandler class.          Parameters         ----------, Returns Neo4j Driver which is the connection to the database         Validates
 
 ### Community 164 - "Community 164"
-Cohesion: 0.12
-Nodes (19): MQTTTopic, *******************************************************************************, *******************************************************************************, test_invalid_topics(), test_invalid_topics_input(), test_valid_topics(), test_valid_topics_input(), _admin_info() (+11 more)
+Cohesion: 0.09
+Nodes (27): datetime, SimpleNamespace, MQTTTopic, *******************************************************************************, *******************************************************************************, test_invalid_topics(), test_invalid_topics_input(), test_valid_topics() (+19 more)
 
 ### Community 165 - "Community 165"
-Cohesion: 0.22
-Nodes (10): Path, Dynaconf, Services and CI often run pytest from a module directory, not the repo root., test_resolve_conf_dir_from_module_directory(), test_resolve_conf_dir_points_to_repo_root(), _is_platform_settings(), Resolve and load platform configuration from the root conf/ directory., True for the repo-root conf that uses Dynaconf environments with a `default:` se (+2 more)
+Cohesion: 0.29
+Nodes (8): Path, Services and CI often run pytest from a module directory, not the repo root., test_resolve_conf_dir_from_module_directory(), test_resolve_conf_dir_points_to_repo_root(), _is_platform_settings(), True for the repo-root conf that uses Dynaconf environments with a `default:` se, Return the directory containing settings.yaml and .secrets.yaml.      Resoluti, resolve_conf_dir()
 
 ### Community 166 - "Community 166"
-Cohesion: 0.10
-Nodes (59): Any, Database, datetime, Database, datetime, Path, time, Database (+51 more)
+Cohesion: 0.03
+Nodes (134): Any, Database, datetime, Database, Any, datetime, Path, time (+126 more)
 
 ### Community 167 - "Community 167"
 Cohesion: 0.25
@@ -995,28 +974,24 @@ Cohesion: 0.27
 Nodes (7): platform, platform, loadPlatformSettings(), platformDir, PlatformSettings, platformSettingsFromConfig(), resolveSettingsPath()
 
 ### Community 171 - "Community 171"
-Cohesion: 0.18
-Nodes (19): Queue, _collect(), _drain(), opcua_server(), End-to-end collector tests against an in-process OPC UA server.  These assert, This is what recovers the gap after a session drop - no explicit read needed., A dead transport must drop SERVER_UP and the reconnect loop must re-subscribe, A minimal server exposing one writable Double, with no security. (+11 more)
+Cohesion: 0.50
+Nodes (3): DataSet, Template, Retrieves the value from the correct slot of the spb_object         spb_object
 
 ### Community 172 - "Community 172"
 Cohesion: 0.25
 Nodes (7): *******************************************************************************, Test if the historian database configurations are valid, Test if the provided configurations for the MQTT server are valid and     there, Test if the mqtt configurations are valid, test_connectivity_to_mqtt(), test_mqtt_config(), test_timescale_db_configs()
 
-### Community 174 - "Community 174"
-Cohesion: 0.15
-Nodes (13): Asset, Collection, Database, MetricDefinition, TopicBinding, Resolve one observed topic to its Asset and remember the answer.          Call, The Asset Model as a flat list ordered by path, which nests trivially., AssetLevel (+5 more)
-
 ### Community 175 - "Community 175"
-Cohesion: 0.15
-Nodes (28): OeeMetrics, Tests for uns_oee.prometheus_metrics.  The exposed text is what is asserted, n, exposed(), FakeConnection, FakeDatabase, FakeResult, good_metrics(), outcome() (+20 more)
+Cohesion: 0.30
+Nodes (21): OeeMetrics, Tests for uns_oee.prometheus_metrics.  The exposed text is what is asserted, n, exposed(), good_metrics(), outcome(), The value of one sample line, or None if the series is absent., series(), test_a_computed_shift_records_its_factors_and_its_close_time() (+13 more)
 
 ### Community 176 - "Community 176"
 Cohesion: 0.18
 Nodes (6): process_info: should be a dict[str,list[str]] if the list contains the string un, test_main_multiple_scenarios(), MQTTConfig, *******************************************************************************, Read the MQTT configurations required to connect to the MQTT broker, Checks if mandatory configurations were provided         Does not check if the
 
 ### Community 177 - "Community 177"
-Cohesion: 0.11
-Nodes (18): Consumer, get_kafka_consumer(), Utility method to create a consumer based on producer config, End to end: MQTT publish lands as a canonical historic envelope on uns.historic-, test_uns_kafka_mapper_init(), test_uns_kafka_mapper_publishing(), check_existing_connection(), check_process() (+10 more)
+Cohesion: 0.07
+Nodes (30): UnsMQTTClient, Consumer, process_info: should be a dict[str,list[str]] if the list contains the string un, test_main_multiple_scenarios(), _connect_and_subscribe(), Regression tests for opt-in MQTT delivery session controls., test_ack_message_forwards_to_paho_ack(), test_default_client_keeps_manual_ack_disabled() (+22 more)
 
 ### Community 178 - "Community 178"
 Cohesion: 0.17
@@ -1027,8 +1002,8 @@ Cohesion: 0.29
 Nodes (4): Event, _FakeConnection, Unit tests for LISTEN/NOTIFY readiness. No database.  `start()` used to return, test_start_does_not_return_until_listen_is_ready()
 
 ### Community 181 - "Community 181"
-Cohesion: 0.23
-Nodes (14): AlertRuleInput, AlertRuleRepository, AlertRuleType, Info, NotPermittedError, The caller is authenticated and lacks the role. The message reaches the client., AlertRuleInput, Mutation (+6 more)
+Cohesion: 0.16
+Nodes (18): AlertRuleSpec, AlertRuleInput, AlertRuleRepository, AlertRuleType, Info, NotPermittedError, The caller is authenticated and lacks the role. The message reaches the client., AlertRuleInput (+10 more)
 
 ### Community 182 - "Community 182"
 Cohesion: 0.18
@@ -1039,28 +1014,24 @@ Cohesion: 0.43
 Nodes (5): _b64u(), jwks_document(), make_key(), RSA keys and tokens minted in-process, so no test in this suite needs Keycloak., TestKey
 
 ### Community 184 - "Community 184"
-Cohesion: 0.48
-Nodes (5): test_data_intents_win_over_platform_map_when_access_group_is_mentioned(), test_job_cards_and_hi_map_to_kinds(), test_performance_rca_is_broader_than_lost_performance(), test_platform_map_is_narrowed_to_literal_platform_questions(), classify()
+Cohesion: 0.08
+Nodes (28): test_data_intents_win_over_platform_map_when_access_group_is_mentioned(), test_job_cards_and_hi_map_to_kinds(), test_performance_rca_is_broader_than_lost_performance(), test_platform_map_is_narrowed_to_literal_platform_questions(), test_under_a_path_matches_descendants_not_similarly_named_siblings(), test_admin_is_unscoped(), test_covers_sql_does_not_use_like(), test_empty_roots_match_nothing() (+20 more)
 
 ### Community 185 - "Community 185"
-Cohesion: 0.13
-Nodes (17): Any, Identity, ConnectivityRepository, ConnectivityServerType, Info, OpcUaDataValueType, UnitOfMeasureType, The caller's identity, if their roles include one of `allowed`.      The query (+9 more)
+Cohesion: 0.12
+Nodes (19): ConnectivityRepository, ConnectivityServerType, Info, OpcUaDataValueType, UnitOfMeasureType, Client, The caller's identity, if their roles include one of `allowed`.      The query, require_role() (+11 more)
 
 ### Community 186 - "Community 186"
-Cohesion: 0.29
-Nodes (3): include_name(), Alembic environment for the authored Asset Model.  The URL comes from the plat, Autogenerate must ignore the historian's hypertables and Timescale internals.
+Cohesion: 0.12
+Nodes (11): Shared pytest hooks for the GraphQL module., include_name(), Alembic environment for the authored Asset Model.  The URL comes from the plat, Autogenerate must ignore the historian's hypertables and Timescale internals., Drop cached DB engines and topic resolvers so retries and xdist workers stay iso, _reset_asset_model_singletons(), *******************************************************************************, Asset Model and Enrichment for the Unified Namespace platform.  A small surfac (+3 more)
 
 ### Community 187 - "Community 187"
-Cohesion: 0.31
-Nodes (6): main(), Entry point for the datalake mapper service., build_mapper(), Kafka-to-object-store archival loop for canonical historic events., Prometheus instrumentation for the datalake mapper., start_metrics_server()
-
-### Community 188 - "Community 188"
-Cohesion: 0.05
-Nodes (45): compile_pg(), Tests for the conf/oee/*.yaml importer.  `plan_from_oee_config` is a pure func, Records apply_plan's writes, at the repository seam., `uns_model_setup` seeds, then imports OEE. A unit that names a missing Asset, RecordingOeeRepository, test_a_full_config_records_every_oee_conf_file_as_present(), test_a_producing_state_must_not_also_have_a_reason_rule(), test_a_shifts_only_config_records_only_the_shifts_file_as_present() (+37 more)
+Cohesion: 0.27
+Nodes (7): ObjectStore, main(), Entry point for the datalake mapper service., build_mapper(), Kafka-to-object-store archival loop for canonical historic events., Prometheus instrumentation for the datalake mapper., start_metrics_server()
 
 ### Community 189 - "Community 189"
-Cohesion: 0.15
-Nodes (18): ConnectivityServerSpec, ConnectivityTagSpec, ServerConfig, `servers_from_catalog`: the pure fold from Connectivity catalog specs to ServerC, A catalog server with no entry in tags_by_server_id is not a collector to run., test_catalog_row_becomes_server_config_with_mqtt_topic(), test_s7_and_eip_catalog_rows_are_not_opcua_collectors(), test_server_missing_from_tags_map_is_skipped() (+10 more)
+Cohesion: 0.17
+Nodes (14): ConnectivityServerSpec, ConnectivityTagSpec, ServerConfig, `servers_from_catalog`: the pure fold from Connectivity catalog specs to ServerC, A catalog server with no entry in tags_by_server_id is not a collector to run., test_catalog_row_becomes_server_config_with_mqtt_topic(), test_s7_and_eip_catalog_rows_are_not_opcua_collectors(), test_server_missing_from_tags_map_is_skipped() (+6 more)
 
 ### Community 190 - "Community 190"
 Cohesion: 0.43
@@ -1075,12 +1046,12 @@ Cohesion: 0.30
 Nodes (17): Any, datetime, _clean_legacy_rows(), database(), Integration tests for the historian event pipeline Alembic migration., _raw_table_exists(), _run_alembic(), test_checkpoint_and_worklist_round_trip() (+9 more)
 
 ### Community 193 - "Community 193"
-Cohesion: 0.09
-Nodes (24): allowed_topic(), _connectivity_asset_path(), The caller's view of the Asset tree.  One scope per request. Admin is unrestri, True when path is in scope, or is an ancestor of a granted root.          Tree, True when the caller may see this topic.      Unrestricted callers skip bindin, visible_topic(), _identity(), A modelled but out-of-scope topic must not open the Connectivity catalog. (+16 more)
+Cohesion: 0.07
+Nodes (30): Any, allowed_topic(), _connectivity_asset_path(), The caller's view of the Asset tree.  One scope per request. Admin is unrestri, True when path is in scope, or is an ancestor of a granted root.          Tree, True when the caller may see this topic.      Unrestricted callers skip bindin, visible_topic(), _identity() (+22 more)
 
 ### Community 194 - "Community 194"
-Cohesion: 0.19
-Nodes (23): Client, Node, BaseException, test_discover_and_read_share_browse_path(), test_read_reports_good_double(), test_unique_by_node_id_keeps_the_first_browse_path(), browse_children(), _browse_node() (+15 more)
+Cohesion: 0.16
+Nodes (27): ConnectivityServer, ConnectivityTag, Client, Node, BaseException, test_discover_and_read_share_browse_path(), test_discover_from_a_folder_stays_inside_that_folder(), test_read_reports_good_double() (+19 more)
 
 ### Community 196 - "Community 196"
 Cohesion: 0.23
@@ -1094,10 +1065,6 @@ Nodes (5): check_process(), heartbeat_is_fresh(), is_consumer_ready(), main(), H
 Cohesion: 0.83
 Nodes (3): 00_bootstrap.sh script, psql_app(), psql_super()
 
-### Community 200 - "Community 200"
-Cohesion: 0.49
-Nodes (16): Any, ConnectivityRepository, ConnectivityServer, ConnectivityServerType, EdgeAdapterInput, UnitOfMeasureType, ConnectivityServerInput, ConnectivityTagInput (+8 more)
-
 ### Community 201 - "Community 201"
 Cohesion: 0.38
 Nodes (6): check_existing_connection(), check_process(), main(), Check if the uns_graphdb process is running., Check if a connection to the specified host and port is already established., Main health check function.
@@ -1107,16 +1074,16 @@ Cohesion: 0.50
 Nodes (3): Prometheus instrumentation for the OPC UA edge connector., Expose /metrics for Prometheus scraping., start_metrics_server()
 
 ### Community 257 - "Community 257"
-Cohesion: 0.15
-Nodes (6): Shared platform configuration for all UNS modules., AuthConfig, PlatformConfig, Platform-wide settings shared across modules (instance, URLs, application names), Client-specific platform identity and URL settings., Where the realm is, for everything that has to reach it.      Two base URLs, a
+Cohesion: 0.13
+Nodes (8): Dynaconf, Shared platform configuration for all UNS modules., Resolve and load platform configuration from the root conf/ directory., AuthConfig, PlatformConfig, Platform-wide settings shared across modules (instance, URLs, application names), Client-specific platform identity and URL settings., Where the realm is, for everything that has to reach it.      Two base URLs, a
 
 ### Community 259 - "Community 259"
-Cohesion: 0.23
-Nodes (13): _endpoint_open(), _get_kafka_consumer(), _kafka_bootstrap_host_port(), Pipeline acceptance and qualification tests for the canonical event transport., Kafka delivery failure and shard loss both drop readiness without acking MQTT., _require_fault_orchestration(), _require_pipeline_stack(), test_end_to_end_mqtt_publish_lands_on_historic_topic() (+5 more)
+Cohesion: 0.21
+Nodes (14): _endpoint_open(), _get_kafka_consumer(), _kafka_bootstrap_host_port(), Pipeline acceptance and qualification tests for the canonical event transport., Kafka delivery failure and shard loss both drop readiness without acking MQTT., _require_fault_orchestration(), _require_pipeline_stack(), test_end_to_end_mqtt_publish_lands_on_historic_topic() (+6 more)
 
 ### Community 261 - "Community 261"
-Cohesion: 0.15
-Nodes (12): _as_int(), Connectivity catalog writes.  Role each field needs is in `auth/require.py`, n, Splice the catalog's Edge rows into HiveMQ Edge's `config.xml`. Sync, per `after, Int64 parses to str; the repository wants an int. Same conversion as AlertRuleIn, Only keys the caller set, so omitted patch fields are not written as null., _sync_edge(), _tag_update_fields(), probe_tcp: a bare TCP connect check for S7/EtherNet-IP servers, which have no a (+4 more)
+Cohesion: 0.38
+Nodes (5): probe_tcp: a bare TCP connect check for S7/EtherNet-IP servers, which have no a, test_probe_tcp_ok(), test_probe_tcp_refused(), probe_tcp(), A bare TCP connect check for S7 / EtherNet-IP servers.  Unlike OPC UA, S7 and
 
 ### Community 262 - "Community 262"
 Cohesion: 0.17
@@ -1127,28 +1094,20 @@ Cohesion: 0.17
 Nodes (16): AlertRuleInput, _input(), *******************************************************************************, 0 is not 'no timeout': `validate()` rejects 0, and NULL is what 'never' means., The schema cannot express a bad severity, but it can express a bad range., Guards against a field added to `AlertRuleSpec` that nothing in the schema can s, Enabled by default, because a rule an engineer just wrote is one they want armed, Every `int` in this schema is the Int64 scalar, which parses to a string. Withou (+8 more)
 
 ### Community 264 - "Community 264"
-Cohesion: 0.33
-Nodes (5): *******************************************************************************, historian_pool(), pytest_collection_modifyitems(), Warm the shared database engine for integration tests., Dynamically add xdist_group marker to uns_historian tests unless running in VSCo
+Cohesion: 0.10
+Nodes (13): *******************************************************************************, historian_pool(), pytest_collection_modifyitems(), Warm the shared database engine for integration tests., Dynamically add xdist_group marker to uns_historian tests unless running in VSCo, *******************************************************************************, test_execute_prepared(), test_persist_mqtt_msg() (+5 more)
 
 ### Community 265 - "Community 265"
 Cohesion: 0.25
 Nodes (5): AsyncDriver, Executes a (CQL) query with the provided positional and keyword parameters., Returns the Neo4j async driver which is the connection to the database., Closes the Neo4j async driver and releases the connection.         Ensures that, Record
 
 ### Community 266 - "Community 266"
-Cohesion: 0.18
-Nodes (13): _event_row(), *******************************************************************************, Spec section 10 writes the signature down. Asserted by introspection rather than, A shift with no Loading Time must not arrive at the dashboard as 0%., Not an error: a line whose first shift has not closed yet is normal., _result_row(), test_a_null_factor_is_null_in_the_response(), test_an_asset_with_no_results_is_an_empty_list() (+5 more)
+Cohesion: 0.07
+Nodes (34): DowntimeEventRow, DowntimeEventRow, ShiftResultRow, datetime, _assigned(), _event_row(), *******************************************************************************, Spec section 10 writes the signature down. Asserted by introspection rather than (+26 more)
 
 ### Community 268 - "Community 268"
 Cohesion: 0.12
-Nodes (35): date, datetime, HistoricEventEnvelope, BatchPersistResult, ConsumedEvent, ConsumedEvent, HistoricEventEnvelope, Unit tests for historian batch assembly and offset math. (+27 more)
-
-### Community 270 - "Community 270"
-Cohesion: 0.22
-Nodes (13): Any, apply_plan(), _parse_datetime(), _parse_time(), _pattern_spec_from_entry(), Read `conf/oee/*.yaml` into a plan, then apply the plan.  Split for the same r, Read `conf/oee/*.yaml` into the mapping `plan_from_oee_config` consumes., Accept both a YAML time and a 'HH:MM' string.      PyYAML turns an unquoted 06 (+5 more)
-
-### Community 271 - "Community 271"
-Cohesion: 0.22
-Nodes (14): AlertRuleRepository, alert_rules(), An AlertRuleRepository with no test rules in it, before and after., A role surviving a removal is how somebody gets paged after unsubscribing., _rule(), test_a_rule_outside_the_vocabulary_never_reaches_the_database(), test_a_saved_alert_rule_comes_back_whole(), test_an_evaluation_that_fires_counts_and_is_timestamped_by_the_server() (+6 more)
+Nodes (38): date, datetime, HistoricEventEnvelope, Any, BatchPersistResult, ConsumedEvent, datetime, ConsumedEvent (+30 more)
 
 ### Community 272 - "Community 272"
 Cohesion: 0.38
@@ -1174,71 +1133,43 @@ Nodes (3): See Spb2UNSPublisher#init(), test_publish_to_uns_connected(), test_sp
 Cohesion: 0.43
 Nodes (4): check_existing_connection(), check_process(), is_consumer_ready(), main()
 
-### Community 279 - "Community 279"
-Cohesion: 0.19
-Nodes (8): ReceiptToken, MQTTv31, MQTTv311, MQTTv5, _MqttAckAdapter, MqttDeliveryOptions, Opt-in MQTT 5 delivery controls for durable ingestion shards., Creates an instance of an MQTT client          Parameters         ----------
-
 ### Community 280 - "Community 280"
 Cohesion: 0.17
 Nodes (11): mock_graphdb_config(), mock_graphdb_driver(), *******************************************************************************, Validates that the driver was closed, Test Read Queries from Graphdb, Reduce retries and sleep time for tests to fail fast., Fixture to mock the Neo4j async driver., Test with mock object to validate singularity of the neo4j driver (+3 more)
-
-### Community 281 - "Community 281"
-Cohesion: 0.20
-Nodes (9): auth, getAssets, getHierarchy, getSubscribedSignals, retryHierarchyMigrate, saveHierarchy, TREE, uns (+1 more)
 
 ### Community 282 - "Community 282"
 Cohesion: 0.33
 Nodes (6): HiveMQ-Simulator.sh script, ctx(), kpi(), mqttcli(), p(), raw()
 
 ### Community 284 - "Community 284"
-Cohesion: 0.12
-Nodes (15): DataSet, Template, DataSet, PropertySet, PropertySetList, *******************************************************************************, Private Utility function to merge Enums because Enums cannot be extended, Enumeration of basic datatypes as per sparkplugB specifications     Enhancing t (+7 more)
-
-### Community 285 - "Community 285"
-Cohesion: 0.36
-Nodes (8): datetime, SimpleNamespace, _admin_info(), *******************************************************************************, test_get_historic_events_in_time_range(), test_strawberry_get_historic_events_by_property(), test_strawberry_get_historic_events_by_publishers(), test_strawberry_get_historic_events_in_time_range()
+Cohesion: 0.07
+Nodes (34): DataSet, MetaData, Metric, PropertySet, PropertySetList, Template, DataSet, PropertySet (+26 more)
 
 ### Community 286 - "Community 286"
 Cohesion: 0.39
 Nodes (7): AccessGroupRecord, _group(), Reading Access Groups through the schema, with the repository replaced.  Non-a, test_admin_gets_one_access_group(), test_admin_lists_access_groups(), test_engineer_gets_null_access_group(), test_engineer_lists_no_access_groups()
 
-### Community 287 - "Community 287"
-Cohesion: 0.25
-Nodes (8): SimpleNamespace, _data_value(), test_read_opc_ua_nodes_returns_data_values(), test_save_signal_label_returns_the_stored_name(), test_save_unit_of_measure_persists_other_symbol(), test_signal_labels_returns_catalog_names(), test_units_of_measure_returns_the_catalog(), DataValueRow
-
-### Community 288 - "Community 288"
-Cohesion: 0.29
-Nodes (5): AlertRuleSpec, _as_int(), *******************************************************************************, Whole numbers arrive as strings.      Every `int` in this schema is the Int64, Translate to the repository's value object.          The enums carry the strin
-
 ### Community 289 - "Community 289"
 Cohesion: 0.25
 Nodes (3): Structural tests for the OEE tables.  These assert the contract other modules, A NULL scope key means 'every Asset', so two NULLs must collide., test_nullable_scope_keys_are_unique_with_nulls_not_distinct()
 
-### Community 290 - "Community 290"
-Cohesion: 0.29
-Nodes (5): AlertRule, AlertRule, Database, AlertRuleRole, A role that is notified when an Alert Rule fires.
-
 ### Community 291 - "Community 291"
-Cohesion: 0.38
-Nodes (6): _compose(), Timescale must keep console catalogs across `docker compose down`.  Connectivi, A named volume, not the container writable layer. `down` without -v keeps it., The one-shot job must not fail when the historian database already exists., test_timescale_data_survives_compose_down(), test_tsdb_setup_reruns_against_an_existing_volume()
-
-### Community 294 - "Community 294"
-Cohesion: 0.50
-Nodes (3): Shared pytest hooks for the GraphQL module., Drop cached DB engines and topic resolvers so retries and xdist workers stay iso, _reset_asset_model_singletons()
+Cohesion: 0.15
+Nodes (10): Compose contract for the optional OEE demo MQTT publisher., _compose(), Timescale must keep console catalogs across `docker compose down`.  Connectivi, A named volume, not the container writable layer. `down` without -v keeps it., The one-shot job must not fail when the historian database already exists., test_timescale_data_survives_compose_down(), test_tsdb_setup_reruns_against_an_existing_volume(), Round-trip loader/dumper so settings.yaml comments and key order survive a save. (+2 more)
 
 ## Knowledge Gaps
-- **376 isolated node(s):** `test_docker.sh script`, `EventKind`, `Path`, `Element`, `pre_setup_nodes.sh script` (+371 more)
+- **380 isolated node(s):** `test_docker.sh script`, `EventKind`, `Path`, `Element`, `pre_setup_nodes.sh script` (+375 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **32 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **28 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Database` connect `Community 82` to `Community 3`, `Community 133`, `Community 134`, `Community 6`, `Community 7`, `Community 5`, `Community 10`, `Community 268`, `Community 142`, `Community 271`, `Community 145`, `Community 20`, `Community 22`, `Community 153`, `Community 25`, `Community 27`, `Community 29`, `Community 290`, `Community 34`, `Community 35`, `Community 293`, `Community 38`, `Community 166`, `Community 37`, `Community 42`, `Community 45`, `Community 174`, `Community 175`, `Community 50`, `Community 181`, `Community 185`, `Community 58`, `Community 59`, `Community 60`, `Community 188`, `Community 64`, `Community 65`, `Community 67`, `Community 70`, `Community 200`, `Community 80`, `Community 83`, `Community 88`, `Community 95`, `Community 97`, `Community 98`, `Community 108`, `Community 113`, `Community 116`, `Community 123`, `Community 125`, `Community 126`?**
-  _High betweenness centrality (0.233) - this node is a cross-community bridge._
-- **Why does `YAML` connect `Community 26` to `Community 291`, `Community 68`, `Community 101`, `Community 295`, `Community 169`, `Community 137`, `Community 9`, `Community 173`, `Community 109`, `Community 270`, `Community 115`, `Community 52`, `Community 55`, `Community 89`, `Community 59`?**
-  _High betweenness centrality (0.050) - this node is a cross-community bridge._
-- **Why does `UnsMQTTClient` connect `Community 38` to `Community 65`, `Community 262`, `Community 135`, `Community 39`, `Community 106`, `Community 177`, `Community 53`, `Community 86`, `Community 279`, `Community 153`, `Community 59`, `Community 28`, `Community 94`?**
+- **Why does `Database` connect `Community 82` to `Community 5`, `Community 6`, `Community 7`, `Community 8`, `Community 266`, `Community 10`, `Community 268`, `Community 142`, `Community 145`, `Community 19`, `Community 25`, `Community 27`, `Community 29`, `Community 34`, `Community 35`, `Community 37`, `Community 38`, `Community 166`, `Community 42`, `Community 45`, `Community 181`, `Community 185`, `Community 58`, `Community 59`, `Community 60`, `Community 186`, `Community 64`, `Community 193`, `Community 65`, `Community 67`, `Community 70`, `Community 80`, `Community 88`, `Community 95`, `Community 97`, `Community 98`, `Community 111`, `Community 123`?**
+  _High betweenness centrality (0.230) - this node is a cross-community bridge._
+- **Why does `YAML` connect `Community 291` to `Community 68`, `Community 101`, `Community 166`, `Community 169`, `Community 137`, `Community 9`, `Community 173`, `Community 109`, `Community 115`, `Community 52`, `Community 55`, `Community 89`, `Community 26`, `Community 59`?**
+  _High betweenness centrality (0.045) - this node is a cross-community bridge._
+- **Why does `UnsMQTTClient` connect `Community 38` to `Community 96`, `Community 65`, `Community 262`, `Community 39`, `Community 106`, `Community 80`, `Community 177`, `Community 53`, `Community 86`, `Community 59`, `Community 28`, `Community 94`, `Community 95`?**
   _High betweenness centrality (0.032) - this node is a cross-community bridge._
 - **Are the 277 inferred relationships involving `Database` (e.g. with `Database` and `date`) actually correct?**
   _`Database` has 277 INFERRED edges - model-reasoned connections that need verification._
