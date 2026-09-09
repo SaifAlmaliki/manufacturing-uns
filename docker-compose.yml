@@ -202,6 +202,7 @@ services:
   # in conf when the catalog is empty. extra_hosts lets it reach OPC servers on
   # the host (e.g. opc.tcp://desktop-h4hdql2:50000/).
   opcua_client:
+    profiles: ["legacy-opcua"]
     build:
       context: .
       dockerfile: ./10_uns_opcua/Dockerfile
@@ -355,6 +356,7 @@ services:
       UNS_CONF_DIR: /app/conf
       UNS_MODULE: 07_uns_graphql
       UNS_mqtt__host: uns_mqtt_broker
+      UNS_hivemq_edge__base_url: "http://uns_mqtt_broker:8080"
 
       UNS_graphdb__url: "bolt://uns_neo4j_db:7687"
       UNS_graphdb__username: neo4j
@@ -464,7 +466,6 @@ services:
       - historian_client
       - graphdb_client
       - oee_client
-      - opcua_client
       - datalake_mapper
 
   uns_grafana:

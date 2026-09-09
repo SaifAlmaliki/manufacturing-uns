@@ -35,6 +35,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 
 from sqlalchemy import ARRAY, TIMESTAMP, Text, bindparam, text
+from sqlalchemy.ext.asyncio import AsyncConnection
 from uns_mqtt.mqtt_listener import UnsMQTTClient
 
 from uns_graphql.graphql_config import HistorianConfig
@@ -174,11 +175,20 @@ class HistorianRepository:
 
         return await self._fetch(conditions, params, types)
 
-    async def rewrite_topic_prefix(self, old_prefix: str, new_prefix: str) -> int:
+    async def rewrite_topic_prefix(
+        self,
+        old_prefix: str,
+        new_prefix: str,
+        *,
+        connection: AsyncConnection | None = None,
+    ) -> int:
         """Rewrite stored topics under ``old_prefix`` to sit under ``new_prefix``.
 
         Updates ``HistorianConfig.table`` and ``uns_metrics`` (when that table
         exists). Returns rows changed on the raw table. Does not refresh CAGGs.
+
+        When ``connection`` is supplied, runs on that connection without opening
+        a nested transaction (for catalog remaps in the same failure domain).
 
         Raises:
             ValueError: if ``old_prefix`` and ``new_prefix`` are the same.
@@ -194,15 +204,20 @@ class HistorianRepository:
             f"UPDATE {HistorianConfig.table} SET topic = {assignment} WHERE {match}"  # noqa: S608
         )
 
-        async with self._database.begin() as connection:
-            result = await connection.execute(raw_sql, params)
-            present = (await connection.execute(text("SELECT to_regclass('public.uns_metrics')"))).scalar()
+        async def _run(conn: AsyncConnection) -> int:
+            result = await conn.execute(raw_sql, params)
+            present = (await conn.execute(text("SELECT to_regclass('public.uns_metrics')"))).scalar()
             if present is not None:
-                await connection.execute(
+                await conn.execute(
                     text(f"UPDATE uns_metrics SET topic = {assignment} WHERE {match}"),
                     params,
                 )
             return result.rowcount or 0
+
+        if connection is not None:
+            return await _run(connection)
+        async with self._database.begin() as conn:
+            return await _run(conn)
 
     async def _fetch(
         self,

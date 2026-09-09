@@ -15,6 +15,12 @@ Related:
 [2026-09-01-opcua-edge-connector-design.md](./2026-09-01-opcua-edge-connector-design.md)
 (Browse/Test library).
 
+Apply path: superseded by
+[2026-09-07-connectivity-edge-live-apply-design.md](./2026-09-07-connectivity-edge-live-apply-design.md)
+and OPC UA on Edge by
+[2026-09-08-uns-edge-opcua-datalake-design.md](./2026-09-08-uns-edge-opcua-datalake-design.md).
+Catalog, XML generator, and TCP Test in this document still apply.
+
 ## 1. Problem
 
 A plant will have Siemens S7, EtherNet/IP, and OPC UA at the same time. All three must

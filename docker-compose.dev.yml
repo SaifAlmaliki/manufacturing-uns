@@ -7,10 +7,16 @@ services:
     command: ["--skip-oee-import"]
 
   # This PC's NetBIOS name is not in Docker DNS. Map it to the host so Test/Browse
-  # can use the same opc.tcp://desktop-h4hdql2:50000/ URL as UA Expert.
+  # and HiveMQ Edge OPC UA adapters can use the same opc.tcp://desktop-h4hdql2:50000/
+  # URL as UA Expert. wtp2 simulators on host.docker.internal:50001 need host-gateway too.
   graphql_server:
     extra_hosts:
       - "desktop-h4hdql2:host-gateway"
+
+  uns_mqtt_broker:
+    extra_hosts:
+      - "desktop-h4hdql2:host-gateway"
+      - "host.docker.internal:host-gateway"
 
   opcua_client:
     extra_hosts:
@@ -30,5 +36,4 @@ services:
       - historian_client
       - graphdb_client
       - oee_client
-      - opcua_client
       - datalake_mapper

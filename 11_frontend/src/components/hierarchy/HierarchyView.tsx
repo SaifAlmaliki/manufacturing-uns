@@ -664,13 +664,7 @@ export const HierarchyView: React.FC = () => {
     <PageShell id="hierarchy-view" scroll={false} className="flex flex-col font-mono">
       <div className="min-h-0 flex-1 overflow-y-auto">
         <PageContent fullWidth className="flex min-h-full flex-col gap-3 pb-4">
-          <CompactKpiRow
-            actions={
-              <BtnPrimary onClick={() => void handleSave()} disabled={!canSave}>
-                {saving ? 'Saving…' : 'Save'}
-              </BtnPrimary>
-            }
-          >
+          <CompactKpiRow>
             <PageStat compact label="Sites" value={counts?.sites ?? '—'} icon={<Factory className="size-3.5 text-muted-foreground" />} />
             <PageStat compact label="Areas" value={counts?.areas ?? '—'} icon={<GitBranch className="size-3.5 text-muted-foreground" />} />
             <PageStat compact label="Lines" value={counts?.lines ?? '—'} icon={<GitBranch className="size-3.5 text-muted-foreground" />} />
@@ -762,20 +756,30 @@ export const HierarchyView: React.FC = () => {
                     </div>
                     <label className="block space-y-1.5">
                       <span className="text-xs font-medium text-muted-foreground">Name</span>
-                      <ConsoleInput
-                        value={draftName}
-                        onChange={(e) => setDraftName(e.target.value)}
-                        onBlur={() => {
-                          applyDraft();
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
+                      <div className="flex gap-2">
+                        <ConsoleInput
+                          className="min-w-0 flex-1"
+                          value={draftName}
+                          onChange={(e) => setDraftName(e.target.value)}
+                          onBlur={() => {
                             applyDraft();
-                          }
-                        }}
-                        aria-invalid={fieldError ? true : undefined}
-                      />
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              applyDraft();
+                            }
+                          }}
+                          aria-invalid={fieldError ? true : undefined}
+                        />
+                        <BtnPrimary
+                          onClick={() => void handleSave()}
+                          disabled={!canSave}
+                          className="shrink-0"
+                        >
+                          {saving ? 'Saving…' : 'Save'}
+                        </BtnPrimary>
+                      </div>
                     </label>
                     {fieldError && <p className="text-xs text-rose-400">{fieldError}</p>}
                     <p className="font-mono text-[11px] text-muted-foreground">{nodePrefix(tree, selected)}</p>

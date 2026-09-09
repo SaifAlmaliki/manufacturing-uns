@@ -36,6 +36,7 @@ class EdgeAdapterInput:
     protocol: str
     host: str
     port: int
+    uri: str = ""
     controller_type: str = "S7_1500"
     tags: tuple[EdgeTagInput, ...] = ()
 
@@ -71,20 +72,32 @@ def _unique_tag_names(tags: tuple[EdgeTagInput, ...]) -> list[str]:
 
 
 def render_catalog_adapter(adapter: EdgeAdapterInput) -> str:
-    protocol_id = "eip" if adapter.protocol == "ethernet_ip" else "s7"
+    if adapter.protocol == "ethernet_ip":
+        protocol_id = "eip"
+    elif adapter.protocol == "opc_ua":
+        protocol_id = "opcua"
+    else:
+        protocol_id = "s7"
     aid = adapter_id_for(adapter.server_id)
     lines = [
         "        <protocol-adapter>",
         f"            <adapterId>{_esc(aid)}</adapterId>",
         f"            <protocolId>{protocol_id}</protocolId>",
         "            <config>",
-        f"                <host>{_esc(adapter.host)}</host>",
-        f"                <port>{adapter.port}</port>",
     ]
-    if protocol_id == "s7":
-        lines.append(
-            f"                <controllerType>{_esc(adapter.controller_type)}</controllerType>"
+    if protocol_id == "opcua":
+        lines.append(f"                <uri>{_esc(adapter.uri)}</uri>")
+    else:
+        lines.extend(
+            [
+                f"                <host>{_esc(adapter.host)}</host>",
+                f"                <port>{adapter.port}</port>",
+            ]
         )
+        if protocol_id == "s7":
+            lines.append(
+                f"                <controllerType>{_esc(adapter.controller_type)}</controllerType>"
+            )
     lines.append("            </config>")
     if not adapter.tags:
         lines.extend(["            <northboundMappings/>", "            <tags/>"])
@@ -104,7 +117,12 @@ def render_catalog_adapter(adapter: EdgeAdapterInput) -> str:
             )
         lines.append("            </northboundMappings>")
         lines.append("            <tags>")
-        addr_el = "tagAddress" if protocol_id == "s7" else "address"
+        if protocol_id == "s7":
+            addr_el = "tagAddress"
+        elif protocol_id == "eip":
+            addr_el = "address"
+        else:
+            addr_el = "node"
         for tag, name in zip(adapter.tags, names, strict=True):
             desc = tag.display_name or tag.node_id
             lines.extend(
