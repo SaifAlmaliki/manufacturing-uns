@@ -46,6 +46,8 @@ sample_spb_payload: bytes = (
         ),
         ("spBv1.0/uns_group/NBIRTH/eon1", sample_spb_payload, BytesPayload, sample_spb_payload),
         ("spBv1.0/uns_group/NDATA/eon1", sample_spb_payload, BytesPayload, sample_spb_payload),
+        ("ent1/fac1/area5", b"{'value': 1.2}", BytesPayload, b"{'value': 1.2}"),
+        ("ent1/fac1/area5", b"not-json", BytesPayload, b"not-json"),
     ],
 )
 def test_resolve_payload(

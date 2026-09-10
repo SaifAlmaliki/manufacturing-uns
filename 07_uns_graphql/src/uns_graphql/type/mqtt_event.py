@@ -50,6 +50,13 @@ class MQTTMessage:
 
     # # The payload which was published was either a JSON, a string or bytes
 
+    def _json_or_bytes(self) -> JSONPayload | BytesPayload:
+        try:
+            return JSONPayload(data=self._raw_payload.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            LOGGER.error("Expected JSON String in payload:%s", self._raw_payload)
+            return BytesPayload(data=self._raw_payload)
+
     @strawberry.field(name="payload", description="the payload of the MQTT message\n -JSON for UNS \n -bytes for sparkplugB")
     def resolve_payload(
         self,
@@ -57,7 +64,7 @@ class MQTTMessage:
     ) -> JSONPayload | BytesPayload | None:
         if UnsMQTTClient.is_topic_matched(UnsMQTTClient.SPB_STATE_MSG_TYPE, self.topic):
             # Message to sparkplug STATE message
-            return JSONPayload(data=self._raw_payload.decode("utf-8"))
+            return self._json_or_bytes()
 
         elif self.topic.startswith(UnsMQTTClient.SPARKPLUG_NS):
             # Message to sparkplug name space in protobuf i.e. BytesPayload
@@ -65,8 +72,4 @@ class MQTTMessage:
 
         else:
             # Message to UNS or spb STATE message f i.e. JSONPayload
-            try:
-                return JSONPayload(data=self._raw_payload.decode("utf-8"))
-            except json.JSONDecodeError as ex:
-                LOGGER.error(f"Expected JSON String in payload:{self._raw_payload}")
-                raise ex
+            return self._json_or_bytes()

@@ -75,8 +75,8 @@ def test_historian_client_uses_kafka_not_mqtt(compose: dict):
     assert "UNS_mqtt__host" not in environment
     assert "uns_mqtt_broker" not in service["depends_on"]
     assert "uns_kafka_broker" in service["depends_on"]
-    assert "uns_historian" in environment["UNS_historian__kafka__config"]
-    assert "uns_kafka_broker:29092" in environment["UNS_historian__kafka__config"]
+    assert "uns_historian" in environment["UNS_kafka__config"]
+    assert "uns_kafka_broker:29092" in environment["UNS_kafka__config"]
 
 
 def test_settings_declare_kafka_bootstrap_contract(settings: dict):

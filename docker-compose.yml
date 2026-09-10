@@ -254,7 +254,7 @@ services:
       UNS_historian__pipeline_epoch: "1"
       UNS_historian__username: uns_dbuser
       UNS_historian__password: ${UNS_historian__password}
-      UNS_historian__kafka__config: '@json {"client.id": "uns_historian", "group.id": "uns_historian", "bootstrap.servers": "uns_kafka_broker:29092", "enable.auto.commit": false, "auto.offset.reset": "earliest"}'
+      UNS_kafka__config: '@json {"client.id": "uns_historian", "group.id": "uns_historian", "bootstrap.servers": "uns_kafka_broker:29092", "enable.auto.commit": false, "auto.offset.reset": "earliest"}'
     depends_on:
       uns_kafka_broker:
         condition: service_healthy

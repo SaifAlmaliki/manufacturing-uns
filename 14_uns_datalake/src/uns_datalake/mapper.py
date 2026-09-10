@@ -96,6 +96,12 @@ class DatalakeMapper:
     def __post_init__(self) -> None:
         self.batch = BatchManager(limits=self.limits, monotonic=self.monotonic)
 
+    def _kafka_on_assign(self, _consumer, partitions: Sequence[TopicPartition]) -> None:
+        self.on_assign(partitions)
+
+    def _kafka_on_revoke(self, _consumer, partitions: Sequence[TopicPartition]) -> None:
+        self.on_revoke(partitions)
+
     def on_assign(self, partitions: Sequence[TopicPartition]) -> None:
         self.revoked = False
         self.ownership_active = True
@@ -117,8 +123,8 @@ class DatalakeMapper:
     def start(self) -> None:
         self.consumer.subscribe(
             [self.historic_topic],
-            on_assign=self.on_assign,
-            on_revoke=self.on_revoke,
+            on_assign=self._kafka_on_assign,
+            on_revoke=self._kafka_on_revoke,
         )
         MAPPER_UP.set(1)
 

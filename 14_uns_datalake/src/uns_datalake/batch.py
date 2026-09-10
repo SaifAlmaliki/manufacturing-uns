@@ -66,7 +66,7 @@ def new_flush_id(*, now: datetime | None = None) -> str:
 class BatchManager:
     limits: FlushLimits
     buffers: dict[int, PartitionBuffer] = field(default_factory=dict)
-    monotonic: Callable[[], float] = field(default_factory=time.monotonic)
+    monotonic: Callable[[], float] = field(default=time.monotonic)
 
     def total_buffered_bytes(self) -> int:
         return sum(buffer.byte_total for buffer in self.buffers.values())

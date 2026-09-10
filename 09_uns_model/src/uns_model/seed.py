@@ -25,7 +25,7 @@ Applying is the only part that writes.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -184,9 +184,40 @@ def _cell_entries(
                         )
                     )
     if not rows:
-        # Preserve the existing flat-shape and empty-sites errors via _cells.
+        # Nested `sites` with no Work Cells yet (a new site of Areas) is valid.
+        # Legacy flat site/area/line/cell still goes through `_cells`.
+        if "sites" in hierarchy:
+            return []
         return [(*segments, ()) for segments in _cells(hierarchy)]
     return rows
+
+
+def _prefix_branch(segments: Sequence[str]) -> list[AssetSpec]:
+    return [
+        AssetSpec(segment=segment, level=level)
+        for segment, level in zip(segments, SIMULATOR_LEVELS, strict=False)
+    ]
+
+
+def _authored_prefix_branches(hierarchy: Mapping[str, Any]) -> list[list[AssetSpec]]:
+    """One branch per authored node, including Sites/Areas that have no Work Cell yet."""
+    enterprise = hierarchy.get("enterprise")
+    sites = hierarchy.get("sites")
+    if not enterprise or sites is None:
+        return []
+    branches: list[list[AssetSpec]] = [_prefix_branch([str(enterprise)])]
+    for site in sites:
+        site_segs = [str(enterprise), _named(site)]
+        branches.append(_prefix_branch(site_segs))
+        for area in _as_mapping(site).get("areas") or []:
+            area_segs = [*site_segs, _named(area)]
+            branches.append(_prefix_branch(area_segs))
+            for line in _as_mapping(area).get("lines") or []:
+                line_segs = [*area_segs, _named(line)]
+                branches.append(_prefix_branch(line_segs))
+                for cell in _as_mapping(line).get("cells") or []:
+                    branches.append(_prefix_branch([*line_segs, _named(cell)]))
+    return branches
 
 
 def _machines(simulator: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
@@ -237,12 +268,14 @@ def plan_from_simulator_config(simulator: Mapping[str, Any]) -> SeedPlan:
         raise ValueError("hierarchy is required to seed the Asset Model")
 
     machines = _machines(simulator)
-    enterprise = str(_as_mapping(hierarchy).get("enterprise") or "") or None
+    hierarchy_map = _as_mapping(hierarchy)
+    enterprise = str(hierarchy_map.get("enterprise") or "") or None
     plan = SeedPlan(enterprise=enterprise)
     sites_seen: set[str] = set()
     lines_seen: set[tuple[str, ...]] = set()
+    plan.branches.extend(_authored_prefix_branches(hierarchy_map))
 
-    for *segments, authored in _cell_entries(_as_mapping(hierarchy)):
+    for *segments, authored in _cell_entries(hierarchy_map):
         segments = tuple(segments)
         cell_branch = [
             AssetSpec(segment=segment, level=level)

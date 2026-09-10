@@ -681,6 +681,11 @@ export const HierarchyView: React.FC = () => {
         setDraftName(nodeName(result.tree, selected));
       }
       updateSettings({ organization: result.tree.enterprise });
+      try {
+        setAssets(await unsGraphQLClient.getAssets());
+      } catch {
+        setAssets([]);
+      }
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Hierarchy was not saved');
     } finally {
@@ -713,7 +718,10 @@ export const HierarchyView: React.FC = () => {
   const menuParent = selected?.level ?? 'enterprise';
   const jobFailed = job?.status === 'failed';
   const draftDirty = Boolean(tree && selected && draftName.trim() !== nodeName(tree, selected));
-  const canSave = Boolean(tree) && !saving && (dirty || draftDirty);
+  const missingFromAssetModel = Boolean(
+    tree && [...treePrefixes(tree)].some((prefix) => assetIdForPrefix(assets, prefix) == null),
+  );
+  const canSave = Boolean(tree) && !saving && (dirty || draftDirty || missingFromAssetModel);
 
   if (!canEdit) {
     return (

@@ -86,6 +86,14 @@ async def test_sql_success_commits_when_ownership_is_active():
     assert commits == {(HISTORIC_KAFKA_TOPIC, 0): 12}
 
 
+def test_should_pause_for_backpressure_calls_clock_function():
+    handler = AsyncMock(spec=HistorianHandler)
+    mapper = HistorianKafkaMapper(handler=handler)
+
+    assert callable(mapper.monotonic)
+    assert mapper.should_pause_for_backpressure() is False
+
+
 def test_poison_offset_blocks_committing_later_contiguous_prefix():
     from uns_historian.batch import compute_next_offset
 

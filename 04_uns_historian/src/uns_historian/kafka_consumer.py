@@ -86,7 +86,8 @@ class HistorianKafkaMapper:
     ownership_active: bool = False
     batch_in_flight: bool = False
     pending_kafka_commits: dict[tuple[str, int], int] = field(default_factory=dict)
-    monotonic: Callable[[], float] = field(default_factory=time.monotonic)
+    # `default_factory=time.monotonic` calls the clock at init and stores a float.
+    monotonic: Callable[[], float] = field(default_factory=lambda: time.monotonic)
 
     def reset_collector(self) -> None:
         self.collector = BatchCollector(HistorianHandler.batch_limits())
@@ -236,7 +237,7 @@ class HistorianKafkaConsumer:
                 self._pause_owned()
             message = self._consumer.poll(self._poll_timeout)
             if message is None:
-                self._loop.call_soon_threadsafe(lambda: asyncio.create_task(self._maybe_flush()))
+                self._loop.call_soon_threadsafe(lambda: asyncio.create_task(self._maybe_flush(force=False)))
                 continue
             if hasattr(message, "error") and message.error():
                 error = message.error()
@@ -277,7 +278,7 @@ class HistorianKafkaConsumer:
         else:
             await self._maybe_flush(force=False)
 
-    async def _maybe_flush(self, *, force: bool) -> None:
+    async def _maybe_flush(self, *, force: bool = False) -> None:
         if self._mapper.batch_in_flight:
             return
         if not force and not self._mapper.collector.is_full(self._mapper.monotonic()):

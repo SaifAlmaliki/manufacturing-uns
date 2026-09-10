@@ -503,6 +503,70 @@ describe('the plant hierarchy editor', () => {
     );
   });
 
+  it('reloads Asset Model ids after save so a second site can attach signals', async () => {
+    getAssets
+      .mockResolvedValueOnce([
+        { id: 2, path: 'AcmeWater/Site1/RawWater', segment: 'RawWater', level: 'AREA' },
+      ])
+      .mockResolvedValueOnce([
+        { id: 2, path: 'AcmeWater/Site1/RawWater', segment: 'RawWater', level: 'AREA' },
+        { id: 9, path: 'AcmeWater/Site', segment: 'Site', level: 'SITE' },
+      ]);
+    saveHierarchy.mockImplementation(async (tree) => ({
+      tree,
+      job: { status: 'done', oldPrefix: null, newPrefix: null, rewritten: 0, error: null },
+    }));
+    getSubscribedSignals.mockResolvedValue([
+      {
+        serverId: 's1',
+        serverName: 'opcplc',
+        nodeId: 'ns=3;s=T101',
+        browsePath: 'T101/Level',
+        displayName: 'Level',
+        mqttTopic: 'Plant/T101/Level',
+        subscribed: true,
+      },
+    ]);
+    render(<HierarchyView />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Enterprise AcmeWater' })).toBeTruthy());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Enterprise AcmeWater' }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'New' })[1]);
+    fireEvent.click(screen.getByRole('menuitem', { name: /^Site/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(saveHierarchy).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(getAssets).toHaveBeenCalledTimes(2));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Attach signals to Site Site' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /level/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Attach' }));
+
+    await waitFor(() =>
+      expect(updateConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101', { assetId: 9 }),
+    );
+  });
+
+  it('enables Save when a loaded site is missing from the Asset Model', async () => {
+    getHierarchy.mockResolvedValue({
+      ...TREE,
+      sites: [
+        TREE.sites[0],
+        { name: 'Krabala', areas: [{ name: 'RawWater', kind: 'production', lines: [] }] },
+      ],
+    });
+    getAssets.mockResolvedValue([
+      { id: 1, path: 'AcmeWater', segment: 'AcmeWater', level: 'ENTERPRISE' },
+      { id: 2, path: 'AcmeWater/Site1', segment: 'Site1', level: 'SITE' },
+      { id: 3, path: 'AcmeWater/Site1/RawWater', segment: 'RawWater', level: 'AREA' },
+      { id: 4, path: 'AcmeWater/Site1/RawWater/Train1', segment: 'Train1', level: 'LINE' },
+      { id: 5, path: 'AcmeWater/Site1/RawWater/Train1/V101', segment: 'V101', level: 'WORK_CELL' },
+    ]);
+    render(<HierarchyView />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Site Krabala' })).toBeTruthy());
+    expect(screen.getByRole('button', { name: 'Save' })).not.toBeDisabled();
+  });
+
   it('does not attach when the node is missing from the Asset Model', async () => {
     getSubscribedSignals.mockResolvedValue([
       {

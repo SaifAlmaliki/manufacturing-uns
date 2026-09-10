@@ -103,6 +103,15 @@ def _mapper(tmp_path: Path, *, limits: FlushLimits | None = None) -> tuple[Datal
     return mapper, consumer, store, dlq
 
 
+def test_kafka_callbacks_accept_consumer_argument(tmp_path: Path):
+    mapper, consumer, _store, _dlq = _mapper(tmp_path)
+    mapper.start()
+    consumer.on_assign(object(), [TopicPartition("uns.historic-events", 0, 0)])
+    assert mapper.ownership_active is True
+    consumer.on_revoke(object(), [TopicPartition("uns.historic-events", 0)])
+    assert mapper.ownership_active is False
+
+
 def test_upload_happens_before_commit(tmp_path: Path):
     mapper, consumer, store, _dlq = _mapper(tmp_path, limits=FlushLimits(max_records=1, max_bytes=1_000_000, interval_seconds=60, worker_max_buffered_bytes=1_000_000))
     consumer.messages = [

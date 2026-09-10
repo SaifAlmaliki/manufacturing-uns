@@ -88,7 +88,8 @@ def test_each_machine_is_created_under_every_work_cell():
 def test_the_production_unit_level_is_skipped_because_the_topics_skip_it():
     plan = plan_from_simulator_config(SIMULATOR_CONFIG)
 
-    levels = [spec.level for spec in plan.branches[0]]
+    cell_branch = next(branch for branch in plan.branches if branch[-1].level == "WORK_CELL")
+    levels = [spec.level for spec in cell_branch]
 
     assert levels == list(SIMULATOR_LEVELS)
     assert "PRODUCTION_UNIT" not in levels
@@ -357,7 +358,7 @@ def test_a_plan_with_two_area_branches_produces_two_area_paths():
         {
             SEPARATOR.join(spec.segment for spec in branch[:3])
             for branch in plan.branches
-            if branch[2].level == "AREA"
+            if len(branch) > 2 and branch[2].level == "AREA"
         }
     )
     assert area_paths == ["Co/Site/PressShop", "Co/Site/RawWater"]
@@ -403,6 +404,59 @@ def test_plan_from_hierarchy_tree_builds_a_branch_for_each_cell():
     assert "E/S/A/L/V101" in plan.asset_paths
     assert "E/S/A/L/V102" in plan.asset_paths
     assert "E" in plan.asset_paths
+
+
+def test_plan_includes_areas_on_a_second_site_that_has_no_work_cells_yet():
+    """A new site can be saved with Areas before any Line/Cell exists.
+
+    Seed used to walk only complete Work Cell paths, so Halabja attached
+    signals while Krabala Areas never got an Asset id.
+    """
+    tree = HierarchyTree(
+        enterprise="HalabjaWTP",
+        sites=(
+            HierarchySite(
+                "Halabja",
+                (
+                    HierarchyArea(
+                        "Treatment",
+                        "production",
+                        (HierarchyLine("Train1", (HierarchyCell("B101"),)),),
+                    ),
+                ),
+            ),
+            HierarchySite(
+                "Krabala",
+                (
+                    HierarchyArea("RawWater", "production", ()),
+                    HierarchyArea("Treatment", "production", ()),
+                ),
+            ),
+        ),
+    )
+
+    plan = plan_from_hierarchy_tree(tree)
+
+    assert "HalabjaWTP/Halabja/Treatment/Train1/B101" in plan.asset_paths
+    assert "HalabjaWTP/Krabala" in plan.asset_paths
+    assert "HalabjaWTP/Krabala/RawWater" in plan.asset_paths
+    assert "HalabjaWTP/Krabala/Treatment" in plan.asset_paths
+
+
+def test_plan_includes_a_site_of_areas_when_the_plant_has_no_work_cells_yet():
+    tree = HierarchyTree(
+        enterprise="E",
+        sites=(
+            HierarchySite(
+                "NewSite",
+                (HierarchyArea("RawWater", "production", ()),),
+            ),
+        ),
+    )
+
+    plan = plan_from_hierarchy_tree(tree)
+
+    assert plan.asset_paths == ["E", "E/NewSite", "E/NewSite/RawWater"]
 
 
 def test_plan_from_hierarchy_tree_matches_simulator_config_from_the_same_tree():
