@@ -36,6 +36,7 @@ LOGGER = logging.getLogger(__name__)
 MODEL_SCHEMA = "model"
 CONSOLE_SCHEMA = "console"
 OEE_SCHEMA = "oee"
+EDGE_SCHEMA = "edge"
 
 
 @dataclass(frozen=True, slots=True)

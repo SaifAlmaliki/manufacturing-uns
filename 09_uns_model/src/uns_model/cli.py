@@ -59,12 +59,16 @@ def _project_dir() -> Path:
     The directory holding alembic.ini and migrations/.
 
     Walked up from this file rather than assumed to be the working directory, so
-    `uns_model_migrate` works from anywhere. Migrations are not packaged inside the
-    wheel, so this requires the editable install the uv workspace already uses.
+    `uns_model_migrate` works from anywhere. Migrations ship beside the package in
+    both editable installs and release wheels (`pyproject.toml` includes them).
     """
-    for parent in Path(__file__).resolve().parents:
+    here = Path(__file__).resolve()
+    for parent in here.parents:
         if (parent / _ALEMBIC_INI).is_file() and (parent / "migrations").is_dir():
             return parent
+    packaged = here.parent.parent
+    if (packaged / _ALEMBIC_INI).is_file() and (packaged / "migrations").is_dir():
+        return packaged
     raise FileNotFoundError(
         f"Could not find {_ALEMBIC_INI} above {__file__}. "
         "Run `alembic upgrade head` from the 09_uns_model source directory instead."

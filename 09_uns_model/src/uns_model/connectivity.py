@@ -43,6 +43,7 @@ from uns_config.hivemq_edge_xml import EdgeAdapterInput, EdgeTagInput
 from uns_model.engine import Database
 import re
 
+from uns_config import get_settings
 from uns_model.repositories import AssetModelRepository
 from uns_model.tables import (
     CONNECTIVITY_AUTH_MODES,
@@ -66,6 +67,12 @@ _XML_ILLEGAL_CHARS = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F]")
 EDGE_APPLY_ERROR = "Waiting for HiveMQ Edge to apply"
 
 LOGGER = logging.getLogger(__name__)
+
+
+def is_cloud_edge_mode() -> bool:
+    """True when connectivity writes must be scoped to an enrolled edge."""
+    block = get_settings("default").get("platform.edge_management") or {}
+    return bool(block.get("cloud_mode", False))
 
 
 def parse_host_port(endpoint: str) -> tuple[str, int]:
@@ -163,6 +170,7 @@ class ConnectivityServerSpec:
     name: str
     protocol: str
     endpoint: str
+    edge_id: str | None = None
     auth_mode: str = "anonymous"
     security_policy: str = "None"
     security_mode: str = "None"
@@ -181,6 +189,8 @@ class ConnectivityServerSpec:
             raise ValueError(f"Connectivity server {self.id!r} needs a name")
         if not self.endpoint:
             raise ValueError(f"Connectivity server {self.id!r} needs an endpoint")
+        if is_cloud_edge_mode() and not self.edge_id:
+            raise ValueError(f"Connectivity server {self.id!r} needs edge_id in cloud edge mode")
         if self.protocol in PLC_PROTOCOLS:
             parse_host_port(self.endpoint)
             if self.protocol == "s7":

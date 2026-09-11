@@ -1861,6 +1861,7 @@ source = { editable = "09_uns_model" }
 dependencies = [
     { name = "alembic" },
     { name = "asyncpg" },
+    { name = "cryptography" },
     { name = "dynaconf" },
     { name = "pyyaml" },
     { name = "ruamel-yaml" },
@@ -1872,6 +1873,7 @@ dependencies = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.14.0,<2" },
     { name = "asyncpg", specifier = ">=0.31.0,<0.32" },
+    { name = "cryptography", specifier = ">=44.0.0,<51" },
     { name = "dynaconf", specifier = "~=3.2" },
     { name = "pyyaml", specifier = ">=6.0.2,<7" },
     { name = "ruamel-yaml", specifier = ">=0.18,<1" },

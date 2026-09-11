@@ -559,6 +559,8 @@ class ConnectivityServer(Base):
     )
 
     id: Mapped[str] = mapped_column(Text, primary_key=True)
+    edge_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    """Optional edge scope for cloud-mode catalog rows; legacy rows stay NULL until assigned."""
     name: Mapped[str] = mapped_column(Text, nullable=False)
     protocol: Mapped[str] = mapped_column(Text, nullable=False)
     endpoint: Mapped[str] = mapped_column(Text, nullable=False)
