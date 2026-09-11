@@ -1,0 +1,124 @@
+{
+  "contract_version": 1,
+  "release_id": "cloud-edge-qualification-baseline-2026-09-12",
+  "git_baseline_commit": "5c862964",
+  "qualification_status": "unqualified",
+  "broker_profile": "isolated-qualification",
+  "qualification_blockers": [
+    "No operator HiveMQ Enterprise (central broker) license or edition decision recorded",
+    "No digest-pinned central broker image verified",
+    "No HiveMQ Edge offline buffering license recorded for durable edge tier",
+    "No digest-pinned HiveMQ Edge production image verified (development uses hivemq/hivemq-edge:latest)",
+    "mTLS, publish-only edge ACLs, session revocation, persistent subscription policy, and broker restart behaviour not live-qualified",
+    "Central broker crash-after-PUBACK and mapper-outage loss windows not measured",
+    "Edge power-loss RPO not measured (buffering license blocked)",
+    "HTTPS business outbox not implemented (Task 13)",
+    "Four-domain live lake acceptance not executed in Task 1"
+  ],
+  "edge_api_version": "v1",
+  "edge_api_paths": [
+    "/api/v1/auth/authenticate",
+    "/api/v1/management/protocol-adapters/adapters"
+  ],
+  "supported_protocols": [
+    "opc_ua",
+    "s7",
+    "ethernet_ip"
+  ],
+  "supported_protocols_planned": [
+    "modbus_tcp"
+  ],
+  "buffering_license_required": true,
+  "buffering_license_status": "blocked",
+  "images": [
+    {
+      "name": "hivemq-edge",
+      "role": "dmz-collector",
+      "repository_candidate": "hivemq/hivemq-edge",
+      "tag_observed_dev": "latest",
+      "digest": null,
+      "status": "blocked",
+      "blocker": "No production digest pinned; floating latest in docker-compose.yml only"
+    },
+    {
+      "name": "hivemq-broker",
+      "role": "central-mqtt",
+      "repository_candidate": "hivemq/hivemq4",
+      "digest": null,
+      "status": "blocked",
+      "blocker": "Full HiveMQ Enterprise broker requires operator license and digest-pinned image before qualification"
+    },
+    {
+      "name": "hivemq-enterprise-security-extension",
+      "role": "central-broker-authentication",
+      "digest": null,
+      "status": "blocked",
+      "blocker": "Authentication extension entitlement not supplied by operator"
+    }
+  ],
+  "authentication_extension": {
+    "name": "hivemq-enterprise-security-extension",
+    "status": "blocked",
+    "blocker": "Requires HiveMQ Enterprise license; not verified in Task 1"
+  },
+  "adapter_api_schemas": {
+    "opcua": {
+      "edge_protocol_id": "opcua",
+      "catalog_protocol": "opc_ua",
+      "status": "code-mapped"
+    },
+    "s7": {
+      "edge_protocol_id": "s7",
+      "catalog_protocol": "s7",
+      "status": "code-mapped"
+    },
+    "eip": {
+      "edge_protocol_id": "eip",
+      "catalog_protocol": "ethernet_ip",
+      "status": "code-mapped"
+    },
+    "modbus": {
+      "edge_protocol_id": "modbus",
+      "catalog_protocol": "modbus_tcp",
+      "status": "not-implemented-in-code"
+    }
+  },
+  "rpo": {
+    "edge_power_loss": {
+      "status": "blocked",
+      "accepted_rpo": null,
+      "mechanism": "HiveMQ Edge licensed offline bridge buffering",
+      "blocker": "Offline buffering license not supplied; no outage test run"
+    },
+    "broker_power_loss": {
+      "status": "blocked",
+      "accepted_rpo": null,
+      "mechanism": "Qualified central HiveMQ broker persistence and bridge session policy",
+      "blocker": "Central broker not qualified; crash-after-PUBACK window not measured"
+    },
+    "canonical_kafka_persistence": {
+      "status": "design-only",
+      "accepted_rpo": null,
+      "mechanism": "uns.historic-events retained log; at-least-once ingest",
+      "notes": "Dev retention 604800000 ms (7 days). Live production RPO not measured in Task 1."
+    },
+    "sql_outbox_persistence": {
+      "status": "not-implemented",
+      "accepted_rpo": null,
+      "mechanism": "PostgreSQL durable outbox worker (Task 13)",
+      "blocker": "Outbox not built; no persistence claim"
+    }
+  },
+  "mqtt_qos_zero_loss_claim": false,
+  "allowed_deployment_profiles": [
+    "isolated-qualification"
+  ],
+  "reader_lake_baseline": {
+    "v2_publications_enabled_in_shipped_config": true,
+    "historian_v2_unit_tests": "9 passed",
+    "graphql_v2_unit_tests": "7 passed",
+    "datalake_contract_tests": "143 passed (6 integration deselected)",
+    "kafka_contract_tests": "72 passed (20 integration deselected)",
+    "config_contract_tests": "174 passed, 1 failed (catalog adapter drift in conf/hivemq/config.xml)"
+  }
+}

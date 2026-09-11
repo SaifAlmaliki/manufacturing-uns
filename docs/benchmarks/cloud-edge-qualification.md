@@ -1,0 +1,249 @@
+# Cloud Platform and Outbound DMZ Edge — Qualification Report
+
+> **Status:** Baseline frozen at programme Task 1. Product and infrastructure
+> qualification are **not complete**. Items that require operator licenses, pinned
+> production images, or live broker/edge infrastructure are recorded as **blocked**.
+> Do not treat this document as production qualification evidence.
+
+Design reference: [Cloud-hosted UNS with outbound-only DMZ management](../superpowers/specs/2026-09-12-cloud-platform-outbound-edge-design.md).
+
+Implementation plan: [Cloud platform and outbound edge](../superpowers/plans/2026-09-12-cloud-platform-outbound-edge.md).
+
+Related delivery evidence: [UNS-to-lake delivery](./uns-to-lake-delivery.md),
+[UNS-to-lake operations](../operations/uns-to-lake-delivery.md).
+
+Deployment validator input: [`deploy/release-contract.json`](../../deploy/release-contract.json).
+
+## 1. Run metadata
+
+| Field | Value |
+| --- | --- |
+| Date (UTC) | 2026-09-12 |
+| Operator | Task 1 agent (automated baseline capture) |
+| Git branch | `feat/cloud-platform-outbound-edge` |
+| Git commit (baseline) | `5c862964` (`chore(graph): update community labels and graph report metrics`) |
+| Working tree at start | Clean — no staged or unstaged changes |
+| Programme base commit | `5c862964` (per plan) |
+| Qualification profile | `isolated-qualification` only until `release-contract.json` status is `qualified` |
+
+### 1.1 Starting git baseline (independent commands)
+
+```text
+git status --short          → (empty)
+git diff --stat             → (empty)
+git diff --cached --stat    → (empty)
+git log --oneline -10       → 5c862964 chore(graph): update community labels...
+                            f3349763 feat(events): enhance event schema...
+                            130f6f30 refactor(connectivity): improve table layout...
+                            092488b8 test(connectivity): add test for long lastError...
+                            e2196ae2 fix(docker-compose): extend start periods...
+                            9f5eea02 fix(kafka): correct environment variable naming...
+                            18a6b094 refactor(oee_mqtt_simulator): update Docker...
+                            1ed6b07e feat(docker): enhance docker-compose...
+                            827c9f69 feat(datalake): update historic event lake mapper...
+                            6e995892 fix(tests): ensure proper database closure...
+```
+
+No pre-existing staged delivery/UI work was present in the working tree at Task 1 start.
+
+## 2. Repository baseline (development stack)
+
+Observations from the inspected working tree at `5c862964`. These describe current
+development behaviour, not a qualified production deployment.
+
+| Location | Current behaviour | Edge-to-cloud production consequence |
+| --- | --- | --- |
+| `docker-compose.yml` | Development-only; co-locates `hivemq/hivemq-edge:latest` with central Kafka/SQL/GraphQL; publishes MQTT `1883` and Edge console `18080` on the host | **Disabled** in production bundle — Edge runs only on DMZ VM; central stack uses a full HiveMQ broker candidate, not Edge |
+| `conf/hivemq/config.xml` | Unencrypted MQTT `1883`, admin HTTP `8080` on `0.0.0.0`, read-only mount; contains `simulation` adapter plus catalog-owned OPC UA fixtures from local dev | **Disabled** for cloud console writes — agent applies via private Edge API; production uses TLS/mTLS and writable persistent config volume |
+| `00_uns_config/.../hivemq_edge_api.py` | Synchronous Edge Management API v1 (`/api/v1/...`); OPC UA, S7, EtherNet/IP; deletes catalog adapters absent from supplied list; **no Modbus** | Retained on edge agent path; **disabled** from cloud GraphQL process |
+| `00_uns_config/.../hivemq_edge_xml.py` | Renders/edits local `config.xml` | **Disabled** from cloud — configuration is desired-state over HTTPS only |
+| `07_uns_graphql/.../mutations/connectivity.py` | `after_flush` writes XML then `apply_catalog_adapters_live` | **Disabled** in edge-to-cloud profile — agent reconciles |
+| `07_uns_graphql/.../queries/connectivity.py` | Direct OPC UA browse/test/read via `uns_opcua` from GraphQL | **Disabled** — replaced by bounded agent management jobs (not yet implemented) |
+| `09_uns_model/.../connectivity.py` | Shared catalog; no per-edge desired/reported lifecycle | Gap — Tasks 3–9 |
+| `00_uns_config/.../platform.py` | Public URLs default to `http://localhost` | Must be replaced in production bundle |
+| `10_uns_opcua` | Separate local collector (`legacy-opcua` profile) | **Disabled** in production — must not duplicate Edge collection |
+| `HiveMQ-Simulator.sh`, `conf/simulator/*` | MQTT publishers; `H`/`P` select broker (default `localhost:1883`; stack uses `uns_mqtt_broker`) | Edge-sim profile must target `hivemq-edge:8883` only; **never** cloud broker |
+| `conf/settings.yaml` `hivemq_edge.base_url` | `http://127.0.0.1:18080` | Local dev only; agent uses `https://hivemq-edge:8443` on private network |
+
+### 2.1 Graphify orientation (`graphify query "hivemq_edge_api connectivity OPC UA deployment" --budget 2000`)
+
+Traversal: BFS depth 2 from `connectivity()` and `hivemq_edge_api.py`; 129 nodes (67 truncated by budget).
+
+Confirmed high-signal paths:
+
+| Category | Source paths |
+| --- | --- |
+| Edge API client | `00_uns_config/src/uns_config/hivemq_edge_api.py` |
+| XML config writer | `00_uns_config/src/uns_config/hivemq_edge_xml.py` |
+| GraphQL writes | `07_uns_graphql/src/uns_graphql/mutations/connectivity.py` |
+| GraphQL OPC probes | `07_uns_graphql/src/uns_graphql/queries/connectivity.py`, `10_uns_opcua/src/uns_opcua/session.py` |
+| Shared catalog | `09_uns_model/src/uns_model/connectivity.py`, `tables.py` |
+| Tests | `00_uns_config/test/test_hivemq_edge_api.py`, `test_hivemq_edge_xml.py`, `07_uns_graphql/test/mutations/test_connectivity.py` |
+
+### 2.2 Direct PLC / protocol calls (current code)
+
+| Call site | Protocol / target | Edge-to-cloud profile |
+| --- | --- | --- |
+| `mutations/connectivity.py` → `open_client` / `opcua_browse` | OPC UA discovery on configured endpoint | **Disabled** from cloud GraphQL |
+| `queries/connectivity.py` → `test_opc_ua_connection`, `browse_opc_ua`, `discover_opc_ua_variables`, `read_opc_ua_nodes` | OPC UA anonymous sessions from GraphQL host | **Disabled** from cloud GraphQL |
+| `hivemq_edge_api.py` → Edge adapter CRUD | HiveMQ Edge Management API (not wire-level PLC) | **Moved** to edge agent private calls only |
+| `10_uns_opcua` collector | OPC UA poll + MQTT publish (`legacy-opcua` profile) | **Disabled** in production |
+
+S7 and EtherNet/IP have no cloud-side wire probes; tags are authored manually in the console and applied through Edge adapters only.
+
+### 2.3 Configuration writers (current code)
+
+| Writer | Mechanism | Edge-to-cloud profile |
+| --- | --- | --- |
+| `apply_catalog_adapters_file` | Rewrites `conf/hivemq/config.xml` | **Disabled** from cloud |
+| `apply_catalog_adapters_live` | Edge REST API from GraphQL after flush | **Disabled** from cloud |
+| Future agent apply | Private HTTPS poll → local Edge API | **Enabled** (Tasks 7–9) |
+
+### 2.4 MQTT command and Sparkplug rebirth publishers
+
+| Component | Role | Edge-to-cloud profile |
+| --- | --- | --- |
+| `spb_mapper_client` (`05_sparkplugb`) | Subscribes to `spBv1.0/...`; handles NCMD/DCMD/NDATA/DDATA; translates to UNS publishes | Remains a **central** consumer; not an edge bridge |
+| `HiveMQ-Simulator.sh` | OEE demo MQTT with `-r` retained publishes | Edge-sim only; local `hivemq-edge:8883` |
+| `conf/simulator/multi_system_publishers.py` | Halabja machine/MES/LIMS/SAP-shaped MQTT | Edge-sim only; local broker |
+| `uns_ingest.classify_event_kind` | Classifies `NCMD`/`DCMD` as `command` | Unchanged classification; cloud bridge denies southbound app topics |
+| Edge northbound mappings | QoS 1 telemetry from adapters | **Enabled** edge → cloud only |
+
+No repository component currently publishes Sparkplug NCMD/DCMD rebirth commands to plant equipment. The Sparkplug mapper consumes inbound SCADA traffic in the development stack.
+
+## 3. Canonical reader and lake readiness (delivery plan re-check)
+
+The [multi-system delivery plan](../superpowers/plans/2026-09-11-multi-system-uns-to-lake.md)
+header still reads *"Ready for later implementation"*. Task 1 re-measured **actual**
+readiness against the codebase at `5c862964`:
+
+| Area | Actual readiness | Evidence |
+| --- | --- | --- |
+| v2 envelope writer | **Implemented; enabled in shipped config** | `kafka_mapper.ingestion.v2_publications_enabled: true` in `conf/settings.yaml` |
+| Historian v1/v2 reader | **Compatible (unit)** | `04_uns_historian/test/test_event_v2_compatibility.py` — 9 passed |
+| GraphQL v1/v2 reader | **Compatible (unit)** | `07_uns_graphql/test/backend/test_event_v2_compatibility.py` — 7 passed |
+| Lake mapper v1/v2 routing | **Implemented (unit/contract)** | `14_uns_datalake/test` — 143 passed, 6 deselected (`not integrationtest`) |
+| Kafka ingest / publication | **Implemented (unit/contract)** | `06_uns_kafka/test` — 72 passed, 20 deselected |
+| Config / Edge stack contracts | **Mostly green; one baseline drift** | `00_uns_config/test` — 174 passed, **1 failed** (`test_default_config_has_no_protocol_adapters`: `config.xml` contains `catalog-*` OPC UA adapter from local connectivity saves) |
+| Four-domain live acceptance | **Blocked (integration)** | `test_four_domains_reach_lake_with_historian_stopped` exists; requires live MQTT/Kafka/MinIO stack — not executed in Task 1 |
+| ADLS live backend | **Not qualified** | Per existing delivery benchmark template |
+| AWS S3 production backend | **Not qualified** | Per existing delivery benchmark template |
+
+**Conclusion:** Dual-version readers and lake/kafka contract tests are **code-ready**.
+Live multi-system qualification and backend durability rows remain **blocked** or
+**not qualified**, matching the existing `uns-to-lake-delivery.md` template state.
+The old plan heading overstates production readiness; do not enable production cutover
+from Task 1 evidence alone.
+
+### 3.1 Verification commands executed (2026-09-12)
+
+```powershell
+# From repository root; module rootdirs avoid conftest import collisions on Windows.
+uv run pytest 14_uns_datalake/test --rootdir=14_uns_datalake -c 14_uns_datalake/pyproject.toml -n 0 -m "not integrationtest"
+# → 143 passed, 6 deselected
+
+uv run pytest 06_uns_kafka/test --rootdir=06_uns_kafka -c 06_uns_kafka/pyproject.toml -n 0 -m "not integrationtest"
+# → 72 passed, 20 deselected
+
+uv run pytest 00_uns_config/test -n 0 -m "not integrationtest"
+# → 174 passed, 1 failed (hivemq config catalog adapter drift)
+
+uv run pytest 04_uns_historian/test/test_event_v2_compatibility.py --rootdir=04_uns_historian -c 04_uns_historian/pyproject.toml -n 0
+# → 9 passed
+
+uv run pytest 07_uns_graphql/test/backend/test_event_v2_compatibility.py --rootdir=07_uns_graphql -c 07_uns_graphql/pyproject.toml -n 0
+# → 7 passed
+```
+
+## 4. Product candidates and license gates
+
+**No licenses were purchased and no operator entitlement was supplied during Task 1.**
+All digest-pinned production images and commercial features below are **blocked**.
+
+### 4.1 Central full HiveMQ broker (production reference candidate)
+
+| Field | Value | Status |
+| --- | --- | --- |
+| Role | Cloud UNS MQTT ingress (not HiveMQ Edge) | Candidate selected in design |
+| Edition | HiveMQ Enterprise (full broker) | **Blocked** — operator license/edition decision required |
+| Image repository (candidate) | `hivemq/hivemq4` | **Blocked** — no digest pinned |
+| Image digest | — | **Blocked** — not pulled/verified in Task 1 |
+| Authentication extension | HiveMQ Enterprise Extension for MQTT (file/JWT/OIDC as qualified) | **Blocked** — requires license + live config |
+| mTLS bridge ingress | Per-edge client certificates | **Blocked** — Task 10 |
+| Publish-only edge ACLs | Bridge principal publish-only; deny subscriptions | **Blocked** — live broker ACL qualification |
+| Active session revocation | Admin disconnect on cert revocation | **Blocked** |
+| Stable client IDs | Per-edge assigned IDs + MQTT 5 persistent session policy | **Blocked** — measured on qualified broker |
+| Retained message policy | Explicit retain rules per route | **Blocked** |
+| Persistent subscriptions | Deny for bridge principals | **Blocked** |
+| Queue / inflight limits | Finite per-session queues | **Blocked** |
+| Broker restart behaviour | Crash-after-PUBACK loss window | **Blocked** — requires fault injection |
+
+If the candidate broker cannot pass the rows above, **stop the production broker
+branch** and escalate a product/edition decision. Do not substitute Mosquitto, EMQX,
+or another broker without explicit qualification.
+
+### 4.2 HiveMQ Edge (DMZ collector)
+
+| Field | Value | Status |
+| --- | --- | --- |
+| Development image | `hivemq/hivemq-edge:latest` (`docker-compose.yml`) | Floating tag — **not production-qualified** |
+| Image digest | — | **Blocked** — `latest` only in dev |
+| Management API | `/api/v1/auth/authenticate`, `/api/v1/management/protocol-adapters/adapters` | Documented in code; **not pinned to Edge release** |
+| Supported adapter API schemas (code) | `opcua`, `s7`, `eip` via `_protocol_id` | **Partial** — Modbus not mapped in `hivemq_edge_api.py` |
+| Offline bridge buffering license | HiveMQ Edge persistent offline buffering ([S2](https://docs.hivemq.com/hivemq-edge/mqtt-bridging.html)) | **Blocked** — commercial license required; operator input absent |
+| Edge TLS listener | `8883` mTLS for local publishers + cloud bridge | **Blocked** — not configured in dev `config.xml` |
+
+### 4.3 Operator actions required before qualification can advance
+
+1. Confirm HiveMQ Enterprise (central broker) license tier and extension entitlements.
+2. Confirm HiveMQ Edge offline buffering license for each DMZ site requiring durable edge tier.
+3. Supply digest-pinned OCI images (or offline tarballs) for the chosen Edge and broker releases.
+4. Provide test CA / issuance process for mTLS (management + MQTT bridge).
+
+## 5. Recovery point objectives (RPO) — separate boundaries
+
+**No overall zero-loss claim from MQTT QoS alone.** Record each boundary independently.
+Measured values are **not available** in Task 1.
+
+| Boundary | Intended mechanism | Task 1 status | Notes |
+| --- | --- | --- | --- |
+| Edge power loss | Licensed HiveMQ Edge offline bridge buffering + disk | **Blocked** | License absent; durable edge tier unqualified. Unit tests for management agent are **not** blocked. |
+| Central broker power loss | Broker persistence + bridge session policy | **Blocked** | Requires qualified `hivemq4` (or chosen edition) and crash-after-PUBACK test |
+| Canonical Kafka persistence | `uns.historic-events` retained log (dev: 7 days / `604800000` ms) | **Design accepted; live RPO not measured** | At-least-once; mapper ACKs MQTT after Kafka produce in current ingest path |
+| SQL outbox persistence | PostgreSQL durable outbox for HTTPS business push | **Not implemented** | Task 13; no RPO claim until worker + broker acceptance qualified |
+
+Accepted RPO targets for production must be recorded after Tasks 10, 11A, 13, and 15
+fault injection — not before.
+
+## 6. Edge-to-cloud-only profile summary
+
+Enabled:
+
+- DMZ-initiated MQTT/TLS bridge (edge → cloud data only).
+- DMZ-initiated HTTPS management (agent poll/report).
+- Edge protocol adapters for qualified industrial sources.
+- Optional `edge-sim` publishers → local Edge MQTT only.
+- Existing central pipeline: MQTT → Kafka → historian / lake / GraphQL.
+
+Disabled or removed from cloud runtime:
+
+- Cloud-initiated connections to DMZ management or Edge API.
+- GraphQL direct OPC UA probes and local `config.xml` writes.
+- `10_uns_opcua` parallel collector in production.
+- Simulators publishing directly to cloud broker addresses.
+- Development floating images, public Edge console port, unencrypted MQTT `1883`.
+- Cloud-to-edge MQTT application topics and device write mappings.
+
+## 7. Exit criteria for Task 1
+
+| Criterion | Result |
+| --- | --- |
+| Source baseline explicit | **Done** — sections 1–2 |
+| Graphify-confirmed API/PLC/config paths | **Done** — sections 2.1–2.4 |
+| Reader/lake actual readiness recorded | **Done** — section 3 |
+| Product/license facts recorded or blocked | **Done** — section 4; `qualification_status: unqualified` |
+| RPO boundaries separated | **Done** — section 5 |
+| `release-contract.json` defined | **Done** — `deploy/release-contract.json` |
+
+**Programme gate:** Production broker and durable edge tiers remain **unqualified**.
+Proceed to Task 2 isolated harness work; do not declare production support.
