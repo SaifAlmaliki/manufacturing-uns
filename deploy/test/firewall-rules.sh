@@ -60,6 +60,15 @@ case "${1:-apply}" in
     ;;
   counters)
     iptables -L -v -n -x
+    echo "--- conntrack ---"
+    conntrack -C 2>/dev/null || true
+    ;;
+  stats)
+    iptables -L UNS_CLOUD_DMZ_MGMT_DENIED -v -n -x 2>/dev/null || true
+    iptables -L UNS_DMZ_TO_CLOUD -v -n -x 2>/dev/null || true
+    iptables -L UNS_EDGE_ESTABLISHED -v -n -x 2>/dev/null || true
+    echo "--- conntrack ---"
+    conntrack -C 2>/dev/null || true
     ;;
   block-cloud)
     iptables -I FORWARD 1 -s "${DMZ_NET}" -d "${CLOUD_NET}" -j DROP
@@ -68,7 +77,7 @@ case "${1:-apply}" in
     iptables -D FORWARD -s "${DMZ_NET}" -d "${CLOUD_NET}" -j DROP 2>/dev/null || true
     ;;
   *)
-    echo "usage: $0 [apply|counters|block-cloud|restore-cloud]" >&2
+    echo "usage: $0 [apply|counters|stats|block-cloud|restore-cloud]" >&2
     exit 1
     ;;
 esac

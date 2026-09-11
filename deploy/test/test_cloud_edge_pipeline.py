@@ -22,7 +22,7 @@ def test_enroll_save_and_apply_round_trip(cloud_edge):
         {"endpoint": "opc.tcp://opcua-simulator:4840/cloud-edge-qualification/"},
     )
     print(f"pending_revision={revision}")
-    report = cloud_edge.wait_applied("edge-01", revision, timeout=30)
+    report = cloud_edge.wait_applied("edge-01", revision, timeout=60)
     print(
         "applied_report="
         f"desired_revision={report.desired_revision} "
@@ -30,8 +30,9 @@ def test_enroll_save_and_apply_round_trip(cloud_edge):
         f"phase={report.phase} "
         f"certificate_subject={report.certificate_subject}"
     )
-    assert report.applied_revision >= revision
-    assert report.phase in {"applied", "applying", "pending"}
+    assert report.applied_revision == revision
+    assert report.phase == "applied"
+    assert report.certificate_subject == identity.management_subject
 
 
 @pytest.mark.integrationtest
@@ -45,8 +46,10 @@ def test_publish_case_reaches_lake_fixture(cloud_edge):
         f"count={len(rows)} "
         f"offsets={[row.get('kafka_offset') for row in rows[:5]]}"
     )
-    assert rows
-    assert any(row.get("event_id") == identity.event_id for row in rows)
+    assert len(rows) >= 2
+    assert all(row.get("event_id") == identity.event_id for row in rows)
+    offsets = {row.get("kafka_offset") for row in rows}
+    assert len(offsets) >= 2
 
 
 @pytest.mark.integrationtest

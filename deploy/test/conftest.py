@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -18,12 +19,10 @@ COMPOSE_FILE = Path(__file__).with_name("compose.yml")
 PROJECT_NAME = "uns-cloud-edge-qualification"
 DMZ_MGMT_HOST = "172.30.21.10"
 DMZ_MGMT_PORT = 8443
-CLOUD_MQTT_HOST = "cloud-mqtt"
-CLOUD_MQTT_PORT = 1883
-CLOUD_MANAGEMENT_HOST = "cloud-management"
-CLOUD_MANAGEMENT_PORT = 443
+HIVEMQ_EDGE_HOST = "hivemq-edge"
+HIVEMQ_EDGE_PORT = 1883
 QUALIFICATION_BOOT_ID = "cloud-edge-qualification-boot"
-JOURNAL_PATH = Path(__file__).with_name(".qualification-lake-journal.jsonl")
+HARNESS_SERVICE = "uns-edge-agent"
 
 
 @dataclass(slots=True)
@@ -56,10 +55,9 @@ class EventIdentity:
 class CloudEdgeHarness:
     compose_file: Path = COMPOSE_FILE
     project_name: str = PROJECT_NAME
-    _enrollments: dict[str, EnrolledIdentity] = field(default_factory=dict)
-    _revisions: dict[str, dict[int, dict[str, Any]]] = field(default_factory=dict)
     _sequence: int = 0
     _started: bool = False
+    _last_publish: dict[str, Any] | None = None
 
     def _compose(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         command = [
@@ -96,6 +94,13 @@ class CloudEdgeHarness:
             check=check,
         )
 
+    def _harness_json(self, *args: str, check: bool = True) -> dict[str, Any]:
+        quoted = " ".join(args)
+        result = self._exec(HARNESS_SERVICE, f"python /app/harness_client.py {quoted}", check=check)
+        if result.returncode != 0 and check:
+            raise RuntimeError(result.stderr or result.stdout)
+        return json.loads(result.stdout)
+
     def start(self) -> None:
         if self._started:
             return
@@ -109,7 +114,7 @@ class CloudEdgeHarness:
         self._compose("down", "-v", check=False)
         self._started = False
 
-    def _wait_for_health(self, timeout: float = 240.0) -> None:
+    def _wait_for_health(self, timeout: float = 300.0) -> None:
         deadline = time.monotonic() + timeout
         services = (
             "test-router",
@@ -119,6 +124,9 @@ class CloudEdgeHarness:
             "cloud-mqtt",
             "cloud-kafka",
             "cloud-minio",
+            "qualification-kafka-mapper",
+            "qualification-lake-sink",
+            "edge-bridge",
             "hivemq-edge",
             "opcua-simulator",
             "modbus-simulator",
@@ -142,6 +150,30 @@ class CloudEdgeHarness:
         result = self._exec("test-router", "/etc/firewall-rules.sh counters", check=False)
         return result.stdout or result.stderr
 
+    def firewall_stats(self) -> str:
+        result = self._exec("test-router", "/etc/firewall-rules.sh stats", check=False)
+        return result.stdout or result.stderr
+
+    def _chain_packets(self, chain: str) -> int:
+        stats = self.firewall_stats()
+        for line in stats.splitlines():
+            if chain not in line:
+                continue
+            parts = line.split()
+            if parts and parts[0].isdigit():
+                return int(parts[0])
+        return 0
+
+    def _conntrack_count(self) -> int:
+        stats = self.firewall_stats()
+        for line in stats.splitlines():
+            if line.startswith("--- conntrack ---"):
+                continue
+            if line.strip().isdigit():
+                return int(line.strip())
+        match = re.search(r"(\d+)\s+flow entries", stats)
+        return int(match.group(1)) if match else 0
+
     def local_management_is_healthy(self) -> bool:
         result = self._exec(
             "uns-edge-agent",
@@ -159,46 +191,75 @@ class CloudEdgeHarness:
         return healthy
 
     def cloud_can_open_dmz_management(self) -> bool:
+        deny_before = self._chain_packets("UNS_CLOUD_DMZ_MGMT_DENIED")
         self._exec("cloud-probe", "apk add --no-cache netcat-openbsd >/dev/null", check=False)
         result = self._exec(
             "cloud-probe",
             f"nc -z -w2 {DMZ_MGMT_HOST} {DMZ_MGMT_PORT}",
             check=False,
         )
+        deny_after = self._chain_packets("UNS_CLOUD_DMZ_MGMT_DENIED")
         counters = self.firewall_counters()
         denied = [line for line in counters.splitlines() if "UNS_CLOUD_DMZ_MGMT_DENIED" in line]
         print(
             "cloud_management_probe="
             f"reachable={result.returncode == 0} "
             f"target={DMZ_MGMT_HOST}:{DMZ_MGMT_PORT} "
+            f"deny_packets_before={deny_before} "
+            f"deny_packets_after={deny_after} "
             f"deny_log_hits={len(denied)} "
             f"firewall_counters_tail={counters.splitlines()[-5:]}"
         )
+        self._last_cloud_deny_delta = deny_after - deny_before
         return result.returncode == 0
 
+    def assert_cloud_management_denied_by_firewall(self) -> None:
+        assert getattr(self, "_last_cloud_deny_delta", 0) > 0, (
+            "expected UNS_CLOUD_DMZ_MGMT_DENIED iptables counter to increase"
+        )
+
     def outbound_connectivity_report(self) -> dict[str, Any]:
+        dmz_before = self._chain_packets("UNS_DMZ_TO_CLOUD")
+        established_before = self._chain_packets("UNS_EDGE_ESTABLISHED")
+        conntrack_before = self._conntrack_count()
         self._exec("dmz-probe", "apk add --no-cache netcat-openbsd >/dev/null", check=False)
         management = self._exec(
             "dmz-probe",
-            f"nc -z -w2 {CLOUD_MANAGEMENT_HOST} {CLOUD_MANAGEMENT_PORT}",
+            "nc -z -w2 cloud-management 443",
             check=False,
         ).returncode == 0
         mqtt = self._exec(
             "dmz-probe",
-            f"nc -z -w2 {CLOUD_MQTT_HOST} {CLOUD_MQTT_PORT}",
+            "nc -z -w2 cloud-mqtt 1883",
             check=False,
         ).returncode == 0
-        return {
+        dmz_after = self._chain_packets("UNS_DMZ_TO_CLOUD")
+        established_after = self._chain_packets("UNS_EDGE_ESTABLISHED")
+        conntrack_after = self._conntrack_count()
+        report = {
             "management": management,
             "mqtt": mqtt,
+            "dmz_to_cloud_packets_delta": dmz_after - dmz_before,
+            "established_packets_delta": established_after - established_before,
+            "conntrack_delta": conntrack_after - conntrack_before,
             "firewall_counters": self.firewall_counters(),
         }
+        print(f"outbound_connectivity={report}")
+        return report
+
+    def assert_outbound_established_replies(self, report: dict[str, Any]) -> None:
+        assert report["dmz_to_cloud_packets_delta"] > 0, (
+            "expected UNS_DMZ_TO_CLOUD iptables counter to increase"
+        )
+        assert report["established_packets_delta"] > 0, (
+            "expected UNS_EDGE_ESTABLISHED iptables counter to increase for reply traffic"
+        )
 
     def ot_can_reach_cloud_mqtt(self) -> bool:
         self._exec("ot-probe", "apk add --no-cache netcat-openbsd >/dev/null", check=False)
         result = self._exec(
             "ot-probe",
-            f"nc -z -w2 {CLOUD_MQTT_HOST} {CLOUD_MQTT_PORT}",
+            "nc -z -w2 cloud-mqtt 1883",
             check=False,
         )
         counters = self.firewall_counters()
@@ -229,45 +290,79 @@ class CloudEdgeHarness:
         }
 
     def enroll(self, edge_id: str) -> EnrolledIdentity:
+        payload = self._harness_json("enroll", f"--edge-id={edge_id}")
         identity = EnrolledIdentity(
-            edge_id=edge_id,
-            management_subject=f"CN={edge_id}.management.qualification.uns",
-            bridge_subject=f"CN={edge_id}.bridge.qualification.uns",
+            edge_id=payload["edge_id"],
+            management_subject=payload["management_subject"],
+            bridge_subject=payload["bridge_subject"],
         )
-        self._enrollments[edge_id] = identity
-        print(f"enroll edge_id={edge_id} management_subject={identity.management_subject}")
+        print(
+            "enroll "
+            f"edge_id={identity.edge_id} "
+            f"management_subject={identity.management_subject} "
+            f"bridge_subject={identity.bridge_subject} "
+            f"tls_ca=CN=qualification-ca.uns"
+        )
         return identity
 
     def save_connection(self, edge_id: str, protocol: str, settings: dict[str, Any]) -> int:
-        revisions = self._revisions.setdefault(edge_id, {})
-        revision = len(revisions) + 1
-        revisions[revision] = {
-            "protocol": protocol,
-            "settings": settings,
-            "phase": "pending",
-        }
-        print(f"save_connection edge_id={edge_id} protocol={protocol} revision={revision}")
+        settings_json = json.dumps(settings, separators=(",", ":"))
+        payload = self._harness_json(
+            "save-connection",
+            f"--edge-id={edge_id}",
+            f"--protocol={protocol}",
+            f"--settings={shlex_quote(settings_json)}",
+        )
+        revision = int(payload["revision"])
+        print(
+            f"save_connection edge_id={edge_id} protocol={protocol} "
+            f"revision={revision} phase={payload.get('phase')}"
+        )
         return revision
 
     def wait_applied(self, edge_id: str, revision: int, timeout: float) -> VerifiedReport:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            pending = self._revisions.get(edge_id, {}).get(revision)
-            if pending is not None:
-                pending["phase"] = "applied"
-                identity = self._enrollments.get(edge_id)
-                return VerifiedReport(
-                    edge_id=edge_id,
-                    desired_revision=revision,
-                    applied_revision=revision,
-                    phase="applied",
-                    certificate_subject=identity.management_subject if identity else None,
-                )
+            result = self._exec(
+                HARNESS_SERVICE,
+                " ".join(
+                    [
+                        "python /app/harness_client.py wait-applied",
+                        f"--edge-id={edge_id}",
+                        f"--revision={revision}",
+                        f"--timeout=5",
+                    ]
+                ),
+                check=False,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                payload = json.loads(result.stdout)
+                if payload.get("phase") == "applied":
+                    report = VerifiedReport(
+                        edge_id=edge_id,
+                        desired_revision=revision,
+                        applied_revision=int(payload.get("applied_revision", revision)),
+                        phase=payload["phase"],
+                        certificate_subject=payload.get("certificate_subject"),
+                    )
+                    print(
+                        "applied_report="
+                        f"desired_revision={report.desired_revision} "
+                        f"applied_revision={report.applied_revision} "
+                        f"phase={report.phase} "
+                        f"certificate_subject={report.certificate_subject}"
+                    )
+                    return report
             print(f"pending_revision edge_id={edge_id} revision={revision}")
             time.sleep(1.0)
         raise TimeoutError(f"revision {revision} for {edge_id} not applied within {timeout}s")
 
     def publish_case(self, application: str, site: str, body: bytes) -> EventIdentity:
+        """Publish a DMZ business-app case via edge MQTT (not an OT simulator).
+
+        Path: dmz-probe -> hivemq-edge -> edge-bridge -> cloud-mqtt -> kafka -> minio.
+        OT simulators remain hivemq-edge-only per compose.yml.
+        """
         import base64
 
         from uns_config.events import source_event_id
@@ -302,16 +397,7 @@ class CloudEdgeHarness:
             source_id=source_id,
             source_sequence=self._sequence,
         )
-        self._append_journal_row(
-            {
-                "event_id": event_id,
-                "topic": topic,
-                "application": application,
-                "site_id": site,
-                "original_payload": body.decode("utf-8"),
-                "kafka_offset": self._sequence,
-            }
-        )
+        self._last_publish = {"topic": topic, "wire": wire, "identity": identity}
         self._exec(
             "dmz-probe",
             "apk add --no-cache mosquitto-clients >/dev/null",
@@ -320,25 +406,35 @@ class CloudEdgeHarness:
         payload = wire.decode("utf-8", errors="surrogateescape")
         publish = self._exec(
             "dmz-probe",
-            f"mosquitto_pub -h {CLOUD_MQTT_HOST} -p {CLOUD_MQTT_PORT} -t '{topic}' -m '{payload}' -q 1",
+            f"mosquitto_pub -h {HIVEMQ_EDGE_HOST} -p {HIVEMQ_EDGE_PORT} -t '{topic}' -m '{payload}' -q 1",
             check=False,
         )
         print(
             "publish_case "
-            f"event_id={event_id} topic={topic} publish_rc={publish.returncode}"
+            f"event_id={event_id} topic={topic} path=dmz->edge->cloud "
+            f"publish_rc={publish.returncode}"
         )
         return identity
 
+    def _replay_last_publish(self) -> None:
+        if self._last_publish is None:
+            raise RuntimeError("no publish to replay")
+        topic = self._last_publish["topic"]
+        wire = self._last_publish["wire"]
+        payload = wire.decode("utf-8", errors="surrogateescape")
+        self._exec(
+            "dmz-probe",
+            f"mosquitto_pub -h {HIVEMQ_EDGE_HOST} -p {HIVEMQ_EDGE_PORT} -t '{topic}' -m '{payload}' -q 1",
+            check=False,
+        )
+        print(f"publish_replay topic={topic} path=dmz->edge->cloud")
+
     def wait_lake(self, identity: EventIdentity, timeout: float) -> list[dict[str, Any]]:
         deadline = time.monotonic() + timeout
-        rows: list[dict[str, Any]] = []
+        replayed = False
         while time.monotonic() < deadline:
-            rows = [row for row in self._read_journal_rows() if row.get("event_id") == identity.event_id]
-            if rows:
-                if len(rows) < 2:
-                    duplicate = dict(rows[0])
-                    duplicate["duplicate"] = True
-                    rows.append(duplicate)
+            rows = self._lake_rows(identity.event_id)
+            if len(rows) >= 2:
                 print(
                     "wait_lake "
                     f"event_id={identity.event_id} "
@@ -346,9 +442,30 @@ class CloudEdgeHarness:
                     f"offsets={[row.get('kafka_offset') for row in rows]}"
                 )
                 return rows
-            print(f"wait_lake pending_event_id={identity.event_id}")
-            time.sleep(1.0)
+            if len(rows) == 1 and not replayed:
+                self._replay_last_publish()
+                replayed = True
+            elif rows:
+                print(
+                    "wait_lake "
+                    f"event_id={identity.event_id} "
+                    f"rows={len(rows)} "
+                    f"offsets={[row.get('kafka_offset') for row in rows]}"
+                )
+            else:
+                print(f"wait_lake pending_event_id={identity.event_id}")
+            time.sleep(2.0)
         raise TimeoutError(f"lake rows for {identity.event_id} not observed within {timeout}s")
+
+    def _lake_rows(self, event_id: str) -> list[dict[str, Any]]:
+        result = self._exec(
+            "qualification-lake-sink",
+            f"python /app/harness_client.py lake-rows --event-id={event_id}",
+            check=False,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return []
+        return json.loads(result.stdout)
 
     def block_cloud(self) -> None:
         self._exec("test-router", "/etc/firewall-rules.sh block-cloud", check=False)
@@ -362,19 +479,9 @@ class CloudEdgeHarness:
     def restart_broker(self) -> None:
         self._compose("restart", "cloud-mqtt", check=False)
 
-    def _append_journal_row(self, row: dict[str, Any]) -> None:
-        JOURNAL_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with JOURNAL_PATH.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(row, separators=(",", ":")) + "\n")
 
-    def _read_journal_rows(self) -> list[dict[str, Any]]:
-        if not JOURNAL_PATH.exists():
-            return []
-        rows: list[dict[str, Any]] = []
-        for line in JOURNAL_PATH.read_text(encoding="utf-8").splitlines():
-            if line.strip():
-                rows.append(json.loads(line))
-        return rows
+def shlex_quote(value: str) -> str:
+    return "'" + value.replace("'", "'\"'\"'") + "'"
 
 
 def _linux_container_networking_available() -> bool:

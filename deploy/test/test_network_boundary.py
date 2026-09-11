@@ -8,19 +8,15 @@ import pytest
 def test_cloud_cannot_dial_dmz_management(cloud_edge):
     assert cloud_edge.local_management_is_healthy()
     assert not cloud_edge.cloud_can_open_dmz_management()
+    cloud_edge.assert_cloud_management_denied_by_firewall()
 
 
 @pytest.mark.integrationtest
 def test_dmz_outbound_cloud_paths_work(cloud_edge):
     report = cloud_edge.outbound_connectivity_report()
-    print(
-        "outbound_connectivity="
-        f"management={report['management']} "
-        f"mqtt={report['mqtt']} "
-        f"firewall_counters={report['firewall_counters']}"
-    )
     assert report["management"] is True
     assert report["mqtt"] is True
+    cloud_edge.assert_outbound_established_replies(report)
 
 
 @pytest.mark.integrationtest
