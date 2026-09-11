@@ -1595,9 +1595,9 @@
     "semantic_hash": "9951c33337b327f3a412d1b0fde29014"
   },
   "11_frontend/src/components/dashboard/DashboardView.tsx": {
-    "mtime": 1788725428.5332403,
-    "ast_hash": "dd1b7cc49d40946094f71bc77c8a7706",
-    "semantic_hash": "dd1b7cc49d40946094f71bc77c8a7706"
+    "mtime": 1789163788.9700532,
+    "ast_hash": "1a79ad728490b4ebd9b3dd80c1bfcac4",
+    "semantic_hash": ""
   },
   "11_frontend/src/components/explore/ExploreView.tsx": {
     "mtime": 1788534382.8519425,
@@ -1940,14 +1940,14 @@
     "semantic_hash": "d70786e59abc48455f4a988d036501a4"
   },
   "11_frontend/src/lib/dashboard/activity.test.ts": {
-    "mtime": 1788722868.397231,
-    "ast_hash": "39c6a7c101464675d47e096726098a15",
-    "semantic_hash": "39c6a7c101464675d47e096726098a15"
+    "mtime": 1789163392.4096518,
+    "ast_hash": "ed0a1bb5d22f9b615d0d91ee86326a7d",
+    "semantic_hash": ""
   },
   "11_frontend/src/lib/dashboard/activity.ts": {
-    "mtime": 1788723390.9250176,
-    "ast_hash": "24a2c0b40756bb62d066d481f23aa55f",
-    "semantic_hash": "24a2c0b40756bb62d066d481f23aa55f"
+    "mtime": 1789163388.5780993,
+    "ast_hash": "96dc0de7e669e11dd961fe31d0a756b0",
+    "semantic_hash": ""
   },
   "11_frontend/src/lib/dashboard/plant-summary.test.ts": {
     "mtime": 1788725200.5968308,
