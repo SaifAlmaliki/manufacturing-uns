@@ -1,5 +1,12 @@
 # Historian-first telemetry and data lake
 
+> **Superseded planning direction (2026-09-11):** The UNS-to-lake feature now
+> covers publications from machines and business systems, organized by source
+> application, site, and payload schema. See
+> [Multi-system UNS-to-lake delivery](2026-09-11-multi-system-uns-to-lake-design.md)
+> for the replacement design awaiting written review. The proposal below is
+> historical context, not authorization to replace the accepted Kafka path.
+
 Date: 2026-09-09
 
 Status: Proposed implementation specification; requested for later implementation.

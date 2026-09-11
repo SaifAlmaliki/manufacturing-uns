@@ -86,7 +86,10 @@ services:
       interval: 10s
       timeout: 10s
       retries: 12
-      start_period: 120s
+      # APOC install + first HTTP on a loaded Docker Desktop (right after --build)
+      # has been measured at ~4.5 minutes. Failures during start_period do not
+      # consume retries; 120s did, and Compose aborted npm run stack as unhealthy.
+      start_period: 5m
 
   uns_kafka_broker:
     image: "apache/kafka:3.9.0"
@@ -488,7 +491,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 20
-      start_period: 40s
+      # start-dev: Quarkus augmentation + H2 schema + realm import. After --build
+      # on Docker Desktop this has been measured at ~4.5 minutes before :9000
+      # answers. A 40s start_period marks it unhealthy and npm run stack exits.
+      start_period: 5m
 
   uns_frontend:
     build:
