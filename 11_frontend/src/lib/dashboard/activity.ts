@@ -18,19 +18,56 @@ export function formatTopicShort(topic: string): string {
   return parts.length > 2 ? parts.slice(-2).join(' / ') : topic;
 }
 
-export function formatEventValue(payload: MqttMessage['payload']): string {
-  const raw =
-    payload && typeof payload === 'object' && !Array.isArray(payload) && 'value' in payload
-      ? (payload as { value: unknown }).value
-      : payload;
+function scalarEventValue(raw: unknown): string | null {
   if (typeof raw === 'number' && Number.isFinite(raw)) {
     return String(Number(raw.toFixed(2)));
   }
   if (typeof raw === 'boolean') return raw ? 'true' : 'false';
   if (typeof raw === 'string') return raw;
+  return null;
+}
+
+export function formatEventValue(payload: MqttMessage['payload']): string {
+  const raw =
+    payload && typeof payload === 'object' && !Array.isArray(payload) && 'value' in payload
+      ? (payload as { value: unknown }).value
+      : payload;
+  const scalar = scalarEventValue(raw);
+  if (scalar != null) return scalar;
   if (raw == null) return '—';
   try {
     return JSON.stringify(raw);
+  } catch {
+    return '—';
+  }
+}
+
+/** Compact title for dashboard recent-event rows (topic + business metadata when present). */
+export function formatRecentEventTitle(topic: string, payload: MqttMessage['payload']): string {
+  const short = formatTopicShort(topic);
+  if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+    const record = payload as Record<string, unknown>;
+    if (typeof record.source_application === 'string' && typeof record.payload_schema_id === 'string') {
+      return `${short} · ${record.source_application}/${record.payload_schema_id}`;
+    }
+  }
+  return short;
+}
+
+/** Full payload text for a recent-event row; wraps inside the card instead of overflowing. */
+export function formatRecentEventBody(payload: MqttMessage['payload']): string {
+  if (payload == null) return '—';
+  if (typeof payload === 'string') return payload;
+  if (typeof payload === 'number' || typeof payload === 'boolean') {
+    return scalarEventValue(payload) ?? '—';
+  }
+  if (typeof payload === 'object' && !Array.isArray(payload) && 'value' in payload) {
+    const inner = (payload as { value: unknown }).value;
+    const scalar = scalarEventValue(inner);
+    if (scalar != null) return scalar;
+  }
+  try {
+    return JSON.stringify(payload);
   } catch {
     return '—';
   }

@@ -19,7 +19,8 @@ import {
   ACTIVITY_BUCKETS,
   bucketMessageActivity,
   formatAge,
-  formatEventValue,
+  formatRecentEventBody,
+  formatRecentEventTitle,
   formatTopicShort,
   freshnessPct,
   lastMessageAgeMs,
@@ -301,23 +302,29 @@ export const DashboardView: React.FC = () => {
                 ) : (
                   recentMessages.map((msg) => (
                     <div
-                      key={msg.topic}
-                      className="flex items-center gap-2.5 rounded-lg border border-zinc-800/60 bg-zinc-900/40 px-2.5 py-2"
+                      key={msg.id}
+                      className="rounded-lg border border-zinc-800/60 bg-zinc-900/40 px-2.5 py-2"
                     >
-                      <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-[#FF7A00]/15">
-                        <Radio className="size-3.5 text-[#FF7A00]" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-xs font-medium text-zinc-200">
-                          {formatTopicShort(msg.topic)}
+                      <div className="flex items-start gap-2">
+                        <div className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md bg-[#FF7A00]/15">
+                          <Radio className="size-3 text-[#FF7A00]" />
                         </div>
-                        <div className="text-[10px] text-zinc-500">
-                          {formatAge(Date.now() - Date.parse(msg.timestamp))}
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <div className="truncate text-xs font-medium text-zinc-200">
+                              {formatRecentEventTitle(msg.topic, msg.payload)}
+                            </div>
+                            <span className="shrink-0 text-[10px] tabular-nums text-zinc-500">
+                              {formatAge(Date.now() - Date.parse(msg.timestamp))}
+                            </span>
+                          </div>
+                          <pre
+                            className="max-h-20 overflow-y-auto whitespace-pre-wrap break-all font-mono text-[10px] leading-snug text-zinc-400"
+                          >
+                            {formatRecentEventBody(msg.payload)}
+                          </pre>
                         </div>
                       </div>
-                      <span className="shrink-0 font-mono text-xs tabular-nums text-zinc-200">
-                        {formatEventValue(msg.payload)}
-                      </span>
                     </div>
                   ))
                 )}

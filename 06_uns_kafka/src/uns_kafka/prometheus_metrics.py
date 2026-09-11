@@ -7,9 +7,19 @@ INGEST_RECEIVED = Counter(
     "MQTT historic events received by the ingestion mapper",
     ["shard", "qos"],
 )
+INGEST_ADMITTED = Counter(
+    "uns_kafka_ingest_admitted_total",
+    "Historic events queued for durable Kafka publication",
+    ["shard"],
+)
 INGEST_ACCEPTED = Counter(
     "uns_kafka_ingest_accepted_total",
-    "Historic events accepted for Kafka publication",
+    "Historic events successfully delivered to the canonical log",
+    ["shard"],
+)
+INGEST_QOS0 = Counter(
+    "uns_kafka_ingest_qos0_total",
+    "Best-effort QoS 0 historic events published without manual acknowledgment",
     ["shard"],
 )
 INGEST_REJECTED = Counter(

@@ -8,6 +8,9 @@
     "down": "uv run uns_compose -f docker-compose.yml -f docker-compose.dev.yml down",
     "simulator": "bash HiveMQ-Simulator.sh",
     "simulator:stack": "uv run uns_compose -f docker-compose.yml -f docker-compose.dev.yml --profile oee-demo up -d oee_mqtt_simulator",
-    "simulator:stop": "uv run uns_compose -f docker-compose.yml -f docker-compose.dev.yml --profile oee-demo stop oee_mqtt_simulator"
+    "simulator:stop": "uv run uns_compose -f docker-compose.yml -f docker-compose.dev.yml --profile oee-demo stop oee_mqtt_simulator",
+    "sim:multi-system": "uv run python conf/simulator/multi_system_publishers.py",
+    "sim:multi-system:stack": "uv run uns_compose -f docker-compose.yml -f docker-compose.dev.yml --profile multi-system-demo up -d --build multi_system_simulator",
+    "sim:multi-system:stop": "uv run uns_compose -f docker-compose.yml -f docker-compose.dev.yml --profile multi-system-demo stop multi_system_simulator"
   }
 }

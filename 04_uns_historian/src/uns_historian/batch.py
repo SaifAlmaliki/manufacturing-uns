@@ -61,6 +61,19 @@ class ConsumedEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class IgnoredConsumedRecord:
+    """Kafka record consumed but not projected into historian SQL."""
+
+    kafka_topic: str
+    partition: int
+    offset: int
+
+    @property
+    def partition_key(self) -> tuple[str, int]:
+        return (self.kafka_topic, self.partition)
+
+
+@dataclass(frozen=True, slots=True)
 class RawInsertRow:
     time: datetime
     topic: str

@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fetchRealmMembers = vi.hoisted(() => vi.fn());
@@ -27,6 +28,21 @@ const auth = vi.hoisted(() => ({
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => auth }));
 
 import { UserManagementView } from './UserManagementView';
+
+function renderUsers(path = '/users/directory') {
+  return render(
+    <MemoryRouter initialEntries={[path]}>
+      <Routes>
+        <Route path="/users">
+          <Route index element={<Navigate to="directory" replace />} />
+          <Route path="directory" element={<UserManagementView />} />
+          <Route path="groups" element={<UserManagementView />} />
+          <Route path="roles" element={<UserManagementView />} />
+        </Route>
+      </Routes>
+    </MemoryRouter>,
+  );
+}
 
 const FILTRATION_GROUP = {
   id: 1,
@@ -69,7 +85,7 @@ const MEMBERS = {
 describe('the user directory', () => {
   it('lists the realm’s members with the roles the realm granted', async () => {
     fetchRealmMembers.mockResolvedValue(MEMBERS);
-    render(<UserManagementView />);
+    renderUsers();
 
     await waitFor(() => expect(screen.getByText('Erin Engineer')).toBeTruthy());
     expect(screen.getByText('Olga Operator')).toBeTruthy();
@@ -78,7 +94,7 @@ describe('the user directory', () => {
 
   it('shows a member with no console role as having none, not as a viewer', async () => {
     fetchRealmMembers.mockResolvedValue(MEMBERS);
-    render(<UserManagementView />);
+    renderUsers();
 
     await waitFor(() => expect(screen.getByText('Olga Operator')).toBeTruthy());
     expect(screen.getAllByText(/No console role/i).length).toBeGreaterThan(0);
@@ -86,7 +102,7 @@ describe('the user directory', () => {
 
   it('says it cannot read the realm rather than showing an empty directory', async () => {
     fetchRealmMembers.mockResolvedValue({ kind: 'forbidden' });
-    render(<UserManagementView />);
+    renderUsers();
 
     await waitFor(() => expect(screen.getByText(/cannot read the realm/i)).toBeTruthy());
     expect(screen.queryByText(/no users/i)).toBeNull();
@@ -94,13 +110,13 @@ describe('the user directory', () => {
 
   it('offers Open Keycloak as a button', async () => {
     fetchRealmMembers.mockResolvedValue({ kind: 'forbidden' });
-    render(<UserManagementView />);
+    renderUsers();
     await waitFor(() => expect(screen.getByRole('button', { name: /Open Keycloak/i })).toBeTruthy());
   });
 
   it('reports an unreachable realm with its reason', async () => {
     fetchRealmMembers.mockResolvedValue({ kind: 'unreachable', detail: 'Failed to fetch' });
-    render(<UserManagementView />);
+    renderUsers();
 
     await waitFor(() => expect(screen.getByText(/Failed to fetch/)).toBeTruthy());
   });
@@ -108,7 +124,7 @@ describe('the user directory', () => {
   it('does not ask the realm at all when the signed-in user is not an admin', async () => {
     auth.isAdmin = false;
     auth.roles = ['operator'];
-    render(<UserManagementView />);
+    renderUsers();
 
     await waitFor(() => expect(screen.getByText(/administrator/i)).toBeTruthy());
     expect(fetchRealmMembers).not.toHaveBeenCalled();
@@ -116,7 +132,7 @@ describe('the user directory', () => {
 
   it('shows Access Group chips on a directory row', async () => {
     fetchRealmMembers.mockResolvedValue(MEMBERS);
-    render(<UserManagementView />);
+    renderUsers();
     await waitFor(() => expect(screen.getByText('Erin Engineer')).toBeTruthy());
     expect(screen.getByText('Filtration')).toBeTruthy();
   });
@@ -125,7 +141,7 @@ describe('the user directory', () => {
 describe('what this screen can no longer do', () => {
   it('offers no way to create, edit or delete a user', async () => {
     fetchRealmMembers.mockResolvedValue(MEMBERS);
-    const { container } = render(<UserManagementView />);
+    const { container } = renderUsers();
 
     await waitFor(() => expect(screen.getByText('Erin Engineer')).toBeTruthy());
     expect(container.textContent).not.toMatch(/add user|new user|create user|delete user/i);
@@ -133,7 +149,7 @@ describe('what this screen can no longer do', () => {
 
   it('offers no per-user permission tick boxes', async () => {
     fetchRealmMembers.mockResolvedValue(MEMBERS);
-    render(<UserManagementView />);
+    renderUsers();
 
     await waitFor(() => expect(screen.getByText('Erin Engineer')).toBeTruthy());
     const directoryTable = screen.getByRole('table');
@@ -144,12 +160,12 @@ describe('what this screen can no longer do', () => {
 describe('Access Groups on Users and Access', () => {
   it('offers Assign groups, Create group and Save group after groups load', async () => {
     fetchRealmMembers.mockResolvedValue(MEMBERS);
-    render(<UserManagementView />);
+    renderUsers();
 
     await waitFor(() => expect(screen.getByText('Erin Engineer')).toBeTruthy());
     expect(screen.getAllByRole('button', { name: /Assign groups/i }).length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole('button', { name: /Access Groups/i }));
+    fireEvent.click(screen.getByRole('link', { name: /Access Groups/i }));
     await waitFor(() => expect(screen.getByRole('button', { name: /Create group/i })).toBeTruthy());
 
     fireEvent.click(screen.getByRole('button', { name: /Create group/i }));
@@ -166,7 +182,7 @@ describe('Access Groups on Users and Access', () => {
     };
     getAccessGroups.mockResolvedValue([FILTRATION_GROUP, packaging]);
     fetchRealmMembers.mockResolvedValue(MEMBERS);
-    render(<UserManagementView />);
+    renderUsers();
 
     await waitFor(() => expect(screen.getByText('Erin Engineer')).toBeTruthy());
     await waitFor(() => expect(screen.getByText('Filtration')).toBeTruthy());
@@ -186,9 +202,9 @@ describe('Access Groups on Users and Access', () => {
       { id: 9, path: 'AcmeWater/Site1/Filtration', segment: 'Filtration', level: 'AREA' },
     ]);
     fetchRealmMembers.mockResolvedValue(MEMBERS);
-    render(<UserManagementView />);
+    renderUsers();
 
-    fireEvent.click(screen.getByRole('button', { name: /Access Groups/i }));
+    fireEvent.click(screen.getByRole('link', { name: /Access Groups/i }));
     fireEvent.click(await screen.findByRole('button', { name: /Create group/i }));
 
     const parent = await screen.findByRole('checkbox', { name: 'AcmeWater' });
@@ -211,9 +227,9 @@ describe('Access Groups on Users and Access', () => {
       { id: 9, path: 'AcmeWater/Site1/Filtration', segment: 'Filtration', level: 'AREA' },
     ]);
     fetchRealmMembers.mockResolvedValue(MEMBERS);
-    render(<UserManagementView />);
+    renderUsers();
 
-    fireEvent.click(screen.getByRole('button', { name: /Access Groups/i }));
+    fireEvent.click(screen.getByRole('link', { name: /Access Groups/i }));
     fireEvent.click(await screen.findByRole('button', { name: /Create group/i }));
 
     await screen.findByRole('checkbox', { name: 'AcmeWater' });
@@ -239,9 +255,9 @@ describe('Access Groups on Users and Access', () => {
     saveAccessGroup.mockResolvedValue(created);
     setAccessGroupMembers.mockRejectedValueOnce(new Error('members failed'));
     fetchRealmMembers.mockResolvedValue(MEMBERS);
-    render(<UserManagementView />);
+    renderUsers();
 
-    fireEvent.click(screen.getByRole('button', { name: /Access Groups/i }));
+    fireEvent.click(screen.getByRole('link', { name: /Access Groups/i }));
     fireEvent.click(await screen.findByRole('button', { name: /Create group/i }));
     fireEvent.change(screen.getByPlaceholderText(/Access Group name/i), {
       target: { value: 'New zone' },
@@ -262,7 +278,7 @@ describe('Access Groups on Users and Access', () => {
   it('reloads groups when Assign save fails so retry is not from a stale snapshot', async () => {
     fetchRealmMembers.mockResolvedValue(MEMBERS);
     setAccessGroupMembers.mockRejectedValueOnce(new Error('assign failed'));
-    render(<UserManagementView />);
+    renderUsers();
 
     await waitFor(() => expect(screen.getByText('Erin Engineer')).toBeTruthy());
     fireEvent.click(screen.getAllByRole('button', { name: /Assign groups/i })[0]);
@@ -277,9 +293,9 @@ describe('Access Groups on Users and Access', () => {
       { ...FILTRATION_GROUP, subjects: ['kc-1', 'stale-sub'] },
     ]);
     fetchRealmMembers.mockResolvedValue(MEMBERS);
-    render(<UserManagementView />);
+    renderUsers();
 
-    fireEvent.click(screen.getByRole('button', { name: /Access Groups/i }));
+    fireEvent.click(screen.getByRole('link', { name: /Access Groups/i }));
     fireEvent.click(await screen.findByRole('button', { name: /^Edit$/i }));
 
     await waitFor(() => expect(screen.getByText('unknown')).toBeTruthy());
@@ -288,5 +304,38 @@ describe('Access Groups on Users and Access', () => {
     fireEvent.click(screen.getByRole('button', { name: /Remove unknown stale-sub/i }));
     expect(screen.queryByText('unknown')).toBeNull();
     expect(screen.queryByText('stale-sub')).toBeNull();
+  });
+
+  it('gives directory, groups and roles their own routes', async () => {
+    fetchRealmMembers.mockResolvedValue(MEMBERS);
+    renderUsers();
+    await waitFor(() => expect(screen.getByText('Erin Engineer')).toBeTruthy());
+    expect(screen.getByRole('link', { name: /User Directory/i }).getAttribute('href')).toBe(
+      '/users/directory',
+    );
+    expect(screen.getByRole('link', { name: /Access Groups/i }).getAttribute('href')).toBe(
+      '/users/groups',
+    );
+    expect(screen.getByRole('link', { name: /Role Profiles/i }).getAttribute('href')).toBe(
+      '/users/roles',
+    );
+  });
+
+  it('redirects /users to the directory tab', async () => {
+    fetchRealmMembers.mockResolvedValue(MEMBERS);
+    renderUsers('/users');
+    await waitFor(() => expect(screen.getByText('Erin Engineer')).toBeTruthy());
+    expect(screen.getByRole('link', { name: /User Directory/i }).getAttribute('aria-current')).toBe(
+      'page',
+    );
+  });
+
+  it('uses the console muted hover on group rows', async () => {
+    fetchRealmMembers.mockResolvedValue(MEMBERS);
+    renderUsers('/users/groups');
+    const name = await screen.findByText('Filtration');
+    const row = name.closest('tr');
+    expect(row?.className).toContain('hover:bg-muted');
+    expect(row?.className).not.toMatch(/zinc-800/);
   });
 });

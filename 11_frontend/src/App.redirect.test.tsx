@@ -68,3 +68,14 @@ describe('connectivity routes', () => {
     expect(src).toMatch(/path="(?:\/connectivity\/)?signals"/);
   });
 });
+
+describe('users routes', () => {
+  it('splits directory, groups and roles onto their own paths', () => {
+    const src = readFileSync(resolve(__dirname, './App.tsx'), 'utf8');
+    expect(src).toMatch(/path="\/users"/);
+    expect(src).toMatch(/Navigate to="(?:\/users\/)?directory"/);
+    expect(src).toMatch(/path="(?:\/users\/)?directory"/);
+    expect(src).toMatch(/path="(?:\/users\/)?groups"/);
+    expect(src).toMatch(/path="(?:\/users\/)?roles"/);
+  });
+});

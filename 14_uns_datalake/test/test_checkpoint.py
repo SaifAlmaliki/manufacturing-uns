@@ -2,38 +2,57 @@
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from confluent_kafka import TopicPartition
 
-from uns_datalake.batch import LakeRecord
 from uns_datalake.checkpoint import (
+    ConsumedPrefix,
     build_commit_partitions,
-    compute_next_offset,
     inspect_commit_result,
     may_commit_kafka,
-    next_offsets_for_records,
 )
-from conftest import source_envelope
 
 
-def _record(partition: int, offset: int) -> LakeRecord:
-    envelope = source_envelope()
-    return LakeRecord(
-        kafka_topic="uns.historic-events",
-        partition=partition,
-        offset=offset,
-        envelope=envelope,
-        envelope_bytes=b"{}",
-    )
+def test_numeric_gap_does_not_block_but_unresolved_record_does():
+    prefix = ConsumedPrefix()
+    for offset in (10, 12, 15):
+        prefix.observe(offset)
+    prefix.resolve(15)
+    assert prefix.next_offset() is None
+    prefix.resolve(10)
+    assert prefix.next_offset() == 11
+    prefix.resolve(12)
+    assert prefix.next_offset() == 16
 
 
-def test_compute_next_offset_requires_contiguous_prefix():
-    assert compute_next_offset(0, [0, 1, 2]) == 3
-    assert compute_next_offset(0, [0, 2]) == 1
+def test_observe_rejects_duplicate_or_out_of_order_offsets():
+    prefix = ConsumedPrefix()
+    prefix.observe(10)
+    with pytest.raises(ValueError, match="out-of-order"):
+        prefix.observe(9)
+    with pytest.raises(ValueError, match="out-of-order"):
+        prefix.observe(10)
 
 
-def test_next_offsets_for_records():
-    records = (_record(0, 10), _record(0, 11), _record(1, 5))
-    assert next_offsets_for_records(records) == {("uns.historic-events", 0): 12, ("uns.historic-events", 1): 6}
+def test_resolve_rejects_unknown_offsets():
+    prefix = ConsumedPrefix()
+    prefix.observe(10)
+    with pytest.raises(ValueError, match="unknown offset"):
+        prefix.resolve(11)
+
+
+def test_discard_committed_trims_resolved_prefix():
+    prefix = ConsumedPrefix()
+    for offset in (10, 11, 12):
+        prefix.observe(offset)
+    for offset in (10, 11, 12):
+        prefix.resolve(offset)
+    prefix.discard_committed(13)
+    assert prefix.next_offset() is None
+    prefix.observe(13)
+    prefix.resolve(13)
+    assert prefix.next_offset() == 14
 
 
 def test_build_commit_partitions():

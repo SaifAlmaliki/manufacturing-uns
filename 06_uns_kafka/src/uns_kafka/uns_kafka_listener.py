@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+from uns_config.publication_routes import resolve_route
 from uns_config.uns_ingest import is_historic_event_topic
 from uns_mqtt.mqtt_listener import MqttDeliveryOptions, UnsMQTTClient
 
@@ -12,9 +13,12 @@ from uns_kafka.ingest import IngestionOwner, ReceiptToken
 from uns_kafka.kafka_handler import KafkaHandler
 from uns_kafka.prometheus_metrics import (
     INGEST_ACCEPTED,
+    INGEST_ADMITTED,
     INGEST_BACKPRESSURE,
+    INGEST_QOS0,
     INGEST_READY,
     INGEST_RECEIVED,
+    INGEST_REJECTED,
     start_metrics_server,
 )
 from uns_kafka.uns_kafka_config import IngestionSettings, KAFKAConfig, MQTTConfig
@@ -52,11 +56,16 @@ class UNSKafkaMapper:
         self.kafka_handler = KafkaHandler(KAFKAConfig.kafka_config_map)
         publisher = _KafkaPublisherAdapter(self.kafka_handler)
         self.mqtt_ack = _MqttAckAdapter(None)  # placeholder until client exists
+        shard = self.ingestion_config.shard_id
         self.owner = IngestionOwner(
             config=self.ingestion_config,
             mqtt=self.mqtt_ack,
             events=publisher,
             dlq=publisher,
+            on_admitted=lambda: INGEST_ADMITTED.labels(shard=shard).inc(),
+            on_historic_delivered=lambda: INGEST_ACCEPTED.labels(shard=shard).inc(),
+            on_dlq_delivered=lambda reason: INGEST_REJECTED.labels(shard=shard, reason=reason).inc(),
+            on_qos0_delivered=lambda: INGEST_QOS0.labels(shard=shard).inc(),
         )
         self.uns_client = UnsMQTTClient(
             client_id=self.ingestion_config.client_id,
@@ -98,26 +107,9 @@ class UNSKafkaMapper:
     def on_message(self, client, userdata, msg):  # noqa: ARG002
         if not is_historic_event_topic(msg.topic):
             return
-        INGEST_RECEIVED.labels(shard=self.ingestion_config.shard_id, qos=str(msg.qos)).inc()
-        decoded_payload = None
-        if not msg.topic.startswith("spBv1.0/"):
-            try:
-                decoded_payload = self.uns_client.get_payload_as_dict(
-                    topic=msg.topic,
-                    payload=msg.payload,
-                    mqtt_ignored_attributes=MQTTConfig.ignored_attributes,
-                )
-            except Exception:
-                decoded_payload = None
-        else:
-            try:
-                decoded_payload = self.uns_client.get_payload_as_dict(
-                    topic=msg.topic,
-                    payload=msg.payload,
-                    mqtt_ignored_attributes=MQTTConfig.ignored_attributes,
-                )
-            except Exception:
-                decoded_payload = {}
+        shard = self.ingestion_config.shard_id
+        INGEST_RECEIVED.labels(shard=shard, qos=str(msg.qos)).inc()
+        decoded_payload = self._decode_payload(msg.topic, msg.payload)
 
         token = ReceiptToken(self.owner.connection_generation, msg.mid, msg.qos)
         if msg.qos == 0:
@@ -125,9 +117,40 @@ class UNSKafkaMapper:
         elif msg.qos == 1:
             self.mqtt_ack.register(token, msg)
             self.owner.ingest_qos1(token, msg.topic, msg.payload, decoded_payload)
-            INGEST_ACCEPTED.labels(shard=self.ingestion_config.shard_id).inc()
         self._sync_readiness()
         self.kafka_handler.poll(0)
+
+    def _decode_payload(self, topic: str, payload: bytes) -> dict | None:
+        if self._uses_publication_bytes(topic):
+            return None
+        if topic.startswith("spBv1.0/"):
+            try:
+                return self.uns_client.get_payload_as_dict(
+                    topic=topic,
+                    payload=payload,
+                    mqtt_ignored_attributes=MQTTConfig.ignored_attributes,
+                )
+            except Exception:
+                return {}
+        try:
+            return self.uns_client.get_payload_as_dict(
+                topic=topic,
+                payload=payload,
+                mqtt_ignored_attributes=MQTTConfig.ignored_attributes,
+            )
+        except Exception:
+            return None
+
+    def _uses_publication_bytes(self, topic: str) -> bool:
+        if not self.ingestion_config.v2_publications_enabled:
+            return False
+        if not self.ingestion_config.publication_routes:
+            return False
+        try:
+            resolve_route(topic, self.ingestion_config.publication_routes)
+        except Exception:
+            return False
+        return True
 
     def on_disconnect(
         self,

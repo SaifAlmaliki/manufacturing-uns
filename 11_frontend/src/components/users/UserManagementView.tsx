@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, Layers, Shield, Users } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { fetchRealmMembers, type DirectoryResult, type RealmMember } from '../../lib/auth/directory';
 import { platformConfig } from '../../lib/platform/config';
@@ -28,7 +29,19 @@ import {
 } from '../ui/console-ui';
 import { ConsoleTreeNode } from '../ui/console-tree';
 
-type SubTab = 'directory' | 'groups' | 'roles';
+export const USER_TAB_PATHS = {
+  directory: '/users/directory',
+  groups: '/users/groups',
+  roles: '/users/roles',
+} as const;
+
+export type SubTab = keyof typeof USER_TAB_PATHS;
+
+function tabIdFromPath(pathname: string): SubTab {
+  const segment = pathname.replace(/^\/users\/?/, '').split('/')[0];
+  if (segment === 'groups' || segment === 'roles') return segment;
+  return 'directory';
+}
 
 type GroupEditor = {
   id: number | null;
@@ -219,7 +232,8 @@ function AssetTreeRows({
 
 export const UserManagementView: React.FC = () => {
   const { isAdmin } = useAuth();
-  const [activeSubTab, setActiveSubTab] = useState<SubTab>('directory');
+  const location = useLocation();
+  const activeSubTab = useMemo(() => tabIdFromPath(location.pathname), [location.pathname]);
   const [result, setResult] = useState<DirectoryResult | null>(null);
   const [groups, setGroups] = useState<AccessGroupDto[]>([]);
   const [assets, setAssets] = useState<AccessAssetDto[]>([]);
@@ -281,9 +295,21 @@ export const UserManagementView: React.FC = () => {
   }, [members, searchQuery, roleFilter]);
 
   const userTabs = [
-    { id: 'directory', label: 'User Directory', icon: Users, badge: members.length || undefined },
-    { id: 'groups', label: 'Access Groups', icon: Layers, badge: groups.length || undefined },
-    { id: 'roles', label: 'Role Profiles', icon: Shield },
+    {
+      id: 'directory',
+      label: 'User Directory',
+      icon: Users,
+      badge: members.length || undefined,
+      href: USER_TAB_PATHS.directory,
+    },
+    {
+      id: 'groups',
+      label: 'Access Groups',
+      icon: Layers,
+      badge: groups.length || undefined,
+      href: USER_TAB_PATHS.groups,
+    },
+    { id: 'roles', label: 'Role Profiles', icon: Shield, href: USER_TAB_PATHS.roles },
   ];
 
   const reloadGroups = async () => {
@@ -408,7 +434,7 @@ export const UserManagementView: React.FC = () => {
     <PageShell id="user-management-view" scroll={false} className="flex flex-col font-mono">
       <div className="min-h-0 flex-1 overflow-y-auto">
         <PageContent fullWidth className="flex min-h-full flex-col gap-3 pb-4">
-          <SegmentTabs tabs={userTabs} active={activeSubTab} onChange={(id) => setActiveSubTab(id as SubTab)} />
+          <SegmentTabs tabs={userTabs} active={activeSubTab} />
 
           {activeSubTab === 'directory' && (
             <>
@@ -486,7 +512,7 @@ That needs the realm-management view-users role. Users are managed in Keycloak."
                             filteredMembers.map((member) => {
                               const memberGroups = groupsForMember(groups, member.id);
                               return (
-                                <tr key={member.id} className="transition-colors hover:bg-zinc-800/40">
+                                <tr key={member.id} className="transition-colors hover:bg-muted">
                                   <td className="px-3 py-2.5 font-semibold text-white">{member.displayName}</td>
                                   <td className="px-3 py-2.5 font-mono text-zinc-400">{member.username}</td>
                                   <td className="px-3 py-2.5 text-zinc-500">{member.email ?? '—'}</td>
@@ -707,7 +733,7 @@ That needs the realm-management view-users role. Users are managed in Keycloak."
                           </tr>
                         ) : (
                           groups.map((group) => (
-                            <tr key={group.id} className="transition-colors hover:bg-zinc-800/40">
+                            <tr key={group.id} className="transition-colors hover:bg-muted">
                               <td className="px-3 py-2.5 font-semibold text-white">{group.name}</td>
                               <td className="px-3 py-2.5">
                                 <div className="flex flex-wrap gap-1">

@@ -20,13 +20,30 @@ from uns_config.uns_ingest import is_historic_event_topic
 
 MAX_ENVELOPE_BYTES = 1_048_576
 SUPPORTED_SCHEMA_VERSION = 1
+SUPPORTED_SCHEMA_VERSIONS: frozenset[int] = frozenset({1, 2})
 _LEGACY_SECONDS_THRESHOLD = 100_000_000_000
 
 IdentityQuality = Literal["source", "ingress"]
 TimestampQuality = Literal["source", "ingress"]
-EventKind = Literal["telemetry", "sparkplug_raw", "lifecycle", "command"]
+EventKind = Literal[
+    "telemetry",
+    "sparkplug_raw",
+    "lifecycle",
+    "command",
+    "business_event",
+    "state_snapshot",
+]
 
-_EVENT_KINDS: frozenset[str] = frozenset({"telemetry", "sparkplug_raw", "lifecycle", "command"})
+_EVENT_KINDS: frozenset[str] = frozenset(
+    {
+        "telemetry",
+        "sparkplug_raw",
+        "lifecycle",
+        "command",
+        "business_event",
+        "state_snapshot",
+    }
+)
 _IDENTITY_QUALITIES: frozenset[str] = frozenset({"source", "ingress"})
 _TIMESTAMP_QUALITIES: frozenset[str] = frozenset({"source", "ingress"})
 
@@ -34,6 +51,16 @@ _SOURCE_ID_PATTERN = re.compile(r"^source:[0-9a-f]{64}$")
 _INGRESS_ID_PATTERN = re.compile(
     r"^ingress:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
     re.IGNORECASE,
+)
+_ROUTE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+
+_V2_REQUIRED_FIELDS = (
+    "source_application",
+    "payload_schema_id",
+    "payload_schema_version",
+    "content_type",
+    "original_payload_base64",
+    "archive_eligible",
 )
 
 
@@ -82,11 +109,18 @@ class HistoricEventEnvelope:
     is_historical: bool
     payload: dict[str, Any]
     raw_payload_base64: str | None
+    source_application: str | None = None
+    payload_schema_id: str | None = None
+    payload_schema_version: str | None = None
+    content_type: str | None = None
+    original_payload: bytes | None = None
+    archive_eligible: bool | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "time", _ensure_utc(self.time))
         object.__setattr__(self, "received_at", _ensure_utc(self.received_at))
-        object.__setattr__(self, "payload", normalize_payload_timestamps(self.payload))
+        if self.schema_version == SUPPORTED_SCHEMA_VERSION:
+            object.__setattr__(self, "payload", normalize_payload_timestamps(self.payload))
 
 
 def normalize_payload_timestamps(payload: dict[str, Any]) -> dict[str, Any]:
@@ -109,22 +143,45 @@ def normalize_legacy_timestamp_value(value: Any) -> int:
 
 
 def immutable_content_hash(envelope: HistoricEventEnvelope) -> str:
-    parts = (
-        envelope.schema_version,
-        envelope.event_id,
-        envelope.identity_quality,
-        envelope.source_id,
-        envelope.source_boot_id,
-        envelope.source_sequence,
-        envelope.site_id,
-        _format_time(envelope.time),
-        envelope.timestamp_quality,
-        envelope.topic,
-        envelope.event_kind,
-        envelope.is_historical,
-        envelope.payload,
-        envelope.raw_payload_base64,
-    )
+    if envelope.schema_version == SUPPORTED_SCHEMA_VERSION:
+        parts = (
+            envelope.schema_version,
+            envelope.event_id,
+            envelope.identity_quality,
+            envelope.source_id,
+            envelope.source_boot_id,
+            envelope.source_sequence,
+            envelope.site_id,
+            _format_time(envelope.time),
+            envelope.timestamp_quality,
+            envelope.topic,
+            envelope.event_kind,
+            envelope.is_historical,
+            envelope.payload,
+            envelope.raw_payload_base64,
+        )
+    else:
+        parts = (
+            envelope.schema_version,
+            envelope.event_id,
+            envelope.identity_quality,
+            envelope.source_id,
+            envelope.source_boot_id,
+            envelope.source_sequence,
+            envelope.site_id,
+            _format_time(envelope.time),
+            envelope.timestamp_quality,
+            envelope.topic,
+            envelope.event_kind,
+            envelope.is_historical,
+            envelope.payload,
+            envelope.source_application,
+            envelope.payload_schema_id,
+            envelope.payload_schema_version,
+            envelope.content_type,
+            _encode_original_payload_for_hash(envelope.original_payload),
+            envelope.archive_eligible,
+        )
     return tuple_digest(parts)
 
 
@@ -167,7 +224,7 @@ def decode_event(data: bytes) -> HistoricEventEnvelope:
 
 
 def _envelope_to_dict(envelope: HistoricEventEnvelope) -> dict[str, Any]:
-    return {
+    wire: dict[str, Any] = {
         "schema_version": envelope.schema_version,
         "event_id": envelope.event_id,
         "identity_quality": envelope.identity_quality,
@@ -184,9 +241,25 @@ def _envelope_to_dict(envelope: HistoricEventEnvelope) -> dict[str, Any]:
         "payload": envelope.payload,
         "raw_payload_base64": envelope.raw_payload_base64,
     }
+    if envelope.schema_version == 2:
+        wire.update(
+            {
+                "source_application": envelope.source_application,
+                "payload_schema_id": envelope.payload_schema_id,
+                "payload_schema_version": envelope.payload_schema_version,
+                "content_type": envelope.content_type,
+                "original_payload_base64": base64.b64encode(envelope.original_payload).decode("ascii"),
+                "archive_eligible": envelope.archive_eligible,
+            }
+        )
+    return wire
 
 
 def _dict_to_envelope(parsed: dict[str, Any]) -> HistoricEventEnvelope:
+    schema_version = parsed.get("schema_version")
+    if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
+        raise EnvelopeError("unsupported_schema")
+
     required_fields = (
         "schema_version",
         "event_id",
@@ -212,8 +285,11 @@ def _dict_to_envelope(parsed: dict[str, Any]) -> HistoricEventEnvelope:
     if not isinstance(parsed["payload"], dict):
         raise EnvelopeError("invalid_field", "payload")
 
+    if schema_version == 2:
+        return _dict_to_envelope_v2(parsed, raw_payload_base64)
+
     return HistoricEventEnvelope(
-        schema_version=parsed["schema_version"],
+        schema_version=schema_version,
         event_id=parsed["event_id"],
         identity_quality=parsed["identity_quality"],
         source_id=parsed["source_id"],
@@ -231,8 +307,60 @@ def _dict_to_envelope(parsed: dict[str, Any]) -> HistoricEventEnvelope:
     )
 
 
+def _dict_to_envelope_v2(parsed: dict[str, Any], raw_payload_base64: str | None) -> HistoricEventEnvelope:
+    for field in _V2_REQUIRED_FIELDS:
+        if field not in parsed:
+            raise EnvelopeError("missing_field", field)
+
+    source_application = parsed["source_application"]
+    payload_schema_id = parsed["payload_schema_id"]
+    payload_schema_version = parsed["payload_schema_version"]
+    content_type = parsed["content_type"]
+    original_payload_base64 = parsed["original_payload_base64"]
+    archive_eligible = parsed["archive_eligible"]
+
+    if not isinstance(source_application, str):
+        raise EnvelopeError("invalid_field", "source_application")
+    if not isinstance(payload_schema_id, str):
+        raise EnvelopeError("invalid_field", "payload_schema_id")
+    if not isinstance(payload_schema_version, str):
+        raise EnvelopeError("invalid_field", "payload_schema_version")
+    if not isinstance(content_type, str):
+        raise EnvelopeError("invalid_field", "content_type")
+    if not isinstance(original_payload_base64, str):
+        raise EnvelopeError("invalid_field", "original_payload_base64")
+    if not isinstance(archive_eligible, bool):
+        raise EnvelopeError("invalid_field", "archive_eligible")
+
+    original_payload = _decode_original_payload_base64(original_payload_base64)
+
+    return HistoricEventEnvelope(
+        schema_version=2,
+        event_id=parsed["event_id"],
+        identity_quality=parsed["identity_quality"],
+        source_id=parsed["source_id"],
+        source_boot_id=parsed.get("source_boot_id"),
+        source_sequence=parsed.get("source_sequence"),
+        site_id=parsed["site_id"],
+        time=_parse_time(parsed["time"], "time"),
+        received_at=_parse_time(parsed["received_at"], "received_at"),
+        timestamp_quality=parsed["timestamp_quality"],
+        topic=parsed["topic"],
+        event_kind=parsed["event_kind"],
+        is_historical=parsed["is_historical"],
+        payload=parsed["payload"],
+        raw_payload_base64=raw_payload_base64,
+        source_application=source_application,
+        payload_schema_id=payload_schema_id,
+        payload_schema_version=payload_schema_version,
+        content_type=content_type,
+        original_payload=original_payload,
+        archive_eligible=archive_eligible,
+    )
+
+
 def _validate_envelope(envelope: HistoricEventEnvelope) -> None:
-    if envelope.schema_version != SUPPORTED_SCHEMA_VERSION:
+    if envelope.schema_version not in SUPPORTED_SCHEMA_VERSIONS:
         raise EnvelopeError("unsupported_schema")
 
     if envelope.identity_quality not in _IDENTITY_QUALITIES:
@@ -241,6 +369,9 @@ def _validate_envelope(envelope: HistoricEventEnvelope) -> None:
         raise EnvelopeError("invalid_field", "timestamp_quality")
     if envelope.event_kind not in _EVENT_KINDS:
         raise EnvelopeError("invalid_field", "event_kind")
+
+    if not isinstance(envelope.payload, dict):
+        raise EnvelopeError("invalid_field", "payload")
 
     if not envelope.site_id or not envelope.source_id or not envelope.topic:
         raise EnvelopeError("invalid_field", "site_id/source_id/topic")
@@ -267,11 +398,78 @@ def _validate_envelope(envelope: HistoricEventEnvelope) -> None:
         if not _INGRESS_ID_PATTERN.fullmatch(envelope.event_id):
             raise EnvelopeError("invalid_identity")
 
+    if envelope.schema_version == SUPPORTED_SCHEMA_VERSION:
+        _validate_v1_envelope(envelope)
+    else:
+        _validate_v2_envelope(envelope)
+
+
+def _validate_v1_envelope(envelope: HistoricEventEnvelope) -> None:
     if envelope.raw_payload_base64 is not None:
         try:
             base64.b64decode(envelope.raw_payload_base64, validate=True)
         except (ValueError, binascii.Error) as exc:
             raise EnvelopeError("invalid_field", "raw_payload_base64") from exc
+
+    if any(
+        value is not None
+        for value in (
+            envelope.source_application,
+            envelope.payload_schema_id,
+            envelope.payload_schema_version,
+            envelope.content_type,
+            envelope.original_payload,
+            envelope.archive_eligible,
+        )
+    ):
+        raise EnvelopeError("invalid_field", "v2_fields_on_v1_envelope")
+
+
+def _validate_v2_envelope(envelope: HistoricEventEnvelope) -> None:
+    if envelope.raw_payload_base64 is not None:
+        raise EnvelopeError("invalid_field", "raw_payload_base64")
+
+    if envelope.source_application is None:
+        raise EnvelopeError("missing_field", "source_application")
+    if envelope.payload_schema_id is None:
+        raise EnvelopeError("missing_field", "payload_schema_id")
+    if envelope.payload_schema_version is None:
+        raise EnvelopeError("missing_field", "payload_schema_version")
+    if envelope.content_type is None:
+        raise EnvelopeError("missing_field", "content_type")
+    if envelope.original_payload is None:
+        raise EnvelopeError("missing_field", "original_payload")
+    if envelope.archive_eligible is None:
+        raise EnvelopeError("missing_field", "archive_eligible")
+
+    if not isinstance(envelope.original_payload, bytes):
+        raise EnvelopeError("invalid_field", "original_payload")
+    if not isinstance(envelope.archive_eligible, bool):
+        raise EnvelopeError("invalid_field", "archive_eligible")
+    if not isinstance(envelope.content_type, str) or not envelope.content_type:
+        raise EnvelopeError("invalid_field", "content_type")
+
+    for field_name, value in (
+        ("source_application", envelope.source_application),
+        ("payload_schema_id", envelope.payload_schema_id),
+        ("payload_schema_version", envelope.payload_schema_version),
+        ("site_id", envelope.site_id),
+    ):
+        if not isinstance(value, str) or not _ROUTE_ID_PATTERN.fullmatch(value):
+            raise EnvelopeError("invalid_field", field_name)
+
+
+def _decode_original_payload_base64(value: str) -> bytes:
+    try:
+        return base64.b64decode(value, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise EnvelopeError("invalid_field", "original_payload_base64") from exc
+
+
+def _encode_original_payload_for_hash(original_payload: bytes | None) -> str:
+    if original_payload is None:
+        raise EnvelopeError("missing_field", "original_payload")
+    return base64.b64encode(original_payload).decode("ascii")
 
 
 def _ensure_utc(value: datetime) -> datetime:

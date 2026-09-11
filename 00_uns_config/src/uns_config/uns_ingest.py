@@ -15,7 +15,14 @@ from __future__ import annotations
 
 from typing import Literal
 
-EventKind = Literal["telemetry", "sparkplug_raw", "lifecycle", "command"]
+EventKind = Literal[
+    "telemetry",
+    "sparkplug_raw",
+    "lifecycle",
+    "command",
+    "business_event",
+    "state_snapshot",
+]
 
 SPARKPLUG_PREFIX = "spBv1.0/"
 SPARKPLUG_STATE_PREFIX = "spBv1.0/STATE/"

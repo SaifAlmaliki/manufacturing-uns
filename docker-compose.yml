@@ -53,6 +53,18 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Halabja MES / LIMS / SAP (+ machine telemetry) for multi-system lake qualification.
+  # Host: npm run sim:multi-system. In-stack: npm run sim:multi-system:stack
+  multi_system_simulator:
+    profiles: ["multi-system-demo"]
+    build:
+      context: .
+      dockerfile: ./conf/simulator/Dockerfile.multi-system
+    depends_on:
+      uns_mqtt_broker:
+        condition: service_healthy
+    restart: unless-stopped
+
   uns_timescale_db:
     image: "timescale/timescaledb:latest-pg16"
     ports:

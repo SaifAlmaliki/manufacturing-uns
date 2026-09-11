@@ -249,6 +249,7 @@ default:
     kafka:
       topic: uns.historic-events
       group_id: uns_datalake
+      initial_position: require_committed
       config:
         client.id: uns_datalake
         bootstrap.servers: localhost:9092
@@ -258,6 +259,8 @@ default:
       max_records: 10000
       max_record_bytes: 1048576
       worker_max_buffered_bytes: 33554432
+      max_active_route_groups: 64
+      max_encoded_bytes: 16777216
     s3:
       bucket: uns-historic-events
       region: us-east-1
@@ -307,6 +310,7 @@ datalake:
   kafka:
     topic: uns.historic-events
     group_id: uns_datalake
+    initial_position: require_committed
     config:
       client.id: uns_datalake
       bootstrap.servers: localhost:9092
@@ -316,6 +320,8 @@ datalake:
     max_records: 10000
     max_record_bytes: 1048576
     worker_max_buffered_bytes: 33554432
+    max_active_route_groups: 64
+    max_encoded_bytes: 16777216
   s3:
     bucket: uns-historic-events
     region: us-east-1
@@ -337,10 +343,75 @@ kafka_mapper:
   ingestion:
     shard_id: "dev"
     client_id: "uns_kafka_ingest-dev"
+    # Enabled in shipped config: historian and GraphQL readers are v2-compatible (ADR-0012).
+    # Set false only when rolling back or upgrading readers before writers on an existing deployment.
+    v2_publications_enabled: true
     ownership:
       - site_id: "default"
         source_id: "default/ingress"
         topic_prefix: ""
+    publication_routes:
+      - topic_filter: "HalabjaWTP/Halabja/Distribution/+/+/Value"
+        source_id: "halabja/distribution-machine"
+        source_application: machine
+        site_id: halabja
+        wire_format: raw
+        content_type: application/json
+        event_kind: telemetry
+        archive_eligible: true
+        default_schema_pair:
+          payload_schema_id: machine-temperature
+          payload_schema_version: "1"
+        allowed_schema_pairs:
+          - payload_schema_id: machine-temperature
+            payload_schema_version: "1"
+      - topic_filter: "HalabjaWTP/Halabja/LIMS/results"
+        source_id: "halabja/lims-01"
+        source_application: lims
+        site_id: halabja
+        wire_format: uns-publication-v1
+        content_type: application/json
+        event_kind: business_event
+        archive_eligible: true
+        allowed_schema_pairs:
+          - payload_schema_id: lab-result
+            payload_schema_version: "1"
+      - topic_filter: "HalabjaWTP/Halabja/MES/orders"
+        source_id: "halabja/mes-01"
+        source_application: mes
+        site_id: halabja
+        wire_format: raw
+        content_type: application/json
+        event_kind: business_event
+        archive_eligible: true
+        default_schema_pair:
+          payload_schema_id: production-order
+          payload_schema_version: "1"
+        allowed_schema_pairs:
+          - payload_schema_id: production-order
+            payload_schema_version: "1"
+      - topic_filter: "HalabjaWTP/Halabja/Logistics/movements"
+        source_id: "halabja/logistics-01"
+        source_application: logistics
+        site_id: halabja
+        wire_format: uns-publication-v1
+        content_type: application/json
+        event_kind: business_event
+        archive_eligible: true
+        allowed_schema_pairs:
+          - payload_schema_id: inventory-movement
+            payload_schema_version: "1"
+      - topic_filter: "HalabjaWTP/Halabja/SAP/material-documents"
+        source_id: "halabja/sap-erp-01"
+        source_application: sap
+        site_id: halabja
+        wire_format: uns-publication-v1
+        content_type: application/json
+        event_kind: business_event
+        archive_eligible: true
+        allowed_schema_pairs:
+          - payload_schema_id: material-document
+            payload_schema_version: "1"
   metrics_port: 9094
   kafka:
     config:

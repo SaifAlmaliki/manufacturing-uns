@@ -23,6 +23,7 @@ from typing import Literal
 
 from uns_config import get_settings
 from uns_config.kafka import sanitize_kafka_config
+from uns_config.publication_routes import PublicationRoute, publication_route_from_dict, validate_routes
 from uns_kafka.ingest import (
     HISTORIC_TOPIC,
     IngestionConfig,
@@ -93,6 +94,13 @@ class KAFKAConfig:
     kafka_config_map: dict = build_producer_config(settings.get("kafka.config"))
 
 
+def load_publication_routes() -> tuple[PublicationRoute, ...]:
+    raw = settings.get("ingestion.publication_routes", [])
+    routes = tuple(publication_route_from_dict(entry) for entry in raw)
+    validate_routes(routes)
+    return routes
+
+
 def load_ingestion_config() -> IngestionConfig:
     raw = settings.get("ingestion", {})
     ownership_raw = raw.get(
@@ -118,6 +126,8 @@ def load_ingestion_config() -> IngestionConfig:
         historic_topic=raw.get("historic_topic", HISTORIC_TOPIC),
         dlq_topic=raw.get("dlq_topic", DLQ_TOPIC),
         ownership_mappings=mappings,
+        publication_routes=load_publication_routes(),
+        v2_publications_enabled=bool(raw.get("v2_publications_enabled", False)),
         pending_record_limit=int(raw.get("pending_record_limit", 1000)),
         pending_byte_limit=int(raw.get("pending_byte_limit", 16 * 1024 * 1024)),
         timestamp_attribute=raw.get("timestamp_attribute", MQTTConfig.timestamp_key),
@@ -126,4 +136,6 @@ def load_ingestion_config() -> IngestionConfig:
 
 class IngestionSettings:
     config: IngestionConfig = load_ingestion_config()
+    publication_routes: tuple[PublicationRoute, ...] = load_publication_routes()
+    v2_publications_enabled: bool = bool(settings.get("ingestion.v2_publications_enabled", False))
     metrics_port: int | None = settings.get("metrics_port")

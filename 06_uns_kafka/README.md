@@ -22,6 +22,26 @@ See [ADR-0011](../docs/adr/0011-canonical-historic-event-pipeline.md) and the
 Dotted MQTT-to-Kafka topic conversion is **not** used by the default stack. Older
 documentation describing `_` topic mapping remains for historical context only.
 
+## Multi-system publications (v2)
+
+Registered publication routes live under `kafka_mapper.ingestion` in
+[`conf/settings.yaml`](../conf/settings.yaml). Each route binds one MQTT filter to
+immutable metadata (application, site, schema pairs, wire format, event kind).
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `v2_publications_enabled` | `true` | Set `false` only for rollback or pre-reader upgrade on existing deployments |
+| `publication_routes` | Halabja examples | Validated at startup; overlapping filters fail |
+
+When `v2_publications_enabled` is `false`, the mapper emits v1 telemetry envelopes
+as before. When `true`, registered routes produce v2 envelopes with byte-preserving
+`original_payload` for lake routing. Unknown topics are durable rejections, not
+silent drops.
+
+See [ADR-0012](../docs/adr/0012-multi-system-uns-to-lake-delivery.md) and the
+[operations runbook](../docs/operations/uns-to-lake-delivery.md) for rollout order.
+Business records do not require assets.
+
 ## Legacy dotted-topic note (pre-Phase 1)
 
 Valid characters for Kafka topics are the ASCII alphanumerics, **`.`**, **`_`**, and **`-`** and it is better not to mix `.` and `_` to avoid metric namespace collisions

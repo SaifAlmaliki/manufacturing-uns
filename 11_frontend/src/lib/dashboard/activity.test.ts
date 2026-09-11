@@ -5,6 +5,8 @@ import {
   ACTIVITY_BUCKETS,
   bucketMessageActivity,
   formatEventValue,
+  formatRecentEventBody,
+  formatRecentEventTitle,
   formatTopicShort,
   isDashboardNoiseTopic,
   lastMessageAgeMs,
@@ -113,6 +115,21 @@ describe('format helpers', () => {
     expect(formatEventValue({ value: 12.456 })).toBe('12.46');
     expect(formatEventValue(true)).toBe('true');
     expect(formatEventValue('running')).toBe('running');
+  });
+
+  it('labels wrapped business publications and keeps the full body for the row', () => {
+    const wrapper = {
+      publication_version: 1,
+      source_application: 'sap',
+      payload_schema_id: 'material-document',
+      payload_schema_version: '1',
+      original_payload_base64: 'eyJxIjoxfQ==',
+    };
+    expect(formatRecentEventTitle('HalabjaWTP/Halabja/SAP/material-documents', wrapper)).toBe(
+      'SAP / material-documents · sap/material-document',
+    );
+    expect(formatRecentEventBody(wrapper)).toBe(JSON.stringify(wrapper));
+    expect(formatRecentEventBody({ value: 16.39 })).toBe('16.39');
   });
 
   it('reports age from the newest process message', () => {

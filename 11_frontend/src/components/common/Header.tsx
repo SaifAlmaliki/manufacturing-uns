@@ -45,6 +45,12 @@ function getPageHeading(
   if (path.startsWith('/system')) {
     return { title: 'System Health' };
   }
+  if (path.startsWith('/users/groups')) {
+    return { title: 'Access Groups' };
+  }
+  if (path.startsWith('/users/roles')) {
+    return { title: 'Role Profiles' };
+  }
   if (path.startsWith('/users')) {
     return { title: 'Users' };
   }

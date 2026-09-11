@@ -41,6 +41,7 @@ from uns_historian.batch import (
     ConsumedEvent,
     ContentConflictError,
     HISTORIC_KAFKA_TOPIC,
+    IgnoredConsumedRecord,
     PIPELINE_SCHEMA,
     build_metric_rows,
     compute_next_offset,
@@ -408,6 +409,79 @@ class HistorianHandler:
                 duplicate_count=duplicate_count,
                 filtered_stale_count=filtered_stale_count,
                 quarantined_conflicts=tuple(quarantined),
+                next_offsets=next_offsets,
+            )
+
+    async def checkpoint_ignored_records(
+        self,
+        records: Sequence[IgnoredConsumedRecord],
+        pipeline_epoch: int,
+    ) -> BatchPersistResult:
+        if not records:
+            return BatchPersistResult(
+                inserted_count=0,
+                duplicate_count=0,
+                filtered_stale_count=0,
+                quarantined_conflicts=(),
+                next_offsets={},
+            )
+
+        sorted_records = sorted(records, key=lambda record: (record.kafka_topic, record.partition, record.offset))
+        partition_keys = sorted({record.partition_key for record in sorted_records})
+
+        async with self._database.begin() as connection:
+            checkpoints: dict[tuple[str, int], int] = {}
+            for kafka_topic_name, partition_id in partition_keys:
+                await connection.execute(
+                    _CHECKPOINT_ENSURE,
+                    {
+                        "pipeline_epoch": pipeline_epoch,
+                        "kafka_topic": kafka_topic_name,
+                        "partition_id": partition_id,
+                    },
+                )
+                locked = (
+                    await connection.execute(
+                        _CHECKPOINT_LOCK,
+                        {
+                            "pipeline_epoch": pipeline_epoch,
+                            "kafka_topic": kafka_topic_name,
+                            "partition_id": partition_id,
+                        },
+                    )
+                ).mappings().one()
+                checkpoints[(kafka_topic_name, partition_id)] = locked["next_offset"]
+
+            handled_by_partition: dict[tuple[str, int], list[int]] = {}
+            filtered_stale_count = 0
+            for record in sorted_records:
+                partition_key = record.partition_key
+                if record.offset < checkpoints[partition_key]:
+                    filtered_stale_count += 1
+                    continue
+                handled_by_partition.setdefault(partition_key, []).append(record.offset)
+
+            next_offsets: dict[tuple[str, int], int] = {}
+            for partition_key, handled_offsets in handled_by_partition.items():
+                kafka_topic_name, partition_id = partition_key
+                advanced = compute_next_offset(checkpoints[partition_key], handled_offsets)
+                if advanced > checkpoints[partition_key]:
+                    await connection.execute(
+                        _CHECKPOINT_ADVANCE,
+                        {
+                            "pipeline_epoch": pipeline_epoch,
+                            "kafka_topic": kafka_topic_name,
+                            "partition_id": partition_id,
+                            "next_offset": advanced,
+                        },
+                    )
+                    next_offsets[partition_key] = advanced
+
+            return BatchPersistResult(
+                inserted_count=0,
+                duplicate_count=0,
+                filtered_stale_count=filtered_stale_count,
+                quarantined_conflicts=(),
                 next_offsets=next_offsets,
             )
 

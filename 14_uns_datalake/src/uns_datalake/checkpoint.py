@@ -2,34 +2,67 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 
 from confluent_kafka import TopicPartition
 
-from uns_datalake.batch import LakeRecord
 
+class ConsumedPrefix:
+    """Ordered consumed-record ledger for one partition assignment generation."""
 
-def compute_next_offset(partition: int, handled_offsets: Iterable[int]) -> int:
-    """Return the next contiguous commit offset after handled offsets."""
-    if not handled_offsets:
-        raise ValueError("handled_offsets must not be empty")
-    ordered = sorted(set(handled_offsets))
-    expected = ordered[0]
-    for offset in ordered:
-        if offset != expected:
-            return expected
-        expected += 1
-    return expected
+    def __init__(self) -> None:
+        self._observed: list[int] = []
+        self._observed_set: set[int] = set()
+        self._resolved: set[int] = set()
+        self._committed_floor: int | None = None
 
+    def observe(self, offset: int) -> None:
+        if self._observed and offset <= self._observed[-1]:
+            raise ValueError("duplicate or out-of-order observation")
+        self._observed.append(offset)
+        self._observed_set.add(offset)
 
-def next_offsets_for_records(records: Sequence[LakeRecord]) -> dict[tuple[str, int], int]:
-    grouped: dict[tuple[str, int], list[int]] = {}
-    for record in records:
-        grouped.setdefault(record.partition_key, []).append(record.offset)
-    return {
-        key: compute_next_offset(key[1], offsets)
-        for key, offsets in grouped.items()
-    }
+    def resolve(self, offset: int) -> None:
+        if offset not in self._observed_set:
+            raise ValueError("unknown offset")
+        self._resolved.add(offset)
+
+    def next_offset(self) -> int | None:
+        last_resolved: int | None = None
+        for offset in self._observed:
+            if offset not in self._resolved:
+                if last_resolved is None:
+                    return None
+                return last_resolved + 1
+            last_resolved = offset
+        if last_resolved is None:
+            return None
+        return last_resolved + 1
+
+    def has_unresolved_before(self, offset: int) -> bool:
+        for observed in self._observed:
+            if observed >= offset:
+                return False
+            if observed not in self._resolved:
+                return True
+        return False
+
+    def discard_committed(self, next_offset: int) -> None:
+        if next_offset <= 0:
+            raise ValueError("next_offset must be positive")
+        self._committed_floor = next_offset
+        remaining_observed: list[int] = []
+        remaining_set: set[int] = set()
+        remaining_resolved: set[int] = set()
+        for offset in self._observed:
+            if offset >= next_offset:
+                remaining_observed.append(offset)
+                remaining_set.add(offset)
+                if offset in self._resolved:
+                    remaining_resolved.add(offset)
+        self._observed = remaining_observed
+        self._observed_set = remaining_set
+        self._resolved = remaining_resolved
 
 
 def build_commit_partitions(next_offsets: dict[tuple[str, int], int]) -> list[TopicPartition]:

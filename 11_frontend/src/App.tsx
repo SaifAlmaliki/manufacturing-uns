@@ -82,7 +82,12 @@ export default function App() {
                   <Route path="/sparkplug" element={<SparkplugView />} />
                   <Route path="/streams" element={<Navigate to="/dashboard" replace />} />
                   <Route path="/system" element={<SystemHealthView />} />
-                  <Route path="/users" element={<UserManagementView />} />
+                  <Route path="/users">
+                    <Route index element={<Navigate to="directory" replace />} />
+                    <Route path="directory" element={<UserManagementView />} />
+                    <Route path="groups" element={<UserManagementView />} />
+                    <Route path="roles" element={<UserManagementView />} />
+                  </Route>
                   <Route path="/hierarchy" element={<HierarchyView />} />
                   <Route path="/connectivity">
                     <Route index element={<Navigate to="servers" replace />} />

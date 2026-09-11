@@ -5,6 +5,12 @@ services:
   # Importing it fails the one-shot job and blocks GraphQL. Skip OEE on this overlay.
   asset_model_setup:
     command: ["--skip-oee-import"]
+  
+  uns_minio:
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Console UI
+    command: ["server", "/data", "--console-address", ":9001"]
 
   # This PC's NetBIOS name is not in Docker DNS. Map it to the host so Test/Browse
   # and HiveMQ Edge OPC UA adapters can use the same opc.tcp://desktop-h4hdql2:50000/

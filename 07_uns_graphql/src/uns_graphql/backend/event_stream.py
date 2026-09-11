@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Any, Protocol
 
 from confluent_kafka import OFFSET_END, Consumer, KafkaError, TopicPartition
+from uns_config.event_compatibility import as_legacy_telemetry
 from uns_config.events import EnvelopeError, decode_event
 
 from uns_graphql.auth.scope import AccessScope, allowed_topic
@@ -96,15 +97,18 @@ def assign_live_end(_consumer, partitions) -> None:
 def envelope_to_dispatched(payload: bytes) -> DispatchedEvent | None:
     try:
         envelope = decode_event(payload)
+        legacy = as_legacy_telemetry(envelope)
     except EnvelopeError as exc:
         LOGGER.warning("Skipping invalid live envelope: %s", exc)
         return None
-    payload_json = json.dumps(envelope.payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    if legacy is None:
+        return None
+    payload_json = json.dumps(legacy.payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     return DispatchedEvent(
-        topic=envelope.topic,
+        topic=legacy.topic,
         payload_json=payload_json,
-        event_id=envelope.event_id,
-        event_time=envelope.time,
+        event_id=legacy.event_id,
+        event_time=legacy.time,
     )
 
 

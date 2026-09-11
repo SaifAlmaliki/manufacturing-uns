@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 from confluent_kafka import Consumer, KafkaError, TopicPartition
+from uns_config.event_compatibility import as_legacy_telemetry
 from uns_config.events import EnvelopeError, decode_event
 from uns_model.engine import Database
 from uns_model.notifications import AssetModelChangeListener
@@ -19,7 +20,12 @@ from uns_model.topic_binder import TopicBinder
 
 from uns_historian import health_check as historian_health
 from uns_historian.aggregate_refresh import AggregateRefreshWorker
-from uns_historian.batch import BatchCollector, BatchPersistResult, ConsumedEvent
+from uns_historian.batch import (
+    BatchCollector,
+    BatchPersistResult,
+    ConsumedEvent,
+    IgnoredConsumedRecord,
+)
 from uns_historian.historian_config import HistorianConfig, KafkaConfig
 from uns_historian.historian_handler import HistorianHandler
 from uns_historian.prometheus_metrics import (
@@ -73,6 +79,13 @@ def build_commit_partitions(next_offsets: dict[tuple[str, int], int]) -> list[To
 
 def may_commit_kafka(*, ownership_active: bool, revoked: bool) -> bool:
     return ownership_active and not revoked
+
+
+@dataclass(frozen=True, slots=True)
+class BufferMessageResult:
+    consumed: ConsumedEvent | None = None
+    ignored: IgnoredConsumedRecord | None = None
+    needs_flush: bool = False
 
 
 @dataclass(slots=True)
@@ -135,24 +148,33 @@ class HistorianKafkaMapper:
         partition: int,
         offset: int,
         payload: bytes,
-    ) -> tuple[ConsumedEvent | None, bool]:
+    ) -> BufferMessageResult:
         try:
             envelope = decode_event(payload)
+            legacy = as_legacy_telemetry(envelope)
         except EnvelopeError as exc:
             DECODE_FAILURE.labels(reason=exc.reason).inc()
             LOGGER.warning("Rejecting invalid envelope at %s[%s]@%s: %s", topic, partition, offset, exc)
-            return None, False
+            return BufferMessageResult()
+        if legacy is None:
+            return BufferMessageResult(
+                ignored=IgnoredConsumedRecord(
+                    kafka_topic=topic,
+                    partition=partition,
+                    offset=offset,
+                )
+            )
         event = ConsumedEvent(
             kafka_topic=topic,
             partition=partition,
             offset=offset,
-            envelope=envelope,
+            envelope=legacy,
             envelope_bytes=payload,
         )
         if not self.collector.try_add(event, monotonic=self.monotonic()):
-            return event, True
+            return BufferMessageResult(consumed=event, needs_flush=True)
         EVENTS_CONSUMED.inc()
-        return event, False
+        return BufferMessageResult(consumed=event)
 
 
 class ConsumerPort(Protocol):
@@ -256,18 +278,31 @@ class HistorianKafkaConsumer:
         if assignment:
             self._consumer.resume(assignment)
 
+    async def _handle_ignored_record(self, ignored: IgnoredConsumedRecord) -> None:
+        await self._maybe_flush(force=True)
+        result = await self._handler.checkpoint_ignored_records(
+            [ignored],
+            self._mapper.pipeline_epoch,
+        )
+        commits = self._mapper.record_sql_success(result, revoked=self._mapper.revoked)
+        if commits:
+            self._commit_kafka(commits)
+
     async def _handle_message(self, message) -> None:
         if self._mapper.should_pause_for_backpressure():
             await self._maybe_flush(force=True)
             if self._mapper.should_pause_for_backpressure():
                 return
-        _event, needs_flush = self._mapper.try_buffer_message(
+        buffered = self._mapper.try_buffer_message(
             topic=message.topic(),
             partition=message.partition(),
             offset=message.offset(),
             payload=message.value() or b"",
         )
-        if needs_flush:
+        if buffered.ignored is not None:
+            await self._handle_ignored_record(buffered.ignored)
+            return
+        if buffered.needs_flush:
             await self._maybe_flush(force=True)
             self._mapper.try_buffer_message(
                 topic=message.topic(),

@@ -5,15 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
 
 import pytest
 from confluent_kafka import TopicPartition
 
-from uns_datalake.batch import FlushLimits, LakeRecord
-from uns_datalake.mapper import DatalakeMapper, DlqPublisher, OwnershipLostError
+from uns_datalake.batch import FlushLimits
+from uns_datalake.mapper import DatalakeMapper, OwnershipLostError
+from uns_datalake.routing import LakeRecord
 from uns_datalake.stores import FakeObjectStore
-from conftest import envelope_bytes, source_envelope
+from conftest import envelope_bytes, lake_record_from_envelope, legacy_route_map, source_envelope
 
 
 @dataclass
@@ -50,6 +50,7 @@ class FakeConsumer:
     messages: list[FakeMessage] = field(default_factory=list)
     commits: list[list[TopicPartition]] = field(default_factory=list)
     paused: list[TopicPartition] = field(default_factory=list)
+    assigned: list[TopicPartition] = field(default_factory=list)
     on_assign = None
     on_revoke = None
 
@@ -68,12 +69,28 @@ class FakeConsumer:
             if partition in self.paused:
                 self.paused.remove(partition)
 
+    def assign(self, partitions):
+        self.assigned = list(partitions)
+
+    def committed(self, partitions, timeout: float):
+        return [TopicPartition(part.topic, part.partition, 0) for part in partitions]
+
+    def get_watermark_offsets(self, partition: TopicPartition, timeout: float):
+        return 0, 100
+
+    def position(self, partitions):
+        return list(partitions)
+
     def commit(self, offsets=None, asynchronous=False):
         self.commits.append(list(offsets or []))
         return []
 
     def close(self):
         pass
+
+
+def _commit_offsets(consumer: FakeConsumer) -> list[list[tuple[str, int, int]]]:
+    return [[(part.topic, part.partition, part.offset) for part in batch] for batch in consumer.commits]
 
 
 class FakeDlq:
@@ -87,20 +104,41 @@ class FakeDlq:
         self.messages.append((topic, key, value))
 
 
+def _test_limits(**overrides) -> FlushLimits:
+    defaults = {
+        "max_records": 2,
+        "max_bytes": 8_388_608,
+        "max_record_bytes": 1_048_576,
+        "interval_seconds": 60,
+        "worker_max_buffered_bytes": 32 * 1024 * 1024,
+    }
+    defaults.update(overrides)
+    return FlushLimits(**defaults)
+
+
 def _mapper(tmp_path: Path, *, limits: FlushLimits | None = None) -> tuple[DatalakeMapper, FakeConsumer, FakeObjectStore, FakeDlq]:
     consumer = FakeConsumer()
     store = FakeObjectStore(root=tmp_path)
     dlq = FakeDlq()
+    legacy = legacy_route_map()
     mapper = DatalakeMapper(
         consumer=consumer,
         store=store,
         dlq=dlq,
-        limits=limits or FlushLimits(max_records=2, max_bytes=1_000_000, interval_seconds=60, worker_max_buffered_bytes=1_000_000),
+        legacy_map=legacy,
+        limits=limits or _test_limits(),
         monotonic=lambda: 0.0,
         sleep=lambda _seconds: None,
     )
     mapper.on_assign([TopicPartition("uns.historic-events", 0, 0)])
     return mapper, consumer, store, dlq
+
+
+def _complete_frozen_flush(mapper: DatalakeMapper) -> bool:
+    while mapper.frozen_flush is not None:
+        if not mapper.run_once():
+            return False
+    return True
 
 
 def test_kafka_callbacks_accept_consumer_argument(tmp_path: Path):
@@ -113,7 +151,10 @@ def test_kafka_callbacks_accept_consumer_argument(tmp_path: Path):
 
 
 def test_upload_happens_before_commit(tmp_path: Path):
-    mapper, consumer, store, _dlq = _mapper(tmp_path, limits=FlushLimits(max_records=1, max_bytes=1_000_000, interval_seconds=60, worker_max_buffered_bytes=1_000_000))
+    mapper, consumer, store, _dlq = _mapper(
+        tmp_path,
+        limits=_test_limits(max_records=1),
+    )
     consumer.messages = [
         FakeMessage("uns.historic-events", 0, 0, envelope_bytes(source_sequence=1)),
     ]
@@ -121,8 +162,9 @@ def test_upload_happens_before_commit(tmp_path: Path):
     assert mapper.frozen_flush is not None
     assert consumer.commits == []
     assert mapper.run_once()
-    assert store.put_calls
-    assert consumer.commits == [[TopicPartition("uns.historic-events", 0, 1)]]
+    assert store.objects
+    assert _complete_frozen_flush(mapper)
+    assert _commit_offsets(consumer) == [[("uns.historic-events", 0, 1)]]
 
 
 def test_malformed_envelope_goes_to_dlq_before_commit(tmp_path: Path):
@@ -130,51 +172,51 @@ def test_malformed_envelope_goes_to_dlq_before_commit(tmp_path: Path):
     consumer.messages = [FakeMessage("uns.historic-events", 0, 0, b"not-json")]
     assert mapper.run_once()
     assert dlq.messages
-    assert consumer.commits == [[TopicPartition("uns.historic-events", 0, 1)]]
+    assert _commit_offsets(consumer) == [[("uns.historic-events", 0, 1)]]
 
 
 def test_poison_after_buffered_valid_record_waits_for_flush(tmp_path: Path):
     mapper, consumer, store, dlq = _mapper(
         tmp_path,
-        limits=FlushLimits(max_records=1, max_bytes=1_000_000, interval_seconds=60, worker_max_buffered_bytes=1_000_000),
+        limits=_test_limits(max_records=1),
     )
     consumer.messages = [FakeMessage("uns.historic-events", 0, 0, envelope_bytes(source_sequence=1))]
     assert mapper.run_once()
     assert mapper.frozen_flush is not None
     assert dlq.messages == []
-    assert mapper.run_once()
+    assert _complete_frozen_flush(mapper)
     consumer.messages = [FakeMessage("uns.historic-events", 0, 1, b"{bad json")]
     assert mapper.run_once()
-    assert store.put_calls
+    assert store.objects
     assert dlq.messages
-    assert consumer.commits[-1] == [TopicPartition("uns.historic-events", 0, 2)]
+    assert _commit_offsets(consumer)[-1] == [("uns.historic-events", 0, 2)]
 
 
 def test_upload_retry_reuses_frozen_bytes(tmp_path: Path):
     mapper, consumer, store, _dlq = _mapper(
         tmp_path,
-        limits=FlushLimits(max_records=1, max_bytes=1_000_000, interval_seconds=60, worker_max_buffered_bytes=1_000_000),
+        limits=_test_limits(max_records=1),
     )
     consumer.messages = [FakeMessage("uns.historic-events", 0, 0, envelope_bytes(source_sequence=1))]
     mapper.run_once()
-    path = mapper.frozen_flush.object_path
-    frozen = mapper.frozen_flush.parquet_bytes
+    path = mapper.frozen_flush.route_groups[0].object_path
     store.fail_paths.add(path)
     assert mapper.run_once()
+    frozen_bytes = mapper.frozen_object.data
     assert consumer.commits == []
     store.fail_paths.clear()
-    assert mapper.run_once()
-    assert store.objects[path] == frozen
+    assert _complete_frozen_flush(mapper)
+    assert store.objects[path] == frozen_bytes
 
 
 def test_upload_failure_after_retries_does_not_commit(tmp_path: Path):
     mapper, consumer, store, _dlq = _mapper(
         tmp_path,
-        limits=FlushLimits(max_records=1, max_bytes=1_000_000, interval_seconds=60, worker_max_buffered_bytes=1_000_000),
+        limits=_test_limits(max_records=1),
     )
     consumer.messages = [FakeMessage("uns.historic-events", 0, 0, envelope_bytes(source_sequence=1))]
     mapper.run_once()
-    path = mapper.frozen_flush.object_path
+    path = mapper.frozen_flush.route_groups[0].object_path
     store.fail_paths.add(path)
     assert mapper.run_once() is True
     assert mapper.run_once() is True
@@ -184,9 +226,14 @@ def test_upload_failure_after_retries_does_not_commit(tmp_path: Path):
 
 def test_ownership_loss_with_pending_buffer_exits(tmp_path: Path):
     mapper, _consumer, _store, _dlq = _mapper(tmp_path)
-    mapper.batch.try_add(
-        LakeRecord("uns.historic-events", 0, 0, source_envelope(), envelope_bytes())
+    record = lake_record_from_envelope(
+        source_envelope(),
+        legacy_map=legacy_route_map(),
+        offset=0,
+        envelope_bytes=envelope_bytes(),
     )
+    mapper._prefix(record.partition_key).observe(0)
+    mapper.batch.try_add(record)
     with pytest.raises(OwnershipLostError):
         mapper.on_revoke([TopicPartition("uns.historic-events", 0)])
 
@@ -194,32 +241,32 @@ def test_ownership_loss_with_pending_buffer_exits(tmp_path: Path):
 def test_revoked_owner_does_not_commit_after_upload(tmp_path: Path):
     mapper, consumer, store, _dlq = _mapper(
         tmp_path,
-        limits=FlushLimits(max_records=1, max_bytes=1_000_000, interval_seconds=60, worker_max_buffered_bytes=1_000_000),
+        limits=_test_limits(max_records=1),
     )
     consumer.messages = [FakeMessage("uns.historic-events", 0, 0, envelope_bytes(source_sequence=1))]
     mapper.run_once()
     mapper.revoked = True
-    store.put(mapper.frozen_flush.object_path, mapper.frozen_flush.parquet_bytes)
+    mapper.ownership_active = False
     with pytest.raises(OwnershipLostError):
-        mapper._complete_frozen_flush()
+        mapper.run_once()
     assert consumer.commits == []
 
 
 def test_duplicate_event_ids_survive_replay_in_separate_files(tmp_path: Path):
     mapper, consumer, store, _dlq = _mapper(
         tmp_path,
-        limits=FlushLimits(max_records=1, max_bytes=1_000_000, interval_seconds=60, worker_max_buffered_bytes=1_000_000),
+        limits=_test_limits(max_records=1),
     )
     payload = envelope_bytes(source_sequence=99)
     consumer.messages = [FakeMessage("uns.historic-events", 0, 0, payload)]
     mapper.run_once()
-    mapper.run_once()
+    _complete_frozen_flush(mapper)
     first_key = next(iter(store.objects))
 
     mapper.frozen_flush = None
     mapper.batch = mapper.batch.__class__(limits=mapper.limits, monotonic=mapper.monotonic)
     consumer.messages = [FakeMessage("uns.historic-events", 0, 5, payload)]
     mapper.run_once()
-    mapper.run_once()
+    _complete_frozen_flush(mapper)
     assert len(store.objects) == 2
     assert first_key in store.objects
