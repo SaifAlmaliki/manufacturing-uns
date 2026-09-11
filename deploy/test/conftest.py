@@ -156,13 +156,29 @@ class CloudEdgeHarness:
 
     def _chain_packets(self, chain: str) -> int:
         stats = self.firewall_stats()
+        in_chain = False
+        past_column_header = False
+        total = 0
         for line in stats.splitlines():
-            if chain not in line:
+            stripped = line.strip()
+            if stripped.startswith(f"Chain {chain}"):
+                in_chain = True
+                past_column_header = False
+                continue
+            if not in_chain:
+                continue
+            if stripped.startswith("Chain "):
+                break
+            if not stripped:
+                continue
+            if not past_column_header:
+                if stripped.startswith("pkts"):
+                    past_column_header = True
                 continue
             parts = line.split()
             if parts and parts[0].isdigit():
-                return int(parts[0])
-        return 0
+                total += int(parts[0])
+        return total
 
     def _conntrack_count(self) -> int:
         stats = self.firewall_stats()
@@ -191,14 +207,14 @@ class CloudEdgeHarness:
         return healthy
 
     def cloud_can_open_dmz_management(self) -> bool:
-        deny_before = self._chain_packets("UNS_CLOUD_DMZ_MGMT_DENIED")
+        deny_before = self._chain_packets("UNS_CLOUD_TO_DMZ")
         self._exec("cloud-probe", "apk add --no-cache netcat-openbsd >/dev/null", check=False)
         result = self._exec(
             "cloud-probe",
             f"nc -z -w2 {DMZ_MGMT_HOST} {DMZ_MGMT_PORT}",
             check=False,
         )
-        deny_after = self._chain_packets("UNS_CLOUD_DMZ_MGMT_DENIED")
+        deny_after = self._chain_packets("UNS_CLOUD_TO_DMZ")
         counters = self.firewall_counters()
         denied = [line for line in counters.splitlines() if "UNS_CLOUD_DMZ_MGMT_DENIED" in line]
         print(
@@ -215,7 +231,7 @@ class CloudEdgeHarness:
 
     def assert_cloud_management_denied_by_firewall(self) -> None:
         assert getattr(self, "_last_cloud_deny_delta", 0) > 0, (
-            "expected UNS_CLOUD_DMZ_MGMT_DENIED iptables counter to increase"
+            "expected UNS_CLOUD_TO_DMZ iptables counter to increase"
         )
 
     def outbound_connectivity_report(self) -> dict[str, Any]:

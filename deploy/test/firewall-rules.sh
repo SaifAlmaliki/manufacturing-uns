@@ -64,7 +64,7 @@ case "${1:-apply}" in
     conntrack -C 2>/dev/null || true
     ;;
   stats)
-    iptables -L UNS_CLOUD_DMZ_MGMT_DENIED -v -n -x 2>/dev/null || true
+    iptables -L UNS_CLOUD_TO_DMZ -v -n -x 2>/dev/null || true
     iptables -L UNS_DMZ_TO_CLOUD -v -n -x 2>/dev/null || true
     iptables -L UNS_EDGE_ESTABLISHED -v -n -x 2>/dev/null || true
     echo "--- conntrack ---"
