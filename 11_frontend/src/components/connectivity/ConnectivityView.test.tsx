@@ -279,6 +279,28 @@ describe('the OPC UA server table', () => {
     expect(screen.getByRole('button', { name: /browse data/i })).toBeTruthy();
   });
 
+  it('keeps a long lastError inside the status cell instead of stretching the table', async () => {
+    const lastError =
+      'Multiple exceptions: [Errno 111] Connection refused, [Errno 101] Network unreachable';
+    getConnectivityServers.mockResolvedValue([
+      {
+        ...SERVER,
+        lastStatus: 'failed',
+        lastError,
+        lastTestedAt: '2026-09-11T15:49:00.000Z',
+      },
+    ]);
+    renderView();
+
+    const err = await screen.findByText(lastError);
+    expect(err).toHaveAttribute('title', lastError);
+    expect(err.className).toMatch(/\btruncate\b/);
+    expect(err.className).toMatch(/\bmin-w-0\b/);
+    expect(err.closest('td')?.className).toMatch(/\bmax-w-0\b/);
+    expect(err.closest('table')?.className).toMatch(/\btable-fixed\b/);
+    expect(screen.getByRole('button', { name: /browse data/i })).toBeTruthy();
+  });
+
   it('hides Add Server when the signed-in role cannot mutate connectivity', async () => {
     auth.hasPermission = (_feature: string): boolean => false;
     renderView();

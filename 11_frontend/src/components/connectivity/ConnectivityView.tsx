@@ -384,15 +384,15 @@ export const ConnectivityView: React.FC = () => {
               ) : (
                 <ConsoleCard padding="none" className="overflow-hidden">
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[860px] border-collapse text-left text-sm">
+                    <table className="w-full min-w-[960px] table-fixed border-collapse text-left text-sm">
                       <thead className="border-b border-border bg-muted/50 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
                         <tr>
                           <th className="px-4 py-3">Name</th>
-                          <th className="px-4 py-3">Protocol</th>
+                          <th className="w-24 px-4 py-3">Protocol</th>
                           <th className="px-4 py-3">Endpoint</th>
-                          <th className="px-4 py-3">Status</th>
-                          <th className="px-4 py-3">Last test</th>
-                          <th className="px-4 py-3 text-right">Actions</th>
+                          <th className="w-[22%] px-4 py-3">Status</th>
+                          <th className="w-28 px-4 py-3">Last test</th>
+                          <th className="w-[18.5rem] px-4 py-3 text-right">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border text-xs">
@@ -402,12 +402,13 @@ export const ConnectivityView: React.FC = () => {
                             className="cursor-pointer hover:bg-muted/60"
                             onClick={() => openSignalTerminal(server)}
                           >
-                            <td className="px-4 py-3">
+                            <td className="max-w-0 px-4 py-3">
                               <button
                                 type="button"
                                 aria-label={`Open ${server.name}`}
+                                title={server.name}
                                 onClick={() => openSignalTerminal(server)}
-                                className="font-heading text-left font-semibold text-foreground hover:text-[#FF7A00] hover:underline"
+                                className="block w-full truncate font-heading text-left font-semibold text-foreground hover:text-[#FF7A00] hover:underline"
                               >
                                 {server.name}
                               </button>
@@ -415,25 +416,34 @@ export const ConnectivityView: React.FC = () => {
                             <td className="px-4 py-3 text-muted-foreground">
                               {protocolLabel(server.protocol)}
                             </td>
-                            <td className="px-4 py-3 font-mono text-[11px] text-muted-foreground">
-                              {server.endpoint}
+                            <td className="max-w-0 px-4 py-3 font-mono text-[11px] text-muted-foreground">
+                              <span className="block truncate" title={server.endpoint}>
+                                {server.endpoint}
+                              </span>
                             </td>
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-2">
-                                <span className={`size-2 rounded-full ${statusDotClass(server.lastStatus)}`} />
-                                <span className="text-foreground">{statusLabel(server.lastStatus)}</span>
-                                {server.lastError && (
-                                  <span className="truncate text-[10px] text-rose-400" title={server.lastError}>
-                                    {server.lastError}
-                                  </span>
-                                )}
+                            <td className="max-w-0 px-4 py-3">
+                              <div className="flex min-w-0 items-start gap-2">
+                                <span
+                                  className={`mt-1 size-2 shrink-0 rounded-full ${statusDotClass(server.lastStatus)}`}
+                                />
+                                <div className="min-w-0">
+                                  <div className="text-foreground">{statusLabel(server.lastStatus)}</div>
+                                  {server.lastError ? (
+                                    <p
+                                      className="min-w-0 truncate text-[10px] leading-snug text-rose-400"
+                                      title={server.lastError}
+                                    >
+                                      {server.lastError}
+                                    </p>
+                                  ) : null}
+                                </div>
                               </div>
                             </td>
-                            <td className="px-4 py-3 font-mono text-[11px] tabular-nums text-muted-foreground">
+                            <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] tabular-nums text-muted-foreground">
                               {formatLastTestedAt(server.lastTestedAt)}
                             </td>
                             <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                              <div className="flex items-center justify-end gap-1">
+                              <div className="flex items-center justify-end gap-1 whitespace-nowrap">
                                 <BtnGhost
                                   onClick={() => openEdit(server)}
                                   className="px-2 py-1 text-[11px]"

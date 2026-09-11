@@ -3,8 +3,6 @@ import {
   Folder,
   FolderOpen,
   FileCode,
-  ChevronRight,
-  ChevronDown,
   Search,
   RefreshCw,
   Bookmark,
@@ -23,6 +21,7 @@ import {
 import { tagMatchesNode } from '../../lib/condition-monitoring/match-tags';
 import type { GraphqlConnectivityTag } from '../../services/graphql/types';
 import { consoleTokens } from '../ui/console-ui';
+import { ConsoleTreeNode } from '../ui/console-tree';
 
 export const UnsTreeView: React.FC<{
   connectedTags?: GraphqlConnectivityTag[];
@@ -73,38 +72,30 @@ export const UnsTreeView: React.FC<{
         : 'bg-zinc-600';
 
     return (
-      <div key={node.topic} className="select-none">
-        <div
-          id={`uns-node-${node.topic.replace(/[^a-zA-Z0-9]/g, '-')}`}
-          onClick={() => {
+      <div key={node.topic} id={`uns-node-${node.topic.replace(/[^a-zA-Z0-9]/g, '-')}`}>
+        <ConsoleTreeNode
+          level={level}
+          name={node.name}
+          expandable={isExpandable}
+          expanded={isExpanded}
+          selected={isSelected}
+          collapsePlaceholder={<span className={`size-1.5 shrink-0 rounded-full ${statusDot}`} />}
+          onToggle={() => {
+            void toggleNodeExpanded(node.topic);
+          }}
+          onRowClick={() => {
             selectNode(node);
             if (isExpandable && !expandedNodes.has(node.topic)) {
               void toggleNodeExpanded(node.topic);
             }
           }}
-          style={{ paddingLeft: `${level * 14 + 8}px` }}
-          className={`group flex cursor-pointer items-center justify-between rounded-lg px-2 py-1.5 text-sm transition-colors ${
-            isSelected
-              ? 'bg-[#FF7A00]/15 text-[#FF7A00]'
-              : 'text-foreground hover:bg-muted hover:text-foreground'
-          }`}
+          branch={
+            isExpandable && isExpanded && node.children && node.children.length > 0
+              ? node.children.map((child) => renderNode(child, level + 1))
+              : undefined
+          }
         >
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            {isExpandable ? (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleNodeExpanded(node.topic);
-                }}
-                className="rounded p-0.5 text-muted-foreground hover:text-[#FF7A00]"
-              >
-                {isExpanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-              </button>
-            ) : (
-              <span className={`size-1.5 shrink-0 rounded-full ${statusDot}`} />
-            )}
-
             {!isExpandable ? (
               <FileCode className="size-3.5 shrink-0 text-emerald-500" />
             ) : isExpanded ? (
@@ -128,6 +119,7 @@ export const UnsTreeView: React.FC<{
           </div>
 
           <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation();
               if (bookmarked) removeBookmark(node.topic);
@@ -142,13 +134,7 @@ export const UnsTreeView: React.FC<{
               <BookmarkPlus className="size-3.5" />
             )}
           </button>
-        </div>
-
-        {isExpanded && node.children && node.children.length > 0 && (
-          <div className="ml-3 border-l border-border">
-            {node.children.map((child) => renderNode(child, level + 1))}
-          </div>
-        )}
+        </ConsoleTreeNode>
       </div>
     );
   };

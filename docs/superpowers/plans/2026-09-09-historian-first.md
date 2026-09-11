@@ -4,8 +4,8 @@
 > UNS-to-lake delivery. The approved scope covers machine and business-system
 > publications, routed by source application, site, and payload schema, with no
 > historian dependency or downstream transformation work. See the
-> [replacement design awaiting written review](../specs/2026-09-11-multi-system-uns-to-lake-design.md).
-> Its task-by-task replacement plan follows written design approval. The original
+> [approved replacement design](../specs/2026-09-11-multi-system-uns-to-lake-design.md)
+> and [replacement implementation plan](2026-09-11-multi-system-uns-to-lake.md). The original
 > proposal is retained below for historical context; no runtime cutover is implied.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans`

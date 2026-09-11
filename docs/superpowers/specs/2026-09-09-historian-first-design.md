@@ -4,7 +4,7 @@
 > covers publications from machines and business systems, organized by source
 > application, site, and payload schema. See
 > [Multi-system UNS-to-lake delivery](2026-09-11-multi-system-uns-to-lake-design.md)
-> for the replacement design awaiting written review. The proposal below is
+> for the approved replacement design and its linked implementation plan. The proposal below is
 > historical context, not authorization to replace the accepted Kafka path.
 
 Date: 2026-09-09

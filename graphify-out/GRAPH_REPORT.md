@@ -1,16 +1,16 @@
 # Graph Report - manufacturing-uns  (2026-09-11)
 
 ## Corpus Check
-- 557 files · ~308,294 words
+- 557 files · ~308,383 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 7058 nodes · 18361 edges · 290 communities (260 shown, 30 thin omitted)
+- 7058 nodes · 18361 edges · 289 communities (260 shown, 29 thin omitted)
 - Extraction: 73% EXTRACTED · 27% INFERRED · 0% AMBIGUOUS · INFERRED: 5004 edges (avg confidence: 0.53)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `9f5eea02`
+- Built from commit: `e2196ae2`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -258,7 +258,6 @@
 - [[_COMMUNITY_Community 280|Community 280]]
 - [[_COMMUNITY_Community 281|Community 281]]
 - [[_COMMUNITY_Community 282|Community 282]]
-- [[_COMMUNITY_Community 283|Community 283]]
 - [[_COMMUNITY_Community 284|Community 284]]
 - [[_COMMUNITY_Community 285|Community 285]]
 - [[_COMMUNITY_Community 286|Community 286]]
@@ -311,27 +310,27 @@
 - 1-file cycle: `07_uns_graphql/src/uns_graphql/type/streaming_event.py -> 07_uns_graphql/src/uns_graphql/type/streaming_event.py`
 - 1-file cycle: `07_uns_graphql/test/queries/test_historian.py -> 07_uns_graphql/test/queries/test_historian.py`
 
-## Communities (290 total, 30 thin omitted)
+## Communities (289 total, 29 thin omitted)
 
 ### Community 0 - "Community 0"
-Cohesion: 0.03
-Nodes (83): BrowseDataDrawerProps, HistorianTableProps, asInt(), AuthHooks, BinaryOperator, defaultAuthHooks, auth, PLANT (+75 more)
+Cohesion: 0.02
+Nodes (99): DEFAULT_APP_SETTINGS, graphqlUrl, STORAGE_KEYS, httpToWs(), loadSettings(), NavigationTab, UNSContext, UNSContextType (+91 more)
 
 ### Community 1 - "Community 1"
 Cohesion: 0.17
 Nodes (24): Interval, StopInterval, ReasonResolver, Tests for resolving a machine state into a downtime reason code.  Three behavi, resolver(), stop(), t(), test_a_manual_reason_for_a_different_stop_does_not_leak() (+16 more)
 
 ### Community 2 - "Community 2"
-Cohesion: 0.06
-Nodes (43): AddressSpaceTreeProps, BrowseDataDrawer(), mergeRows(), RowState, uniqueDiscovered(), ConnectivityView(), DIALOG_COPY, dialogCopyFor() (+35 more)
+Cohesion: 0.04
+Nodes (58): AddressSpaceTreeProps, BrowseDataDrawer(), BrowseDataDrawerProps, mergeRows(), RowState, uniqueDiscovered(), ConnectivityView(), DIALOG_COPY (+50 more)
 
 ### Community 3 - "Community 3"
 Cohesion: 0.07
 Nodes (31): AsyncSession, ConnectivityServer, ConnectivityTag, EdgeAdapterInput, Neither call raises: a distinct topic is fine, and a blank one is not yet assign, test_assert_unique_mqtt_topic_allows_a_distinct_or_blank_topic(), test_assert_unique_mqtt_topic_rejects_when_topic_is_already_subscribed(), test_assert_xml_safe_allows_tab_newline_cr_and_blank() (+23 more)
 
 ### Community 4 - "Community 4"
-Cohesion: 0.05
-Nodes (60): AlarmActiveTab(), RoleAlertMatrix(), LoginView(), login, Session, AccessRestricted(), AccessRestrictedProps, rolesThatGrant() (+52 more)
+Cohesion: 0.03
+Nodes (90): AlarmActiveTab(), RoleAlertMatrix(), LoginView(), login, AccessRestricted(), rolesThatGrant(), GRAFANA_DASHBOARDS, GrafanaDashboardId (+82 more)
 
 ### Community 5 - "Community 5"
 Cohesion: 0.04
@@ -362,12 +361,12 @@ Cohesion: 0.07
 Nodes (77): datetime, StopInterval, datetime, UnitMasterData, datetime, Fingerprint, Sample, ShiftPipeline (+69 more)
 
 ### Community 12 - "Community 12"
-Cohesion: 0.10
-Nodes (32): Any, FastAPI, Identity, BaseModel, IdentityGetter, MemoryConversationStore, ScopeLoader, test_chat_foreign_conversation_is_404() (+24 more)
+Cohesion: 0.61
+Nodes (7): MemoryConversationStore, _client(), test_delete_foreign_is_404(), test_delete_mine_is_204(), test_get_foreign_is_404(), test_list_returns_only_caller_threads(), test_post_creates_conversation()
 
 ### Community 13 - "Community 13"
-Cohesion: 0.05
-Nodes (49): grafanaTopicFilter(), alarms, auth, FAULT, getConnectivityServers, getHistoricEvents, navigate, SPEED (+41 more)
+Cohesion: 0.29
+Nodes (4): EXCLUDED_CHART_KEYS, isChartableMetric(), looksLikeEpoch(), PREFERRED_METRIC_ORDER
 
 ### Community 14 - "Community 14"
 Cohesion: 0.06
@@ -375,7 +374,7 @@ Nodes (52): GraphqlHierarchyTree, AssetLevelIcon(), addDescription(), DESCRIPTIO
 
 ### Community 15 - "Community 15"
 Cohesion: 0.05
-Nodes (64): AlarmAuditLog(), AlarmManagementLayout(), ALERT_TAB_PATHS, AlertTabId, AlarmRulesTab(), AlarmOutletContext, AlarmPanel(), getSeverityBadge() (+56 more)
+Nodes (76): AlarmAuditLog(), AlarmManagementLayout(), ALERT_TAB_PATHS, AlertTabId, AlarmRulesTab(), AlarmOutletContext, AlarmPanel(), getSeverityBadge() (+68 more)
 
 ### Community 16 - "Community 16"
 Cohesion: 0.15
@@ -386,8 +385,8 @@ Cohesion: 0.17
 Nodes (44): Citation, ContextPack, ConversationStore, GraphqlPost, Scope, SqlExecutor, Kind, Any (+36 more)
 
 ### Community 18 - "Community 18"
-Cohesion: 0.07
-Nodes (41): ConditionMonitoringView(), alarmMatchesTag(), conditionKpis, isFaultTag(), assetLeafLabel(), collectLoadedDescendants(), filterTagsBySearch(), pathSegments() (+33 more)
+Cohesion: 0.05
+Nodes (52): ConditionMonitoringView(), alarms, auth, FAULT, getConnectivityServers, getHistoricEvents, navigate, SPEED (+44 more)
 
 ### Community 19 - "Community 19"
 Cohesion: 0.07
@@ -418,8 +417,8 @@ Cohesion: 0.10
 Nodes (50): Any, HierarchyTree, Path, HierarchyTree, Path, Tests for `hierarchy_io`: read/write `settings.yaml` hierarchy and branding., C1/I8: a hierarchy save must not strip comments or mapper-adjacent blocks., _sample_tree() (+42 more)
 
 ### Community 27 - "Community 27"
-Cohesion: 0.07
-Nodes (34): Any, ConversationStore, AccessGroupRepository, AsyncEngine, JwksCache, SqlExecutor, JwksCache, AbstractAsyncContextManager (+26 more)
+Cohesion: 0.06
+Nodes (50): Any, Any, ConversationStore, FastAPI, Identity, AccessGroupRepository, AsyncEngine, JwksCache (+42 more)
 
 ### Community 28 - "Community 28"
 Cohesion: 0.07
@@ -539,11 +538,11 @@ Nodes (28): Scope, test_admin_is_unscoped(), test_covers_sql_does_not_use_like()
 
 ### Community 57 - "Community 57"
 Cohesion: 0.05
-Nodes (33): adminBase(), authHeaders(), DirectoryResult, fetchRealmMembers(), KeycloakUser, RealmMember, rolesOf(), KEYCLOAK_USERS (+25 more)
+Nodes (28): adminBase(), authHeaders(), DirectoryResult, fetchRealmMembers(), KeycloakUser, RealmMember, rolesOf(), KEYCLOAK_USERS (+20 more)
 
 ### Community 58 - "Community 58"
-Cohesion: 0.07
-Nodes (33): GRAFANA_DASHBOARDS, GrafanaDashboardId, GrafanaEmbed(), GrafanaEmbedOptions, GrafanaEmbedProps, grafanaKioskPath(), JsonViewer(), JsonViewerProps (+25 more)
+Cohesion: 0.21
+Nodes (12): AlertRule, AlertCategory, AlertCondition, AlertRuleSummary, AlertRuleType, AlertSeverity, ConsoleRole, ******************************************************************************* (+4 more)
 
 ### Community 59 - "Community 59"
 Cohesion: 0.08
@@ -658,8 +657,8 @@ Cohesion: 0.12
 Nodes (14): Session, GraphDBHandler, Iterate the topics by '/'. create node for each level & merge the messages to th, This function saves attribute nodes in the graph database.          Parameters, Get the name of the node depending on the depth in the tree, Creates or Merges the MQTT message as a Graph node. Each level of the topic is a, Class responsible for persisting the MQTT message into the Graph Database, Function to transform parameters being sent         - null parameters (+6 more)
 
 ### Community 87 - "Community 87"
-Cohesion: 0.13
-Nodes (24): Any, Identity, Who may write what, and who may see which plant path.  One table, because a po, The caller's identity, if their roles allow this mutation.      `KeyError` on, The caller's identity, if `path` sits inside their Access Groups.      Unsigne, require(), require_path(), FakeInfo (+16 more)
+Cohesion: 0.07
+Nodes (43): Any, Identity, AlertRuleSpec, AlertRuleInput, AlertRuleRepository, AlertRuleType, Info, NotPermittedError (+35 more)
 
 ### Community 88 - "Community 88"
 Cohesion: 0.12
@@ -698,8 +697,8 @@ Cohesion: 0.20
 Nodes (12): KAFKATopicInput, KAFKASubscription, GraphQL subscription for authorized canonical live events., Subscription class providing methods for subscribing to live canonical events., Dispatcher lifecycle is owned by the FastAPI app lifespan., _admin_info(), _collect_messages(), _dispatched() (+4 more)
 
 ### Community 97 - "Community 97"
-Cohesion: 0.08
-Nodes (42): AlertRule, ConnectivityServer, ConnectivityTag, ConnectivityServer, ConnectivityTag, _E, Enum, AlertCategory (+34 more)
+Cohesion: 0.12
+Nodes (30): ConnectivityServer, ConnectivityTag, ConnectivityServer, ConnectivityTag, _E, Enum, ConnectivityAuthMode, ConnectivityProtocol (+22 more)
 
 ### Community 98 - "Community 98"
 Cohesion: 0.34
@@ -782,8 +781,8 @@ Cohesion: 0.19
 Nodes (18): AlertRuleSpec, *******************************************************************************, RANGE_OUTSIDE with one bound would never fire, which is worse than failing loudl, _spec(), test_a_complete_rule_is_valid(), test_a_negative_delay_is_rejected(), test_a_range_rule_with_both_bounds_is_valid(), test_a_range_rule_without_an_upper_bound_is_rejected() (+10 more)
 
 ### Community 119 - "Community 119"
-Cohesion: 0.23
-Nodes (10): Creates the SPBNode         topic: The MQTT Topic / namespace to which the SPBP, convert_dict_to_dataset(), convert_dict_to_metric(), convert_dict_to_payload(), convert_dict_to_propertyset(), convert_dict_to_template(), _fix_keys_and_value_types(), ******************************************************************************* (+2 more)
+Cohesion: 0.15
+Nodes (13): *******************************************************************************, setup_alias_map(), Creates the SPBNode         topic: The MQTT Topic / namespace to which the SPBP, *******************************************************************************, convert_dict_to_dataset(), convert_dict_to_metric(), convert_dict_to_payload(), convert_dict_to_propertyset() (+5 more)
 
 ### Community 120 - "Community 120"
 Cohesion: 0.11
@@ -866,12 +865,12 @@ Cohesion: 0.13
 Nodes (14): description, type, description, properties, body, timestamp, uuid, $schema (+6 more)
 
 ### Community 140 - "Community 140"
-Cohesion: 0.17
-Nodes (12): $ref, definitions, metadata, metric, parameter, propertySet, type, type (+4 more)
+Cohesion: 0.13
+Nodes (15): $ref, definitions, metadata, metric, parameter, property, propertySet, type (+7 more)
 
 ### Community 141 - "Community 141"
 Cohesion: 0.05
-Nodes (44): draftCount(), mergeSignalDraft(), pruneUnchanged(), sameLabels(), SignalDrafts, stageSignalPatch(), ROW, withAddedLabel() (+36 more)
+Nodes (45): draftCount(), mergeSignalDraft(), pruneUnchanged(), sameLabels(), SignalDrafts, stageSignalPatch(), ROW, withAddedLabel() (+37 more)
 
 ### Community 142 - "Community 142"
 Cohesion: 0.04
@@ -970,8 +969,8 @@ Cohesion: 0.11
 Nodes (57): Any, Database, datetime, Database, datetime, Path, time, Database (+49 more)
 
 ### Community 167 - "Community 167"
-Cohesion: 0.18
-Nodes (12): property, type, properties, name, type, value, additionalProperties, properties (+4 more)
+Cohesion: 0.25
+Nodes (9): type, properties, name, type, value, properties, type, oneOf (+1 more)
 
 ### Community 168 - "Community 168"
 Cohesion: 0.25
@@ -982,8 +981,8 @@ Cohesion: 0.27
 Nodes (7): platform, platform, loadPlatformSettings(), platformDir, PlatformSettings, platformSettingsFromConfig(), resolveSettingsPath()
 
 ### Community 171 - "Community 171"
-Cohesion: 0.50
-Nodes (3): DataSet, Template, Retrieves the value from the correct slot of the spb_object         spb_object
+Cohesion: 0.17
+Nodes (7): DataSet, Template, Private Utility function to merge Enums because Enums cannot be extended, Override creation of subclass enum         Added meta data to the value type, Set the value in the correct slot of the spb_object         spb_object is one o, Retrieves the value from the correct slot of the spb_object         spb_object, _SPBAbstractDataTypes
 
 ### Community 172 - "Community 172"
 Cohesion: 0.25
@@ -1014,8 +1013,8 @@ Cohesion: 0.29
 Nodes (4): Event, _FakeConnection, Unit tests for LISTEN/NOTIFY readiness. No database.  `start()` used to return, test_start_does_not_return_until_listen_is_ready()
 
 ### Community 181 - "Community 181"
-Cohesion: 0.15
-Nodes (19): AlertRuleSpec, AlertRuleInput, AlertRuleRepository, AlertRuleType, Info, NotPermittedError, The caller is authenticated and lacks the role. The message reaches the client., AlertRuleInput (+11 more)
+Cohesion: 0.22
+Nodes (9): _cache(), test_bearer_header_is_extracted(), test_missing_bearer_is_401(), test_valid_bearer_resolves_identity(), bearer_from_header(), identity_from_token(), JwksCache, Turn a bearer token into an identity, or raise. (+1 more)
 
 ### Community 182 - "Community 182"
 Cohesion: 0.18
@@ -1030,8 +1029,8 @@ Cohesion: 0.48
 Nodes (5): test_data_intents_win_over_platform_map_when_access_group_is_mentioned(), test_job_cards_and_hi_map_to_kinds(), test_performance_rca_is_broader_than_lost_performance(), test_platform_map_is_narrowed_to_literal_platform_questions(), classify()
 
 ### Community 185 - "Community 185"
-Cohesion: 0.15
-Nodes (15): ConnectivityRepository, ConnectivityServerType, Info, OpcUaDataValueType, UnitOfMeasureType, The caller's identity, if their roles include one of `allowed`.      The query, require_role(), ConnectivityProtocol (+7 more)
+Cohesion: 0.12
+Nodes (19): ConnectivityRepository, ConnectivityServerType, Info, OpcUaDataValueType, UnitOfMeasureType, Client, The caller's identity, if their roles include one of `allowed`.      The query, require_role() (+11 more)
 
 ### Community 186 - "Community 186"
 Cohesion: 0.29
@@ -1067,7 +1066,7 @@ Nodes (32): Any, allowed_topic(), _connectivity_asset_path(), filter_by_path(), 
 
 ### Community 194 - "Community 194"
 Cohesion: 0.08
-Nodes (40): Client, Node, Client, BaseException, _BrowseName, _DeniedChild, _DisplayName, _MixedParent (+32 more)
+Nodes (36): Client, Node, BaseException, _BrowseName, _DeniedChild, _DisplayName, _MixedParent, _NodeId (+28 more)
 
 ### Community 196 - "Community 196"
 Cohesion: 0.23
@@ -1182,8 +1181,8 @@ Cohesion: 0.33
 Nodes (6): HiveMQ-Simulator.sh script, ctx(), kpi(), mqttcli(), p(), raw()
 
 ### Community 284 - "Community 284"
-Cohesion: 0.06
-Nodes (51): DataSet, MetaData, Metric, Payload, PropertySet, PropertySetList, Template, SPBDataSetDataTypes (+43 more)
+Cohesion: 0.07
+Nodes (44): DataSet, MetaData, Metric, Payload, PropertySet, PropertySetList, Template, SPBDataSetDataTypes (+36 more)
 
 ### Community 289 - "Community 289"
 Cohesion: 0.25
@@ -1192,12 +1191,12 @@ Nodes (3): Structural tests for the OEE tables.  These assert the contract other
 ## Knowledge Gaps
 - **380 isolated node(s):** `test_docker.sh script`, `EventKind`, `Path`, `Element`, `pre_setup_nodes.sh script` (+375 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **30 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **29 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Database` connect `Community 82` to `Community 129`, `Community 131`, `Community 3`, `Community 5`, `Community 6`, `Community 135`, `Community 264`, `Community 7`, `Community 266`, `Community 10`, `Community 268`, `Community 11`, `Community 142`, `Community 145`, `Community 19`, `Community 20`, `Community 27`, `Community 29`, `Community 35`, `Community 37`, `Community 38`, `Community 166`, `Community 42`, `Community 45`, `Community 46`, `Community 176`, `Community 181`, `Community 185`, `Community 59`, `Community 60`, `Community 64`, `Community 193`, `Community 65`, `Community 67`, `Community 69`, `Community 70`, `Community 80`, `Community 88`, `Community 95`, `Community 111`, `Community 123`, `Community 125`, `Community 126`?**
+- **Why does `Database` connect `Community 82` to `Community 129`, `Community 131`, `Community 3`, `Community 5`, `Community 6`, `Community 135`, `Community 264`, `Community 7`, `Community 266`, `Community 10`, `Community 268`, `Community 11`, `Community 142`, `Community 145`, `Community 19`, `Community 20`, `Community 27`, `Community 29`, `Community 35`, `Community 37`, `Community 38`, `Community 166`, `Community 42`, `Community 45`, `Community 46`, `Community 176`, `Community 185`, `Community 59`, `Community 60`, `Community 64`, `Community 193`, `Community 65`, `Community 67`, `Community 69`, `Community 70`, `Community 80`, `Community 87`, `Community 88`, `Community 95`, `Community 111`, `Community 123`, `Community 125`, `Community 126`?**
   _High betweenness centrality (0.223) - this node is a cross-community bridge._
 - **Why does `UnsMQTTClient` connect `Community 38` to `Community 65`, `Community 129`, `Community 262`, `Community 39`, `Community 106`, `Community 270`, `Community 53`, `Community 86`, `Community 59`, `Community 28`, `Community 94`?**
   _High betweenness centrality (0.044) - this node is a cross-community bridge._

@@ -204,6 +204,28 @@ describe('Access Groups on Users and Access', () => {
     expect(grandchild).toBeDisabled();
   });
 
+  it('collapses a parent the way the plant tree does so descendants hide', async () => {
+    getAssets.mockResolvedValue([
+      { id: 1, path: 'AcmeWater', segment: 'AcmeWater', level: 'ENTERPRISE' },
+      { id: 2, path: 'AcmeWater/Site1', segment: 'Site1', level: 'SITE' },
+      { id: 9, path: 'AcmeWater/Site1/Filtration', segment: 'Filtration', level: 'AREA' },
+    ]);
+    fetchRealmMembers.mockResolvedValue(MEMBERS);
+    render(<UserManagementView />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Access Groups/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Create group/i }));
+
+    await screen.findByRole('checkbox', { name: 'AcmeWater' });
+    expect(screen.getByRole('checkbox', { name: 'AcmeWater/Site1' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /Collapse AcmeWater/i }));
+
+    expect(screen.queryByRole('checkbox', { name: 'AcmeWater/Site1' })).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: 'AcmeWater/Site1/Filtration' })).toBeNull();
+    expect(screen.getByRole('checkbox', { name: 'AcmeWater' })).toBeTruthy();
+  });
+
   it('sets editor id from the saved group before members so a retry does not create a duplicate', async () => {
     const created = {
       id: 99,

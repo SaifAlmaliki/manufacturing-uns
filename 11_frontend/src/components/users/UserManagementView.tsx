@@ -5,12 +5,15 @@ import { fetchRealmMembers, type DirectoryResult, type RealmMember } from '../..
 import { platformConfig } from '../../lib/platform/config';
 import { unsGraphQLClient } from '../../services/graphql/client';
 import type { AccessAssetDto, AccessGroupDto } from '../../services/graphql/types';
+import { expandableAssetPaths, nestAssets, parseAssetLevel, type AssetTreeNode } from '../../lib/access/asset-tree';
 import {
   UserRole,
   SYSTEM_FEATURES,
   ROLE_CONFIGS,
 } from '../../types/rbac';
 import { AccessRestricted } from '../common/AccessRestricted';
+import { AssetLevelIcon } from '../hierarchy/AssetLevelIcon';
+import { levelDef } from '../hierarchy/hierarchyLevels';
 import {
   BtnGhost,
   BtnPrimary,
@@ -21,7 +24,9 @@ import {
   ConsoleInput,
   SegmentTabs,
   FilterToolbar,
+  consoleTokens,
 } from '../ui/console-ui';
+import { ConsoleTreeNode } from '../ui/console-tree';
 
 type SubTab = 'directory' | 'groups' | 'roles';
 

@@ -2,8 +2,10 @@
 
 Date: 2026-09-11
 
-Status: Scope approved in conversation; detailed design awaiting written review.
+Status: Written design approved by the user on 2026-09-11.
 Planning only; no runtime implementation or deployment change is authorized here.
+
+Plan: [Multi-system UNS-to-lake implementation plan](../plans/2026-09-11-multi-system-uns-to-lake.md).
 
 ## 1. Goal and boundary
 
@@ -270,8 +272,8 @@ not passing integration tests.
 5. Implement verified publication and safe partition checkpoint advancement.
 6. Qualify failure/replay limits and document deployment/reader contracts.
 
-Build the task-by-task implementation plan after the written design is reviewed.
-The plan must map these requirements to exact existing modules and focused new
+The written design has been approved. The linked task-by-task implementation plan
+maps these requirements to exact existing modules and focused new
 files, with failing tests and targeted verification commands. It must not carry
 forward historian-first SQL archive worklists, historian cutover, dashboard polling
 changes, or transformation work.
