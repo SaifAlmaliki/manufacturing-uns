@@ -13,7 +13,6 @@ import {
 import { UnsNode } from '../../types/uns';
 import { useUNS } from '../../context/UNSContext';
 import {
-  getNodeRole,
   hasLiveTelemetry,
   isNodeStale,
   isStaleCandidate,

@@ -50,10 +50,6 @@ function openKeycloak() {
   );
 }
 
-function segmentDepth(path: string): number {
-  return Math.max(0, path.split('/').filter(Boolean).length - 1);
-}
-
 function isCoveredByAncestor(path: string, selectedPaths: string[]): boolean {
   return selectedPaths.some((root) => path !== root && path.startsWith(`${root}/`));
 }
@@ -105,41 +101,119 @@ function AssetPicker({
   selectedPaths: string[];
   onToggle: (path: string) => void;
 }) {
-  const sorted = useMemo(
-    () => [...assets].sort((a, b) => a.path.localeCompare(b.path)),
-    [assets],
-  );
+  const roots = useMemo(() => nestAssets(assets), [assets]);
+  const expandableKey = useMemo(() => expandableAssetPaths(roots).join('|'), [roots]);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [syncedKey, setSyncedKey] = useState('');
+  if (expandableKey !== syncedKey) {
+    setSyncedKey(expandableKey);
+    setExpanded(new Set(expandableAssetPaths(roots)));
+  }
 
-  if (sorted.length === 0) {
-    return <p className="text-xs text-zinc-500">No Assets in the model yet.</p>;
+  const toggleExpand = (path: string) => {
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  };
+
+  if (roots.length === 0) {
+    return <p className="text-xs text-muted-foreground">No Assets in the model yet.</p>;
   }
 
   return (
-    <div className="max-h-64 space-y-0.5 overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-950/50 p-2">
-      {sorted.map((asset) => {
-        const included = isCoveredByAncestor(asset.path, selectedPaths);
-        const checked = included || selectedPaths.includes(asset.path);
+    <div className={`max-h-64 overflow-y-auto ${consoleTokens.cardMuted} p-1`}>
+      <AssetTreeRows
+        nodes={roots}
+        level={0}
+        expanded={expanded}
+        selectedPaths={selectedPaths}
+        onToggle={onToggle}
+        onToggleExpand={toggleExpand}
+      />
+    </div>
+  );
+}
+
+function AssetTreeRows({
+  nodes,
+  level,
+  expanded,
+  selectedPaths,
+  onToggle,
+  onToggleExpand,
+}: {
+  nodes: AssetTreeNode[];
+  level: number;
+  expanded: Set<string>;
+  selectedPaths: string[];
+  onToggle: (path: string) => void;
+  onToggleExpand: (path: string) => void;
+}) {
+  return (
+    <>
+      {nodes.map((node) => {
+        const included = isCoveredByAncestor(node.path, selectedPaths);
+        const checked = included || selectedPaths.includes(node.path);
+        const expandable = node.children.length > 0;
+        const isExpanded = expanded.has(node.path);
+        const nodeLevel = parseAssetLevel(node.level);
         return (
-          <label
-            key={asset.path}
-            className={`flex items-center gap-2 rounded-lg px-2 py-1 text-xs ${
-              included ? 'text-zinc-500' : 'text-zinc-200'
-            }`}
-            style={{ paddingLeft: segmentDepth(asset.path) * 12 }}
+          <ConsoleTreeNode
+            key={node.path}
+            level={level}
+            name={node.segment}
+            expandable={expandable}
+            expanded={isExpanded}
+            selected={selectedPaths.includes(node.path)}
+            onToggle={() => onToggleExpand(node.path)}
+            branch={
+              expandable && isExpanded ? (
+                <AssetTreeRows
+                  nodes={node.children}
+                  level={level + 1}
+                  expanded={expanded}
+                  selectedPaths={selectedPaths}
+                  onToggle={onToggle}
+                  onToggleExpand={onToggleExpand}
+                />
+              ) : undefined
+            }
           >
-            <input
-              type="checkbox"
-              checked={checked}
-              disabled={included}
-              onChange={() => onToggle(asset.path)}
-              aria-label={asset.path}
-            />
-            <span className="font-medium">{asset.segment}</span>
-            <span className="font-mono text-[10px] text-zinc-500">{asset.level}</span>
-          </label>
+            <label
+              className={`flex min-w-0 flex-1 items-center gap-2 ${
+                included ? 'text-muted-foreground' : 'text-foreground'
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                disabled={included}
+                onChange={() => onToggle(node.path)}
+                aria-label={node.path}
+              />
+              {nodeLevel ? (
+                <AssetLevelIcon
+                  level={nodeLevel}
+                  className={`size-3.5 shrink-0 ${
+                    selectedPaths.includes(node.path) ? 'text-[#FF7A00]' : 'text-muted-foreground'
+                  }`}
+                />
+              ) : null}
+              <span className="truncate font-medium">{node.segment}</span>
+              <span className="shrink-0 text-[10px] tracking-wider text-muted-foreground">
+                {nodeLevel ? levelDef(nodeLevel).label : node.level}
+              </span>
+            </label>
+          </ConsoleTreeNode>
         );
       })}
-    </div>
+    </>
   );
 }
 
@@ -522,7 +596,7 @@ That needs the realm-management view-users role. Users are managed in Keycloak."
               {editor ? (
                 <ConsoleCard padding="md" className="space-y-4">
                   <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase tracking-wider text-zinc-500" htmlFor="access-group-name">
+                    <label className={consoleTokens.label} htmlFor="access-group-name">
                       Name
                     </label>
                     <ConsoleInput
@@ -534,7 +608,7 @@ That needs the realm-management view-users role. Users are managed in Keycloak."
                   </div>
 
                   <div className="space-y-1.5">
-                    <div className="text-[10px] uppercase tracking-wider text-zinc-500">Assets</div>
+                    <div className={consoleTokens.label}>Assets</div>
                     <AssetPicker
                       assets={assets}
                       selectedPaths={editor.selectedPaths}
@@ -545,13 +619,13 @@ That needs the realm-management view-users role. Users are managed in Keycloak."
                   </div>
 
                   <div className="space-y-1.5">
-                    <div className="text-[10px] uppercase tracking-wider text-zinc-500">Members</div>
+                    <div className={consoleTokens.label}>Members</div>
                     {unknownMemberIds.length > 0 && (
-                      <div className="space-y-1 rounded-xl border border-zinc-800 bg-zinc-950/50 p-2">
+                      <div className={`space-y-1 ${consoleTokens.cardMuted} p-2`}>
                         {unknownMemberIds.map((subject) => (
                           <div
                             key={subject}
-                            className="flex items-center justify-between gap-2 text-xs text-zinc-400"
+                            className="flex items-center justify-between gap-2 text-xs text-muted-foreground"
                           >
                             <span>
                               unknown
@@ -579,9 +653,9 @@ That needs the realm-management view-users role. Users are managed in Keycloak."
                         </p>
                       )
                     ) : (
-                      <div className="max-h-48 space-y-1 overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-950/50 p-2">
+                      <div className={`max-h-48 space-y-1 overflow-y-auto ${consoleTokens.cardMuted} p-2`}>
                         {members.map((member) => (
-                          <label key={member.id} className="flex items-center gap-2 text-xs text-zinc-200">
+                          <label key={member.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-foreground hover:bg-muted">
                             <input
                               type="checkbox"
                               checked={editor.memberIds.includes(member.id)}

@@ -1510,13 +1510,13 @@
     "semantic_hash": "9213edba889f87ebc24d1577ff35c4e6"
   },
   "11_frontend/src/components/connectivity/ConnectivityView.test.tsx": {
-    "mtime": 1789141965.9699557,
-    "ast_hash": "29d0bb69617ecb6ea9aa1c4a035b1922",
+    "mtime": 1789143100.5437167,
+    "ast_hash": "e42c9ee93933d7e41f902552b3299327",
     "semantic_hash": ""
   },
   "11_frontend/src/components/connectivity/ConnectivityView.tsx": {
-    "mtime": 1789141982.7339296,
-    "ast_hash": "fd7239bb4131c744e33b349e070d179e",
+    "mtime": 1789143099.122776,
+    "ast_hash": "9b79ec8b4956fe29461c2cc0271d9ac3",
     "semantic_hash": ""
   },
   "11_frontend/src/components/connectivity/SignalContextPanel.tsx": {
@@ -1665,8 +1665,8 @@
     "semantic_hash": "8c4014fefb1d1c6c0ec145142889a405"
   },
   "11_frontend/src/components/home/UnsTreeView.tsx": {
-    "mtime": 1788989632.4194047,
-    "ast_hash": "1a430a3463c83796f035977261aa6a6d",
+    "mtime": 1789143022.2855642,
+    "ast_hash": "c5bc6fb12691bc9c801888e7a22303c9",
     "semantic_hash": ""
   },
   "11_frontend/src/components/landing/LandingView.tsx": {
@@ -1765,14 +1765,14 @@
     "semantic_hash": "65e6c55d49116ac137e0259b20654b72"
   },
   "11_frontend/src/components/users/UserManagementView.test.tsx": {
-    "mtime": 1788546102.6717749,
-    "ast_hash": "80a61f82ecf6bb800e8839c0f4135222",
-    "semantic_hash": "80a61f82ecf6bb800e8839c0f4135222"
+    "mtime": 1789142785.6382778,
+    "ast_hash": "4736d1cdb9b660c21c18fb7ec8801561",
+    "semantic_hash": ""
   },
   "11_frontend/src/components/users/UserManagementView.tsx": {
-    "mtime": 1788546102.6717749,
-    "ast_hash": "9dc75db4a7b63bea9d34fc94c8ff6431",
-    "semantic_hash": "9dc75db4a7b63bea9d34fc94c8ff6431"
+    "mtime": 1789142962.5729728,
+    "ast_hash": "55a2e1c006677570a00900e45f5003d3",
+    "semantic_hash": ""
   },
   "11_frontend/src/config/branding.ts": {
     "mtime": 1788008425.9344144,
@@ -2782,6 +2782,21 @@
   "00_uns_config/test/test_compose_health_windows.py": {
     "mtime": 1789139177.4573991,
     "ast_hash": "112a3d27225137ccfa0a63795ef97dc5",
+    "semantic_hash": ""
+  },
+  "11_frontend/src/components/ui/console-tree.tsx": {
+    "mtime": 1789142899.5158188,
+    "ast_hash": "adabf8404b3b969f645ded62b661906c",
+    "semantic_hash": ""
+  },
+  "11_frontend/src/lib/access/asset-tree.test.ts": {
+    "mtime": 1789142785.710174,
+    "ast_hash": "23365c7073db653ebb19136fa38dfe10",
+    "semantic_hash": ""
+  },
+  "11_frontend/src/lib/access/asset-tree.ts": {
+    "mtime": 1789142828.919881,
+    "ast_hash": "43977fdd152c209d4fefae4e30129dce",
     "semantic_hash": ""
   }
 }

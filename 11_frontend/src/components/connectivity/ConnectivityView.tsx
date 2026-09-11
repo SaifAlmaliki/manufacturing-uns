@@ -384,15 +384,23 @@ export const ConnectivityView: React.FC = () => {
               ) : (
                 <ConsoleCard padding="none" className="overflow-hidden">
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[960px] table-fixed border-collapse text-left text-sm">
+                    <table className="w-full table-fixed border-collapse text-left text-sm">
+                      <colgroup>
+                        <col className="w-[9rem]" />
+                        <col className="w-[6.5rem]" />
+                        <col />
+                        <col className="w-[12rem]" />
+                        <col className="w-[7rem]" />
+                        <col className="w-[22rem]" />
+                      </colgroup>
                       <thead className="border-b border-border bg-muted/50 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
                         <tr>
-                          <th className="px-4 py-3">Name</th>
-                          <th className="w-24 px-4 py-3">Protocol</th>
+                          <th className="w-[9rem] px-4 py-3">Name</th>
+                          <th className="w-[6.5rem] px-4 py-3">Protocol</th>
                           <th className="px-4 py-3">Endpoint</th>
-                          <th className="w-[22%] px-4 py-3">Status</th>
-                          <th className="w-28 px-4 py-3">Last test</th>
-                          <th className="w-[18.5rem] px-4 py-3 text-right">Actions</th>
+                          <th className="w-[12rem] px-4 py-3">Status</th>
+                          <th className="w-[7rem] px-4 py-3">Last test</th>
+                          <th className="w-[22rem] px-4 py-3 text-right">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border text-xs">
@@ -402,7 +410,7 @@ export const ConnectivityView: React.FC = () => {
                             className="cursor-pointer hover:bg-muted/60"
                             onClick={() => openSignalTerminal(server)}
                           >
-                            <td className="max-w-0 px-4 py-3">
+                            <td className="overflow-hidden px-4 py-3">
                               <button
                                 type="button"
                                 aria-label={`Open ${server.name}`}
@@ -413,24 +421,26 @@ export const ConnectivityView: React.FC = () => {
                                 {server.name}
                               </button>
                             </td>
-                            <td className="px-4 py-3 text-muted-foreground">
-                              {protocolLabel(server.protocol)}
+                            <td className="overflow-hidden px-4 py-3 text-muted-foreground">
+                              <span className="block truncate">{protocolLabel(server.protocol)}</span>
                             </td>
-                            <td className="max-w-0 px-4 py-3 font-mono text-[11px] text-muted-foreground">
+                            <td className="overflow-hidden px-4 py-3 font-mono text-[11px] text-muted-foreground">
                               <span className="block truncate" title={server.endpoint}>
                                 {server.endpoint}
                               </span>
                             </td>
-                            <td className="max-w-0 px-4 py-3">
-                              <div className="flex min-w-0 items-start gap-2">
+                            <td className="overflow-hidden px-4 py-3">
+                              <div className="flex w-full min-w-0 items-start gap-2">
                                 <span
                                   className={`mt-1 size-2 shrink-0 rounded-full ${statusDotClass(server.lastStatus)}`}
                                 />
-                                <div className="min-w-0">
-                                  <div className="text-foreground">{statusLabel(server.lastStatus)}</div>
+                                <div className="min-w-0 flex-1 overflow-hidden">
+                                  <div className="truncate text-foreground">
+                                    {statusLabel(server.lastStatus)}
+                                  </div>
                                   {server.lastError ? (
                                     <p
-                                      className="min-w-0 truncate text-[10px] leading-snug text-rose-400"
+                                      className="truncate text-[10px] leading-snug text-rose-400"
                                       title={server.lastError}
                                     >
                                       {server.lastError}
@@ -439,10 +449,12 @@ export const ConnectivityView: React.FC = () => {
                                 </div>
                               </div>
                             </td>
-                            <td className="whitespace-nowrap px-4 py-3 font-mono text-[11px] tabular-nums text-muted-foreground">
-                              {formatLastTestedAt(server.lastTestedAt)}
+                            <td className="overflow-hidden px-4 py-3 font-mono text-[11px] tabular-nums text-muted-foreground">
+                              <span className="block truncate">
+                                {formatLastTestedAt(server.lastTestedAt)}
+                              </span>
                             </td>
-                            <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                            <td className="overflow-hidden px-4 py-3" onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center justify-end gap-1 whitespace-nowrap">
                                 <BtnGhost
                                   onClick={() => openEdit(server)}

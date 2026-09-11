@@ -279,7 +279,7 @@ describe('the OPC UA server table', () => {
     expect(screen.getByRole('button', { name: /browse data/i })).toBeTruthy();
   });
 
-  it('keeps a long lastError inside the status cell instead of stretching the table', async () => {
+  it('clips a long lastError inside Status so Name stays compact and Last test stays readable', async () => {
     const lastError =
       'Multiple exceptions: [Errno 111] Connection refused, [Errno 101] Network unreachable';
     getConnectivityServers.mockResolvedValue([
@@ -295,9 +295,12 @@ describe('the OPC UA server table', () => {
     const err = await screen.findByText(lastError);
     expect(err).toHaveAttribute('title', lastError);
     expect(err.className).toMatch(/\btruncate\b/);
-    expect(err.className).toMatch(/\bmin-w-0\b/);
-    expect(err.closest('td')?.className).toMatch(/\bmax-w-0\b/);
+    expect(err.closest('td')?.className).toMatch(/\boverflow-hidden\b/);
+    expect(screen.getByRole('columnheader', { name: /^name$/i }).className).toMatch(/w-\[9rem\]/);
+    expect(screen.getByRole('columnheader', { name: /^status$/i }).className).toMatch(/w-\[12rem\]/);
+    expect(screen.getByRole('columnheader', { name: /last test/i }).className).toMatch(/w-\[7rem\]/);
     expect(err.closest('table')?.className).toMatch(/\btable-fixed\b/);
+    expect(screen.getByRole('button', { name: /edit server/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /browse data/i })).toBeTruthy();
   });
 
