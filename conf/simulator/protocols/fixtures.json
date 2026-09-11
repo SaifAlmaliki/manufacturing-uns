@@ -1,0 +1,18 @@
+{
+  "opcua": {
+    "endpoint": "opc.tcp://0.0.0.0:4840/cloud-edge-qualification/",
+    "namespace_uri": "urn:uns:cloud-edge-qualification",
+    "nodes": [
+      {"node_id": "ns=2;i=1001", "name": "Temperature", "value": 21.4},
+      {"node_id": "ns=2;i=1002", "name": "Pressure", "value": 1.01}
+    ]
+  },
+  "modbus": {
+    "listen_host": "0.0.0.0",
+    "listen_port": 1502,
+    "holding_registers": {
+      "40001": 214,
+      "40002": 101
+    }
+  }
+}

@@ -1,0 +1,6 @@
+FROM python:3.14-slim
+RUN pip install --no-cache-dir "pymodbus>=3.8.0,<4"
+COPY conf/simulator/protocols/modbus_server.py /simulator/modbus_server.py
+COPY conf/simulator/protocols/fixtures.json /simulator/fixtures.json
+WORKDIR /simulator
+ENTRYPOINT ["python", "modbus_server.py"]

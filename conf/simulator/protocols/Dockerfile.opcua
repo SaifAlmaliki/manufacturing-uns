@@ -1,0 +1,6 @@
+FROM python:3.14-slim
+RUN pip install --no-cache-dir "asyncua>=1.1.0,<2"
+COPY conf/simulator/protocols/opcua_server.py /simulator/opcua_server.py
+COPY conf/simulator/protocols/fixtures.json /simulator/fixtures.json
+WORKDIR /simulator
+ENTRYPOINT ["python", "opcua_server.py"]
