@@ -56,6 +56,46 @@ def _reconciler(edge: FakeEdgeClient, *, revision: int = 0, digest: str = "") ->
     )
 
 
+def _modified_s7_adapter() -> AdapterConfig:
+    return AdapterConfig(
+        adapter_id="catalog-fixture-s7",
+        protocol="s7",
+        connection={
+            "host": "192.0.2.1",
+            "port": 102,
+            "controller_type": "S7_1500",
+            "read_only": True,
+        },
+        tags=(
+            {
+                "tag_id": "speed",
+                "address": "%ID104",
+                "data_type": "Integer",
+            },
+        ),
+        northbound_mappings=(
+            {
+                "tag_id": "speed",
+                "topic": "Acme/Test/Area/Line/Cell/S7/ProcessValue/Speed2",
+            },
+        ),
+    )
+
+
+def _assert_failed_apply_keeps_revision(
+    report,
+    *,
+    expected_revision: int,
+    edge: FakeEdgeClient,
+    adapter_id: str,
+    expected_tag_address: str,
+) -> None:
+    assert report.phase == "failed"
+    assert report.applied_revision == expected_revision
+    current = edge.read_owned("edge-test-01")
+    assert current[adapter_id].tags[0]["definition"]["tagAddress"] == expected_tag_address
+
+
 def test_apply_creates_owned_adapters_and_preserves_unmanaged_ids():
     edge = FakeEdgeClient()
     edge.seed_adapter({"id": "simulation", "type": "simulation", "config": {}})
@@ -97,85 +137,107 @@ def test_older_revision_is_ignored():
     assert report.applied_revision == 8
 
 
+def test_adapter_failure_reports_failed_and_keeps_previous_revision():
+    edge = FakeEdgeClient()
+    reconciler = _reconciler(edge)
+    reconciler.apply(_config(revision=8, adapters=(_s7_adapter(),)))
+    edge.failures["catalog-fixture-s7"] = "adapter"
+    report = reconciler.apply(_config(revision=9, adapters=(_modified_s7_adapter(),)))
+    _assert_failed_apply_keeps_revision(
+        report,
+        expected_revision=8,
+        edge=edge,
+        adapter_id="catalog-fixture-s7",
+        expected_tag_address="%ID103",
+    )
+
+
+def test_tags_failure_reports_failed_and_keeps_previous_revision():
+    edge = FakeEdgeClient()
+    reconciler = _reconciler(edge)
+    reconciler.apply(_config(revision=8, adapters=(_s7_adapter(),)))
+    edge.failures["catalog-fixture-s7"] = "tags"
+    report = reconciler.apply(_config(revision=9, adapters=(_modified_s7_adapter(),)))
+    _assert_failed_apply_keeps_revision(
+        report,
+        expected_revision=8,
+        edge=edge,
+        adapter_id="catalog-fixture-s7",
+        expected_tag_address="%ID103",
+    )
+
+
 def test_mappings_failure_reports_failed_and_keeps_previous_revision():
     edge = FakeEdgeClient()
     reconciler = _reconciler(edge)
-    revision_8 = _config(revision=8, adapters=(_s7_adapter(),))
-    report_8 = reconciler.apply(revision_8)
-    assert report_8.phase == "applied"
+    reconciler.apply(_config(revision=8, adapters=(_s7_adapter(),)))
     edge.failures["catalog-fixture-s7"] = "mappings"
-    revision_9 = _config(
-        revision=9,
-        adapters=(
-            AdapterConfig(
-                adapter_id="catalog-fixture-s7",
-                protocol="s7",
-                connection={
-                    "host": "192.0.2.1",
-                    "port": 102,
-                    "controller_type": "S7_1500",
-                    "read_only": True,
-                },
-                tags=(
-                    {
-                        "tag_id": "speed",
-                        "address": "%ID104",
-                        "data_type": "Integer",
-                    },
-                ),
-                northbound_mappings=(
-                    {
-                        "tag_id": "speed",
-                        "topic": "Acme/Test/Area/Line/Cell/S7/ProcessValue/Speed2",
-                    },
-                ),
-            ),
-        ),
+    report = reconciler.apply(_config(revision=9, adapters=(_modified_s7_adapter(),)))
+    _assert_failed_apply_keeps_revision(
+        report,
+        expected_revision=8,
+        edge=edge,
+        adapter_id="catalog-fixture-s7",
+        expected_tag_address="%ID103",
     )
-    report_9 = reconciler.apply(revision_9)
-    assert report_9.phase == "failed"
-    assert report_9.applied_revision == 8
-    current = edge.read_owned("edge-test-01")
-    assert current["catalog-fixture-s7"].tags[0]["definition"]["tagAddress"] == "%ID103"
+
+
+def test_fail_after_write_reports_failed_and_keeps_previous_revision():
+    edge = FakeEdgeClient()
+    reconciler = _reconciler(edge)
+    reconciler.apply(_config(revision=8, adapters=(_s7_adapter(),)))
+    edge.fail_after_write.add("catalog-fixture-s7")
+    report = reconciler.apply(_config(revision=9, adapters=(_modified_s7_adapter(),)))
+    _assert_failed_apply_keeps_revision(
+        report,
+        expected_revision=8,
+        edge=edge,
+        adapter_id="catalog-fixture-s7",
+        expected_tag_address="%ID103",
+    )
+
+
+def test_delete_failure_reports_failed_and_keeps_previous_revision():
+    edge = FakeEdgeClient()
+    reconciler = _reconciler(edge)
+    old = _s7_adapter(adapter_id="catalog-old-s7")
+    new = _modbus_adapter(adapter_id="catalog-modbus-sim")
+    reconciler.apply(_config(revision=1, adapters=(old,)))
+    edge.failures["catalog-old-s7"] = "delete"
+    report = reconciler.apply(
+        _config(revision=2, adapters=(new,), deleted=("catalog-old-s7",)),
+    )
+    assert report.phase == "failed"
+    assert report.applied_revision == 1
+    owned = edge.read_owned("edge-test-01")
+    assert set(owned) == {"catalog-old-s7"}
 
 
 def test_recovery_failure_reports_degraded_with_actual_state():
     edge = FakeEdgeClient()
     reconciler = _reconciler(edge)
-    revision_8 = _config(revision=8, adapters=(_s7_adapter(),))
-    reconciler.apply(revision_8)
+    reconciler.apply(_config(revision=8, adapters=(_s7_adapter(),)))
     edge.failures["catalog-fixture-s7"] = "mappings"
-    revision_9 = _config(
-        revision=9,
-        adapters=(
-            AdapterConfig(
-                adapter_id="catalog-fixture-s7",
-                protocol="s7",
-                connection={
-                    "host": "192.0.2.1",
-                    "port": 102,
-                    "controller_type": "S7_1500",
-                    "read_only": True,
-                },
-                tags=(
-                    {
-                        "tag_id": "speed",
-                        "address": "%ID104",
-                        "data_type": "Integer",
-                    },
-                ),
-                northbound_mappings=(
-                    {
-                        "tag_id": "speed",
-                        "topic": "Acme/Test/Area/Line/Cell/S7/ProcessValue/Speed2",
-                    },
-                ),
-            ),
-        ),
-    )
-    report = reconciler.apply(revision_9)
-    assert report.phase in {"failed", "degraded"}
+
+    def failing_restore(_snapshot):
+        raise RuntimeError("recovery failed")
+
+    edge.restore_snapshot = failing_restore  # type: ignore[method-assign]
+
+    report = reconciler.apply(_config(revision=9, adapters=(_modified_s7_adapter(),)))
+    assert report.phase == "degraded"
     assert report.applied_revision == 8
+    assert report.last_error_code == "mappings_failed"
+    assert report.adapter_results == (
+        {
+            "adapter_id": "catalog-fixture-s7",
+            "protocol_type": "s7",
+            "status": "present",
+        },
+    )
+    current = edge.read_owned("edge-test-01")
+    assert current["catalog-fixture-s7"].tags[0]["definition"]["tagAddress"] == "%ID104"
+    assert current["catalog-fixture-s7"].northbound_mappings == ()
 
 
 def test_restart_resumes_journal_without_claiming_unapplied_revision(journal):
