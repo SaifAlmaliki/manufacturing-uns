@@ -12,6 +12,7 @@ from uns_edge_agent.credentials import CredentialStore
 from uns_edge_agent.cloud_client import CloudClient
 from uns_edge_agent.edge_client import HiveMQEdgeClient
 from uns_edge_agent.journal import Journal
+from uns_edge_agent.jobs import JobExecutor
 from uns_edge_agent.polling import PollLoop
 from uns_edge_agent.reconcile import Reconciler
 
@@ -47,12 +48,18 @@ def run_agent(config: AgentConfig) -> None:
             endpoint_allowlist=config.endpoint_allowlist,
         )
 
+    latest_config: dict = {}
+
     def on_configuration(snapshot) -> None:
         LOGGER.info(
             "configuration revision=%s digest=%s received",
             snapshot.revision,
             snapshot.digest,
         )
+        latest_config.clear()
+        latest_config.update(snapshot.document)
+
+    job_executor = JobExecutor(endpoint_allowlist=config.endpoint_allowlist) if edge_client else None
 
     loop = PollLoop(
         cloud_client=cloud_client,
@@ -61,6 +68,8 @@ def run_agent(config: AgentConfig) -> None:
         edge_id_loader=lambda: credentials.load_manifest()["edge_id"],
         edge_client=edge_client,
         reconciler=reconciler,
+        job_executor=job_executor,
+        latest_config=lambda: dict(latest_config) if latest_config else None,
     )
     loop.state.boot_id = boot_id
     journal.set_boot_id(boot_id)

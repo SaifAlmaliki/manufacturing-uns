@@ -21,6 +21,7 @@ from uns_graphql.edge_api.identity import (
     VerifiedEdgeIdentity,
     verify_management_identity,
 )
+from uns_graphql.edge_api.jobs import EdgeJobService
 from uns_graphql.edge_api.service import EdgeManagementService, EdgeServiceError, LeaseHeaders
 
 
@@ -37,6 +38,13 @@ class SessionRequest(BaseModel):
 class RenewRequest(BaseModel):
     purpose: str
     csr: str
+
+
+class JobResultRequest(BaseModel):
+    status: str
+    result: dict[str, Any] = Field(default_factory=dict)
+    error_code: str | None = None
+    error_detail: str | None = None
 
 
 class ReportRequest(BaseModel):
@@ -77,8 +85,14 @@ def _lease_headers(
     return LeaseHeaders(boot_id=boot_id, generation=generation, lease_token=lease_token)
 
 
-def create_edge_router(service: EdgeManagementService) -> APIRouter:
+def create_edge_router(service: EdgeManagementService, job_service: EdgeJobService | None = None) -> APIRouter:
     router = APIRouter(prefix="/api/edge/v1", tags=["edge"])
+    jobs = job_service or EdgeJobService(
+        service._database,  # noqa: SLF001
+        service._repository,  # noqa: SLF001
+        service,
+        now=service._now,  # noqa: SLF001
+    )
 
     @router.post("/enroll")
     async def enroll(request: Request, body: EnrollRequest) -> JSONResponse:
@@ -199,6 +213,64 @@ def create_edge_router(service: EdgeManagementService) -> APIRouter:
         except Exception as exc:
             return _error_response(exc)
         return Response(status_code=200, content=plaintext, media_type="application/octet-stream")
+
+    @router.get("/jobs")
+    async def poll_jobs(
+        request: Request,
+        lease: Annotated[LeaseHeaders, Depends(_lease_headers)],
+    ) -> JSONResponse:
+        try:
+            identity = verify_management_identity(request)
+            records = await jobs.poll_jobs(identity, lease)
+        except Exception as exc:
+            return _error_response(exc)
+        return JSONResponse(
+            status_code=200,
+            content={
+                "jobs": [
+                    {
+                        "job_id": record.job_id,
+                        "edge_id": record.edge_id,
+                        "connection_id": record.connection_id,
+                        "config_revision": record.config_revision,
+                        "kind": record.kind,
+                        "cursor": record.cursor,
+                        "node_id": record.node_id,
+                        "expires_at": record.expires_at.isoformat(),
+                    }
+                    for record in records
+                ]
+            },
+        )
+
+    @router.post("/jobs/{job_id}/result")
+    async def submit_job_result(
+        request: Request,
+        job_id: str,
+        body: JobResultRequest,
+        lease: Annotated[LeaseHeaders, Depends(_lease_headers)],
+    ) -> JSONResponse:
+        try:
+            identity = verify_management_identity(request)
+            record = await jobs.submit_result(
+                identity,
+                lease,
+                job_id,
+                status=body.status,
+                result=body.result,
+                error_code=body.error_code,
+                error_detail=body.error_detail,
+            )
+        except Exception as exc:
+            return _error_response(exc)
+        return JSONResponse(
+            status_code=200,
+            content={
+                "job_id": record.job_id,
+                "status": record.status,
+                "error_code": record.error_code,
+            },
+        )
 
     @router.post("/renew")
     async def renew_certificate(request: Request, body: RenewRequest) -> JSONResponse:

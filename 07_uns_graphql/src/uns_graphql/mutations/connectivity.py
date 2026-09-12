@@ -52,8 +52,18 @@ from uns_graphql.input.connectivity import (
     ConnectivityTagInput,
     ConnectivityTagUpdateInput,
 )
+from uns_config.edge_jobs import JOB_KIND_BROWSE_TAGS, JOB_KIND_TEST_CONNECTION
+from uns_graphql.edge_api.jobs import EdgeJobService
+from uns_graphql.edge_api.service import EdgeServiceError
 from uns_graphql.tcp_probe import probe_tcp
-from uns_graphql.type.connectivity import ConnectivityServerType, ConnectivityTagType, UnitOfMeasureType
+from uns_graphql.type.connectivity import (
+    ConnectivityJobType,
+    ConnectivityServerType,
+    ConnectivityTagType,
+    UnitOfMeasureType,
+    connectivity_job_from_record,
+)
+from uns_model.edge_repository import EdgeStatusSnapshot
 
 LOGGER = logging.getLogger(__name__)
 
@@ -64,6 +74,50 @@ def _repository() -> ConnectivityRepository:
 
 def _edge_repository() -> EdgeRepository:
     return EdgeRepository(Database.shared("graphql"))
+
+
+async def _require_connected_edge(edge_id: str) -> EdgeStatusSnapshot:
+    status = await _edge_repository().device_status(edge_id)
+    if status is None or status.last_seen is None:
+        raise ValueError(f"Edge {edge_id!r} is not connected")
+    return status
+
+
+async def _start_connectivity_job(
+    info: strawberry.Info,
+    server: ConnectivityServer,
+    *,
+    kind: str,
+    node_id: str | None = None,
+    cursor: str | None = None,
+) -> ConnectivityJobType:
+    if not server.edge_id:
+        raise ValueError("edge_id is required in cloud edge mode")
+    await require_edge_access(info, server.edge_id)
+    status = await _require_connected_edge(server.edge_id)
+    try:
+        record = await _job_service().create_job(
+            edge_id=server.edge_id,
+            connection_id=server.id,
+            kind=kind,
+            config_revision=status.desired_revision,
+            node_id=node_id,
+            cursor=cursor,
+        )
+    except EdgeServiceError as exc:
+        raise ValueError(exc.reason) from exc
+    return connectivity_job_from_record(record)
+
+
+def _job_service() -> EdgeJobService:
+    from uns_graphql.mutations.edge import _edge_service
+
+    management = _edge_service()
+    return EdgeJobService(
+        Database.shared("graphql"),
+        _edge_repository(),
+        management,
+    )
 
 
 def _sync_edge(adapters: list[EdgeAdapterInput]) -> None:
@@ -264,6 +318,33 @@ class Mutation:
         if deleted:
             LOGGER.info("Connectivity server %s deleted", id)
         return deleted
+
+    @strawberry.mutation(
+        description="Request a paged OPC UA browse on an edge-owned server. Returns a job "
+        "the console polls until tags are available. Cloud edge mode only."
+    )
+    async def browse_opc_ua_tags(
+        self,
+        info: strawberry.Info,
+        server_id: str,
+        node_id: str | None = strawberry.UNSET,
+        cursor: str | None = strawberry.UNSET,
+    ) -> ConnectivityJobType:
+        require(info, "browseOpcUaTags")
+        if not is_cloud_edge_mode():
+            raise ValueError("browseOpcUaTags is only available in cloud edge mode")
+        server = await _find_server(_repository(), server_id)
+        if server is None:
+            raise ValueError(f"No Connectivity server with id {server_id!r}")
+        if server.protocol != "opc_ua":
+            raise ValueError("OPC UA browse is only available for OPC UA servers")
+        return await _start_connectivity_job(
+            info,
+            server,
+            kind=JOB_KIND_BROWSE_TAGS,
+            node_id=node_id if node_id is not strawberry.UNSET else None,
+            cursor=cursor if cursor is not strawberry.UNSET else None,
+        )
 
     @strawberry.mutation(
         description="Discover Variables under nodeId (or the whole Objects tree) and fold "
@@ -515,8 +596,14 @@ class Mutation:
         if server is None:
             raise ValueError(f"No Connectivity server with id {id!r}")
         if is_cloud_edge_mode():
+            job = await _start_connectivity_job(info, server, kind=JOB_KIND_TEST_CONNECTION)
             status = await _edge_status(server.edge_id)
-            return ConnectivityServerType.from_server(server, edge_status=status)
+            return ConnectivityServerType.from_server(
+                server,
+                edge_status=status,
+                active_job_id=job.job_id,
+                active_job_status=job.status.value,
+            )
         was_pending = server.last_status == "pending"
         if server.protocol == "opc_ua":
             ok, error, _elapsed_ms = await opcua_browse.test_connection(server.endpoint)

@@ -61,6 +61,10 @@ async def _clean(database: Database) -> None:
     async with database.begin() as connection:
         for edge_id in (TEST_EDGE, TEST_EDGE_OTHER):
             await connection.execute(
+                text("DELETE FROM edge.jobs WHERE edge_id = :edge_id"),
+                {"edge_id": edge_id},
+            )
+            await connection.execute(
                 text("DELETE FROM edge.devices WHERE edge_id = :edge_id"),
                 {"edge_id": edge_id},
             )

@@ -11,13 +11,14 @@ from __future__ import annotations
 import logging
 
 import strawberry
-from uns_model.connectivity import ConnectivityRepository
+from uns_model.connectivity import ConnectivityRepository, is_cloud_edge_mode
 from uns_model.engine import Database
 from uns_opcua import browse as opcua_browse
 from uns_opcua.session import open_client
 
 from uns_graphql.auth.require import OPC_PROBE_ROLES, require_role
 from uns_graphql.type.connectivity import (
+    ConnectivityJobType,
     ConnectivityProtocol,
     ConnectivityServerType,
     ConnectivityTestResultType,
@@ -25,6 +26,7 @@ from uns_graphql.type.connectivity import (
     OpcUaDataValueType,
     SubscribedSignalType,
     UnitOfMeasureType,
+    connectivity_job_from_record,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -32,6 +34,24 @@ LOGGER = logging.getLogger(__name__)
 
 def _repository() -> ConnectivityRepository:
     return ConnectivityRepository(Database.shared("graphql"))
+
+
+def _job_service():
+    from uns_graphql.edge_api.jobs import EdgeJobService
+    from uns_graphql.mutations.edge import _edge_service
+    from uns_model.edge_repository import EdgeRepository
+
+    return EdgeJobService(
+        Database.shared("graphql"),
+        EdgeRepository(Database.shared("graphql")),
+        _edge_service(),
+    )
+
+
+def _cloud_probe_unavailable() -> None:
+    raise ValueError(
+        "OPC UA probes are unavailable in cloud edge mode; use edge management jobs."
+    )
 
 
 @strawberry.type(description="Query the console's Connectivity catalog and probe OPC UA servers")
@@ -60,6 +80,8 @@ class Query:
         endpoint: str,
     ) -> ConnectivityTestResultType:
         require_role(info, OPC_PROBE_ROLES)
+        if is_cloud_edge_mode():
+            _cloud_probe_unavailable()
         ok, error, elapsed_ms = await opcua_browse.test_connection(endpoint)
         # Record the test against a saved server that owns this endpoint, if any.
         # The bridge also calls record_test; this is the console's own probe, so the
@@ -80,6 +102,8 @@ class Query:
         node_id: str | None = strawberry.UNSET,
     ) -> list[OpcUaBrowseNodeType]:
         require_role(info, OPC_PROBE_ROLES)
+        if is_cloud_edge_mode():
+            _cloud_probe_unavailable()
         async with await open_client(endpoint) as client:
             rows = await opcua_browse.browse_children(
                 client, node_id if node_id is not strawberry.UNSET else None
@@ -96,6 +120,8 @@ class Query:
         node_id: str | None = strawberry.UNSET,
     ) -> list[OpcUaBrowseNodeType]:
         require_role(info, OPC_PROBE_ROLES)
+        if is_cloud_edge_mode():
+            _cloud_probe_unavailable()
         start = node_id if node_id is not strawberry.UNSET else None
         async with await open_client(endpoint) as client:
             rows = await opcua_browse.discover_variables(client, start)
@@ -109,6 +135,8 @@ class Query:
         node_ids: list[str],
     ) -> list[OpcUaDataValueType]:
         require_role(info, OPC_PROBE_ROLES)
+        if is_cloud_edge_mode():
+            _cloud_probe_unavailable()
         async with await open_client(endpoint) as client:
             rows = await opcua_browse.read_nodes(client, node_ids)
         return [OpcUaDataValueType.from_row(row) for row in rows]
@@ -124,6 +152,14 @@ class Query:
         require_role(info, OPC_PROBE_ROLES)
         rows = await _repository().list_signal_labels()
         return [row.name for row in rows]
+
+    @strawberry.field(description="Poll the status and result of one edge management job.")
+    async def get_connectivity_job(self, info: strawberry.Info, job_id: str) -> ConnectivityJobType:
+        require_role(info, OPC_PROBE_ROLES)
+        record = await _job_service().get_job(job_id)
+        if record is None:
+            raise ValueError(f"No connectivity job with id {job_id!r}")
+        return connectivity_job_from_record(record)
 
     @strawberry.field(
         description="Every subscribed catalog tag across Connectivity servers. "

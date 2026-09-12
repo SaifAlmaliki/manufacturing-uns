@@ -158,6 +158,45 @@ class CloudClient:
             raise CloudClientError(_error_reason(response), response.status_code)
         return response.json()
 
+    def poll_jobs(self, lease: Lease) -> list[dict[str, Any]]:
+        headers = _identity_headers(self._credentials.load_manifest())
+        headers.update(_lease_headers(lease))
+        with self._client() as client:
+            response = client.get(f"{self._base_url}/api/edge/v1/jobs", headers=headers)
+        if response.status_code != 200:
+            raise CloudClientError(_error_reason(response), response.status_code)
+        payload = response.json()
+        jobs = payload.get("jobs", [])
+        return [job for job in jobs if isinstance(job, dict)]
+
+    def submit_job_result(
+        self,
+        lease: Lease,
+        job_id: str,
+        *,
+        status: str,
+        result: dict[str, Any] | None = None,
+        error_code: str | None = None,
+        error_detail: str | None = None,
+    ) -> dict[str, Any]:
+        headers = _identity_headers(self._credentials.load_manifest())
+        headers.update(_lease_headers(lease))
+        body = {
+            "status": status,
+            "result": result or {},
+            "error_code": error_code,
+            "error_detail": error_detail,
+        }
+        with self._client() as client:
+            response = client.post(
+                f"{self._base_url}/api/edge/v1/jobs/{job_id}/result",
+                json=body,
+                headers=headers,
+            )
+        if response.status_code != 200:
+            raise CloudClientError(_error_reason(response), response.status_code)
+        return response.json()
+
     def fetch_secret(self, lease: Lease, secret_id: str, version: int) -> bytes:
         headers = _identity_headers(self._credentials.load_manifest())
         headers.update(_lease_headers(lease))

@@ -40,6 +40,7 @@ from uns_graphql.queries import access_group, alert_rule, asset, connectivity, e
 from uns_graphql.edge_api import create_edge_router
 from uns_graphql.edge_api.issuer import EdgeCertificateIssuer, generate_authority
 from uns_graphql.edge_api.service import EdgeManagementService
+from uns_graphql.subscriptions.connectivity import Subscription as ConnectivitySubscription
 from uns_graphql.subscriptions.kafka import KAFKASubscription
 from uns_graphql.subscriptions.mqtt import MQTTSubscription
 from uns_graphql.subscriptions.opcua import Subscription as OpcUaSubscription
@@ -128,7 +129,7 @@ class Mutation(
 
 
 @strawberry.type(description="Subscribe to UNS Events or Streams")
-class Subscription(MQTTSubscription, KAFKASubscription, OpcUaSubscription):
+class Subscription(MQTTSubscription, KAFKASubscription, OpcUaSubscription, ConnectivitySubscription):
     @classmethod
     async def on_shutdown(cls):
         """
@@ -137,6 +138,7 @@ class Subscription(MQTTSubscription, KAFKASubscription, OpcUaSubscription):
         await MQTTSubscription.on_shutdown()
         await KAFKASubscription.on_shutdown()
         await OpcUaSubscription.on_shutdown()
+        await ConnectivitySubscription.on_shutdown()
 
 
 class UNSGraphql:

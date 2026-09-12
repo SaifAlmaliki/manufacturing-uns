@@ -18,6 +18,7 @@ from uns_edge_agent.config import (
 )
 from uns_edge_agent.edge_client import EdgeClient, snapshot_owned
 from uns_edge_agent.journal import Journal, JournalError
+from uns_edge_agent.jobs import JobExecutor, connection_from_config, polled_job_from_payload
 from uns_edge_agent.reconcile import Reconciler
 
 
@@ -73,6 +74,8 @@ class PollLoop:
         edge_id_loader: Callable[[], str] | None = None,
         edge_client: EdgeClient | None = None,
         reconciler: Reconciler | None = None,
+        job_executor: JobExecutor | None = None,
+        latest_config: Callable[[], dict[str, Any] | None] | None = None,
     ) -> None:
         self._cloud = cloud_client
         self._journal = journal
@@ -83,6 +86,8 @@ class PollLoop:
         self._edge_id_loader = edge_id_loader
         self._edge_client = edge_client
         self._reconciler = reconciler
+        self._job_executor = job_executor
+        self._latest_config = latest_config
         self.state = PollLoopState()
 
     def stop(self) -> None:
@@ -218,10 +223,47 @@ class PollLoop:
         recovery_snapshot = snapshot_owned(current)
         self._journal.begin_apply(snapshot.document, recovery_snapshot)
 
+    def process_pending_jobs(self) -> None:
+        if self._job_executor is None or not self.ensure_session() or self.state.lease is None:
+            return
+        document = self._latest_config() if self._latest_config is not None else None
+        if document is None:
+            return
+        try:
+            jobs = self._cloud.poll_jobs(self.state.lease)
+        except CloudClientError:
+            self._register_backoff()
+            return
+        for payload in jobs:
+            job = polled_job_from_payload(payload)
+            try:
+                connection = connection_from_config(document, job.connection_id)
+                outcome = self._job_executor.execute_sync(job, connection)
+            except Exception as exc:  # noqa: BLE001 - report bounded failure to cloud
+                outcome = {
+                    "status": "failed",
+                    "error_code": getattr(exc, "reason", "job_failed"),
+                    "error_detail": str(exc),
+                }
+            try:
+                self._cloud.submit_job_result(
+                    self.state.lease,
+                    job.job_id,
+                    status=outcome.get("status", "failed"),
+                    result=outcome.get("result"),
+                    error_code=outcome.get("error_code"),
+                    error_detail=outcome.get("error_detail"),
+                )
+            except CloudClientError:
+                self._register_backoff()
+                return
+        self._clear_backoff()
+
     def run_once(self) -> None:
         self.flush_pending_reports()
         self.send_heartbeat_if_due()
         self.process_pending_apply()
+        self.process_pending_jobs()
         self.poll_configuration()
 
     def run_until_stopped(self) -> None:

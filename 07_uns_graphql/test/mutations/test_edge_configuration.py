@@ -1,6 +1,7 @@
 """Cloud-mode connectivity writes use transactional desired state, not local apply."""
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -257,3 +258,90 @@ async def test_local_mode_still_uses_sync_edge(monkeypatch):
     assert result.errors is None
     assert repository.save_server.await_args.kwargs.get("after_flush") is not None
     finish.assert_awaited_once()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_cloud_mode_test_connectivity_server_returns_job(cloud_mode, monkeypatch):
+    repository = AsyncMock()
+    edge_repo = AsyncMock()
+    edge_repo.device_status.return_value = SimpleNamespace(
+        desired_revision=3,
+        applied_revision=2,
+        applied_phase="applied",
+        last_seen=datetime(2026, 9, 12, 12, 0, tzinfo=UTC),
+        capabilities={},
+    )
+    server = _server(id="srv-opc", protocol="opc_ua", endpoint="opc.tcp://plc1:4840")
+    repository.list_servers.return_value = [server]
+    job = SimpleNamespace(
+        job_id="job-123",
+        status="queued",
+        edge_id="edge-01",
+        connection_id="srv-opc",
+        kind="test_connection",
+        cursor=None,
+        node_id=None,
+        result_payload=None,
+        error_code=None,
+        error_detail=None,
+    )
+    job_service = AsyncMock()
+    job_service.create_job.return_value = job
+    monkeypatch.setattr("uns_graphql.mutations.connectivity._job_service", lambda: job_service)
+
+    with patch(REPOSITORY, return_value=repository), patch(EDGE_REPOSITORY, return_value=edge_repo):
+        result = await UNSGraphql.schema.execute(
+            """
+            mutation Test($id: String!) {
+                testConnectivityServer(id: $id) {
+                    id
+                    activeJobId
+                    activeJobStatus
+                }
+            }
+            """,
+            variable_values={"id": "srv-opc"},
+            context_value=ADMIN,
+        )
+
+    assert result.errors is None
+    payload = result.data["testConnectivityServer"]
+    assert payload["activeJobId"] == "job-123"
+    assert payload["activeJobStatus"] == "queued"
+    job_service.create_job.assert_awaited_once()
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_cloud_mode_test_rejects_disconnected_edge(cloud_mode):
+    repository = AsyncMock()
+    edge_repo = AsyncMock()
+    edge_repo.device_status.return_value = SimpleNamespace(
+        desired_revision=3,
+        applied_revision=2,
+        applied_phase="applied",
+        last_seen=None,
+        capabilities={},
+    )
+    server = _server(id="srv-opc", protocol="opc_ua", endpoint="opc.tcp://plc1:4840")
+    repository.list_servers.return_value = [server]
+
+    with patch(REPOSITORY, return_value=repository), patch(EDGE_REPOSITORY, return_value=edge_repo):
+        result = await UNSGraphql.schema.execute(
+            'mutation { testConnectivityServer(id: "srv-opc") { id } }',
+            context_value=ADMIN,
+        )
+
+    assert result.errors is not None
+    assert "not connected" in result.errors[0].message
+
+
+@pytest.mark.asyncio(loop_scope="function")
+async def test_cloud_mode_opc_probes_are_unavailable(cloud_mode, monkeypatch):
+    monkeypatch.setattr("uns_graphql.queries.connectivity.is_cloud_edge_mode", lambda: True)
+    with patch("uns_graphql.queries.connectivity._repository", return_value=AsyncMock()):
+        result = await UNSGraphql.schema.execute(
+            '{ browseOpcUa(endpoint: "opc.tcp://plc1:4840") { nodeId } }',
+            context_value=ADMIN,
+        )
+    assert result.errors is not None
+    assert "cloud edge mode" in result.errors[0].message

@@ -8,6 +8,8 @@ readme = "README.md"
 license = { text = "MIT" }
 dependencies = [
     "uns_config",
+    "uns_model",
+    "uns_opcua",
     "httpx>=0.28.0,<1",
     "cryptography>=44.0.0,<45",
 ]
@@ -23,6 +25,7 @@ uns_edge_healthcheck = "uns_edge_agent.health_check:main"
 [dependency-groups]
 test = [
     "pytest>=9.0.3,<10",
+    "pytest-asyncio>=1.0.0,<2",
     "pytest-timeout>=2.4.0,<3",
     "pytest-xdist>=3.8.0,<4",
 ]
@@ -32,6 +35,8 @@ default-groups = ["test"]
 
 [tool.uv.sources]
 uns_config = { path = "../00_uns_config", editable = true }
+uns_model = { path = "../09_uns_model", editable = true }
+uns_opcua = { path = "../10_uns_opcua", editable = true }
 
 [tool.hatch.build.targets.sdist]
 include = ["src/uns_edge_agent"]
@@ -51,6 +56,7 @@ norecursedirs = [".git", "build", "node_modules", "env*", "tmp*"]
 testpaths = ["test"]
 pythonpath = ["test"]
 addopts = "--timeout=300"
+asyncio_mode = "strict"
 
 [tool.ruff]
 extend = "../pyproject.toml"

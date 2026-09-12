@@ -14,6 +14,7 @@ import logging
 import typing
 
 import strawberry
+from uns_model.connectivity import is_cloud_edge_mode
 from uns_opcua import browse as opcua_browse
 from uns_opcua.session import open_client
 
@@ -66,6 +67,11 @@ class Subscription:
         node_ids: list[str],
     ) -> typing.AsyncGenerator[OpcUaDataValueType]:
         require_role(info, OPC_PROBE_ROLES)
+        if is_cloud_edge_mode():
+            raise ValueError(
+                "OPC UA live subscriptions are unavailable in cloud edge mode; "
+                "use central MQTT streams."
+            )
         queue: asyncio.Queue[OpcUaDataValueType] = asyncio.Queue()
         handler = _DataChangeHandler(queue)
         async with await open_client(endpoint) as client:

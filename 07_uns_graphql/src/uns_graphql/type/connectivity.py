@@ -110,6 +110,35 @@ class ConnectivityTestResultType:
     elapsed_ms: float
 
 
+@strawberry.enum(description="Bounded management job dispatched to an edge device.")
+class ConnectivityJobKind(Enum):
+    TEST_CONNECTION = "test_connection"
+    BROWSE_TAGS = "browse_tags"
+
+
+@strawberry.enum(description="Lifecycle state of an edge management job.")
+class ConnectivityJobStatus(Enum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    EXPIRED = "expired"
+
+
+@strawberry.type(description="An asynchronous edge management job for discovery or connection tests.")
+class ConnectivityJobType:
+    job_id: str
+    edge_id: str
+    connection_id: str
+    kind: ConnectivityJobKind
+    status: ConnectivityJobStatus
+    cursor: str | None = None
+    node_id: str | None = None
+    result: JSON | None = None
+    error_code: str | None = None
+    error_detail: str | None = None
+
+
 @strawberry.enum(description="What kind of plant signal a subscribed tag represents.")
 class SignalSemanticClass(Enum):
     MeasuredValue = "MeasuredValue"
@@ -252,6 +281,8 @@ class ConnectivityServerType:
     connection_health: str | None = None
     last_seen: datetime.datetime | None = None
     last_tested_at: datetime.datetime | None = None
+    active_job_id: str | None = None
+    active_job_status: str | None = None
     created_at: datetime.datetime | None = None
     updated_at: datetime.datetime | None = None
     tags: list[ConnectivityTagType] = strawberry.field(default_factory=list)
@@ -262,6 +293,8 @@ class ConnectivityServerType:
         server: ConnectivityServer,
         *,
         edge_status: EdgeStatusSnapshot | None = None,
+        active_job_id: str | None = None,
+        active_job_status: str | None = None,
     ) -> "ConnectivityServerType":
         from uns_model.edge_desired import connection_health_from_server
 
@@ -290,7 +323,24 @@ class ConnectivityServerType:
             last_status=server.last_status,
             last_error=server.last_error,
             last_tested_at=server.last_tested_at,
+            active_job_id=active_job_id,
+            active_job_status=active_job_status,
             created_at=server.created_at,
             updated_at=server.updated_at,
             tags=[ConnectivityTagType.from_tag(tag) for tag in server.tags],
         )
+
+
+def connectivity_job_from_record(record) -> ConnectivityJobType:
+    return ConnectivityJobType(
+        job_id=record.job_id,
+        edge_id=record.edge_id,
+        connection_id=record.connection_id,
+        kind=ConnectivityJobKind(record.kind),
+        status=ConnectivityJobStatus(record.status),
+        cursor=record.cursor,
+        node_id=record.node_id,
+        result=record.result_payload,
+        error_code=record.error_code,
+        error_detail=record.error_detail,
+    )
