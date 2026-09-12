@@ -1,0 +1,82 @@
+# Production cloud platform settings.
+# Copy to settings.yaml beside compose.yml and inject secrets through secrets/runtime.env.
+# Do not mount the development repository conf/ tree or conf/.secrets.yaml in production.
+
+default:
+  platform:
+    instance_name: "cloud-production"
+    organization_name: "ExamplePlant"
+    display_name: "Unified Namespace"
+    public_origin: "https://uns.example.com"
+    edge_management:
+      cloud_mode: true
+      enrollment_hostname: "enroll.uns.example.com"
+      management_hostname: "edge-mgmt.uns.example.com"
+      trusted_proxy_value: "1"
+
+  urls:
+    graphql_host: "graphql_server"
+    graphql_port: 8000
+    graphql_path: "/graphql"
+    cors_origins:
+      - "https://uns.example.com"
+
+  auth:
+    realm: "uns"
+    # Derived at runtime from platform.public_origin when set; literals kept for readers.
+    base_url: "https://uns.example.com/auth"
+    issuer: "https://uns.example.com/auth/realms/uns"
+    console_client_id: "uns-console"
+    grafana_client_id: "uns-grafana"
+    audience: "uns-console"
+    leeway_seconds: 30
+    internal_base_url: "http://uns_keycloak:8080"
+
+  mqtt:
+    host: "uns_mqtt_broker"
+    port: 8883
+    public_host: "mqtt.uns.example.com"
+    public_port: 8883
+    qos: 1
+    keep_alive: 30
+    reconnect_on_failure: true
+    version: 5
+    transport: "tcp"
+    timestamp_attribute: "timestamp"
+    ignored_attributes: {}
+
+  kafka_mapper:
+    ingestion:
+      v2_publications_enabled: true
+
+  datalake:
+    s3:
+      endpoint_url: "https://s3.eu-central-1.amazonaws.com"
+      bucket: "uns-historic-events"
+      region: "eu-central-1"
+      use_path_style: false
+
+  edge_management:
+    secrets:
+      master_key_id: "production-master-key"
+    trusted_proxy_value: "1"
+
+  operations:
+    backup:
+      enabled: true
+      schedule: "0 3 * * *"
+      retention_days: 30
+      target: "s3://uns-backups/production"
+    log_rotation:
+      max_size: "100m"
+      max_file: "5"
+    resource_limits:
+      kafka_heap_mb: 2048
+      neo4j_heap_mb: 2048
+
+graphql:
+  edge_management:
+    cloud_mode: true
+    trusted_proxy_value: "1"
+
+dynaconf_merge: true

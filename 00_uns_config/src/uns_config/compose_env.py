@@ -16,6 +16,7 @@ import sys
 from uns_config.loader import get_settings
 
 COMPOSE_ENV_KEYS = (
+    "UNS_CONSOLE_ORIGIN",
     "UNS_graphdb__password",
     "UNS_historian__password",
     "PGPASSWORD",
@@ -81,7 +82,10 @@ def compose_environment(settings=None) -> dict[str, str]:
             "minio.root_password initialise the local MinIO service only."
         )
 
+    from uns_config.platform import PlatformConfig
+
     return {
+        "UNS_CONSOLE_ORIGIN": PlatformConfig.console_origin(),
         "UNS_graphdb__password": graphdb_password,
         "UNS_historian__password": historian_password,
         "PGPASSWORD": postgres_password,

@@ -1,0 +1,140 @@
+{
+  "bundle_version": 1,
+  "release_id": "uns-cloud-production-2026-09-12",
+  "qualification_status": "unqualified",
+  "git_baseline_commit": "7c407d1e",
+  "contract_version": 1,
+  "envelope_version": 2,
+  "broker_profile": "isolated-qualification",
+  "single_server_failure_domain": true,
+  "images": {
+    "uns-proxy": {
+      "repository": "uns-cloud-proxy",
+      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "status": "blocked",
+      "blocker": "Build and pin the TLS proxy image before rollout"
+    },
+    "hivemq-broker": {
+      "repository": "hivemq/hivemq4",
+      "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "status": "blocked",
+      "blocker": "Operator must supply a verified HiveMQ Enterprise digest and license"
+    },
+    "postgres-bootstrap": {
+      "repository": "postgres",
+      "tag": "16-alpine",
+      "digest": "sha256:3030303030303030303030303030303030303030303030303030303030303030",
+      "status": "blocked",
+      "blocker": "Pin the Postgres bootstrap image digest before rollout"
+    },
+    "uns-timescale": {
+      "repository": "timescale/timescaledb",
+      "tag": "pg16-2025.04.0",
+      "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "status": "blocked",
+      "blocker": "Pin the Timescale image digest before rollout"
+    },
+    "uns-neo4j": {
+      "repository": "neo4j",
+      "tag": "5.26.0-community",
+      "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "status": "blocked",
+      "blocker": "Pin the Neo4j image digest before rollout"
+    },
+    "uns-kafka": {
+      "repository": "apache/kafka",
+      "tag": "3.9.0",
+      "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "status": "blocked",
+      "blocker": "Pin the Kafka image digest before rollout"
+    },
+    "uns-keycloak": {
+      "repository": "quay.io/keycloak/keycloak",
+      "tag": "26.0.7",
+      "digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "status": "blocked",
+      "blocker": "Pin the Keycloak image digest before rollout"
+    },
+    "uns-frontend": {
+      "repository": "uns-frontend",
+      "digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "status": "blocked",
+      "blocker": "Build and pin the console image before rollout"
+    },
+    "uns-graphql": {
+      "repository": "uns-graphql",
+      "digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+      "status": "blocked",
+      "blocker": "Build and pin the GraphQL image before rollout"
+    },
+    "uns-model": {
+      "repository": "uns-model",
+      "digest": "sha256:1212121212121212121212121212121212121212121212121212121212121212",
+      "status": "blocked",
+      "blocker": "Build and pin the asset model image before rollout"
+    },
+    "uns-kafka-mapper": {
+      "repository": "uns-kafka-mapper",
+      "digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+      "status": "blocked",
+      "blocker": "Build and pin the Kafka mapper image before rollout"
+    },
+    "uns-historian": {
+      "repository": "uns-historian",
+      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "status": "blocked",
+      "blocker": "Build and pin the historian image before rollout"
+    },
+    "uns-graphdb": {
+      "repository": "uns-graphdb",
+      "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "status": "blocked",
+      "blocker": "Build and pin the graph database image before rollout"
+    },
+    "uns-datalake": {
+      "repository": "uns-datalake",
+      "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "status": "blocked",
+      "blocker": "Build and pin the datalake image before rollout"
+    },
+    "uns-oee": {
+      "repository": "uns-oee",
+      "digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "status": "blocked",
+      "blocker": "Build and pin the OEE image before rollout"
+    },
+    "uns-grafana": {
+      "repository": "grafana/grafana",
+      "tag": "11.5.2",
+      "digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "status": "blocked",
+      "blocker": "Pin the Grafana image digest before rollout"
+    },
+    "uns-prometheus": {
+      "repository": "prom/prometheus",
+      "tag": "v3.2.1",
+      "digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "status": "blocked",
+      "blocker": "Pin the Prometheus image digest before rollout"
+    },
+    "uns-route-release-worker": {
+      "repository": "uns-graphql",
+      "digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+      "status": "blocked",
+      "blocker": "Route release worker uses the GraphQL image entrypoint"
+    },
+    "uns-cloud-backup": {
+      "repository": "uns-cloud-backup",
+      "digest": "sha256:1010101010101010101010101010101010101010101010101010101010101010",
+      "status": "blocked",
+      "blocker": "Build and pin the encrypted backup job image before rollout"
+    }
+  },
+  "capacity": {
+    "minimum_root_disk_gb": 200,
+    "minimum_data_disk_gb": 500,
+    "kafka_retention_ms": 604800000,
+    "notes": "Size from measured ingress, catalog growth, and retained log volume; do not treat these defaults as qualified capacity."
+  },
+  "notes": "Replace placeholder digests with verified values from docker inspect or registry manifest before production installation. This bundle is a single-server availability tier, not HA."
+}

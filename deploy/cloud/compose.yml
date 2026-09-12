@@ -1,0 +1,560 @@
+# Production cloud platform bundle. Single-server tier; not HA.
+# Simulators, HiveMQ Edge, and PLC collectors belong on the DMZ edge bundle only.
+name: uns-cloud
+
+x-runtime-env: &runtime_env
+  UNS_CONF_DIR: /app/conf
+  TZ: UTC
+
+x-app-volumes: &app_volumes
+  - ./settings.yaml:/app/conf/settings.yaml:ro
+
+x-logging: &json_logging
+  driver: json-file
+  options:
+    max-size: "100m"
+    max-file: "5"
+
+x-restart: &restart_policy
+  restart: unless-stopped
+
+services:
+  uns_proxy:
+    image: uns-cloud-proxy@sha256:1111111111111111111111111111111111111111111111111111111111111111
+    container_name: uns_proxy
+    <<: *restart_policy
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./secrets/tls:/etc/uns/tls:ro
+    depends_on:
+      uns_frontend:
+        condition: service_started
+      graphql_server:
+        condition: service_healthy
+      uns_keycloak:
+        condition: service_healthy
+    networks:
+      - cloud-public
+      - cloud-internal
+    logging: *json_logging
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+
+  uns_mqtt_broker:
+    image: hivemq/hivemq4@sha256:2222222222222222222222222222222222222222222222222222222222222222
+    container_name: uns_mqtt_broker
+    <<: *restart_policy
+    ports:
+      - "8883:8883"
+    volumes:
+      - broker-data:/opt/hivemq/data
+      - broker-config:/opt/hivemq/conf
+      - ./broker/config.xml:/opt/hivemq/conf/config.xml:ro
+      - ./broker/authorization:/opt/hivemq/conf/authorization:ro
+      - ./secrets/broker-tls:/opt/hivemq/conf/tls:ro
+    env_file:
+      - ./secrets/broker-tls.env
+    networks:
+      - cloud-internal
+    logging: *json_logging
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "timeout 2 bash -c 'echo > /dev/tcp/127.0.0.1/8883' || exit 1",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+
+  uns_timescale_db:
+    image: timescale/timescaledb@sha256:3333333333333333333333333333333333333333333333333333333333333333
+    container_name: uns_timescale_db
+    <<: *restart_policy
+    environment:
+      POSTGRES_PASSWORD: ${PGPASSWORD}
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+    env_file:
+      - ./secrets/runtime.env
+    networks:
+      - cloud-internal
+    logging: *json_logging
+    healthcheck:
+      test: "pg_isready --username=postgres && psql --username=postgres --list"
+      timeout: 10s
+      retries: 20
+
+  uns_neo4j_db:
+    image: neo4j@sha256:4444444444444444444444444444444444444444444444444444444444444444
+    container_name: uns_neo4j_db
+    <<: *restart_policy
+    environment:
+      NEO4J_AUTH: neo4j/${UNS_graphdb__password}
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 2G
+      NEO4J_PLUGINS: '["apoc"]'
+    volumes:
+      - neo4j_data:/data
+    env_file:
+      - ./secrets/runtime.env
+    networks:
+      - cloud-internal
+    logging: *json_logging
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:7474 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 180s
+
+  uns_kafka_broker:
+    image: apache/kafka@sha256:5555555555555555555555555555555555555555555555555555555555555555
+    container_name: uns_kafka_broker
+    <<: *restart_policy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://uns_kafka_broker:29092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_NODE_ID: 1
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@uns_kafka_broker:29093
+      KAFKA_LISTENERS: PLAINTEXT://uns_kafka_broker:29092,CONTROLLER://uns_kafka_broker:29093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_RETENTION_MS: ${UNS_KAFKA_RETENTION_MS:-604800000}
+      CLUSTER_ID: "L6kX4b2SR9O-3p8k0b5V7w"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - cloud-internal
+    logging: *json_logging
+    healthcheck:
+      test: "/opt/kafka/bin/kafka-topics.sh --list --bootstrap-server localhost:29092 || exit 1"
+      start_period: 40s
+      interval: 10s
+      timeout: 10s
+      retries: 12
+
+  kafka_topic_init:
+    image: uns-kafka-mapper@sha256:9999999999999999999999999999999999999999999999999999999999999999
+    volumes: *app_volumes
+    environment:
+      <<: *runtime_env
+      UNS_MODULE: 06_uns_kafka
+      UNS_kafka_bootstrap__config: '@json {"bootstrap.servers": "uns_kafka_broker:29092"}'
+    entrypoint: ["uv", "run", "uns_kafka_bootstrap"]
+    depends_on:
+      uns_kafka_broker:
+        condition: service_healthy
+    networks:
+      - cloud-internal
+    restart: "no"
+
+  tsdb_setup_script:
+    image: postgres@sha256:3030303030303030303030303030303030303030303030303030303030303030
+    volumes:
+      - ../../04_uns_historian/sql_scripts:/sql:ro
+    environment:
+      PGPASSWORD: ${PGPASSWORD}
+      UNS_historian__hostname: uns_timescale_db
+      UNS_historian__database: uns_historian
+      UNS_historian__table: unifiednamespace
+      UNS_historian__username: uns_dbuser
+      UNS_historian__password: ${UNS_historian__password}
+    env_file:
+      - ./secrets/runtime.env
+    depends_on:
+      uns_timescale_db:
+        condition: service_healthy
+    command: ["/bin/sh", "-c", "sed 's/\\r$//' /sql/00_bootstrap.sh | sh"]
+    networks:
+      - cloud-internal
+    restart: "no"
+
+  asset_model_setup:
+    image: uns-model@sha256:1212121212121212121212121212121212121212121212121212121212121212
+    volumes: *app_volumes
+    environment:
+      <<: *runtime_env
+      UNS_MODULE: 09_uns_model
+      UNS_historian__hostname: uns_timescale_db
+      UNS_historian__database: uns_historian
+      UNS_historian__table: unifiednamespace
+      UNS_historian__metrics_table: uns_metrics
+      UNS_historian__username: uns_dbuser
+      UNS_historian__password: ${UNS_historian__password}
+    env_file:
+      - ./secrets/runtime.env
+    depends_on:
+      uns_timescale_db:
+        condition: service_healthy
+      tsdb_setup_script:
+        condition: service_completed_successfully
+    networks:
+      - cloud-internal
+    restart: "no"
+
+  graphdb_client:
+    image: uns-graphdb@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    <<: *restart_policy
+    volumes: *app_volumes
+    environment:
+      <<: *runtime_env
+      UNS_MODULE: 03_uns_graphdb
+      UNS_mqtt__host: uns_mqtt_broker
+      UNS_graphdb__url: bolt://uns_neo4j_db:7687
+      UNS_graphdb__username: neo4j
+      UNS_graphdb__password: ${UNS_graphdb__password}
+      UNS_graphdb__metrics_port: 9092
+    env_file:
+      - ./secrets/runtime.env
+    depends_on:
+      uns_mqtt_broker:
+        condition: service_healthy
+      uns_neo4j_db:
+        condition: service_healthy
+    networks:
+      - cloud-internal
+    logging: *json_logging
+
+  historian_client:
+    image: uns-historian@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    <<: *restart_policy
+    volumes: *app_volumes
+    environment:
+      <<: *runtime_env
+      UNS_MODULE: 04_uns_historian
+      UNS_historian__hostname: uns_timescale_db
+      UNS_historian__database: uns_historian
+      UNS_historian__table: unifiednamespace
+      UNS_historian__metrics_table: uns_metrics
+      UNS_historian__metrics_port: 9091
+      UNS_historian__pipeline_epoch: "1"
+      UNS_historian__username: uns_dbuser
+      UNS_historian__password: ${UNS_historian__password}
+      UNS_kafka__config: '@json {"client.id": "uns_historian", "group.id": "uns_historian", "bootstrap.servers": "uns_kafka_broker:29092", "enable.auto.commit": false, "auto.offset.reset": "earliest"}'
+    env_file:
+      - ./secrets/runtime.env
+    depends_on:
+      uns_kafka_broker:
+        condition: service_healthy
+      kafka_topic_init:
+        condition: service_completed_successfully
+      uns_timescale_db:
+        condition: service_healthy
+      tsdb_setup_script:
+        condition: service_completed_successfully
+      asset_model_setup:
+        condition: service_completed_successfully
+    networks:
+      - cloud-internal
+    logging: *json_logging
+
+  kafka_mapper_client:
+    image: uns-kafka-mapper@sha256:9999999999999999999999999999999999999999999999999999999999999999
+    <<: *restart_policy
+    volumes: *app_volumes
+    environment:
+      <<: *runtime_env
+      UNS_MODULE: 06_uns_kafka
+      UNS_mqtt__host: uns_mqtt_broker
+      UNS_kafka_mapper__metrics_port: 9094
+      UNS_kafka__config: '@json {"client.id": "uns_kafka_client", "bootstrap.servers": "uns_kafka_broker:29092", "enable.idempotence": true, "retries": 10, "compression.type": "gzip"}'
+    depends_on:
+      uns_mqtt_broker:
+        condition: service_healthy
+      uns_kafka_broker:
+        condition: service_healthy
+      kafka_topic_init:
+        condition: service_completed_successfully
+    networks:
+      - cloud-internal
+    logging: *json_logging
+
+  datalake_mapper:
+    image: uns-datalake@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+    <<: *restart_policy
+    volumes: *app_volumes
+    environment:
+      <<: *runtime_env
+      UNS_MODULE: 14_uns_datalake
+      UNS_kafka__config: '@json {"client.id": "uns_datalake", "group.id": "uns_datalake", "bootstrap.servers": "uns_kafka_broker:29092", "enable.auto.commit": false, "auto.offset.reset": "earliest"}'
+    env_file:
+      - ./secrets/runtime.env
+    depends_on:
+      uns_kafka_broker:
+        condition: service_healthy
+      kafka_topic_init:
+        condition: service_completed_successfully
+    networks:
+      - cloud-internal
+    logging: *json_logging
+
+  oee_client:
+    image: uns-oee@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+    <<: *restart_policy
+    volumes: *app_volumes
+    environment:
+      <<: *runtime_env
+      UNS_MODULE: 12_uns_oee
+      UNS_mqtt__host: uns_mqtt_broker
+      UNS_historian__hostname: uns_timescale_db
+      UNS_historian__database: uns_historian
+      UNS_historian__metrics_table: uns_metrics
+      UNS_historian__username: uns_dbuser
+      UNS_historian__password: ${UNS_historian__password}
+      UNS_oee__metrics_port: 9095
+    env_file:
+      - ./secrets/runtime.env
+    depends_on:
+      uns_mqtt_broker:
+        condition: service_healthy
+      uns_timescale_db:
+        condition: service_healthy
+      tsdb_setup_script:
+        condition: service_completed_successfully
+      asset_model_setup:
+        condition: service_completed_successfully
+    networks:
+      - cloud-internal
+    logging: *json_logging
+
+  graphql_server:
+    image: uns-graphql@sha256:8888888888888888888888888888888888888888888888888888888888888888
+    <<: *restart_policy
+    volumes: *app_volumes
+    environment:
+      <<: *runtime_env
+      UNS_MODULE: 07_uns_graphql
+      UNS_mqtt__host: uns_mqtt_broker
+      UNS_graphdb__url: bolt://uns_neo4j_db:7687
+      UNS_graphdb__username: neo4j
+      UNS_graphdb__password: ${UNS_graphdb__password}
+      UNS_historian__hostname: uns_timescale_db
+      UNS_historian__database: uns_historian
+      UNS_historian__table: unifiednamespace
+      UNS_historian__username: uns_dbuser
+      UNS_historian__password: ${UNS_historian__password}
+      UNS_kafka__config: '@json {"client.id": "uns_graphql_server", "group.id": "graphql", "bootstrap.servers": "uns_kafka_broker:29092", "auto.offset.reset": "earliest"}'
+    env_file:
+      - ./secrets/runtime.env
+    depends_on:
+      uns_mqtt_broker:
+        condition: service_healthy
+      uns_neo4j_db:
+        condition: service_healthy
+      uns_timescale_db:
+        condition: service_healthy
+      tsdb_setup_script:
+        condition: service_completed_successfully
+      asset_model_setup:
+        condition: service_completed_successfully
+      uns_kafka_broker:
+        condition: service_healthy
+      kafka_topic_init:
+        condition: service_completed_successfully
+    networks:
+      - cloud-internal
+    logging: *json_logging
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+
+  route_release_worker:
+    image: uns-graphql@sha256:8888888888888888888888888888888888888888888888888888888888888888
+    <<: *restart_policy
+    volumes: *app_volumes
+    environment:
+      <<: *runtime_env
+      UNS_MODULE: 07_uns_graphql
+      UNS_historian__hostname: uns_timescale_db
+      UNS_historian__database: uns_historian
+      UNS_historian__username: uns_dbuser
+      UNS_historian__password: ${UNS_historian__password}
+    env_file:
+      - ./secrets/runtime.env
+    entrypoint: ["uv", "run", "uns_route_release_worker"]
+    depends_on:
+      uns_timescale_db:
+        condition: service_healthy
+      tsdb_setup_script:
+        condition: service_completed_successfully
+      graphql_server:
+        condition: service_healthy
+      uns_mqtt_broker:
+        condition: service_healthy
+    networks:
+      - cloud-internal
+    logging: *json_logging
+
+  uns_keycloak:
+    image: quay.io/keycloak/keycloak@sha256:6666666666666666666666666666666666666666666666666666666666666666
+    <<: *restart_policy
+    command: ["start", "--import-realm", "--http-relative-path=/auth"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${UNS_KEYCLOAK_ADMIN_USERNAME}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${UNS_keycloak__admin_password}
+      KC_HOSTNAME: ${UNS_CONSOLE_ORIGIN}/auth
+      KC_HOSTNAME_STRICT: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://uns_timescale_db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${UNS_keycloak__db_password}
+      UNS_KEYCLOAK_GRAFANA_CLIENT_SECRET: ${UNS_keycloak__grafana_client_secret}
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+    env_file:
+      - ./secrets/runtime.env
+    depends_on:
+      uns_timescale_db:
+        condition: service_healthy
+      tsdb_setup_script:
+        condition: service_completed_successfully
+    networks:
+      - cloud-internal
+    logging: *json_logging
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "exec 3<>/dev/tcp/127.0.0.1/9000 && echo -e 'GET /auth/health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '\"status\": \"UP\"'",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 180s
+
+  uns_frontend:
+    image: uns-frontend@sha256:7777777777777777777777777777777777777777777777777777777777777777
+    <<: *restart_policy
+    environment:
+      UNS_CONSOLE_ORIGIN: ${UNS_CONSOLE_ORIGIN}
+    env_file:
+      - ./secrets/runtime.env
+    depends_on:
+      graphql_server:
+        condition: service_healthy
+      uns_grafana:
+        condition: service_started
+      uns_keycloak:
+        condition: service_healthy
+    networks:
+      - cloud-internal
+    logging: *json_logging
+
+  uns_grafana:
+    image: grafana/grafana@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+    <<: *restart_policy
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_AUTH_OAUTH_AUTO_LOGIN: "true"
+      GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
+      GF_AUTH_GENERIC_OAUTH_NAME: Keycloak
+      GF_AUTH_GENERIC_OAUTH_CLIENT_ID: uns-grafana
+      GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: ${UNS_keycloak__grafana_client_secret}
+      GF_AUTH_GENERIC_OAUTH_SCOPES: "openid profile email roles"
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: ${UNS_CONSOLE_ORIGIN}/auth/realms/uns/protocol/openid-connect/auth
+      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: http://uns_keycloak:8080/auth/realms/uns/protocol/openid-connect/token
+      GF_AUTH_GENERIC_OAUTH_API_URL: http://uns_keycloak:8080/auth/realms/uns/protocol/openid-connect/userinfo
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "contains(roles[*], 'admin') && 'Admin' || contains(roles[*], 'engineer') && 'Editor' || 'Viewer'"
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_STRICT: "false"
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_SERVER_ROOT_URL: ${UNS_CONSOLE_ORIGIN}/grafana/
+      GF_INSTALL_PLUGINS: grafana-mqtt-datasource
+      UNS_HISTORIAN_PASSWORD: ${UNS_historian__password}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ../../08_uns_observability/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ../../08_uns_observability/grafana/provisioning/datasources/datasources.yaml.template:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+      - ../../08_uns_observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    env_file:
+      - ./secrets/runtime.env
+    depends_on:
+      uns_mqtt_broker:
+        condition: service_healthy
+      uns_timescale_db:
+        condition: service_healthy
+      tsdb_setup_script:
+        condition: service_completed_successfully
+      asset_model_setup:
+        condition: service_completed_successfully
+      uns_prometheus:
+        condition: service_started
+      oee_client:
+        condition: service_started
+      uns_keycloak:
+        condition: service_healthy
+    networks:
+      - cloud-internal
+    logging: *json_logging
+
+  uns_prometheus:
+    image: prom/prometheus@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+    <<: *restart_policy
+    volumes:
+      - ../../08_uns_observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../../08_uns_observability/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      - historian_client
+      - graphdb_client
+      - oee_client
+      - kafka_mapper_client
+      - datalake_mapper
+    networks:
+      - cloud-internal
+    logging: *json_logging
+
+  cloud_backup:
+    image: uns-cloud-backup@sha256:1010101010101010101010101010101010101010101010101010101010101010
+    profiles: ["backup"]
+    volumes:
+      - timescale_data:/backup/timescale:ro
+      - neo4j_data:/backup/neo4j:ro
+      - kafka_data:/backup/kafka:ro
+      - broker-data:/backup/broker:ro
+      - grafana_data:/backup/grafana:ro
+      - ./secrets/backup.env:/run/secrets/backup.env:ro
+    env_file:
+      - ./secrets/backup.env
+    networks:
+      - cloud-internal
+    restart: "no"
+
+networks:
+  cloud-public:
+    driver: bridge
+  cloud-internal:
+    driver: bridge
+    internal: true
+
+volumes:
+  timescale_data:
+  neo4j_data:
+  kafka_data:
+  broker-data:
+  broker-config:
+  grafana_data:
+  prometheus_data:

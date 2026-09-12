@@ -54,6 +54,7 @@ def test_compose_environment_reads_secrets_yaml(monkeypatch, tmp_path: Path):
         get_settings.cache_clear()
 
     assert env == {
+        "UNS_CONSOLE_ORIGIN": "http://localhost:8088",
         "UNS_graphdb__password": "neo-secret",
         "UNS_historian__password": "hist-secret",
         "PGPASSWORD": "super-secret",

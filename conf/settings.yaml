@@ -8,6 +8,7 @@ default:
     instance_name: "Instance01"
     organization_name: "HalabjaWTP"
     display_name: "HalabjaWTP UNS"
+    public_origin: "http://localhost:8088"
 
   # ISA-95 plant tree. Single source for seed, GraphQL, and the console.
   # Publishers (OPC UA, Modbus, or any connector) are signals on this tree, not
@@ -153,6 +154,8 @@ default:
   mqtt:
     host: "localhost"
     port: 1883
+    public_host: "localhost"
+    public_port: 1883
     # Topics are per-environment. Dynaconf merges lists, so a default ["#"]
     # would be prepended to every module override.
     qos: 1
