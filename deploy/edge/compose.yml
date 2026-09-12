@@ -1,0 +1,59 @@
+name: uns-edge
+
+x-edge-agent-env: &edge_agent_env
+  UNS_EDGE_API_URL: https://hivemq-edge:8443
+  UNS_EDGE_DATA_DIR: /var/lib/uns-edge-agent
+
+services:
+  hivemq-edge:
+    image: hivemq/hivemq-edge@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    container_name: hivemq-edge
+    restart: unless-stopped
+    networks:
+      - edge-internal
+    volumes:
+      - edge-config:/opt/hivemq/conf
+      - edge-data:/opt/hivemq/data
+      - edge-bridge:/opt/hivemq/bridge-buffer
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "timeout 2 bash -c 'echo > /dev/tcp/127.0.0.1/8883' || exit 1",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
+
+  uns-edge-agent:
+    image: uns-edge-agent@sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210
+    container_name: uns-edge-agent
+    restart: unless-stopped
+    depends_on:
+      hivemq-edge:
+        condition: service_healthy
+    networks:
+      - edge-internal
+    environment:
+      <<: *edge_agent_env
+    env_file:
+      - agent.env
+    volumes:
+      - agent-data:/var/lib/uns-edge-agent
+    secrets:
+      - edge_api_credentials
+
+networks:
+  edge-internal:
+    driver: bridge
+
+volumes:
+  edge-config:
+  edge-data:
+  edge-bridge:
+  agent-data:
+
+secrets:
+  edge_api_credentials:
+    file: ./secrets/edge-api.env

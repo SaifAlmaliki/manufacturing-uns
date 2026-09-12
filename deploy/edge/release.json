@@ -1,0 +1,23 @@
+{
+  "bundle_version": 1,
+  "release_id": "uns-edge-dmz-2026-09-12",
+  "qualification_status": "unqualified",
+  "git_baseline_commit": "e06c7d8d",
+  "images": {
+    "hivemq-edge": {
+      "repository": "hivemq/hivemq-edge",
+      "digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "status": "blocked",
+      "blocker": "Operator must supply a verified HiveMQ Edge production digest before DMZ rollout"
+    },
+    "uns-edge-agent": {
+      "repository": "uns-edge-agent",
+      "digest": "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+      "status": "blocked",
+      "blocker": "Agent image must be built and digest-pinned in the release archive before rollout"
+    }
+  },
+  "buffering_license_required": true,
+  "buffering_license_status": "blocked",
+  "notes": "Replace placeholder digests with verified values from docker inspect or registry manifest before production installation."
+}

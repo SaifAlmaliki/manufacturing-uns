@@ -1,0 +1,11 @@
+# Copy to agent.env during installation. install.sh creates agent.env from this file.
+# Do not commit agent.env or secrets/ to version control.
+
+cloud_base_url: https://cloud-management.example.test
+edge_api_url: https://hivemq-edge:8443
+endpoint_allowlist:
+  - cloud-management.example.test
+  - mqtt.cloud.example.test
+
+# Edge API credentials are installed separately into secrets/edge-api.env by install.sh.
+# Enrollment uses: docker compose exec uns-edge-agent uns_edge_enroll
