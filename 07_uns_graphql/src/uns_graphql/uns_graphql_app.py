@@ -40,6 +40,8 @@ from uns_graphql.queries import access_group, alert_rule, asset, connectivity, e
 from uns_graphql.edge_api import create_edge_router
 from uns_graphql.edge_api.issuer import EdgeCertificateIssuer, generate_authority
 from uns_graphql.edge_api.service import EdgeManagementService
+from uns_graphql.publication_api import create_publication_router
+from uns_graphql.publication_api.service import PublicationIngressService, load_publication_api_config
 from uns_graphql.subscriptions.connectivity import Subscription as ConnectivitySubscription
 from uns_graphql.subscriptions.kafka import KAFKASubscription
 from uns_graphql.subscriptions.mqtt import MQTTSubscription
@@ -50,6 +52,18 @@ from uns_model.edge_secrets import EdgeKeyRing, EdgeSecretStore
 from uns_model.engine import Database
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _build_publication_service() -> PublicationIngressService | None:
+    try:
+        config = load_publication_api_config()
+    except Exception:
+        LOGGER.warning("Publication API configuration unavailable", exc_info=True)
+        return None
+    if not config.routes:
+        return None
+    database = Database.shared()
+    return PublicationIngressService(database, config=config)
 
 
 def _build_edge_management_service() -> EdgeManagementService:
@@ -190,4 +204,7 @@ class UNSGraphql:
     )
     app.include_router(graphql_app, prefix="/graphql")
     app.include_router(create_edge_router(_build_edge_management_service()))
+    publication_service = _build_publication_service()
+    if publication_service is not None:
+        app.include_router(create_publication_router(publication_service))
     app.lifespan = lifespan

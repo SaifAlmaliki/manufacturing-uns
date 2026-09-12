@@ -273,6 +273,39 @@ default:
       container: ""
 
 graphql:
+  publication_api:
+    trusted_proxy_value: "1"
+    global_queue_budget_bytes: 1073741824
+    principal_queue_budget_bytes: 134217728
+    http_routes:
+      - route_id: halabja-lims-results
+        mqtt_topic: HalabjaWTP/Halabja/LIMS/results
+        principal_id: halabja-lims-publisher
+        topic_filter: HalabjaWTP/Halabja/LIMS/results
+        source_id: halabja/lims-01
+        source_application: lims
+        site_id: halabja
+        wire_format: uns-publication-v1
+        content_type: application/json
+        event_kind: business_event
+        archive_eligible: true
+        allowed_schema_pairs:
+          - payload_schema_id: lab-result
+            payload_schema_version: "1"
+      - route_id: halabja-sap-material-documents
+        mqtt_topic: HalabjaWTP/Halabja/SAP/material-documents
+        principal_id: halabja-sap-publisher
+        topic_filter: HalabjaWTP/Halabja/SAP/material-documents
+        source_id: halabja/sap-erp-01
+        source_application: sap
+        site_id: halabja
+        wire_format: uns-publication-v1
+        content_type: application/json
+        event_kind: business_event
+        archive_eligible: true
+        allowed_schema_pairs:
+          - payload_schema_id: material-document
+            payload_schema_version: "1"
   mqtt:
     topics: ["#"]
   kafka:

@@ -404,6 +404,36 @@ services:
       - cloud-internal
     logging: *json_logging
 
+  publication_outbox_worker:
+    image: uns-graphql@sha256:8888888888888888888888888888888888888888888888888888888888888888
+    <<: *restart_policy
+    volumes: *app_volumes
+    environment:
+      <<: *runtime_env
+      UNS_MODULE: 07_uns_graphql
+      UNS_mqtt__host: uns_mqtt_broker
+      UNS_historian__hostname: uns_timescale_db
+      UNS_historian__database: uns_historian
+      UNS_historian__username: uns_dbuser
+      UNS_historian__password: ${UNS_historian__password}
+    env_file:
+      - ./secrets/runtime.env
+    entrypoint: ["uv", "run", "uns_publication_outbox_worker"]
+    depends_on:
+      uns_timescale_db:
+        condition: service_healthy
+      tsdb_setup_script:
+        condition: service_completed_successfully
+      asset_model_setup:
+        condition: service_completed_successfully
+      graphql_server:
+        condition: service_healthy
+      uns_mqtt_broker:
+        condition: service_healthy
+    networks:
+      - cloud-internal
+    logging: *json_logging
+
   uns_keycloak:
     image: quay.io/keycloak/keycloak@sha256:6666666666666666666666666666666666666666666666666666666666666666
     <<: *restart_policy

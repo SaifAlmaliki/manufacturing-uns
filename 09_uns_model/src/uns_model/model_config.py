@@ -37,6 +37,7 @@ MODEL_SCHEMA = "model"
 CONSOLE_SCHEMA = "console"
 OEE_SCHEMA = "oee"
 EDGE_SCHEMA = "edge"
+PUBLICATIONS_SCHEMA = "publications"
 
 
 @dataclass(frozen=True, slots=True)

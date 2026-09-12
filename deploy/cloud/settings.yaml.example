@@ -78,5 +78,24 @@ graphql:
   edge_management:
     cloud_mode: true
     trusted_proxy_value: "1"
+  publication_api:
+    trusted_proxy_value: "1"
+    global_queue_budget_bytes: 1073741824
+    principal_queue_budget_bytes: 134217728
+    http_routes:
+      - route_id: plant-a-lims
+        mqtt_topic: Enterprise/PlantA/LIMS/results
+        principal_id: plant-a-lims-publisher
+        topic_filter: Enterprise/PlantA/LIMS/results
+        source_id: plant-a/lims-01
+        source_application: lims
+        site_id: plant-01
+        wire_format: uns-publication-v1
+        content_type: application/json
+        event_kind: business_event
+        archive_eligible: true
+        allowed_schema_pairs:
+          - payload_schema_id: lab-result
+            payload_schema_version: "1"
 
 dynaconf_merge: true

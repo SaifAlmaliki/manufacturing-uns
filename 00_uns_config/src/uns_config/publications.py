@@ -7,13 +7,21 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 import json
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
+from uuid import UUID
 
-from uns_config.events import EnvelopeError
+from uns_config.events import (
+    EnvelopeError,
+    HistoricEventEnvelope,
+    MAX_ENVELOPE_BYTES,
+    encode_event,
+    source_event_id,
+)
 from uns_config.publication_routes import ROUTE_ID_PATTERN, PublicationRoute, SchemaPair
 
 SUPPORTED_PUBLICATION_VERSION = 1
@@ -163,4 +171,146 @@ def _parse_occurred_at(value: Any) -> datetime:
         raise EnvelopeError("invalid_field", "occurred_at") from exc
     if parsed.tzinfo is None:
         raise EnvelopeError("invalid_field", "occurred_at")
-    return parsed
+    return parsed.astimezone(UTC)
+
+
+def _iso_z(value: datetime) -> str:
+    utc_value = value.astimezone(UTC)
+    return utc_value.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def schema_pair_for_route(route: PublicationRoute) -> SchemaPair:
+    if route.default_schema_pair is not None:
+        return route.default_schema_pair
+    return next(iter(route.allowed_schema_pairs))
+
+
+def build_publication_wrapper(
+    *,
+    route: PublicationRoute,
+    original_payload: bytes,
+    source_boot_id: str,
+    source_sequence: int,
+    occurred_at: datetime | None = None,
+) -> bytes:
+    """Build the explicit uns-publication-v1 MQTT wire payload."""
+    pair = schema_pair_for_route(route)
+    instant = occurred_at or datetime.now(UTC)
+    wire = {
+        "publication_version": SUPPORTED_PUBLICATION_VERSION,
+        "source_application": route.source_application,
+        "site_id": route.site_id,
+        "payload_schema_id": pair.payload_schema_id,
+        "payload_schema_version": pair.payload_schema_version,
+        "content_type": route.content_type,
+        "original_payload_base64": base64.b64encode(original_payload).decode("ascii"),
+        "occurred_at": _iso_z(instant),
+        "source_boot_id": source_boot_id,
+        "source_sequence": source_sequence,
+    }
+    return json.dumps(wire, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+
+def wrapper_bytes_for_http_admission(
+    *,
+    route: PublicationRoute,
+    body: bytes,
+    receipt_id: UUID,
+    occurred_at: datetime | None,
+) -> bytes:
+    """Persist one wrapper for an HTTPS admission using receipt identity."""
+    return build_publication_wrapper(
+        route=route,
+        original_payload=body,
+        source_boot_id=str(receipt_id),
+        source_sequence=0,
+        occurred_at=occurred_at,
+    )
+
+
+def admission_envelope_size(
+    *,
+    route: PublicationRoute,
+    mqtt_topic: str,
+    wrapper_bytes: bytes,
+    received_at: datetime,
+) -> int:
+    """Return the encoded v2 historic envelope size for admission checks."""
+    message = resolve_publisher_message(wrapper_bytes, route)
+    if message.source_boot_id is None or message.source_sequence is None:
+        raise EnvelopeError("invalid_identity")
+    event_id = source_event_id(
+        route.site_id,
+        route.source_id,
+        message.source_boot_id,
+        message.source_sequence,
+    )
+    if message.occurred_at is not None:
+        event_time = message.occurred_at
+        timestamp_quality = "source"
+    else:
+        event_time = received_at
+        timestamp_quality = "ingress"
+
+    envelope = HistoricEventEnvelope(
+        schema_version=2,
+        event_id=event_id,
+        identity_quality="source",
+        source_id=route.source_id,
+        source_boot_id=message.source_boot_id,
+        source_sequence=message.source_sequence,
+        site_id=route.site_id,
+        time=event_time,
+        received_at=received_at,
+        timestamp_quality=timestamp_quality,
+        topic=mqtt_topic,
+        event_kind=route.event_kind,
+        is_historical=False,
+        payload=_compatibility_payload(message),
+        raw_payload_base64=None,
+        source_application=message.source_application,
+        payload_schema_id=message.payload_schema_id,
+        payload_schema_version=message.payload_schema_version,
+        content_type=message.content_type,
+        original_payload=message.original_payload,
+        archive_eligible=route.archive_eligible,
+    )
+    return len(encode_event(envelope))
+
+
+def assert_admission_envelope_fits(
+    *,
+    route: PublicationRoute,
+    mqtt_topic: str,
+    wrapper_bytes: bytes,
+    received_at: datetime,
+) -> None:
+    size = admission_envelope_size(
+        route=route,
+        mqtt_topic=mqtt_topic,
+        wrapper_bytes=wrapper_bytes,
+        received_at=received_at,
+    )
+    if size > MAX_ENVELOPE_BYTES:
+        raise EnvelopeError("oversize")
+
+
+def content_digest(body: bytes, metadata: dict[str, Any]) -> str:
+    wire = json.dumps(
+        {"body": base64.b64encode(body).decode("ascii"), "metadata": metadata},
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(wire).hexdigest()
+
+
+def _compatibility_payload(message: PublisherMessage) -> dict[str, Any]:
+    if message.content_type == "application/json":
+        try:
+            parsed = json.loads(message.original_payload.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return {}
+        if isinstance(parsed, dict):
+            return parsed
+    return {}
