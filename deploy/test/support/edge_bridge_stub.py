@@ -10,7 +10,7 @@ import time
 import paho.mqtt.client as mqtt
 
 EDGE_HOST = os.environ.get("EDGE_MQTT_HOST", "hivemq-edge")
-EDGE_PORT = int(os.environ.get("EDGE_MQTT_PORT", "1883"))
+EDGE_PORT = int(os.environ.get("EDGE_MQTT_PORT", "8883"))
 CLOUD_HOST = os.environ.get("CLOUD_MQTT_HOST", "cloud-mqtt")
 CLOUD_PORT = int(os.environ.get("CLOUD_MQTT_PORT", "1883"))
 TOPIC_PREFIX = os.environ.get("EDGE_BRIDGE_TOPIC_PREFIX", "Enterprise/")

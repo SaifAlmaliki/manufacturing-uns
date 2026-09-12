@@ -111,6 +111,8 @@ services:
     build:
       <<: *stub_build
     command: ["edge_bridge_stub.py"]
+    environment:
+      EDGE_MQTT_PORT: "8883"
     depends_on:
       hivemq-edge:
         condition: service_healthy
@@ -211,13 +213,15 @@ services:
 
   hivemq-edge:
     image: hivemq/hivemq-edge:latest
+    volumes:
+      - ./hivemq-edge/config.xml:/opt/hivemq/conf/config.xml:ro
     networks:
       dmz:
         ipv4_address: 172.30.20.30
       ot:
         ipv4_address: 172.30.30.30
     healthcheck:
-      test: ["CMD-SHELL", "timeout 2 bash -c 'echo > /dev/tcp/127.0.0.1/1883' || exit 1"]
+      test: ["CMD-SHELL", "timeout 2 bash -c 'echo > /dev/tcp/127.0.0.1/8883' || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 20
@@ -229,6 +233,7 @@ services:
     command: ["protocol_collector_stub.py"]
     environment:
       EDGE_ID: edge-01
+      EDGE_MQTT_PORT: "8883"
       FIXTURE_PROFILE: edge_simulation
       FIXTURE_PROFILE_FILE: /app/fixtures.json
     depends_on:
@@ -285,7 +290,7 @@ services:
       dockerfile: conf/simulator/Dockerfile
     environment:
       H: hivemq-edge
-      P: 1883
+      P: 8883
     depends_on:
       hivemq-edge:
         condition: service_healthy
@@ -299,7 +304,7 @@ services:
       dockerfile: conf/simulator/Dockerfile.multi-system
     environment:
       MQTT_HOST: hivemq-edge
-      MQTT_PORT: 1883
+      MQTT_PORT: 8883
       SITE_ID: cloud-edge-qualification
     depends_on:
       hivemq-edge:

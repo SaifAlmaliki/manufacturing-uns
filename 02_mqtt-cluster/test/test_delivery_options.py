@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import paho.mqtt.client as mqtt_client
+import pytest
 from paho.mqtt.properties import Properties
 
 from uns_mqtt.mqtt_listener import (
@@ -39,6 +40,21 @@ def test_default_client_uses_clean_start_on_mqtt_v5_connect():
     )
     kwargs = _connect_and_subscribe(client)
     assert kwargs["clean_start"] is True
+
+
+@pytest.mark.parametrize("protocol", [MQTTVersion.MQTTv311, MQTTVersion.MQTTv31])
+@pytest.mark.parametrize("clean_session", [True, False])
+@patch.object(mqtt_client.Client, "connect", autospec=True)
+def test_mqtt_v3_connect_does_not_pass_v5_clean_start(mock_connect, protocol, clean_session):
+    client = UnsMQTTClient(
+        client_id="v3-client",
+        protocol=protocol,
+        clean_session=clean_session,
+    )
+    client.run(host="localhost", port=1883, topics=["spBv1.0"], qos=1)
+    _, connect_kwargs = mock_connect.call_args
+    assert connect_kwargs["clean_start"] == mqtt_client.MQTT_CLEAN_START_FIRST_ONLY
+    assert connect_kwargs["properties"] is None
 
 
 @patch.object(mqtt_client.Client, "subscribe", autospec=True)

@@ -27,9 +27,9 @@ production central MQTT broker, Linux/OCI/Compose, TLS/mTLS, S3-compatible stora
 
 Design: [Cloud-hosted UNS with outbound-only DMZ management](../specs/2026-09-12-cloud-platform-outbound-edge-design.md).
 
-Status: Prepared for review and later execution. The user approved the deployment
-boundary and agent; this document records the implementation choices and release
-gates. It does not install anything on a cloud account or DMZ VM.
+Status: Code deliverables for Tasks 1–16 are on `feat/cloud-platform-outbound-edge`.
+Qualification remains `unqualified` until operator licenses, digest-pinned images, and
+live VM/cloud runs complete. See [cloud-edge-qualification.md](../../benchmarks/cloud-edge-qualification.md) §14.
 
 Related: [ADR-0012](../../adr/0012-multi-system-uns-to-lake-delivery.md),
 [existing delivery plan](2026-09-11-multi-system-uns-to-lake.md),

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
 
@@ -65,6 +66,44 @@ def test_release_workflow_exists_and_never_publishes_on_push_only():
     matrix = build_job["strategy"]["matrix"]["include"]
     platforms = {entry["platform"] for entry in matrix}
     assert platforms == {"linux/amd64", "linux/arm64"}
+
+
+def _decorator_names(node: ast.AST) -> set[str]:
+    names: set[str] = set()
+    if isinstance(node, ast.Name):
+        names.add(node.id)
+    elif isinstance(node, ast.Attribute):
+        names.add(node.attr)
+        names.update(_decorator_names(node.value))
+    elif isinstance(node, ast.Call):
+        names.update(_decorator_names(node.func))
+        for arg in node.args:
+            names.update(_decorator_names(arg))
+        for keyword in node.keywords:
+            if keyword.value is not None:
+                names.update(_decorator_names(keyword.value))
+    return names
+
+
+def test_cloud_edge_fixture_consumers_are_marked_integrationtest():
+    missing: list[str] = []
+    for path in Path(__file__).parent.glob("test_*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in tree.body:
+            if not isinstance(node, ast.FunctionDef) or not node.name.startswith("test_"):
+                continue
+            uses_cloud_edge = any(arg.arg == "cloud_edge" for arg in node.args.args)
+            if not uses_cloud_edge:
+                continue
+            marks = set()
+            for decorator in node.decorator_list:
+                marks.update(_decorator_names(decorator))
+            if "integrationtest" not in marks:
+                missing.append(f"{path.name}::{node.name}")
+    assert missing == [], (
+        "cloud_edge harness tests must be marked integrationtest so the "
+        "unit-contract job does not start docker compose: " + ", ".join(missing)
+    )
 
 
 def test_edge_base_compose_runs_without_simulators():

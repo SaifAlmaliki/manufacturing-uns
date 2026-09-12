@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 
+@pytest.mark.integrationtest
 def test_cloud_cannot_dial_dmz_management(cloud_edge):
     assert cloud_edge.local_management_is_healthy()
     assert not cloud_edge.cloud_can_open_dmz_management()

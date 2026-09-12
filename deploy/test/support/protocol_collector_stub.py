@@ -14,7 +14,7 @@ from typing import Any
 import paho.mqtt.client as mqtt
 
 EDGE_HOST = os.environ.get("EDGE_MQTT_HOST", "hivemq-edge")
-EDGE_PORT = int(os.environ.get("EDGE_MQTT_PORT", "1883"))
+EDGE_PORT = int(os.environ.get("EDGE_MQTT_PORT", "8883"))
 CLOUD_MANAGEMENT_HOST = os.environ.get("CLOUD_MANAGEMENT_HOST", "cloud-management")
 CLOUD_MANAGEMENT_PORT = int(os.environ.get("CLOUD_MANAGEMENT_PORT", "443"))
 EDGE_ID = os.environ.get("EDGE_ID", "edge-01")

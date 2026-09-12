@@ -189,7 +189,7 @@ or another broker without explicit qualification.
 | Development image | `hivemq/hivemq-edge:latest` (`docker-compose.yml`) | Floating tag — **not production-qualified** |
 | Image digest | — | **Blocked** — `latest` only in dev |
 | Management API | `/api/v1/auth/authenticate`, `/api/v1/management/protocol-adapters/adapters` | Documented in code; **not pinned to Edge release** |
-| Supported adapter API schemas (code) | `opcua`, `s7`, `eip` via `_protocol_id` | **Partial** — Modbus not mapped in `hivemq_edge_api.py` |
+| Supported adapter API schemas (code) | Agent: `opcua`, `modbus`, `s7`, `eip`. Local `hivemq_edge_api.py` still maps `opcua`/`s7`/`eip`. | Cloud-edge agent compiles Modbus; live Edge adapter still license/digest gated |
 | Offline bridge buffering license | HiveMQ Edge persistent offline buffering ([S2](https://docs.hivemq.com/hivemq-edge/mqtt-bridging.html)) | **Blocked** — commercial license required; operator input absent |
 | Edge TLS listener | `8883` mTLS for local publishers + cloud bridge | **Blocked** — not configured in dev `config.xml` |
 
@@ -222,7 +222,7 @@ Enabled:
 - DMZ-initiated MQTT/TLS bridge (edge → cloud data only).
 - DMZ-initiated HTTPS management (agent poll/report).
 - Edge protocol adapters for qualified industrial sources.
-- Optional `edge-sim` publishers → local Edge MQTT only.
+- Optional `edge-sim` publishers → local Edge MQTT `hivemq-edge:8883` only.
 - Existing central pipeline: MQTT → Kafka → historian / lake / GraphQL.
 
 Disabled or removed from cloud runtime:

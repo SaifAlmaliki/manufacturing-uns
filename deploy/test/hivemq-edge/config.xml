@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<hivemq xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <!-- Isolated qualification listener. Destination is hivemq-edge:8883 to match
+         the shipped edge-sim overlay. TLS/mTLS keystores belong to the DMZ bundle. -->
+    <mqtt-listeners>
+        <tcp-listener>
+            <port>8883</port>
+            <bind-address>0.0.0.0</bind-address>
+        </tcp-listener>
+    </mqtt-listeners>
+    <admin-api>
+        <enabled>true</enabled>
+        <listeners>
+            <http-listener>
+                <port>8080</port>
+                <bind-address>127.0.0.1</bind-address>
+            </http-listener>
+        </listeners>
+    </admin-api>
+</hivemq>

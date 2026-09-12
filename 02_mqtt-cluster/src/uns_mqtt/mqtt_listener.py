@@ -283,9 +283,12 @@ class UnsMQTTClient(mqtt_client.Client):
             self.qos: Literal[0, 1, 2] = qos
 
             properties = None
-            clean_start: bool | int = True
+            # Paho rejects clean_start True/False on MQTT 3.1/3.1.1; those
+            # versions use constructor clean_session instead.
+            clean_start: bool | int = mqtt_client.MQTT_CLEAN_START_FIRST_ONLY
             if self.protocol == mqtt_client.MQTTv5:
                 properties = Properties(PacketTypes.CONNECT)
+                clean_start = True
                 if self._delivery_options and self._delivery_options.stable_session:
                     clean_start = False
                     if self._delivery_options.session_expiry_seconds is not None:

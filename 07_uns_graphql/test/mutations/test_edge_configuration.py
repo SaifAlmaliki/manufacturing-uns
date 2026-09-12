@@ -345,3 +345,15 @@ async def test_cloud_mode_opc_probes_are_unavailable(cloud_mode, monkeypatch):
         )
     assert result.errors is not None
     assert "cloud edge mode" in result.errors[0].message
+
+
+def test_cloud_context_attaches_secret_store(monkeypatch):
+    from uns_graphql.mutations.connectivity import _cloud_context
+
+    store = object()
+    monkeypatch.setattr("uns_graphql.mutations.connectivity._edge_secret_store", lambda: store)
+    info = SimpleNamespace(context=ADMIN)
+    ctx = _cloud_context(info, "edge-01", 3)
+    assert ctx.secret_store is store
+    assert ctx.edge_id == "edge-01"
+    assert ctx.expected_revision == 3

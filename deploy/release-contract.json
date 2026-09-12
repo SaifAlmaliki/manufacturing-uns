@@ -12,7 +12,6 @@
     "mTLS, publish-only edge ACLs, session revocation, persistent subscription policy, and broker restart behaviour not live-qualified",
     "Central broker crash-after-PUBACK and mapper-outage loss windows not measured",
     "Edge power-loss RPO not measured (buffering license blocked)",
-    "HTTPS business outbox not implemented (Task 13)",
     "Four-domain live lake acceptance not executed in Task 1"
   ],
   "edge_api_version": "v1",
@@ -22,11 +21,9 @@
   ],
   "supported_protocols": [
     "opc_ua",
+    "modbus_tcp",
     "s7",
     "ethernet_ip"
-  ],
-  "supported_protocols_planned": [
-    "modbus_tcp"
   ],
   "buffering_license_required": true,
   "buffering_license_status": "blocked",
@@ -80,7 +77,7 @@
     "modbus": {
       "edge_protocol_id": "modbus",
       "catalog_protocol": "modbus_tcp",
-      "status": "not-implemented-in-code"
+      "status": "code-mapped"
     }
   },
   "rpo": {
@@ -103,10 +100,10 @@
       "notes": "Dev retention 604800000 ms (7 days). Live production RPO not measured in Task 1."
     },
     "sql_outbox_persistence": {
-      "status": "not-implemented",
+      "status": "implemented",
       "accepted_rpo": null,
       "mechanism": "PostgreSQL durable outbox worker (Task 13)",
-      "blocker": "Outbox not built; no persistence claim"
+      "notes": "Contract tests cover admit/idempotency/PUBACK confirmation. Live broker RPO not measured."
     }
   },
   "mqtt_qos_zero_loss_claim": false,

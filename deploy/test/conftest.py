@@ -23,7 +23,7 @@ PROJECT_NAME = "uns-cloud-edge-qualification"
 DMZ_MGMT_HOST = "172.30.21.10"
 DMZ_MGMT_PORT = 8443
 HIVEMQ_EDGE_HOST = "hivemq-edge"
-HIVEMQ_EDGE_PORT = 1883
+HIVEMQ_EDGE_PORT = 8883
 QUALIFICATION_BOOT_ID = "cloud-edge-qualification-boot"
 HARNESS_SERVICE = "uns-edge-agent"
 
@@ -84,13 +84,19 @@ class CloudEdgeHarness:
             self.project_name,
             *args,
         ]
-        return subprocess.run(
+        result = subprocess.run(
             command,
             cwd=self.compose_file.parent,
             capture_output=True,
             text=True,
-            check=check,
+            check=False,
         )
+        if check and result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()
+            raise RuntimeError(
+                f"docker compose {' '.join(args)} failed with exit {result.returncode}\n{detail}"
+            )
+        return result
 
     def _exec(
         self,

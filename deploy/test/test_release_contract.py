@@ -67,3 +67,27 @@ def test_qualification_compose_uses_shared_simulator_images():
     assert "cloud" in compose["networks"]
     assert "dmz" in compose["networks"]
     assert "ot" in compose["networks"]
+
+
+def test_release_contract_includes_modbus_and_implemented_outbox(release_contract):
+    assert "modbus_tcp" in release_contract["supported_protocols"]
+    assert "supported_protocols_planned" not in release_contract
+    assert release_contract["adapter_api_schemas"]["modbus"]["status"] == "code-mapped"
+    assert release_contract["rpo"]["sql_outbox_persistence"]["status"] == "implemented"
+    blockers = " ".join(release_contract["qualification_blockers"]).lower()
+    assert "outbox not implemented" not in blockers
+
+
+def test_qualification_compose_mqtt_simulators_target_hivemq_edge_8883():
+    import yaml
+
+    compose = yaml.safe_load((REPO_ROOT / "deploy" / "test" / "compose.yml").read_text(encoding="utf-8"))
+    oee = compose["services"]["oee-simulator"]["environment"]
+    multi = compose["services"]["multi-system-simulator"]["environment"]
+    assert oee["H"] == "hivemq-edge"
+    assert str(oee["P"]) == "8883"
+    assert multi["MQTT_HOST"] == "hivemq-edge"
+    assert str(multi["MQTT_PORT"]) == "8883"
+    health = " ".join(compose["services"]["hivemq-edge"]["healthcheck"]["test"])
+    assert "8883" in health
+    assert "1883" not in health

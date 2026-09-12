@@ -39,6 +39,7 @@ from uns_model.connectivity import (
 )
 from uns_model.edge_desired import CloudDesiredContext, commit_connectivity_desired
 from uns_model.edge_repository import EdgeRepository, EdgeRevisionConflict
+from uns_model.edge_secrets import EdgeKeyRing, EdgeSecretStore
 from uns_model.engine import Database
 from uns_model.tables import ConnectivityServer
 from uns_opcua import browse as opcua_browse
@@ -125,6 +126,14 @@ def _sync_edge(adapters: list[EdgeAdapterInput]) -> None:
     apply_catalog_adapters_file(resolve_conf_dir() / "hivemq" / "config.xml", adapters)
 
 
+def _edge_secret_store() -> EdgeSecretStore | None:
+    try:
+        return EdgeSecretStore(EdgeKeyRing.from_settings())
+    except Exception:
+        LOGGER.warning("Edge secret store unavailable; cloud writes skip secret versions", exc_info=True)
+        return None
+
+
 def _cloud_context(
     info: strawberry.Info,
     edge_id: str,
@@ -139,6 +148,7 @@ def _cloud_context(
         actor=getattr(identity, "username", None),
         deleted_adapter_ids=deleted_adapter_ids,
         edge_repository=_edge_repository(),
+        secret_store=_edge_secret_store(),
     )
 
 

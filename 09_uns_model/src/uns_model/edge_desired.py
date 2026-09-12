@@ -251,11 +251,10 @@ async def _persist_server_secrets(
 ) -> None:
     adapter_id = adapter_id_for(server.id)
     candidates: list[tuple[str, str]] = []
-    if server.protocol == "opc_ua":
-        if server.username:
-            candidates.append((f"{adapter_id}/username", server.username))
-        if server.password:
-            candidates.append((f"{adapter_id}/password", server.password))
+    if server.username:
+        candidates.append((f"{adapter_id}/username", server.username))
+    if server.password:
+        candidates.append((f"{adapter_id}/password", server.password))
     for secret_id, plaintext in candidates:
         version = await _next_secret_version(session, secret_id)
         encrypted = secret_store.encrypt(
