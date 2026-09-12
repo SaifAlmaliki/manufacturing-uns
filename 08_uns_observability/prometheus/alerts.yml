@@ -32,3 +32,57 @@ groups:
           severity: warning
         annotations:
           summary: Historian Kafka consumer lag is elevated
+
+  - name: uns_cloud_edge
+    rules:
+      - alert: UnsEdgeDesiredAppliedLag
+        expr: max(uns_edge_desired_applied_lag_seconds) > 300
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Edge desired/applied revision lag exceeds five minutes
+
+      - alert: UnsEdgeBridgeBufferPressure
+        expr: |
+          (
+            uns_edge_bridge_buffer_bytes
+            / clamp_min(uns_edge_bridge_buffer_capacity_bytes, 1)
+          ) > 0.85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Edge bridge offline buffer is above 85% usable capacity
+
+      - alert: UnsPublicationOutboxBacklog
+        expr: uns_publication_outbox_queued_bytes > 536870912
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Publication outbox queued bytes exceed the default 512 MiB warning threshold
+
+      - alert: UnsEdgeCertificateExpiryWarning
+        expr: min(uns_edge_certificate_expiry_seconds) < 1209600
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: Edge or bridge certificate expires within fourteen days
+
+      - alert: UnsEdgeHeartbeatStale
+        expr: max(uns_edge_heartbeat_age_seconds) > 90
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: Edge heartbeat is stale beyond the configured bound
+
+      - alert: UnsEdgeBridgeDropDetected
+        expr: increase(uns_edge_bridge_dropped_messages_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Edge bridge reported dropped messages during WAN pressure

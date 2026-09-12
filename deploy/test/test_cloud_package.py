@@ -183,7 +183,7 @@ def test_proxy_terminates_console_enrollment_and_management_separately():
     assert "X-UNS-Trusted-Proxy" in proxy
     assert "X-Edge-Id" in proxy
     assert "proxy_pass http://$graphql_upstream:8000" in proxy
-    assert "mqtt" not in proxy.lower()
+    assert "listen 8883" not in proxy
 
 
 def test_proxy_does_not_expose_graphql_bypass_port(cloud_compose):

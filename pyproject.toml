@@ -82,7 +82,10 @@ uns_edge_agent = { path = "./15_uns_edge_agent", editable = true }
 members = ["uns_config", "uns_mqtt", "uns_graphdb", "uns_historian", "uns_model", "uns_spb_mapper", "uns_kafka_mapper", "uns_graphql", "uns_datalake", "uns_opcua", "uns_oee", "uns_factory_agent", "uns_edge_agent"]
 
 [tool.pytest.ini_options]
-markers = ["integrationtest: mark a test as an integration test"]
+markers = [
+    "integrationtest: mark a test as an integration test",
+    "faultmatrix: cloud-edge qualification fault-matrix case",
+]
 norecursedirs = [".git", "build", "node_modules", "env*", "tmp*"]
 addopts = "--import-mode=importlib -n auto --dist loadgroup --timeout=300 --durations=10"
 asyncio_default_fixture_loop_scope = "function"

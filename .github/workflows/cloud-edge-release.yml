@@ -1,0 +1,168 @@
+# trunk-ignore-all(checkov/CKV2_GHA_1)
+name: Cloud Edge Release and Qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: "Publish release manifests and offline bundles (authorized release job only)"
+        type: boolean
+        default: false
+  push:
+    branches:
+      - feat/cloud-platform-outbound-edge
+      - main
+    paths:
+      - "deploy/**"
+      - "conf/simulator/**"
+      - "15_uns_edge_agent/**"
+      - ".github/workflows/cloud-edge-release.yml"
+  pull_request:
+    branches:
+      - feat/cloud-platform-outbound-edge
+      - main
+    paths:
+      - "deploy/**"
+      - "conf/simulator/**"
+      - "15_uns_edge_agent/**"
+      - ".github/workflows/cloud-edge-release.yml"
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository }}
+
+jobs:
+  unit-contract:
+    name: Deploy/test unit and contract suites
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup with python environment
+        uses: ./.github/include/setup_python/
+        with:
+          module: .
+
+      - name: Run deploy/test contract suites
+        run: |
+          uv run pytest deploy/test -n 0 -v -m "not integrationtest"
+
+      - name: Validate qualification compose
+        run: docker compose -f deploy/test/compose.yml config --quiet
+
+      - name: Validate edge base and simulation overlays
+        run: |
+          docker compose -f deploy/edge/compose.yml config --quiet
+          docker compose -f deploy/edge/compose.yml -f deploy/edge/compose.simulation.yml config --quiet
+
+  integration-qualification:
+    name: Isolated topology integration qualification
+    runs-on: ubuntu-latest
+    needs: unit-contract
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup with python environment
+        uses: ./.github/include/setup_python/
+        with:
+          module: .
+
+      - name: Run isolated harness integration tests
+        run: uv run pytest deploy/test -n 0 -v -m integrationtest
+
+  build-images:
+    name: Build qualification OCI images (${{ matrix.platform }})
+    runs-on: ubuntu-latest
+    needs: unit-contract
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and export qualification stub image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/test/support/Dockerfile.stub
+          platforms: ${{ matrix.platform }}
+          push: false
+          load: ${{ matrix.platform == 'linux/amd64' }}
+          tags: ${{ env.IMAGE_PREFIX }}/cloud-edge-qualification-stub:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build simulator images
+        run: |
+          for spec in \
+            "conf/simulator/Dockerfile:uns-oee-simulator" \
+            "conf/simulator/Dockerfile.multi-system:uns-multi-system-simulator" \
+            "conf/simulator/protocols/Dockerfile.opcua:uns-opcua-simulator" \
+            "conf/simulator/protocols/Dockerfile.modbus:uns-modbus-simulator"
+          do
+            dockerfile="${spec%%:*}"
+            image="${spec##*:}"
+            docker buildx build \
+              --platform "${{ matrix.platform }}" \
+              --file "${dockerfile}" \
+              --tag "${{ env.IMAGE_PREFIX }}/${image}:${{ github.sha }}" \
+              --output type=cacheonly \
+              .
+          done
+
+  publish-release:
+    name: Publish release manifests and bundle checksums
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_release
+    runs-on: ubuntu-latest
+    needs: [build-images, integration-qualification]
+    environment: release
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Generate release manifest and checksums
+        run: |
+          mkdir -p dist/cloud-edge-release
+          for manifest in deploy/cloud/release.json deploy/edge/release.json deploy/release-contract.json; do
+            cp "${manifest}" "dist/cloud-edge-release/"
+            sha256sum "${manifest}" > "dist/cloud-edge-release/$(basename "${manifest}").sha256"
+          done
+          tar -czf dist/cloud-edge-offline-bundle.tar.gz \
+            deploy/cloud/compose.yml \
+            deploy/cloud/release.json \
+            deploy/edge/compose.yml \
+            deploy/edge/compose.simulation.yml \
+            deploy/edge/release.json \
+            deploy/release-contract.json
+          sha256sum dist/cloud-edge-offline-bundle.tar.gz > dist/cloud-edge-offline-bundle.tar.gz.sha256
+          jq -n \
+            --arg release_id "cloud-edge-${{ github.sha }}" \
+            --arg git_commit "${{ github.sha }}" \
+            --arg generated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{release_id:$release_id, git_commit:$git_commit, generated_at:$generated_at, bundles:["cloud-edge-offline-bundle.tar.gz"]}' \
+            > dist/cloud-edge-release/manifest.json
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloud-edge-release-${{ github.sha }}
+          path: dist/cloud-edge-release/
+          if-no-files-found: error

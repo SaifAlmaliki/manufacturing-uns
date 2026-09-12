@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 COMPOSE_FILE = Path(__file__).with_name("compose.yml")
 EDGE_SIM_CONNECTIONS = REPO_ROOT / "deploy" / "edge" / "simulation" / "connections.json"
 EDGE_SIM_FIXTURES = REPO_ROOT / "conf" / "simulator" / "protocols" / "fixtures.json"
@@ -504,11 +505,30 @@ class CloudEdgeHarness:
     def restore_cloud(self) -> None:
         self._exec("test-router", "/etc/firewall-rules.sh restore-cloud", check=False)
 
+    def block_https(self) -> None:
+        self._exec("test-router", "/etc/firewall-rules.sh block-https", check=False)
+
+    def restore_https(self) -> None:
+        self._exec("test-router", "/etc/firewall-rules.sh restore-https", check=False)
+
+    def stop_simulators(self) -> None:
+        for service in (
+            "opcua-simulator",
+            "modbus-simulator",
+            "oee-simulator",
+            "multi-system-simulator",
+            "protocol-collector",
+        ):
+            self._compose("stop", service, check=False)
+
     def restart_edge(self) -> None:
         self._compose("restart", "hivemq-edge", check=False)
 
     def restart_broker(self) -> None:
         self._compose("restart", "cloud-mqtt", check=False)
+
+    def restart_cloud_management(self) -> None:
+        self._compose("restart", "cloud-management", check=False)
 
     def _simulation_connections(self) -> dict[str, Any]:
         return json.loads(EDGE_SIM_CONNECTIONS.read_text(encoding="utf-8"))

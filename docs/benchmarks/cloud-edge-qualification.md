@@ -247,3 +247,137 @@ Disabled or removed from cloud runtime:
 
 **Programme gate:** Production broker and durable edge tiers remain **unqualified**.
 Proceed to Task 2 isolated harness work; do not declare production support.
+
+## 8. Task 15 — release pipeline and fault matrix (2026-09-12)
+
+| Field | Value |
+| --- | --- |
+| Date (UTC) | 2026-09-12 |
+| Git branch | `feat/cloud-platform-outbound-edge` |
+| Release workflow | `.github/workflows/cloud-edge-release.yml` |
+| Authorized publish | `workflow_dispatch` with `publish_release=true` only |
+| Local tests | Never publish manifests; CI unit job runs `-m "not integrationtest"` |
+
+Release artifacts separate metadata (`deploy/cloud/release.json`, `deploy/edge/release.json`,
+`deploy/release-contract.json`) from secrets. OCI builds use locked Dockerfiles and an
+`linux/amd64` + `linux/arm64` matrix. The optional `edge-sim` overlay and four simulator
+images share Dockerfiles with `deploy/test/compose.yml`.
+
+### 8.1 Fault matrix status
+
+| fault_id | Summary | Status | Evidence |
+| --- | --- | --- | --- |
+| `all_simulators_disabled` | All simulators disabled | **integration** (Linux CI) | `deploy/test/test_configuration_recovery.py` |
+| `real_and_simulator_together` | Real-shaped endpoint and simulator configured together | **integration** (Linux CI) | separate revisions + fixture values |
+| `edge_sim_no_plc` | No PLC hardware, edge-sim enabled | **contract** | `deploy/test/test_edge_simulation.py`, Task 11A |
+| `mapping_changed_on_simulated_source` | Cloud mapping changed on a simulated source | **integration** (Linux CI) | `deploy/test/test_simulated_config_roundtrip.py` |
+| `https_only_outage` | HTTPS-only outage during simulation | **integration** (Linux CI) | router `block-https` / `restore-https` |
+| `cloud_management_unavailable` | Cloud management unavailable | **integration** (Linux CI) | pending until HTTPS restore |
+| `vm_power_loss_during_apply` | VM power loss during apply | **contract** | `15_uns_edge_agent/test/test_journal.py` |
+| `cloud_restart_after_snapshot` | Cloud/database restart after snapshot commit | **blocked** | Persistent cloud-management store not wired in qualification stubs |
+| `https_response_loss_after_report` | HTTPS response loss after enrollment/report | **blocked** | Requires live agent HTTPS fault injection |
+| `duplicate_cloned_agent` | Duplicate/cloned agent | **blocked** | Lease fencing requires production identity database |
+| `bridge_wan_outage_edge_restart` | Bridge WAN outage plus Edge restart | **integration** (Linux CI) | `block-cloud` + `restart_edge` + lake replay |
+| `broker_crash_after_puback` | Cloud MQTT crash immediately after PUBACK | **blocked** | Qualified HiveMQ broker not available in isolated profile |
+| `kafka_mapper_outage_full_queue` | Kafka/mapper downtime and full broker queue | **blocked** | Production mapper backpressure not measured on stub broker |
+| `store_historian_outage` | Store/historian outage | **contract** | independent lake mapper in qualification harness |
+| `partial_route_acl_release` | Partial route/ACL release | **blocked** | Route release gating requires qualified broker ACL harness |
+| `certificate_expiry_rotation` | Certificate expiry/revocation/rotation | **blocked** | Live mTLS revocation harness blocked until broker qualified |
+| `outbox_publish_before_status_crash` | Outbox publish-before-status crash | **contract** | Task 13 worker lease/idempotency tests |
+| `http_flood_oversized_config` | HTTP flood or oversized configuration | **contract** | publication API 413/503 tests |
+| `two_sites_identical_local_names` | Two sites with identical local names | **blocked** | Multi-edge isolated harness not implemented |
+| `unsupported_discovery_mapping` | Unsupported discovery or southbound mapping | **contract** | edge agent protocol rejection tests |
+
+A Linux fixture **passing** does not mean Hostinger VPS, AWS EC2, clean DMZ VM, or
+qualified HiveMQ Enterprise broker were deployed.
+
+### 8.2 Measured metrics (not production SLOs)
+
+| Metric | Intended signal | Task 15 status |
+| --- | --- | --- |
+| Live/catch-up bytes/sec | Bridge and mapper throughput | **Not measured** — stub topology only |
+| RSS / edge buffer usable bytes | Edge bridge offline buffer headroom | **Alert contract only** — `uns_edge_bridge_buffer_bytes` |
+| Broker queue headroom | Central MQTT pressure | **blocked** — qualified broker absent |
+| Kafka retention / outbox disk use | Canonical log + SQL outbox budgets | **Design + alert contract** |
+| Configuration latency | desired→applied lag | **Harness only** — `uns_edge_desired_applied_lag_seconds` alert |
+| Restart recovery | Journal + pending desired state | **Partial** — journal unit tests; cloud restart blocked |
+| Certificate renewal/revocation bounds | mTLS lifecycle | **blocked** |
+| Object verification bandwidth | Backup/restore throughput | **Not measured** |
+
+Recorded RPO/RTO values remain **null** until live fault injection on a qualified broker
+and licensed edge buffer completes.
+
+## 9. Business delivery qualification
+
+| Path | Status | Evidence |
+| --- | --- | --- |
+| DMZ MQTT business cases (LIMS/MES/SAP/machine) | **integration** (Linux CI) | `deploy/test/test_business_delivery.py` |
+| HTTPS outbox (`202` / `broker_accepted`) | **contract** | Task 13 unit tests; not live broker in harness |
+| Historian-independent lake delivery | **contract** | qualification kafka→lake sink |
+| Live vendor SAP/LIMS/MES | **Not qualified** | simulator/fixture bodies only |
+
+HTTP `202` means stored in the platform outbox, not archived to the lake. Receipt polling
+and broker acceptance are separate from Kafka/lake delivery.
+
+## 10. Restore and cutover components
+
+Restore verification must cover, without silently resetting Kafka offsets or discarding
+unarchived records:
+
+| restore component | Mechanism | Task 15 status |
+| --- | --- | --- |
+| `sql_catalog` | PostgreSQL + Timescale backups | **Documented** — `deploy/cloud` backup profile |
+| `encrypted_secrets_with_keys` | Operator-supplied TLS/CA/secret keys | **Documented** — secrets outside images |
+| `identity_database` | Edge enrollment + Keycloak SQL | **blocked** — not exercised in isolated harness |
+| `broker_state` | Qualified HiveMQ persistence | **blocked** |
+| `kafka_retained_log` | `uns.historic-events` retention | **Partial** — lake rows preserve `kafka_offset` in harness |
+| `outbox_receipts` | PostgreSQL outbox terminal rows | **contract** — Task 13 |
+| `edge_journal` | SQLite apply/report journal | **contract** — `15_uns_edge_agent/test/test_journal.py` |
+| `object_store_lake` | MinIO/S3 lake objects | **Partial** — qualification MinIO sink only |
+
+Isolated restoration to a **separate deployment** is an operator procedure documented in
+`deploy/cloud/hostinger.md` and `deploy/cloud/aws-ec2.md`. VM snapshots alone are not
+application-consistent recovery proof.
+
+## 11. Deployment profile status
+
+| Profile | Task 15 status | Notes |
+| --- | --- | --- |
+| Linux isolated fixture (`deploy/test`) | **Contract + integration CI** | Authoritative for architecture, not production broker |
+| Clean DMZ VM + edge-sim → actual cloud | **Not executed** | Operator-owned per Task 11A walkthrough |
+| Hostinger VPS | **Not deployed** | Runbook only (`deploy/cloud/hostinger.md`) |
+| AWS EC2 | **Not deployed** | Runbook only (`deploy/cloud/aws-ec2.md`) |
+| Actual HiveMQ Enterprise broker edition | **blocked** | `qualification_status: unqualified` |
+| Object backend (S3/ADLS) | **Not qualified** | MinIO stub in harness |
+
+Record `edge-sim on VM → actual cloud` acceptance separately from physical PLC/SCADA
+acceptance. Simulation milestone must not be blocked on unavailable hardware.
+
+## 12. Observability additions (Task 15)
+
+Prometheus alert group `uns_cloud_edge` adds:
+
+- `UnsEdgeDesiredAppliedLag`
+- `UnsEdgeBridgeBufferPressure`
+- `UnsPublicationOutboxBacklog`
+- `UnsEdgeCertificateExpiryWarning`
+- `UnsEdgeHeartbeatStale`
+- `UnsEdgeBridgeDropDetected`
+
+Grafana dashboard `platform-observability.json` adds panels for edge lag, bridge buffer,
+outbox backlog, and certificate expiry. Metric series must be emitted by production edge
+agent, bridge, and publication worker before alerts fire in a live deployment.
+
+## 13. Exit criteria for Task 15
+
+| Criterion | Result |
+| --- | --- |
+| Authorized release workflow with arch matrix | **Done** — `.github/workflows/cloud-edge-release.yml` |
+| Fault matrix documented with blocked rows explicit | **Done** — section 8.1 |
+| `deploy/test` unit + integration suites | **Done** — configuration, business, restore, observability |
+| Restore components documented | **Done** — section 10 |
+| Prometheus/Grafana cloud-edge signals | **Done** — alert contracts + dashboard panels |
+| Measured production RPO/RTO | **Not available** — remains blocked |
+
+**Programme gate unchanged:** `qualification_status: unqualified` until operator supplies
+digest-pinned broker/edge images, licenses, and live provider deployments.

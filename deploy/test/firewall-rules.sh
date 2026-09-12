@@ -76,8 +76,16 @@ case "${1:-apply}" in
   restore-cloud)
     iptables -D FORWARD -s "${DMZ_NET}" -d "${CLOUD_NET}" -j DROP 2>/dev/null || true
     ;;
+  block-https)
+    iptables -I UNS_DMZ_TO_CLOUD 1 -s "${DMZ_NET}" -d "${CLOUD_NET}" -p tcp --dport 443 -j DROP
+    ;;
+  restore-https)
+    while iptables -C UNS_DMZ_TO_CLOUD -s "${DMZ_NET}" -d "${CLOUD_NET}" -p tcp --dport 443 -j DROP 2>/dev/null; do
+      iptables -D UNS_DMZ_TO_CLOUD -s "${DMZ_NET}" -d "${CLOUD_NET}" -p tcp --dport 443 -j DROP
+    done
+    ;;
   *)
-    echo "usage: $0 [apply|counters|stats|block-cloud|restore-cloud]" >&2
+    echo "usage: $0 [apply|counters|stats|block-cloud|restore-cloud|block-https|restore-https]" >&2
     exit 1
     ;;
 esac
