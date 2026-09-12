@@ -53,6 +53,7 @@ Repository = "https://github.com/mkashwin/unifiednamespace/tree/main/07_uns_grap
 [project.scripts]
 uns_graphql_app = "uns_graphql.uns_graphql_app:main"
 uns_graphql_healthcheck = "uns_graphql.health_check:main"
+uns_route_release_worker = "uns_graphql.route_release_worker:main"
 
 [dependency-groups]
 main = ["uns-mqtt"]

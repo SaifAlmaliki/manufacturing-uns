@@ -4,7 +4,7 @@ import sys
 
 import psutil
 
-from uns_kafka.uns_kafka_config import KAFKAConfig, MQTTConfig
+from uns_kafka.uns_kafka_config import IngestionSettings, KAFKAConfig, MQTTConfig
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -59,6 +59,10 @@ def main():
 
     if not is_ingestion_ready():
         logger.error("Ingestion shard is not ready%s", f": {_halt_reason}" if _halt_reason else "")
+        sys.exit(1)
+
+    if IngestionSettings.route_control.enabled and not IngestionSettings.route_control.token:
+        logger.error("Route control enabled without route_control.token configured")
         sys.exit(1)
 
     mqtt_host = MQTTConfig.host

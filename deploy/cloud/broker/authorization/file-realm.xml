@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ese-file-realm>
+    <users>
+        <user name="edge-01-bridge">
+            <password disabled="true"/>
+            <certificate>conf/tls/clients/edge-01-bridge.crt</certificate>
+        </user>
+        <user name="edge-02-bridge">
+            <password disabled="true"/>
+            <certificate>conf/tls/clients/edge-02-bridge.crt</certificate>
+        </user>
+        <user name="uns-route-release-worker">
+            <password disabled="true"/>
+            <certificate>conf/tls/clients/route-release-worker.crt</certificate>
+        </user>
+    </users>
+</ese-file-realm>

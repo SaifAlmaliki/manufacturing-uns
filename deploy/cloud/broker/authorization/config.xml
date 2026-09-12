@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<enterprise-security-extension
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="ese-config.xsd">
+    <realms>
+        <realm>
+            <id>bridge-principals</id>
+            <authentication-handler>
+                <type>file</type>
+                <configuration>
+                    <file>authorization/file-realm.xml</file>
+                </configuration>
+            </authentication-handler>
+            <authorization-handler>
+                <type>file</type>
+                <configuration>
+                    <file>authorization/permissions.xml</file>
+                </configuration>
+            </authorization-handler>
+        </realm>
+    </realms>
+    <listeners>
+        <listener>
+            <port>8883</port>
+            <realm>bridge-principals</realm>
+        </listener>
+    </listeners>
+</enterprise-security-extension>

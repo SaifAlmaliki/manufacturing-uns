@@ -21,6 +21,7 @@ from uns_kafka.prometheus_metrics import (
     INGEST_REJECTED,
     start_metrics_server,
 )
+from uns_kafka.route_control import RouteControlServer, RouteControlState
 from uns_kafka.uns_kafka_config import IngestionSettings, KAFKAConfig, MQTTConfig
 
 LOGGER = logging.getLogger(__name__)
@@ -52,6 +53,8 @@ class UNSKafkaMapper:
     """MQTT ingestion shard that publishes canonical historic events to Kafka."""
 
     def __init__(self):
+        self.route_control_state = RouteControlState()
+        self.route_control_server: RouteControlServer | None = None
         self.ingestion_config = IngestionSettings.config
         self.kafka_handler = KafkaHandler(KAFKAConfig.kafka_config_map)
         publisher = _KafkaPublisherAdapter(self.kafka_handler)
@@ -93,6 +96,16 @@ class UNSKafkaMapper:
         set_ingestion_ready(True)
         if IngestionSettings.metrics_port:
             start_metrics_server(int(IngestionSettings.metrics_port))
+        route_control = IngestionSettings.route_control
+        if route_control.enabled and route_control.token:
+            self.route_control_server = RouteControlServer(
+                self.route_control_state,
+                host=route_control.host,
+                port=route_control.port,
+                token=route_control.token,
+            )
+            self.route_control_server.start()
+        self._apply_pending_route_release()
         self.uns_client.run(
             host=MQTTConfig.host,
             port=MQTTConfig.port,
@@ -104,7 +117,20 @@ class UNSKafkaMapper:
             qos=MQTTConfig.qos,
         )
 
+    def _apply_pending_route_release(self) -> None:
+        release = self.route_control_state.drain_pending()
+        if release is None:
+            return
+        active = self.route_control_state.apply_release(release)
+        self.ingestion_config.publication_routes = active.publication_routes
+        LOGGER.info(
+            "Applied mapper route release revision=%s topics=%s",
+            active.revision,
+            list(active.topic_filters),
+        )
+
     def on_message(self, client, userdata, msg):  # noqa: ARG002
+        self._apply_pending_route_release()
         if not is_historic_event_topic(msg.topic):
             return
         shard = self.ingestion_config.shard_id
@@ -190,6 +216,8 @@ def main():
         mapper.uns_client.loop_forever(retry_first_connection=True)
     finally:
         if mapper is not None:
+            if mapper.route_control_server is not None:
+                mapper.route_control_server.stop()
             mapper.owner.shutdown()
             mapper.kafka_handler.flush(10)
             mapper.uns_client.disconnect()

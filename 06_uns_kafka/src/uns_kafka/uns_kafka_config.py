@@ -134,8 +134,30 @@ def load_ingestion_config() -> IngestionConfig:
     )
 
 
+class RouteControlSettings:
+    enabled: bool = bool(settings.get("route_control.enabled", False))
+    host: str = settings.get("route_control.host", "127.0.0.1")
+    port: int = int(settings.get("route_control.port", 19090))
+    token: str = settings.get("route_control.token", "")
+
+
 class IngestionSettings:
     config: IngestionConfig = load_ingestion_config()
     publication_routes: tuple[PublicationRoute, ...] = load_publication_routes()
     v2_publications_enabled: bool = bool(settings.get("ingestion.v2_publications_enabled", False))
     metrics_port: int | None = settings.get("metrics_port")
+    route_control: RouteControlSettings = RouteControlSettings()
+
+
+def mapper_topics_for_release(routes: tuple[PublicationRoute, ...]) -> list[str]:
+    from uns_config.route_release import RouteRelease, mapper_topic_filters
+
+    if not routes:
+        return list(MQTTConfig.topics)
+    release = RouteRelease(
+        revision=0,
+        digest="bootstrap",
+        publication_routes=routes,
+        principal_grants=(),
+    )
+    return list(mapper_topic_filters(release))

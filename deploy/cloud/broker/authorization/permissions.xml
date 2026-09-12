@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ese-file-authorization>
+    <clients>
+        <client id="edge-01-bridge">
+            <publish>
+                <topic>Enterprise/PlantA/LIMS/results</topic>
+            </publish>
+            <subscribe deny="true"/>
+        </client>
+        <client id="edge-02-bridge">
+            <publish>
+                <topic>Enterprise/PlantB/MES/orders</topic>
+            </publish>
+            <subscribe deny="true"/>
+        </client>
+        <client id="uns-route-release-worker">
+            <publish deny="true"/>
+            <subscribe deny="true"/>
+            <administration>
+                <permission>CLIENT_MANAGEMENT</permission>
+                <permission>TOPIC_MANAGEMENT</permission>
+            </administration>
+        </client>
+    </clients>
+</ese-file-authorization>
