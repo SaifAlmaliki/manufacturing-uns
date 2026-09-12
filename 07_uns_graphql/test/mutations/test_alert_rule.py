@@ -324,8 +324,9 @@ def test_only_alert_rules_are_writable():
     reseeds; downtime assignment is the one plant-data correction. Access Groups are
     admin-only plant-scope writes. Connectivity catalog writes (Task 5) are the
     engineer + admin curation of OPC UA servers, their tags, and signal context
-    (units of measure and labels). An extra mutation must be a decision, not an
-    accident.
+    (units of measure and labels). Cloud edge mutations (Task 8) enroll devices,
+    grant access, and assign servers. An extra mutation must be a decision, not
+    an accident.
     """
     mutation = UNSGraphql.schema.get_type_by_name("Mutation")
     names = {field.name for field in mutation.fields}
@@ -352,6 +353,13 @@ def test_only_alert_rules_are_writable():
         "save_unit_of_measure",
         "save_signal_label",
         "test_connectivity_server",
+        "browse_opc_ua_tags",
+        "register_edge_device",
+        "create_edge_enrollment_token",
+        "revoke_edge_device",
+        "assign_connectivity_server_to_edge",
+        "grant_edge_access",
+        "revoke_edge_access",
     }
 
 

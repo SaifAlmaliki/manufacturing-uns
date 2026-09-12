@@ -14,6 +14,7 @@ from uns_graphql.uns_graphql_app import UNSGraphql
 
 REPOSITORY = "uns_graphql.mutations.connectivity._repository"
 EDGE_REPOSITORY = "uns_graphql.mutations.connectivity._edge_repository"
+AUTH_EDGE_REPOSITORY = "uns_graphql.auth.require._edge_repository"
 
 ADMIN = {
     CONTEXT_KEY: Identity(
@@ -186,7 +187,7 @@ async def test_cloud_mode_engineer_requires_edge_grant(cloud_mode):
 
     with (
         patch(REPOSITORY, return_value=repository),
-        patch("uns_graphql.auth.require.EdgeRepository", return_value=edge_repo),
+        patch(AUTH_EDGE_REPOSITORY, return_value=edge_repo),
     ):
         result = await UNSGraphql.schema.execute(
             """
@@ -352,6 +353,7 @@ def test_cloud_context_attaches_secret_store(monkeypatch):
 
     store = object()
     monkeypatch.setattr("uns_graphql.mutations.connectivity._edge_secret_store", lambda: store)
+    monkeypatch.setattr(EDGE_REPOSITORY, lambda: object())
     info = SimpleNamespace(context=ADMIN)
     ctx = _cloud_context(info, "edge-01", 3)
     assert ctx.secret_store is store

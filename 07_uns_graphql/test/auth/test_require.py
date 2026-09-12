@@ -51,6 +51,7 @@ EXPECTED = {
     # so it can record_test.
     "saveConnectivityTag": {"engineer", "admin"},
     "testConnectivityServer": {"engineer", "admin"},
+    "browseOpcUaTags": {"engineer", "admin"},
     # Cloud edge administration (Task 8)
     "registerEdgeDevice": {"admin"},
     "createEdgeEnrollmentToken": {"admin"},

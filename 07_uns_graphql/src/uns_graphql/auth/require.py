@@ -58,6 +58,7 @@ MUTATION_ROLES: dict[str, frozenset[str]] = {
     # (unlike the query-side testOpcUaConnection) because it calls record_test.
     "saveConnectivityTag": frozenset({"engineer", "admin"}),
     "testConnectivityServer": frozenset({"engineer", "admin"}),
+    "browseOpcUaTags": frozenset({"engineer", "admin"}),
     # Cloud edge administration (Task 8)
     "registerEdgeDevice": frozenset({"admin"}),
     "createEdgeEnrollmentToken": frozenset({"admin"}),
@@ -96,6 +97,10 @@ def require(info: Any, mutation: str) -> Identity:
     return identity
 
 
+def _edge_repository() -> EdgeRepository:
+    return EdgeRepository(Database.shared("graphql"))
+
+
 async def require_edge_access(info: Any, edge_id: str) -> Identity:
     """The caller's identity when they may write one edge's connectivity catalog."""
     identity = identity_in(getattr(info, "context", None))
@@ -105,7 +110,7 @@ async def require_edge_access(info: Any, edge_id: str) -> Identity:
         )
     if identity.has_any(frozenset({"admin"})):
         return identity
-    repo = EdgeRepository(Database.shared("graphql"))
+    repo = _edge_repository()
     if not await repo.user_has_grant(edge_id, identity.subject):
         raise NotPermittedError(f"This edge is outside your Access Groups: {edge_id}.")
     return identity
