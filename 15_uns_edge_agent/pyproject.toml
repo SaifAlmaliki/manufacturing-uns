@@ -1,0 +1,56 @@
+[project]
+name = "uns_edge_agent"
+version = "0.9.38"
+description = "Outbound-only DMZ edge management agent for cloud configuration polling"
+authors = [{ name = "Ashwin Krishnan", email = "mkashwin@gmail.com" }]
+requires-python = ">=3.14, <4"
+readme = "README.md"
+license = { text = "MIT" }
+dependencies = [
+    "uns_config",
+    "httpx>=0.28.0,<1",
+    "cryptography>=44.0.0,<45",
+]
+
+[project.urls]
+Repository = "https://github.com/mkashwin/unifiednamespace/tree/main/15_uns_edge_agent"
+
+[project.scripts]
+uns_edge_agent = "uns_edge_agent.main:main"
+uns_edge_enroll = "uns_edge_agent.enrollment:main"
+uns_edge_healthcheck = "uns_edge_agent.health_check:main"
+
+[dependency-groups]
+test = [
+    "pytest>=9.0.3,<10",
+    "pytest-timeout>=2.4.0,<3",
+    "pytest-xdist>=3.8.0,<4",
+]
+
+[tool.uv]
+default-groups = ["test"]
+
+[tool.uv.sources]
+uns_config = { path = "../00_uns_config", editable = true }
+
+[tool.hatch.build.targets.sdist]
+include = ["src/uns_edge_agent"]
+
+[tool.hatch.build.targets.wheel]
+include = ["src/uns_edge_agent"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src/uns_edge_agent" = "uns_edge_agent"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+norecursedirs = [".git", "build", "node_modules", "env*", "tmp*"]
+testpaths = ["test"]
+pythonpath = ["test"]
+addopts = "--timeout=300"
+
+[tool.ruff]
+extend = "../pyproject.toml"
