@@ -92,3 +92,46 @@ bundle.
 Task 11A adds `compose.simulation.yml` with profile `edge-sim` for
 hardware-free commissioning. The base installation remains simulator-free and must
 start real connections without enabling that overlay.
+
+Use the simulation overlay for the **initial canary** when physical PLCs are
+unavailable. See [`edge-simulation-demo.md`](./edge-simulation-demo.md) for the
+VM-to-cloud walkthrough. After qualification evidence is recorded, stop only the
+four simulator services and add real PLC connections through the cloud console—no
+reinstall, re-enrollment, or image change is required.
+
+## Canary enrollment
+
+1. Platform admin registers one site edge in the cloud console and generates a
+   single-use enrollment token (15-minute validity, bound to one edge).
+2. Site IT completes base install and outbound firewall approval.
+3. Run `uns_edge_enroll` once; the agent stores issued certificates in `agent-data`.
+4. Platform admin assigns connections to this edge only; never auto-assign all
+   legacy catalog rows.
+5. Activate simulation or production routes and ACLs before expecting upstream data.
+
+Rebooting the VM does not repeat enrollment. Lost enrollment results after the token
+window require a new token from the platform admin, not CSR reuse with changed keys.
+
+## Legacy migration on site
+
+When replacing a local collector, parallel `opcua_client`, or old MQTT bridge:
+
+- Stop the legacy publisher before the edge bridge carries the same source.
+- Migrate catalog connections individually in the cloud console with stable IDs where
+  possible.
+- Record legacy Kafka topic/partition/offset cutover coordinates separately from the
+  new cloud stream; offset numbers are not portable across clusters.
+
+## IT recovery
+
+| Scenario | Site administrator | Platform admin |
+| --- | --- | --- |
+| Failed upgrade | Restore from `upgrade.sh` backup; re-run upgrade with prior release ID | Supply compatible pinned release manifest |
+| Full disk | Free space on data volume; inspect `edge-data`, `edge-bridge`, `agent-data` | Monitor bridge-buffer and heartbeat alerts |
+| Stolen/lost agent identity | Wipe `agent-data` volume after local approval | Revoke edge registration and certificates |
+| Expired certificate (long offline) | Re-enroll with new token | Issue enrollment token; verify revocation of old cert |
+| Partial apply | Read agent journal and Edge connection status via cloud console | Publish corrective desired revision |
+| DNS/CA rotation | Update trusted CA files and cloud hostnames in `agent.env` | Coordinate issuance and public DNS cutover |
+| Unavailable PLC/vendor endpoint | Verify OT firewall and endpoint reachability | Leave connection pending/degraded; do not delete applied revision |
+
+Package layout and verified commands: [`deploy/edge/README.md`](../../deploy/edge/README.md).

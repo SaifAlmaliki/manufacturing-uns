@@ -73,3 +73,19 @@ validate wire contracts only; they are not connections to live vendor products.
 
 Direct MQTT/TLS publication remains supported for systems that can use the registered
 `uns-publication-v1` or raw routes without HTTPS ingress.
+
+## Cutover during cloud/edge migration
+
+During canary migration, register business routes on the new cloud platform before
+retiring legacy publishers:
+
+1. Keep legacy MQTT or HTTPS publishers running until new routes are `broker_accepted`
+   and lake rows are verified for a sample of receipts.
+2. Scope each business principal to its own routes; do not reuse another principal's
+   certificate or idempotency namespace.
+3. Fence the old publisher path so duplicate bodies do not race on the same route ID.
+4. Roll back publication configuration through a new route revision or pinned release;
+   terminal receipts and lake rows already accepted are retained.
+
+Historian outage does not block raw lake delivery for registered business routes.
+See [`cloud-platform.md`](./cloud-platform.md) for the operator migration sequence.

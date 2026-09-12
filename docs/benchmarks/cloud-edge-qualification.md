@@ -210,7 +210,7 @@ Measured values are **not available** in Task 1.
 | Edge power loss | Licensed HiveMQ Edge offline bridge buffering + disk | **Blocked** | License absent; durable edge tier unqualified. Unit tests for management agent are **not** blocked. |
 | Central broker power loss | Broker persistence + bridge session policy | **Blocked** | Requires qualified `hivemq4` (or chosen edition) and crash-after-PUBACK test |
 | Canonical Kafka persistence | `uns.historic-events` retained log (dev: 7 days / `604800000` ms) | **Design accepted; live RPO not measured** | At-least-once; mapper ACKs MQTT after Kafka produce in current ingest path |
-| SQL outbox persistence | PostgreSQL durable outbox for HTTPS business push | **Not implemented** | Task 13; no RPO claim until worker + broker acceptance qualified |
+| SQL outbox persistence | PostgreSQL durable outbox for HTTPS business push | **Implemented (Task 13); live RPO not measured** | `publication_outbox.py`, migration `0013`, worker + ingress tests; `202` ≠ broker/lake delivery until qualified |
 
 Accepted RPO targets for production must be recorded after Tasks 10, 11A, 13, and 15
 fault injection — not before.
@@ -381,3 +381,64 @@ agent, bridge, and publication worker before alerts fire in a live deployment.
 
 **Programme gate unchanged:** `qualification_status: unqualified` until operator supplies
 digest-pinned broker/edge images, licenses, and live provider deployments.
+
+## 14. Design §11 acceptance matrix (Task 16)
+
+Maps each row in [design §11](../superpowers/specs/2026-09-12-cloud-platform-outbound-edge-design.md#11-acceptance-criteria)
+to executed test evidence, operator-run qualification, or an explicit blocked row.
+**Contract** = unit/compose tests in CI. **Integration** = Linux isolated harness
+(`deploy/test`, `-m integrationtest`). **Operator** = documented runbook step not yet
+executed on a live VM/provider. **Blocked** = requires qualified broker, license, or
+hardware not available in the programme harness.
+
+| Design §11 scenario | Status | Evidence |
+| --- | --- | --- |
+| Clean DMZ VM installation | **contract + operator** | `deploy/test/test_edge_package.py`; runbook [`dmz-edge-installation.md`](../operations/dmz-edge-installation.md); live VM install **operator** |
+| Real-device-ready base release | **contract** | `test_edge_package.py` (no default adapters); `test_all_simulators_disabled_base_configuration_still_works`; hivemq template has no fixture hostnames |
+| Same adapters for both source types | **contract + integration** | `test_real_shaped_and_simulator_connections_use_separate_settings`; `test_simulated_config_roundtrip.py`; no reinstall path in runbooks |
+| Mixed real/simulated catalog | **integration** | `test_real_shaped_and_simulator_connections_use_separate_settings`; separate connection IDs/revisions in harness |
+| Hardware-free edge profile | **contract** | `deploy/test/test_edge_simulation.py`; base compose exactly two services; overlay optional `edge-sim` |
+| Simulator-to-cloud data path | **integration + operator** | `test_publish_case_reaches_lake_fixture`; `test_ot_simulators_cannot_reach_cloud`; VM-to-cloud manifest **operator** |
+| Cloud-to-edge configuration round trip | **integration** | `test_enroll_save_and_apply_round_trip`; `test_cloud_configuration_changes_simulated_collection`; `test_simulated_config_roundtrip.py` |
+| Firewall blocks cloud-to-DMZ initiation | **integration** | `test_network_boundary.py` (`test_cloud_cannot_dial_dmz_management`, HTTPS-only outage keeps MQTT) |
+| OPC UA and Modbus | **contract + integration** | `15_uns_edge_agent/test/test_protocols.py`; `test_simulated_config_roundtrip.py` (parametrized); live wire qualification **blocked** on physical devices |
+| Configuration while edge offline | **integration** | `test_https_only_outage_keeps_mqtt_while_configuration_stays_pending`; `test_pending_configuration_survives_https_outage_until_restore` |
+| Apply partial failure/restart | **contract + integration** | `15_uns_edge_agent/test/test_journal.py`; `test_vm_power_loss_journal_contract_is_unit_tested`; degraded status in agent reconcile tests |
+| Two edges/sites | **blocked** | `two_sites_identical_local_names` in fault matrix; multi-edge harness not implemented |
+| Southbound configuration attempt | **contract** | Edge agent protocol rejection tests; cloud bridge publish-only ACL config in `test_mqtt_boundary.py` (skipped live) |
+| Outage plus Edge restart | **integration** | `test_bridge_wan_outage_survives_edge_restart_and_reconciles`; duplicate/gap boundaries documented, licensed buffer **blocked** |
+| Central broker crash/mapper outage | **blocked** | `broker_crash_after_puback`, `kafka_mapper_outage_full_queue` fault rows; PUBACK-to-Kafka window not measured |
+| Secret/certificate rotation/revocation | **blocked** | `certificate_expiry_rotation` fault row; live mTLS revocation harness requires qualified broker |
+| HTTP/raw business publication | **contract + integration** | Task 13 unit tests; `deploy/test/test_business_delivery.py`; exact-body and idempotency contracts |
+| Historian unavailable | **contract + integration** | `test_business_case_reaches_lake_without_cloud_local_shortcut`; historian-independent lake path in harness |
+| Hostinger/AWS portability | **operator + blocked live** | `deploy/cloud/hostinger.md`, `aws-ec2.md`; `test_provider_runbooks_cover_required_operator_steps`; no live VPS/EC2 deploy executed |
+| Restore/cutover | **contract + operator** | `deploy/test/test_restore.py`; backup profile documented; isolated restore **operator**; no false Kafka offset continuity (`test_restore_policy_forbids_silent_kafka_offset_reset`) |
+
+### 14.1 Task 16 completion review
+
+| Review item | Result |
+| --- | --- |
+| Credential leaks in diff | None observed in Task 16 documentation-only changes |
+| Mixed user/dev artifacts in production bundles | Forbidden by `test_cloud_package.py` / `test_edge_package.py` |
+| Network assumptions documented | Outbound-only matrix in design §5; runbooks name 443/8883 explicitly |
+| Managed-adapter ownership | Cloud GraphQL does not write local `config.xml`; agent reconciles on edge |
+| Unsafe success assertions | Qualification doc separates HTTP 202, broker acceptance, and lake delivery |
+| `git diff --check` | Run at Task 16 handoff |
+| Graphify AST refresh | Run at Task 16 handoff (Markdown not semantically indexed) |
+
+### 14.2 Remaining source-specific integration work
+
+| Area | Status |
+| --- | --- |
+| Physical PLC/SCADA per vendor | **Not qualified** — simulators and test servers only |
+| Native SAP/LIMS/MES connectors | **Out of scope** — generic HTTPS/MQTT publication only |
+| HiveMQ Enterprise broker live ACL/revocation | **Blocked** — operator license + digest |
+| HiveMQ Edge offline buffering RPO | **Blocked** — commercial license |
+| Multi-site edge isolation at scale | **Blocked** — second-edge harness |
+| S3/ADLS production object backend | **Not qualified** — MinIO stub in harness |
+| HA tier / managed cloud DB substitution | **Not included** in completion claim |
+
+**Programme completion (Task 16):** Installable bundles, runbooks, acceptance mapping,
+and isolated CI qualification are in place. Production rollout and live provider/VM
+evidence remain distinct authorized operator actions while `qualification_status` stays
+`unqualified`.

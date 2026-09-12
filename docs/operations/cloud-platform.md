@@ -93,3 +93,73 @@ qualification.
 Cloud simulation **routes** may exist for qualification, but cloud-local simulator
 containers are forbidden. Hardware-free commissioning uses the edge `edge-sim` overlay
 (Task 11A) on the DMZ VM only.
+
+## Canary migration sequence
+
+Production cutover is an authorized operator action. Follow this order and named
+ownership; do not auto-assign every legacy catalog row to the first enrolled edge.
+
+| Step | Owner | Action |
+| --- | --- | --- |
+| 1 | Cloud IT | Provision server, DNS, TLS, secrets, license, and encrypted backups; install a qualified release from the verified archive |
+| 2 | Platform admin | Verify readers and publication routes; register **one** canary edge; issue a single-use enrollment token |
+| 3 | Site IT | Allow DMZ egress to cloud management (443) and MQTT (8883); approve OT destinations; install and enroll the DMZ release |
+| 4 | Platform admin | Assign canary connections explicitly; activate routes and ACLs; publish a route-release snapshot |
+| 5 | Edge agent | Retrieve desired state, apply locally, report applied/health status |
+| 6 | Operator | Reconcile live MQTT, Kafka coordinates, and lake rows; approve rollout to the next edge only after evidence |
+
+Start the initial canary with the edge `edge-sim` profile when physical PLCs are
+unavailable. Complete the real VM-to-cloud walkthrough in
+[`edge-simulation-demo.md`](./edge-simulation-demo.md) before scheduling real-source
+migration. Switching from simulation to real connections uses normal cloud
+configuration only—no reinstall, re-enrollment, or bundle change.
+
+## Legacy collector and stream cutover
+
+Before activating the new edge publisher for a source that an old local collector or
+bridge already serves:
+
+1. **Fence the old path** — stop or disable the legacy collector, local bridge, or
+   development `opcua_client` profile so it cannot publish duplicate topics.
+2. **Migrate catalog rows explicitly** — assign each connection to an edge in the
+   console; never bulk-import legacy rows without per-connection review.
+3. **Preserve stable source identity** — keep connection IDs, route principals, and
+   lake metadata keys where possible so downstream readers stay compatible.
+4. **Handle legacy topics** — register new routes or remap topics deliberately; do not
+   assume topic strings from the old stack apply unchanged.
+5. **Drain the old Kafka stream** — archive or drain the previous cluster/topic, record
+   final offset and timestamp coordinates, then treat the cloud stream as a **new
+   transport namespace**. Copying offset numbers across clusters is not proof of
+   continuity.
+
+Keep old compatible readers and retained data until the rollout and retention window
+ends. Rollback uses a new desired revision or a compatible pinned release; there is
+no automatic destructive migration downgrade.
+
+## IT recovery matrix
+
+| Scenario | Local administrator (site/cloud VM) | Cloud console / platform admin |
+| --- | --- | --- |
+| Lost cloud VM | Restore from encrypted backup to an isolated deployment; reattach DNS/TLS | Re-issue enrollment tokens only after identity store restore; verify route releases |
+| Stolen edge identity | Revoke edge registration and bridge certificate; wipe agent volume on site | Revoke certificates, disconnect MQTT sessions, block management mTLS |
+| Long-offline expired cert | Re-enroll with a new token after wiping compromised material if required | Issue new enrollment token; do not bypass expiry validation |
+| Failed upgrade | Run `upgrade.sh` rollback from timestamped backup under `/opt/uns-edge` or cloud release directory | Pin previous qualified release; publish compatible desired revision |
+| Full disk | Expand volume or prune non-state logs; verify bridge buffer and journal paths | Review capacity alerts; pause new route activations until headroom returns |
+| DNS or CA change | Update trust bundles and agent/broker hostname settings locally | Update public URLs, enrollment hostname, and issuance CA in platform settings |
+| Partial apply / degraded edge | Inspect agent journal and Edge applied status; retry after fixing OT reachability | Inspect desired/applied lag; publish corrective revision; do not assume save == applied |
+| Unavailable vendor source | Confirm OT firewall and endpoint health locally | Mark connection degraded; keep last applied revision until source returns |
+
+Edge reboot does **not** trigger re-enrollment. Identity material persists in the
+agent volume and HiveMQ Edge configuration volume.
+
+## Release artifacts
+
+| Artifact | Location |
+| --- | --- |
+| Cloud bundle | `deploy/cloud/` — `release.json`, `compose.yml`, `validate.py` |
+| Edge bundle | `deploy/edge/` — `release.json`, `install.sh`, `verify.sh`, `upgrade.sh` |
+| Contract gate | `deploy/release-contract.json` |
+| Authorized publish | `.github/workflows/cloud-edge-release.yml` (`workflow_dispatch`, `publish_release=true`) |
+
+Replace placeholder digests in `release.json` with verified values before installation.
+See [`deploy/cloud/README.md`](../../deploy/cloud/README.md) and provider runbooks above.

@@ -71,6 +71,37 @@ Phase 1 pipeline qualification is documented in
 
 ---
 
+## Cloud and DMZ edge deployment
+
+Production uses separate installable bundles under [`deploy/cloud/`](./deploy/cloud/) and
+[`deploy/edge/`](./deploy/edge/). All plant traffic follows **source → edge → cloud**;
+the local [`docker-compose.yml`](./docker-compose.yml) stack is development-only.
+
+| Bundle | Entrypoint | Operator runbook |
+| --- | --- | --- |
+| Cloud platform | [`deploy/cloud/README.md`](./deploy/cloud/README.md) | [`docs/operations/cloud-platform.md`](./docs/operations/cloud-platform.md) |
+| DMZ edge | [`deploy/edge/README.md`](./deploy/edge/README.md) | [`docs/operations/dmz-edge-installation.md`](./docs/operations/dmz-edge-installation.md) |
+| Hardware-free canary | `deploy/edge/compose.simulation.yml` (`edge-sim` profile) | [`docs/operations/edge-simulation-demo.md`](./docs/operations/edge-simulation-demo.md) |
+
+Quick start on a qualified Linux host:
+
+```bash
+# Cloud (after DNS, TLS, secrets, and validate.py)
+cd /opt/uns-cloud && python3 validate.py
+docker compose --env-file secrets/runtime.env -f compose.yml up -d
+
+# DMZ edge (after verified archive extract)
+sudo ./install.sh --destination /opt/uns-edge
+sudo docker compose --project-directory /opt/uns-edge -f compose.yml up -d
+sudo docker compose --project-directory /opt/uns-edge -f compose.yml exec uns-edge-agent uns_edge_enroll
+```
+
+Qualification status and design acceptance mapping:
+[`docs/benchmarks/cloud-edge-qualification.md`](./docs/benchmarks/cloud-edge-qualification.md).
+Release contract gate: [`deploy/release-contract.json`](./deploy/release-contract.json).
+
+---
+
 ## **Local Docker Compose stack**
 
 [`docker-compose.yml`](./docker-compose.yml) starts a **local, non-production** UNS: MQTT, databases, mappers, GraphQL, and the console UI. Do not use this compose file for production.

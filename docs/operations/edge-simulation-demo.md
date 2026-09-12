@@ -1,7 +1,9 @@
 # Edge simulation demonstration
 
 Hardware-free commissioning walkthrough for the `edge-sim` overlay on an enrolled DMZ
-edge VM. CI simulation validates contracts; record VM-to-cloud evidence separately.
+edge VM. **Start the initial canary here** when physical PLCs are unavailable (design
+§4.2). CI simulation validates contracts; record VM-to-cloud evidence separately from
+Linux fixture results.
 
 ## Prerequisites
 
@@ -82,3 +84,17 @@ is required.
 Host/provider, run ID, configuration revisions, source values, local/cloud timestamps,
 Kafka coordinates, lake paths, byte comparisons between Edge MQTT and `original_payload`,
 firewall counters, and screenshots of live values plus applied status.
+
+## Transition to real sources (post-canary)
+
+After the canary walkthrough is approved:
+
+1. Stop only the four simulator services (preserve Edge, agent, and volumes).
+2. Remove simulation adapters and disable simulation routes through normal cloud
+   configuration.
+3. Approve real OT firewall destinations; create real OPC UA/Modbus connections in the
+   console with distinct connection IDs from simulation fixtures.
+4. Observe applied status and upstream data without reinstalling, re-enrolling, or
+   changing the edge release.
+
+Record physical PLC/vendor qualification separately from this hardware-free milestone.
