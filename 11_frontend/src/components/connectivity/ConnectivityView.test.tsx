@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getConnectivityServers = vi.hoisted(() => vi.fn());
+const getEdgeDevices = vi.hoisted(() => vi.fn());
 const saveConnectivityServer = vi.hoisted(() => vi.fn());
 const deleteConnectivityServer = vi.hoisted(() => vi.fn());
 const testOpcUaConnection = vi.hoisted(() => vi.fn());
@@ -25,6 +26,7 @@ const saveUnitOfMeasure = vi.hoisted(() => vi.fn());
 
 vi.mock('../../services/graphql/client', () => ({
   unsGraphQLClient: {
+    getEdgeDevices,
     getConnectivityServers,
     saveConnectivityServer,
     deleteConnectivityServer,
@@ -97,6 +99,7 @@ beforeEach(() => {
   auth.hasPermission = (feature: string): boolean => feature === 'connectivity';
   auth.isAdmin = true;
   auth.roles = ['admin'];
+  getEdgeDevices.mockResolvedValue([]);
   getConnectivityServers.mockResolvedValue([SERVER]);
   saveConnectivityServer.mockImplementation(async (input) => ({
     ...SERVER,
@@ -435,7 +438,7 @@ describe('the OPC UA server table', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /delete/i }));
     fireEvent.click(screen.getByRole('button', { name: /confirm/i }));
-    await waitFor(() => expect(deleteConnectivityServer).toHaveBeenCalledWith('s1'));
+    await waitFor(() => expect(deleteConnectivityServer).toHaveBeenCalledWith('s1', undefined));
   });
 
   it('keeps later protocols on the Add dropdown, not as empty page tabs', async () => {
@@ -584,7 +587,12 @@ describe('the Browse data drawer', () => {
     fireEvent.change(topicInput, { target: { value: 'Plant/T101/Level' } });
     fireEvent.blur(topicInput);
     await waitFor(() =>
-      expect(updateConnectivityTagTopic).toHaveBeenCalledWith('s1', 'ns=3;s=WTP_T101_Level', 'Plant/T101/Level'),
+      expect(updateConnectivityTagTopic).toHaveBeenCalledWith(
+        's1',
+        'ns=3;s=WTP_T101_Level',
+        'Plant/T101/Level',
+        undefined,
+      ),
     );
   });
 
@@ -633,6 +641,7 @@ describe('the Browse data drawer', () => {
         's1',
         'ns=3;s=WTP_T101_Level',
         'Plant/T101/Level',
+        undefined,
       ),
     );
   });
@@ -643,7 +652,9 @@ describe('the Browse data drawer', () => {
     await waitFor(() => expect(subscribeOpcUaVariables).toHaveBeenCalled());
 
     fireEvent.click(screen.getByRole('button', { name: /unsubscribe/i }));
-    await waitFor(() => expect(unsubscribeConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=WTP_T101_Level'));
+    await waitFor(() =>
+      expect(unsubscribeConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=WTP_T101_Level', undefined),
+    );
   });
 
   it('opens the signal terminal when the server name is clicked', async () => {

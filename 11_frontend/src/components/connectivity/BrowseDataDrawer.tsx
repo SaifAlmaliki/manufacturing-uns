@@ -7,7 +7,9 @@ import type {
   GraphqlOpcUaDataValue,
 } from '../../services/graphql/types';
 import { unsGraphQLClient } from '../../services/graphql/client';
+import { parseBrowseJobResult, pollConnectivityJob } from '../../lib/connectivity/edge-jobs';
 import { formatBrowseClock } from '../../lib/connectivity/map-servers';
+import type { MqttMessage } from '../../types/uns';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ConsoleDialog, QualityLamp } from '../ui/console-ui';
@@ -16,6 +18,8 @@ interface BrowseDataDrawerProps {
   server: GraphqlConnectivityServer;
   onClose: () => void;
   onSubscribed: (server: GraphqlConnectivityServer) => void;
+  cloudEdgeMode?: boolean;
+  expectedRevision?: number | null;
 }
 
 interface RowState {
@@ -82,8 +86,30 @@ function mergeRows(
   });
 }
 
+async function browseNodes(
+  serverId: string,
+  nodeId?: string | null,
+): Promise<GraphqlOpcUaBrowseNode[]> {
+  const started = await unsGraphQLClient.browseOpcUaTags(serverId, nodeId);
+  const job = await pollConnectivityJob(started.jobId, (id) => unsGraphQLClient.getConnectivityJob(id));
+  if (String(job.status).toLowerCase() === 'expired') {
+    throw new Error('Browse job expired before results arrived');
+  }
+  const parsed = parseBrowseJobResult(job.result);
+  return parsed.tags.map((tag) => ({
+    nodeId: tag.nodeId,
+    browseName: tag.browseName,
+    displayName: tag.displayName,
+    browsePath: tag.browsePath,
+    nodeClass: tag.nodeClass,
+    hasChildren: tag.hasChildren,
+  }));
+}
+
 interface AddressSpaceTreeProps {
   endpoint: string;
+  serverId: string;
+  cloudEdgeMode?: boolean;
   selectedId: string | null;
   onSelect: (node: GraphqlOpcUaBrowseNode) => void;
   onError: (message: string) => void;
@@ -91,6 +117,8 @@ interface AddressSpaceTreeProps {
 
 const AddressSpaceTree: React.FC<AddressSpaceTreeProps> = ({
   endpoint,
+  serverId,
+  cloudEdgeMode = false,
   selectedId,
   onSelect,
   onError,
@@ -106,7 +134,9 @@ const AddressSpaceTree: React.FC<AddressSpaceTreeProps> = ({
     setLoadingRoot(true);
     void (async () => {
       try {
-        const nodes = await unsGraphQLClient.browseOpcUa(endpoint);
+        const nodes = cloudEdgeMode
+          ? await browseNodes(serverId)
+          : await unsGraphQLClient.browseOpcUa(endpoint);
         if (!cancelled) setRoots(nodes);
       } catch (err) {
         if (!cancelled) onError(err instanceof Error ? err.message : 'Browse failed');
@@ -117,14 +147,16 @@ const AddressSpaceTree: React.FC<AddressSpaceTreeProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [endpoint, onError]);
+  }, [cloudEdgeMode, endpoint, onError, serverId]);
 
   const loadChildren = useCallback(
     async (nodeId: string) => {
       if (childrenById[nodeId] !== undefined) return;
       setLoadingIds((prev) => new Set(prev).add(nodeId));
       try {
-        const kids = await unsGraphQLClient.browseOpcUa(endpoint, nodeId);
+        const kids = cloudEdgeMode
+          ? await browseNodes(serverId, nodeId)
+          : await unsGraphQLClient.browseOpcUa(endpoint, nodeId);
         setChildrenById((prev) => ({ ...prev, [nodeId]: kids }));
       } catch (err) {
         onError(err instanceof Error ? err.message : 'Browse failed');
@@ -136,7 +168,7 @@ const AddressSpaceTree: React.FC<AddressSpaceTreeProps> = ({
         });
       }
     },
-    [childrenById, endpoint, onError],
+    [childrenById, cloudEdgeMode, endpoint, onError, serverId],
   );
 
   const toggle = (node: GraphqlOpcUaBrowseNode) => {
@@ -217,7 +249,13 @@ const AddressSpaceTree: React.FC<AddressSpaceTreeProps> = ({
   return <div className="p-1">{roots.map((node) => renderNode(node, 0))}</div>;
 };
 
-export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onClose, onSubscribed }) => {
+export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({
+  server,
+  onClose,
+  onSubscribed,
+  cloudEdgeMode = false,
+  expectedRevision = null,
+}) => {
   const [selected, setSelected] = useState<GraphqlOpcUaBrowseNode | null>(null);
   const [discovered, setDiscovered] = useState<GraphqlOpcUaBrowseNode[]>([]);
   const [rows, setRows] = useState<RowState[]>([]);
@@ -228,8 +266,13 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
   const [draftTopics, setDraftTopics] = useState<Record<string, string>>({});
   const [editingTopicId, setEditingTopicId] = useState<string | null>(null);
   const unsubRef = useRef<(() => void) | null>(null);
+  const browseGenerationRef = useRef(0);
   const tagsRef = useRef(server.tags);
   tagsRef.current = server.tags;
+  const cloudWrite =
+    cloudEdgeMode && expectedRevision != null
+      ? { expectedRevision }
+      : undefined;
 
   const catalogSubscribed = useMemo(() => subscribedTags(server.tags), [server.tags]);
 
@@ -248,10 +291,43 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
     (nodes: GraphqlOpcUaBrowseNode[], tags: GraphqlConnectivityTag[], cancelled: () => boolean) => {
       const initial = mergeRows(nodes, tags, []);
       setRows(initial);
-      const drafts: Record<string, string> = {};
-      for (const r of initial) drafts[r.nodeId] = r.mqttTopic;
-      setDraftTopics(drafts);
+      setDraftTopics((prev) => {
+        const drafts: Record<string, string> = {};
+        for (const row of initial) {
+          drafts[row.nodeId] = prev[row.nodeId] ?? row.mqttTopic;
+        }
+        return drafts;
+      });
       if (nodes.length === 0) return;
+      if (unsubRef.current) {
+        unsubRef.current();
+        unsubRef.current = null;
+      }
+      if (cloudEdgeMode) {
+        const topics = [...new Set(tags.filter((tag) => tag.subscribed).map((tag) => tag.mqttTopic))];
+        if (topics.length === 0) return;
+        const topicByNode = new Map(tags.map((tag) => [tag.mqttTopic, tag.nodeId]));
+        unsubRef.current = unsGraphQLClient.subscribeMqttMessages(topics, (message: MqttMessage) => {
+          const nodeId = topicByNode.get(message.topic);
+          if (!nodeId) return;
+          setRows((prev) =>
+            prev.map((row) =>
+              row.nodeId === nodeId
+                ? {
+                    ...row,
+                    value:
+                      typeof message.payload === 'object' && message.payload && 'data' in message.payload
+                        ? (message.payload as { data?: unknown }).data
+                        : message.payload,
+                    status: 'Good',
+                    serverTimestamp: message.timestamp,
+                  }
+                : row,
+            ),
+          );
+        });
+        return;
+      }
       const nodeIds = nodes.map((n) => n.nodeId);
       void unsGraphQLClient
         .readOpcUaNodes(server.endpoint, nodeIds)
@@ -262,10 +338,6 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
         .catch(() => {
           // Value reads can fail on demo nodes after the list is already on screen.
         });
-      if (unsubRef.current) {
-        unsubRef.current();
-        unsubRef.current = null;
-      }
       unsubRef.current = unsGraphQLClient.subscribeOpcUaDataChanges(
         server.endpoint,
         nodeIds,
@@ -287,7 +359,7 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
         },
       );
     },
-    [server.endpoint],
+    [cloudEdgeMode, server.endpoint],
   );
 
   useEffect(() => {
@@ -311,14 +383,17 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
     let cancelled = false;
     setLoading(true);
     setError(null);
+    const generation = ++browseGenerationRef.current;
     void (async () => {
       try {
         const nodes = uniqueDiscovered(
-          await unsGraphQLClient.discoverOpcUaVariables(server.endpoint, selected.nodeId),
+          cloudEdgeMode
+            ? await browseNodes(server.id, selected.nodeId)
+            : await unsGraphQLClient.discoverOpcUaVariables(server.endpoint, selected.nodeId),
         );
-        if (cancelled) return;
+        if (cancelled || generation !== browseGenerationRef.current) return;
         setDiscovered(nodes);
-        applyLiveValues(nodes, tagsRef.current, () => cancelled);
+        applyLiveValues(nodes, tagsRef.current, () => cancelled || generation !== browseGenerationRef.current);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Browse failed');
       } finally {
@@ -332,7 +407,7 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
         unsubRef.current = null;
       }
     };
-  }, [applyLiveValues, selected, server.endpoint]);
+  }, [applyLiveValues, cloudEdgeMode, selected, server.endpoint, server.id]);
 
   const nodeIds = useMemo(() => discovered.map((n) => n.nodeId), [discovered]);
 
@@ -351,7 +426,12 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
     if (drafts.length === 0) return tagMap;
     const persisted = await Promise.all(
       drafts.map((draft) =>
-        unsGraphQLClient.updateConnectivityTagTopic(server.id, draft.nodeId, draft.mqttTopic),
+        unsGraphQLClient.updateConnectivityTagTopic(
+          server.id,
+          draft.nodeId,
+          draft.mqttTopic,
+          cloudWrite,
+        ),
       ),
     );
     for (const updated of persisted) {
@@ -361,13 +441,51 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
     return tagMap;
   };
 
+  const importCloudTags = async (nodes: GraphqlOpcUaBrowseNode[]) => {
+    const variables = nodes.filter(
+      (node) => node.nodeClass === 'Variable' || (!node.hasChildren && node.nodeClass !== 'Object'),
+    );
+    const saved: Array<{
+      nodeId: string;
+      browsePath: string;
+      displayName: string;
+      mqttTopic: string;
+      subscribed: boolean;
+    }> = [];
+    for (const node of variables) {
+      const existing = server.tags.find((tag) => tag.nodeId === node.nodeId);
+      const mqttTopic = draftTopics[node.nodeId]?.trim() || existing?.mqttTopic || node.browsePath;
+      const row = await unsGraphQLClient.saveConnectivityTag(
+        server.id,
+        {
+          nodeId: node.nodeId,
+          browsePath: node.browsePath,
+          displayName: node.displayName,
+          mqttTopic,
+          subscribed: true,
+        },
+        cloudWrite,
+      );
+      saved.push({
+        nodeId: row.nodeId,
+        browsePath: node.browsePath,
+        displayName: node.displayName,
+        mqttTopic: row.mqttTopic,
+        subscribed: row.subscribed,
+      });
+    }
+    return saved;
+  };
+
   const handleSubscribe = async () => {
     if (!selected) return;
     setSubscribing(true);
     setEditingTopicId(null);
     setError(null);
     try {
-      const tags = await unsGraphQLClient.subscribeOpcUaVariables(server.id, selected.nodeId);
+      const tags = cloudEdgeMode
+        ? await importCloudTags(discovered)
+        : await unsGraphQLClient.subscribeOpcUaVariables(server.id, selected.nodeId);
       const tagMap = await persistDraftTopics(tags);
       setRows((prev) =>
         prev.map((r) => {
@@ -378,29 +496,17 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
         }),
       );
       if (nodeIds.length > 0) {
-        if (unsubRef.current) {
-          unsubRef.current();
-          unsubRef.current = null;
-        }
-        unsubRef.current = unsGraphQLClient.subscribeOpcUaDataChanges(
-          server.endpoint,
-          nodeIds,
-          (value: GraphqlOpcUaDataValue) => {
-            setRows((prev) =>
-              prev.map((r) =>
-                r.nodeId === value.nodeId
-                  ? {
-                      ...r,
-                      value: value.value,
-                      dataType: value.dataType,
-                      sourceTimestamp: value.sourceTimestamp,
-                      serverTimestamp: value.serverTimestamp,
-                      status: value.status,
-                    }
-                  : r,
-              ),
-            );
-          },
+        applyLiveValues(
+          discovered,
+          tags.map((tag) => ({
+            serverId: server.id,
+            nodeId: tag.nodeId,
+            browsePath: tag.browsePath,
+            displayName: tag.displayName,
+            mqttTopic: tagMap.get(tag.nodeId)?.mqttTopic ?? tag.mqttTopic,
+            subscribed: true,
+          })),
+          () => false,
         );
       }
       emitServerTags(
@@ -436,6 +542,7 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
         server.id,
         nodeId,
         next.trim(),
+        cloudWrite,
       );
       setRows((prev) =>
         prev.map((r) =>
@@ -470,7 +577,10 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
     setBusyNodeId(nodeId);
     setError(null);
     try {
-      const tags = await unsGraphQLClient.subscribeOpcUaVariables(server.id, nodeId);
+      const node = discovered.find((item) => item.nodeId === nodeId);
+      const tags = cloudEdgeMode && node
+        ? await importCloudTags([node])
+        : await unsGraphQLClient.subscribeOpcUaVariables(server.id, nodeId);
       const tag = tags.find((t) => t.nodeId === nodeId);
       setRows((prev) =>
         prev.map((r) =>
@@ -503,7 +613,7 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
   const handleUnsubscribe = async (nodeId: string) => {
     setBusyNodeId(nodeId);
     try {
-      await unsGraphQLClient.unsubscribeConnectivityTag(server.id, nodeId);
+      await unsGraphQLClient.unsubscribeConnectivityTag(server.id, nodeId, cloudWrite);
       emitServerTags(
         server.tags.map((t) => (t.nodeId === nodeId ? { ...t, subscribed: false } : t)),
       );
@@ -591,6 +701,8 @@ export const BrowseDataDrawer: React.FC<BrowseDataDrawerProps> = ({ server, onCl
             </button>
             <AddressSpaceTree
               endpoint={server.endpoint}
+              serverId={server.id}
+              cloudEdgeMode={cloudEdgeMode}
               selectedId={selected?.nodeId ?? null}
               onSelect={setSelected}
               onError={handleTreeError}

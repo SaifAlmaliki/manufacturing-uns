@@ -9,6 +9,7 @@
  */
 
 import type { GraphqlConnectivityServer } from '../../services/graphql/types'
+import { edgeSupportsProtocol } from './edge-status'
 
 export type ConnectivityTabId =
   | 'opc_ua'
@@ -52,6 +53,7 @@ export const PROTOCOLS_IN_SLICE: ConnectivityTabId[] = ['opc_ua', 's7', 'etherne
 /** GraphQL `ConnectivityProtocol` enum name for each tab in this slice. */
 export const PROTOCOL_TO_GQL = {
   opc_ua: 'OPC_UA',
+  modbus_tcp: 'MODBUS',
   s7: 'S7',
   ethernet_ip: 'ETHERNET_IP',
 } as const
@@ -59,8 +61,23 @@ export const PROTOCOL_TO_GQL = {
 /** `Siemens7ControllerType` enum on the server, for the S7 protocol config. */
 export const S7_CONTROLLER_TYPES = ['S7_1500', 'S7_1200', 'S7_300', 'S7_400'] as const
 
-export function isProtocolInSlice(tab: ConnectivityTabId): boolean {
-  return PROTOCOLS_IN_SLICE.includes(tab)
+export function protocolsInSlice(
+  capabilities?: Record<string, unknown> | null,
+): ConnectivityTabId[] {
+  if (!capabilities) return PROTOCOLS_IN_SLICE
+  const enabled: ConnectivityTabId[] = []
+  for (const tab of PROTOCOL_TABS.map((item) => item.id)) {
+    if (edgeSupportsProtocol(capabilities, tab)) enabled.push(tab)
+  }
+  return enabled.length > 0 ? enabled : PROTOCOLS_IN_SLICE
+}
+
+export function isProtocolInSlice(
+  tab: ConnectivityTabId,
+  capabilities?: Record<string, unknown> | null,
+): boolean {
+  if (!capabilities) return PROTOCOLS_IN_SLICE.includes(tab)
+  return protocolsInSlice(capabilities).includes(tab)
 }
 
 const STATUS_DOT: Record<string, string> = {

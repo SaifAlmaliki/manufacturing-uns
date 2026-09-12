@@ -53,9 +53,17 @@ import {
   SUBSCRIBE_OPCUA_DATA_CHANGES,
   SUBSCRIBE_OPCUA_VARIABLES_MUTATION,
   BROWSE_OPCUA_QUERY,
+  BROWSE_OPCUA_TAGS_MUTATION,
+  CREATE_EDGE_ENROLLMENT_TOKEN_MUTATION,
   DELETE_ACCESS_GROUP_MUTATION,
   DELETE_CONNECTIVITY_SERVER_MUTATION,
   DISCOVER_OPCUA_VARIABLES_QUERY,
+  GET_CONNECTIVITY_JOB_QUERY,
+  GET_EDGE_DEVICES_QUERY,
+  GRANT_EDGE_ACCESS_MUTATION,
+  REGISTER_EDGE_DEVICE_MUTATION,
+  REVOKE_EDGE_ACCESS_MUTATION,
+  REVOKE_EDGE_DEVICE_MUTATION,
   GET_ACCESS_GROUPS_QUERY,
   GET_ASSETS_QUERY,
   SAVE_ACCESS_GROUP_MUTATION,
@@ -82,11 +90,14 @@ import type {
   AccessGroupDto,
   GraphqlAlertRule,
   GraphqlAssetNode,
+  CloudWriteOptions,
+  GraphqlConnectivityJob,
   GraphqlConnectivityProtocol,
   GraphqlConnectivityServer,
   GraphqlConnectivityServerInput,
   GraphqlConnectivityServerTestResult,
   GraphqlConnectivityTag,
+  GraphqlEdgeDevice,
   GraphqlConnectivityTagInput,
   GraphqlConnectivityTagPatch,
   GraphqlConnectivityTestResult,
@@ -753,6 +764,99 @@ export class UnsGraphQLClient {
     return res.data?.getConnectivityServers ?? []
   }
 
+  public async getEdgeDevices(): Promise<GraphqlEdgeDevice[]> {
+    const res = await this.executeQuery<{ getEdgeDevices: GraphqlEdgeDevice[] }>(GET_EDGE_DEVICES_QUERY)
+    if (res.error) {
+      throw new Error(res.error)
+    }
+    return res.data?.getEdgeDevices ?? []
+  }
+
+  public async registerEdgeDevice(
+    edgeId: string,
+    displayName: string,
+    siteId?: string | null,
+  ): Promise<GraphqlEdgeDevice> {
+    const res = await this.executeQuery<{ registerEdgeDevice: GraphqlEdgeDevice }>(
+      REGISTER_EDGE_DEVICE_MUTATION,
+      { edgeId, displayName, siteId: siteId ?? null },
+    )
+    if (res.error || !res.data?.registerEdgeDevice) {
+      throw new Error(res.error || 'Edge device was not registered')
+    }
+    return res.data.registerEdgeDevice
+  }
+
+  public async createEdgeEnrollmentToken(edgeId: string): Promise<string> {
+    const res = await this.executeQuery<{ createEdgeEnrollmentToken: string }>(
+      CREATE_EDGE_ENROLLMENT_TOKEN_MUTATION,
+      { edgeId },
+    )
+    if (res.error || !res.data?.createEdgeEnrollmentToken) {
+      throw new Error(res.error || 'Enrollment token was not created')
+    }
+    return res.data.createEdgeEnrollmentToken
+  }
+
+  public async revokeEdgeDevice(edgeId: string): Promise<boolean> {
+    const res = await this.executeQuery<{ revokeEdgeDevice: boolean }>(
+      REVOKE_EDGE_DEVICE_MUTATION,
+      { edgeId },
+    )
+    if (res.error) {
+      throw new Error(res.error)
+    }
+    return res.data?.revokeEdgeDevice === true
+  }
+
+  public async grantEdgeAccess(edgeId: string, userId: string): Promise<boolean> {
+    const res = await this.executeQuery<{ grantEdgeAccess: boolean }>(
+      GRANT_EDGE_ACCESS_MUTATION,
+      { edgeId, userId },
+    )
+    if (res.error) {
+      throw new Error(res.error)
+    }
+    return res.data?.grantEdgeAccess === true
+  }
+
+  public async revokeEdgeAccess(edgeId: string, userId: string): Promise<boolean> {
+    const res = await this.executeQuery<{ revokeEdgeAccess: boolean }>(
+      REVOKE_EDGE_ACCESS_MUTATION,
+      { edgeId, userId },
+    )
+    if (res.error) {
+      throw new Error(res.error)
+    }
+    return res.data?.revokeEdgeAccess === true
+  }
+
+  public async browseOpcUaTags(
+    serverId: string,
+    nodeId?: string | null,
+    cursor?: string | null,
+  ): Promise<GraphqlConnectivityJob> {
+    const res = await this.executeQuery<{ browseOpcUaTags: GraphqlConnectivityJob }>(
+      BROWSE_OPCUA_TAGS_MUTATION,
+      { serverId, nodeId: nodeId ?? null, cursor: cursor ?? null },
+    )
+    if (res.error || !res.data?.browseOpcUaTags) {
+      throw new Error(res.error || 'Browse job was not started')
+    }
+    return res.data.browseOpcUaTags
+  }
+
+  public async getConnectivityJob(jobId: string): Promise<GraphqlConnectivityJob> {
+    const res = await this.executeQuery<{ getConnectivityJob: GraphqlConnectivityJob }>(
+      GET_CONNECTIVITY_JOB_QUERY,
+      { jobId },
+    )
+    if (res.error || !res.data?.getConnectivityJob) {
+      throw new Error(res.error || 'Connectivity job was not found')
+    }
+    return res.data.getConnectivityJob
+  }
+
   public async saveConnectivityServer(
     server: GraphqlConnectivityServerInput,
   ): Promise<GraphqlConnectivityServer> {
@@ -766,10 +870,17 @@ export class UnsGraphQLClient {
     return res.data.saveConnectivityServer
   }
 
-  public async deleteConnectivityServer(id: string): Promise<boolean> {
+  public async deleteConnectivityServer(
+    id: string,
+    cloud?: CloudWriteOptions,
+  ): Promise<boolean> {
     const res = await this.executeQuery<{ deleteConnectivityServer: boolean }>(
       DELETE_CONNECTIVITY_SERVER_MUTATION,
-      { id },
+      {
+        id,
+        edgeId: cloud?.edgeId ?? null,
+        expectedRevision: cloud?.expectedRevision ?? null,
+      },
     )
     if (res.error) {
       throw new Error(res.error)
@@ -781,10 +892,15 @@ export class UnsGraphQLClient {
   public async saveConnectivityTag(
     serverId: string,
     tag: GraphqlConnectivityTagInput,
+    cloud?: CloudWriteOptions,
   ): Promise<GraphqlSavedConnectivityTag> {
     const res = await this.executeQuery<{ saveConnectivityTag: GraphqlSavedConnectivityTag }>(
       SAVE_CONNECTIVITY_TAG_MUTATION,
-      { serverId, tag },
+      {
+        serverId,
+        tag,
+        expectedRevision: cloud?.expectedRevision ?? null,
+      },
     )
     if (res.error || !res.data?.saveConnectivityTag) {
       throw new Error(res.error || 'Signal was not saved')
@@ -861,10 +977,16 @@ export class UnsGraphQLClient {
     serverId: string,
     nodeId: string,
     mqttTopic: string,
+    cloud?: CloudWriteOptions,
   ): Promise<{ nodeId: string; mqttTopic: string; subscribed: boolean }> {
     const res = await this.executeQuery<{ updateConnectivityTagTopic: unknown }>(
       UPDATE_CONNECTIVITY_TAG_TOPIC_MUTATION,
-      { serverId, nodeId, mqttTopic },
+      {
+        serverId,
+        nodeId,
+        mqttTopic,
+        expectedRevision: cloud?.expectedRevision ?? null,
+      },
     )
     if (res.error || !res.data?.updateConnectivityTagTopic) {
       throw new Error(res.error || 'Topic was not updated')
@@ -872,10 +994,18 @@ export class UnsGraphQLClient {
     return res.data.updateConnectivityTagTopic as never
   }
 
-  public async unsubscribeConnectivityTag(serverId: string, nodeId: string): Promise<boolean> {
+  public async unsubscribeConnectivityTag(
+    serverId: string,
+    nodeId: string,
+    cloud?: CloudWriteOptions,
+  ): Promise<boolean> {
     const res = await this.executeQuery<{ unsubscribeConnectivityTag: boolean }>(
       UNSUBSCRIBE_CONNECTIVITY_TAG_MUTATION,
-      { serverId, nodeId },
+      {
+        serverId,
+        nodeId,
+        expectedRevision: cloud?.expectedRevision ?? null,
+      },
     )
     if (res.error) {
       throw new Error(res.error)
@@ -950,10 +1080,16 @@ export class UnsGraphQLClient {
     serverId: string,
     nodeId: string,
     patch: GraphqlConnectivityTagPatch,
+    cloud?: CloudWriteOptions,
   ): Promise<GraphqlConnectivityTag> {
     const res = await this.executeQuery<{ updateConnectivityTag: GraphqlConnectivityTag }>(
       UPDATE_CONNECTIVITY_TAG_MUTATION,
-      { serverId, nodeId, patch },
+      {
+        serverId,
+        nodeId,
+        patch,
+        expectedRevision: cloud?.expectedRevision ?? null,
+      },
     )
     if (res.error || !res.data?.updateConnectivityTag) {
       throw new Error(res.error || 'Connectivity tag was not updated')

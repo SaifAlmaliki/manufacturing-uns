@@ -7,7 +7,16 @@ import type {
   GraphqlConnectivityProtocol,
   GraphqlConnectivityServer,
   GraphqlConnectivityServerInput,
+  GraphqlEdgeDevice,
 } from '../../services/graphql/types';
+import { parseTestJobResult, pollConnectivityJob } from '../../lib/connectivity/edge-jobs';
+import {
+  connectionHealthDotClass,
+  connectionHealthLabel,
+  isCloudEdgeMode,
+  saveDoesNotImplyConnected,
+  serverConnectionHealth,
+} from '../../lib/connectivity/edge-status';
 import { AccessRestricted } from '../common/AccessRestricted';
 import { Button } from '@/components/ui/button';
 import {
@@ -40,9 +49,8 @@ import {
   filterServers,
   formatLastTestedAt,
   isProtocolInSlice,
-  statusDotClass,
-  statusLabel,
 } from '../../lib/connectivity/map-servers';
+import { EdgeDevicesPanel } from './EdgeDevicesPanel';
 import { defaultPortFor, joinHostPort, splitHostPort } from '../../lib/connectivity/host-port';
 import {
   AUTH_MODE_TO_GQL,
@@ -64,6 +72,7 @@ function newServerId(): string {
 
 const TAB_ID_BY_GQL: Record<GraphqlConnectivityProtocol, ConnectivityTabId> = {
   OPC_UA: 'opc_ua',
+  MODBUS: 'modbus_tcp',
   S7: 's7',
   ETHERNET_IP: 'ethernet_ip',
 };
@@ -97,7 +106,7 @@ function dialogCopyFor(protocol: ConnectivityTabId) {
 }
 
 export const ConnectivityView: React.FC = () => {
-  const { hasPermission } = useAuth();
+  const { hasPermission, isAdmin } = useAuth();
   const canMutate = hasPermission('connectivity');
   const location = useLocation();
   const pageTab = connectivityTabFromPath(location.pathname);
@@ -129,6 +138,10 @@ export const ConnectivityView: React.FC = () => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [browseServer, setBrowseServer] = useState<GraphqlConnectivityServer | null>(null);
+  const [edges, setEdges] = useState<GraphqlEdgeDevice[]>([]);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  const [draftUnitId, setDraftUnitId] = useState('1');
+  const [saveNotice, setSaveNotice] = useState<string | null>(null);
 
   const testServer = useCallback(async (server: GraphqlConnectivityServer) => {
     setTestingId(server.id);
@@ -153,13 +166,29 @@ export const ConnectivityView: React.FC = () => {
     }
   }, []);
 
+  const cloudEdgeMode = isCloudEdgeMode(edges);
+  const selectedEdge = edges.find((edge) => edge.edgeId === selectedEdgeId) ?? edges[0] ?? null;
+  const edgeCapabilities = selectedEdge?.capabilities ?? null;
+  const expectedRevision = selectedEdge?.desiredRevision ?? 0;
+
+  const loadEdges = useCallback(async () => {
+    try {
+      const fetched = await unsGraphQLClient.getEdgeDevices();
+      setEdges(fetched);
+      setSelectedEdgeId((prev) => prev ?? fetched[0]?.edgeId ?? null);
+    } catch {
+      setEdges([]);
+    }
+  }, []);
+
   const loadServers = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
     try {
-      const fetched = await unsGraphQLClient.getConnectivityServers('OPC_UA');
+      const fetched = await unsGraphQLClient.getConnectivityServers();
       setServers(fetched);
       setLoading(false);
+      if (isCloudEdgeMode(edges)) return;
       const needingTest = fetched.filter(
         (s) => s.lastStatus === 'pending' || s.lastStatus === 'untested',
       );
@@ -175,14 +204,22 @@ export const ConnectivityView: React.FC = () => {
       setServers([]);
       setLoading(false);
     }
-  }, [testServer]);
+  }, [edges, testServer]);
 
   useEffect(() => {
     if (!canMutate) return;
-    void loadServers();
-  }, [canMutate, loadServers]);
+    void (async () => {
+      await loadEdges();
+      await loadServers();
+    })();
+  }, [canMutate, loadEdges, loadServers]);
 
-  const filtered = useMemo(() => filterServers(servers, search), [servers, search]);
+  const scopedServers = useMemo(() => {
+    if (!cloudEdgeMode || !selectedEdgeId) return servers;
+    return servers.filter((server) => server.edgeId === selectedEdgeId);
+  }, [cloudEdgeMode, selectedEdgeId, servers]);
+
+  const filtered = useMemo(() => filterServers(scopedServers, search), [scopedServers, search]);
 
   const resetDraft = () => {
     setEditingId(null);
@@ -200,7 +237,9 @@ export const ConnectivityView: React.FC = () => {
     setDraftCertificate('');
     setDraftPrivateKey('');
     setDraftServerCertificate('');
+    setDraftUnitId('1');
     setSaveError(null);
+    setSaveNotice(null);
   };
 
   const openEdit = (server: GraphqlConnectivityServer) => {
@@ -218,12 +257,16 @@ export const ConnectivityView: React.FC = () => {
       if (tabId === 's7') {
         setDraftControllerType(server.protocolConfig?.controllerType ?? 'S7_1500');
       }
+      if (tabId === 'modbus_tcp') {
+        setDraftUnitId(String(server.protocolConfig?.unitId ?? 1));
+      }
     }
     setAddOpen(true);
   };
 
   const handleAdd = async () => {
-    const isPlc = draftProtocol === 's7' || draftProtocol === 'ethernet_ip';
+    const isPlc =
+      draftProtocol === 's7' || draftProtocol === 'ethernet_ip' || draftProtocol === 'modbus_tcp';
     const endpoint = isPlc ? joinHostPort(draftHost, draftPort) : draftEndpoint;
     const invalid = validateConnectivityServer({
       protocol: draftProtocol,
@@ -238,6 +281,7 @@ export const ConnectivityView: React.FC = () => {
       privateKey: draftPrivateKey,
       serverCertificate: draftServerCertificate,
       controllerType: draftControllerType,
+      unitId: draftUnitId,
     });
     if (invalid) {
       setSaveError(invalid);
@@ -249,7 +293,9 @@ export const ConnectivityView: React.FC = () => {
       const input: GraphqlConnectivityServerInput = {
         id: editingId ?? newServerId(),
         name: draftName.trim(),
-        protocol: PROTOCOL_TO_GQL[draftProtocol as 'opc_ua' | 's7' | 'ethernet_ip'] as GraphqlConnectivityProtocol,
+        protocol: PROTOCOL_TO_GQL[
+          draftProtocol as 'opc_ua' | 'modbus_tcp' | 's7' | 'ethernet_ip'
+        ] as GraphqlConnectivityProtocol,
         endpoint: endpoint.trim(),
         authMode: AUTH_MODE_TO_GQL[draftAuthMode],
         securityPolicy: SECURITY_POLICY_TO_GQL[draftSecurityPolicy],
@@ -259,7 +305,14 @@ export const ConnectivityView: React.FC = () => {
         certificate: draftCertificate.trim(),
         privateKey: draftPrivateKey.trim(),
         serverCertificate: draftServerCertificate.trim(),
-        protocolConfig: draftProtocol === 's7' ? { controllerType: draftControllerType } : null,
+        protocolConfig:
+          draftProtocol === 's7'
+            ? { controllerType: draftControllerType }
+            : draftProtocol === 'modbus_tcp'
+              ? { unitId: Number(draftUnitId) }
+              : null,
+        edgeId: cloudEdgeMode ? selectedEdgeId : null,
+        expectedRevision: cloudEdgeMode ? expectedRevision : null,
       };
       const saved = await unsGraphQLClient.saveConnectivityServer(input);
       setServers((prev) => {
@@ -268,13 +321,17 @@ export const ConnectivityView: React.FC = () => {
           ? prev.map((s) => (s.id === saved.id ? { ...s, ...saved } : s))
           : [...prev, saved];
       });
+      setDraftPassword('');
+      setDraftPrivateKey('');
       const wasEdit = Boolean(editingId);
       setAddOpen(false);
       resetDraft();
-      // S7/EtherNet-IP need uns_mqtt_broker recreated before their Edge adapter is live —
-      // testing right after Add would just report EDGE_APPLY_ERROR back at the engineer.
-      // They stay `pending` until an explicit Test after the broker picks up config.xml.
-      if (!wasEdit && saved.protocol === 'OPC_UA') await testServer(saved);
+      setSaveNotice(saveDoesNotImplyConnected(cloudEdgeMode));
+      if (cloudEdgeMode) {
+        void loadEdges();
+      } else if (!wasEdit && saved.protocol === 'OPC_UA') {
+        await testServer(saved);
+      }
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Server was not added');
     } finally {
@@ -283,6 +340,40 @@ export const ConnectivityView: React.FC = () => {
   };
 
   const handleTest = async (server: GraphqlConnectivityServer) => {
+    if (cloudEdgeMode) {
+      setTestingId(server.id);
+      try {
+        const started = await unsGraphQLClient.testConnectivityServer(server.id);
+        if (!started.activeJobId) {
+          setServers((prev) => prev.map((s) => (s.id === started.id ? { ...s, ...started } : s)));
+          return;
+        }
+        const job = await pollConnectivityJob(started.activeJobId, (jobId) =>
+          unsGraphQLClient.getConnectivityJob(jobId),
+        );
+        const outcome = parseTestJobResult(job.result);
+        setServers((prev) =>
+          prev.map((s) =>
+            s.id === server.id
+              ? {
+                  ...s,
+                  lastStatus: outcome.ok ? 'connected' : 'failed',
+                  lastError: outcome.error ?? '',
+                  lastTestedAt: new Date().toISOString(),
+                  connectionHealth: outcome.ok ? 'connected' : 'failed',
+                  activeJobId: job.jobId,
+                  activeJobStatus: job.status,
+                }
+              : s,
+          ),
+        );
+      } catch (err) {
+        setLoadError(err instanceof Error ? err.message : 'Test failed');
+      } finally {
+        setTestingId(null);
+      }
+      return;
+    }
     await testServer(server);
   };
 
@@ -290,7 +381,12 @@ export const ConnectivityView: React.FC = () => {
     setDeletingId(server.id);
     setConfirmDeleteId(null);
     try {
-      await unsGraphQLClient.deleteConnectivityServer(server.id);
+      await unsGraphQLClient.deleteConnectivityServer(
+        server.id,
+        cloudEdgeMode && selectedEdgeId
+          ? { edgeId: selectedEdgeId, expectedRevision }
+          : undefined,
+      );
       setServers((prev) => prev.filter((s) => s.id !== server.id));
       setBrowseServer((prev) => (prev?.id === server.id ? null : prev));
     } catch (err) {
@@ -332,8 +428,28 @@ export const ConnectivityView: React.FC = () => {
     <PageShell id="connectivity-view" scroll={false} className="flex flex-col font-mono">
       <div className="min-h-0 flex-1 overflow-y-auto">
         <PageContent fullWidth className="flex min-h-full flex-col gap-3 pb-4">
+          <EdgeDevicesPanel
+            edges={edges}
+            selectedEdgeId={selectedEdgeId}
+            onSelectEdge={setSelectedEdgeId}
+            onEdgesChange={setEdges}
+            isAdmin={isAdmin}
+            simulationHint={
+              selectedEdge?.displayName?.toLowerCase().includes('sim')
+                ? `${selectedEdge.displayName} — simulation fixtures, not a live PLC or vendor connection.`
+                : null
+            }
+          />
+          {saveNotice ? (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+              {saveNotice}
+            </div>
+          ) : null}
           {pageTab === 'signals' ? (
             <SignalsTab
+              cloudEdgeMode={cloudEdgeMode}
+              expectedRevision={expectedRevision}
+              selectedEdgeId={selectedEdgeId}
               renderToolbar={({ search: signalSearch, selects, trailing }) => (
                 <FilterToolbar
                   tabs={pageTabs}
@@ -432,12 +548,17 @@ export const ConnectivityView: React.FC = () => {
                             <td className="overflow-hidden px-4 py-3">
                               <div className="flex w-full min-w-0 items-start gap-2">
                                 <span
-                                  className={`mt-1 size-2 shrink-0 rounded-full ${statusDotClass(server.lastStatus)}`}
+                                  className={`mt-1 size-2 shrink-0 rounded-full ${connectionHealthDotClass(serverConnectionHealth(server))}`}
                                 />
                                 <div className="min-w-0 flex-1 overflow-hidden">
                                   <div className="truncate text-foreground">
-                                    {statusLabel(server.lastStatus)}
+                                    {connectionHealthLabel(serverConnectionHealth(server))}
                                   </div>
+                                  {server.activeJobStatus ? (
+                                    <p className="truncate text-[10px] text-muted-foreground">
+                                      Job {server.activeJobStatus}
+                                    </p>
+                                  ) : null}
                                   {server.lastError ? (
                                     <p
                                       className="truncate text-[10px] leading-snug text-rose-400"
@@ -543,15 +664,19 @@ export const ConnectivityView: React.FC = () => {
                   const next = e.target.value as ConnectivityTabId;
                   const changingProtocol = next !== draftProtocol;
                   setDraftProtocol(next);
-                  if ((next === 's7' || next === 'ethernet_ip') && changingProtocol) {
+                  if ((next === 's7' || next === 'ethernet_ip' || next === 'modbus_tcp') && changingProtocol) {
                     setDraftPort(defaultPortFor(next));
                   }
                 }}
               >
                 {PROTOCOL_TABS.map((tab) => (
-                  <option key={tab.id} value={tab.id} disabled={!isProtocolInSlice(tab.id)}>
+                  <option
+                    key={tab.id}
+                    value={tab.id}
+                    disabled={!isProtocolInSlice(tab.id, edgeCapabilities)}
+                  >
                     {tab.label}
-                    {isProtocolInSlice(tab.id) ? '' : ' — later'}
+                    {isProtocolInSlice(tab.id, edgeCapabilities) ? '' : ' — later'}
                   </option>
                 ))}
               </ConsoleSelect>
@@ -618,6 +743,18 @@ export const ConnectivityView: React.FC = () => {
                         </option>
                       ))}
                     </ConsoleSelect>
+                  </div>
+                )}
+                {draftProtocol === 'modbus_tcp' && (
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="conn-unit-id">Unit ID</Label>
+                    <Input
+                      id="conn-unit-id"
+                      aria-label="Unit ID"
+                      value={draftUnitId}
+                      onChange={(e) => setDraftUnitId(e.target.value)}
+                      className="font-mono text-xs"
+                    />
                   </div>
                 )}
               </>
@@ -821,6 +958,8 @@ export const ConnectivityView: React.FC = () => {
           server={browseServer}
           onClose={() => setBrowseServer(null)}
           onSubscribed={applyServerUpdate}
+          cloudEdgeMode={cloudEdgeMode}
+          expectedRevision={expectedRevision}
         />
       )}
     </PageShell>

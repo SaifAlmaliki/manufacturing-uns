@@ -25,6 +25,7 @@ export function isHostPort(endpoint: string): boolean {
 }
 
 const DEFAULT_PORT: Partial<Record<ConnectivityTabId, string>> = {
+  modbus_tcp: '502',
   s7: '102',
   ethernet_ip: '44818',
 }

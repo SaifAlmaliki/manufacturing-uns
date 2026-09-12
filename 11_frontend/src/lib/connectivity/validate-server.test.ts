@@ -29,7 +29,7 @@ describe('validateConnectivityServer', () => {
   })
 
   it('rejects a protocol that is not in this slice', () => {
-    expect(validateConnectivityServer(draft({ protocol: 'modbus_tcp' }))).toMatch(/later/i)
+    expect(validateConnectivityServer(draft({ protocol: 'mqtt' }))).toMatch(/not enabled/i)
   })
 
   it('rejects a missing name', () => {
@@ -130,6 +130,18 @@ describe('validateConnectivityServer — S7 and EtherNet/IP', () => {
   })
 
   it('still rejects protocols outside this slice', () => {
-    expect(validateConnectivityServer(draft({ protocol: 'modbus_tcp' }))).toMatch(/later/i)
+    expect(validateConnectivityServer(draft({ protocol: 'mqtt' }))).toMatch(/not enabled/i)
+  })
+
+  it('accepts Modbus TCP host:port with unit id', () => {
+    expect(
+      validateConnectivityServer(
+        draft({
+          protocol: 'modbus_tcp',
+          endpoint: '10.0.0.5:502',
+          unitId: '1',
+        }),
+      ),
+    ).toBeNull()
   })
 })

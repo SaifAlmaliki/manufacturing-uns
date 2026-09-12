@@ -222,7 +222,7 @@ export type GraphqlPrefixRenameInput = {
 }
 
 /** `ConnectivityProtocol` enum on the server. */
-export type GraphqlConnectivityProtocol = 'OPC_UA' | 'S7' | 'ETHERNET_IP'
+export type GraphqlConnectivityProtocol = 'OPC_UA' | 'S7' | 'ETHERNET_IP' | 'MODBUS'
 export type GraphqlConnectivityAuthMode = 'ANONYMOUS' | 'USERNAME' | 'X509'
 export type GraphqlConnectivitySecurityPolicy =
   | 'NONE'
@@ -296,7 +296,14 @@ export type GraphqlConnectivityServer = {
   certificate?: string
   hasPrivateKey?: boolean
   serverCertificate?: string
-  protocolConfig?: { controllerType?: string } | null
+  protocolConfig?: { controllerType?: string; unitId?: number } | null
+  edgeId?: string | null
+  desiredRevision?: number | null
+  appliedRevision?: number | null
+  connectionHealth?: string | null
+  lastSeen?: string | null
+  activeJobId?: string | null
+  activeJobStatus?: string | null
   lastStatus: string
   lastError: string
   lastTestedAt?: string | null
@@ -319,7 +326,52 @@ export type GraphqlConnectivityServerInput = {
   certificate?: string
   privateKey?: string
   serverCertificate?: string
-  protocolConfig?: { controllerType?: string } | null
+  protocolConfig?: { controllerType?: string; unitId?: number } | null
+  edgeId?: string | null
+  expectedRevision?: number | null
+}
+
+export type GraphqlEdgeDevice = {
+  edgeId: string
+  displayName: string
+  siteId?: string | null
+  status: string
+  desiredRevision: number
+  appliedRevision: number
+  appliedPhase: string
+  lastSeen?: string | null
+  capabilities?: Record<string, unknown> | null
+}
+
+export type GraphqlConnectivityJobKind = 'TEST_CONNECTION' | 'BROWSE_TAGS'
+export type GraphqlConnectivityJobStatus =
+  | 'QUEUED'
+  | 'RUNNING'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'EXPIRED'
+  | 'queued'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'expired'
+
+export type GraphqlConnectivityJob = {
+  jobId: string
+  edgeId: string
+  connectionId: string
+  kind: GraphqlConnectivityJobKind | string
+  status: GraphqlConnectivityJobStatus | string
+  cursor?: string | null
+  nodeId?: string | null
+  result?: unknown
+  errorCode?: string | null
+  errorDetail?: string | null
+}
+
+export type CloudWriteOptions = {
+  expectedRevision: number
+  edgeId?: string
 }
 
 /** `ConnectivityTagInput`: one PLC tag the console authors directly, no OPC UA discovery. */
@@ -347,6 +399,9 @@ export type GraphqlConnectivityServerTestResult = {
   lastStatus: string
   lastError: string
   lastTestedAt?: string | null
+  activeJobId?: string | null
+  activeJobStatus?: string | null
+  connectionHealth?: string | null
 }
 
 /** `ConnectivityTestResultType`: the outcome of a probe against one OPC UA endpoint. */

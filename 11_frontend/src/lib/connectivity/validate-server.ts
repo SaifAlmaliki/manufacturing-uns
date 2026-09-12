@@ -52,11 +52,24 @@ export type ConnectivityServerDraft = {
   privateKey: string
   serverCertificate?: string
   controllerType?: string
+  unitId?: string
 }
 
 const ENDPOINT = /^opc\.tcp:\/\/[^\s\/:]+:\d{1,5}(\/.*)?$/
 
 export function validateConnectivityServer(draft: ConnectivityServerDraft): string | null {
+  if (draft.protocol === 'modbus_tcp') {
+    if (!draft.name.trim()) return 'Name is required.'
+    if (!isHostPort(draft.endpoint)) {
+      return 'Endpoint must be host:port'
+    }
+    const unitId = draft.unitId?.trim() ?? '1'
+    const parsed = Number(unitId)
+    if (!Number.isInteger(parsed) || parsed < 0 || parsed > 255) {
+      return 'Unit ID must be an integer between 0 and 255.'
+    }
+    return null
+  }
   if (draft.protocol === 's7' || draft.protocol === 'ethernet_ip') {
     if (!draft.name.trim()) return 'Name is required.'
     if (!isHostPort(draft.endpoint)) {
@@ -71,7 +84,7 @@ export function validateConnectivityServer(draft: ConnectivityServerDraft): stri
     return null
   }
   if (draft.protocol !== 'opc_ua') {
-    return 'OPC UA is the only protocol this slice serves. The others land later.'
+    return 'This protocol is not enabled for the selected edge.'
   }
   if (!draft.name.trim()) return 'Name is required.'
   const endpoint = draft.endpoint.trim()

@@ -100,7 +100,7 @@ describe('SignalsTab', () => {
     await waitFor(() =>
       expect(updateConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101', {
         unitOfMeasure: '°C',
-      }),
+      }, undefined),
     );
   });
 
@@ -165,7 +165,7 @@ describe('SignalsTab', () => {
       expect(updateConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101', {
         displayName: 'Tank Level',
         mqttTopic: 'Plant/T101/TankLevel',
-      }),
+      }, undefined),
     );
   });
 
@@ -179,7 +179,7 @@ describe('SignalsTab', () => {
     fireEvent.click(screen.getByRole('button', { name: /^confirm$/i }));
 
     await waitFor(() =>
-      expect(unsubscribeConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101'),
+      expect(unsubscribeConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101', undefined),
     );
     await waitFor(() => expect(screen.queryByText('Level')).toBeNull());
   });
@@ -196,7 +196,7 @@ describe('SignalsTab', () => {
     await waitFor(() =>
       expect(updateConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101', {
         unitOfMeasure: '°C',
-      }),
+      }, undefined),
     );
     expect(updateConnectivityTag.mock.calls[0][2]).not.toHaveProperty('mqttTopic');
   });
@@ -210,7 +210,7 @@ describe('SignalsTab', () => {
 
     await saveSignalChanges();
     await waitFor(() =>
-      expect(updateConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101', { assetId: 9 }),
+      expect(updateConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101', { assetId: 9 }, undefined),
     );
     expect(updateConnectivityTag.mock.calls[0][2]).not.toHaveProperty('mqttTopic');
   });
@@ -270,7 +270,7 @@ describe('SignalsTab', () => {
     await waitFor(() =>
       expect(updateConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101', {
         labels: ['Custom'],
-      }),
+      }, undefined),
     );
   });
 
@@ -290,7 +290,7 @@ describe('SignalsTab', () => {
     await waitFor(() =>
       expect(updateConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101', {
         labels: ['Custom'],
-      }),
+      }, undefined),
     );
   });
 
@@ -424,7 +424,7 @@ describe('SignalsTab', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: /^confirm$/i }));
 
     await waitFor(() =>
-      expect(unsubscribeConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101'),
+      expect(unsubscribeConnectivityTag).toHaveBeenCalledWith('s1', 'ns=3;s=T101', undefined),
     );
     await waitFor(() => expect(screen.queryByText('Level')).toBeNull());
   });
@@ -485,6 +485,7 @@ describe('SignalsTab', () => {
           mqttTopic: 'Acme/Line/Speed',
           dataType: 'Integer',
         }),
+        undefined,
       ),
     );
     expect(updateConnectivityTag).not.toHaveBeenCalled();

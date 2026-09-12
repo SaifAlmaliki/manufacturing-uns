@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { unsGraphQLClient } from '../../services/graphql/client';
-import type { GraphqlSubscribedSignal } from '../../services/graphql/types';
+import type { CloudWriteOptions, GraphqlSubscribedSignal } from '../../services/graphql/types';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -18,6 +18,7 @@ type SignalContextPanelProps = {
   onClose: () => void;
   onUpdated: (next: GraphqlSubscribedSignal) => void;
   onUnsubscribed: (serverId: string, nodeId: string) => void;
+  cloudWrite?: CloudWriteOptions;
 };
 
 export const SignalContextPanel: React.FC<SignalContextPanelProps> = ({
@@ -25,6 +26,7 @@ export const SignalContextPanel: React.FC<SignalContextPanelProps> = ({
   onClose,
   onUpdated,
   onUnsubscribed,
+  cloudWrite,
 }) => {
   const [name, setName] = useState(signal.displayName);
   const [topic, setTopic] = useState(signal.mqttTopic);
@@ -54,10 +56,15 @@ export const SignalContextPanel: React.FC<SignalContextPanelProps> = ({
     setSaving(true);
     setSaveError(null);
     try {
-      const updated = await unsGraphQLClient.updateConnectivityTag(signal.serverId, signal.nodeId, {
-        displayName,
-        mqttTopic,
-      });
+      const updated = await unsGraphQLClient.updateConnectivityTag(
+        signal.serverId,
+        signal.nodeId,
+        {
+          displayName,
+          mqttTopic,
+        },
+        cloudWrite,
+      );
       onUpdated({ ...signal, ...updated, serverName: signal.serverName });
       onClose();
     } catch (err) {
@@ -71,7 +78,7 @@ export const SignalContextPanel: React.FC<SignalContextPanelProps> = ({
     setUnsubscribing(true);
     setSaveError(null);
     try {
-      await unsGraphQLClient.unsubscribeConnectivityTag(signal.serverId, signal.nodeId);
+      await unsGraphQLClient.unsubscribeConnectivityTag(signal.serverId, signal.nodeId, cloudWrite);
       onUnsubscribed(signal.serverId, signal.nodeId);
       onClose();
     } catch (err) {

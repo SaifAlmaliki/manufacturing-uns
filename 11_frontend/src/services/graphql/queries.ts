@@ -491,6 +491,13 @@ const CONNECTIVITY_SERVER_FIELDS = `
   hasPrivateKey
   serverCertificate
   protocolConfig
+  edgeId
+  desiredRevision
+  appliedRevision
+  connectionHealth
+  lastSeen
+  activeJobId
+  activeJobStatus
   lastStatus
   lastError
   lastTestedAt
@@ -498,6 +505,87 @@ const CONNECTIVITY_SERVER_FIELDS = `
   updatedAt
   tags {
     ${CONNECTIVITY_TAG_FIELDS}
+  }
+`
+
+const EDGE_DEVICE_FIELDS = `
+  edgeId
+  displayName
+  siteId
+  status
+  desiredRevision
+  appliedRevision
+  appliedPhase
+  lastSeen
+  capabilities
+`
+
+const CONNECTIVITY_JOB_FIELDS = `
+  jobId
+  edgeId
+  connectionId
+  kind
+  status
+  cursor
+  nodeId
+  result
+  errorCode
+  errorDetail
+`
+
+export const GET_EDGE_DEVICES_QUERY = `
+  query GetEdgeDevices {
+    getEdgeDevices {
+      ${EDGE_DEVICE_FIELDS}
+    }
+  }
+`
+
+export const REGISTER_EDGE_DEVICE_MUTATION = `
+  mutation RegisterEdgeDevice($edgeId: String!, $displayName: String!, $siteId: String) {
+    registerEdgeDevice(edgeId: $edgeId, displayName: $displayName, siteId: $siteId) {
+      ${EDGE_DEVICE_FIELDS}
+    }
+  }
+`
+
+export const CREATE_EDGE_ENROLLMENT_TOKEN_MUTATION = `
+  mutation CreateEdgeEnrollmentToken($edgeId: String!) {
+    createEdgeEnrollmentToken(edgeId: $edgeId)
+  }
+`
+
+export const REVOKE_EDGE_DEVICE_MUTATION = `
+  mutation RevokeEdgeDevice($edgeId: String!) {
+    revokeEdgeDevice(edgeId: $edgeId)
+  }
+`
+
+export const GRANT_EDGE_ACCESS_MUTATION = `
+  mutation GrantEdgeAccess($edgeId: String!, $userId: String!) {
+    grantEdgeAccess(edgeId: $edgeId, userId: $userId)
+  }
+`
+
+export const REVOKE_EDGE_ACCESS_MUTATION = `
+  mutation RevokeEdgeAccess($edgeId: String!, $userId: String!) {
+    revokeEdgeAccess(edgeId: $edgeId, userId: $userId)
+  }
+`
+
+export const BROWSE_OPCUA_TAGS_MUTATION = `
+  mutation BrowseOpcUaTags($serverId: String!, $nodeId: String, $cursor: String) {
+    browseOpcUaTags(serverId: $serverId, nodeId: $nodeId, cursor: $cursor) {
+      ${CONNECTIVITY_JOB_FIELDS}
+    }
+  }
+`
+
+export const GET_CONNECTIVITY_JOB_QUERY = `
+  query GetConnectivityJob($jobId: String!) {
+    getConnectivityJob(jobId: $jobId) {
+      ${CONNECTIVITY_JOB_FIELDS}
+    }
   }
 `
 
@@ -518,14 +606,14 @@ export const SAVE_CONNECTIVITY_SERVER_MUTATION = `
 `
 
 export const DELETE_CONNECTIVITY_SERVER_MUTATION = `
-  mutation DeleteConnectivityServer($id: String!) {
-    deleteConnectivityServer(id: $id)
+  mutation DeleteConnectivityServer($id: String!, $edgeId: String, $expectedRevision: Int) {
+    deleteConnectivityServer(id: $id, edgeId: $edgeId, expectedRevision: $expectedRevision)
   }
 `
 
 export const SAVE_CONNECTIVITY_TAG_MUTATION = `
-  mutation SaveConnectivityTag($serverId: String!, $tag: ConnectivityTagInput!) {
-    saveConnectivityTag(serverId: $serverId, tag: $tag) {
+  mutation SaveConnectivityTag($serverId: String!, $tag: ConnectivityTagInput!, $expectedRevision: Int) {
+    saveConnectivityTag(serverId: $serverId, tag: $tag, expectedRevision: $expectedRevision) {
       serverId
       nodeId
       mqttTopic
@@ -542,6 +630,9 @@ export const TEST_CONNECTIVITY_SERVER_MUTATION = `
       lastStatus
       lastError
       lastTestedAt
+      activeJobId
+      activeJobStatus
+      connectionHealth
     }
   }
 `
@@ -591,16 +682,16 @@ export const SUBSCRIBE_OPCUA_VARIABLES_MUTATION = `
 `
 
 export const UPDATE_CONNECTIVITY_TAG_TOPIC_MUTATION = `
-  mutation UpdateConnectivityTagTopic($serverId: String!, $nodeId: String!, $mqttTopic: String!) {
-    updateConnectivityTagTopic(serverId: $serverId, nodeId: $nodeId, mqttTopic: $mqttTopic) {
+  mutation UpdateConnectivityTagTopic($serverId: String!, $nodeId: String!, $mqttTopic: String!, $expectedRevision: Int) {
+    updateConnectivityTagTopic(serverId: $serverId, nodeId: $nodeId, mqttTopic: $mqttTopic, expectedRevision: $expectedRevision) {
       ${CONNECTIVITY_TAG_FIELDS}
     }
   }
 `
 
 export const UNSUBSCRIBE_CONNECTIVITY_TAG_MUTATION = `
-  mutation UnsubscribeConnectivityTag($serverId: String!, $nodeId: String!) {
-    unsubscribeConnectivityTag(serverId: $serverId, nodeId: $nodeId)
+  mutation UnsubscribeConnectivityTag($serverId: String!, $nodeId: String!, $expectedRevision: Int) {
+    unsubscribeConnectivityTag(serverId: $serverId, nodeId: $nodeId, expectedRevision: $expectedRevision)
   }
 `
 
@@ -678,8 +769,8 @@ export const GET_SUBSCRIBED_SIGNALS_QUERY = `
 `
 
 export const UPDATE_CONNECTIVITY_TAG_MUTATION = `
-  mutation UpdateConnectivityTag($serverId: String!, $nodeId: String!, $patch: ConnectivityTagUpdateInput!) {
-    updateConnectivityTag(serverId: $serverId, nodeId: $nodeId, patch: $patch) {
+  mutation UpdateConnectivityTag($serverId: String!, $nodeId: String!, $patch: ConnectivityTagUpdateInput!, $expectedRevision: Int) {
+    updateConnectivityTag(serverId: $serverId, nodeId: $nodeId, patch: $patch, expectedRevision: $expectedRevision) {
       ${CONNECTIVITY_TAG_FIELDS}
     }
   }

@@ -116,9 +116,17 @@ export type SignalsToolbar = {
 
 type SignalsTabProps = {
   renderToolbar?: (toolbar: SignalsToolbar) => React.ReactNode;
+  cloudEdgeMode?: boolean;
+  expectedRevision?: number | null;
+  selectedEdgeId?: string | null;
 };
 
-export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
+export const SignalsTab: React.FC<SignalsTabProps> = ({
+  renderToolbar,
+  cloudEdgeMode = false,
+  expectedRevision = null,
+  selectedEdgeId = null,
+}) => {
   const [rows, setRows] = useState<GraphqlSubscribedSignal[]>([]);
   const [units, setUnits] = useState<GraphqlUnitOfMeasure[]>([]);
   const [labels, setLabels] = useState<string[]>([]);
@@ -151,6 +159,8 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
   const [newDataType, setNewDataType] = useState<GraphqlSignalDataType | ''>('');
   const [addSignalError, setAddSignalError] = useState<string | null>(null);
   const [addingSignal, setAddingSignal] = useState(false);
+  const cloudWrite =
+    cloudEdgeMode && expectedRevision != null ? { expectedRevision } : undefined;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -210,7 +220,11 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
       );
     }
     if (serverResult.status === 'fulfilled') {
-      setServers(serverResult.value);
+      const scoped =
+        cloudEdgeMode && selectedEdgeId
+          ? serverResult.value.filter((server) => server.edgeId === selectedEdgeId)
+          : serverResult.value;
+      setServers(scoped);
     } else {
       setServers([]);
       catalogErrors.push(
@@ -225,7 +239,7 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
     }
 
     setLoading(false);
-  }, []);
+  }, [cloudEdgeMode, selectedEdgeId]);
 
   useEffect(() => {
     void load();
@@ -255,42 +269,65 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
       if (cancelled) return;
 
       const endpointById = new Map(servers.map((server) => [server.id, server.endpoint]));
-      const groups = new Map<string, { serverId: string; endpoint: string; nodeIds: string[] }>();
-      for (const target of liveTargets) {
-        const endpoint = endpointById.get(target.serverId);
-        if (!endpoint) continue;
-        const group = groups.get(target.serverId) ?? {
-          serverId: target.serverId,
-          endpoint,
-          nodeIds: [],
-        };
-        group.nodeIds.push(target.nodeId);
-        groups.set(target.serverId, group);
-      }
 
-      const applyReading = (serverId: string, reading: GraphqlOpcUaDataValue) => {
-        setLiveByKey((prev) => ({
-          ...prev,
-          [rowKey({ serverId, nodeId: reading.nodeId })]: {
-            value: reading.value,
-            status: reading.status,
-          },
-        }));
-      };
-
-      for (const group of groups.values()) {
-        try {
-          const values = await unsGraphQLClient.readOpcUaNodes(group.endpoint, group.nodeIds);
-          if (cancelled) return;
-          for (const reading of values) applyReading(group.serverId, reading);
-        } catch {
-          // Live reads are optional — the catalog row still stands.
+      if (cloudEdgeMode) {
+        const topics = [...new Set(rows.map((row) => row.mqttTopic).filter(Boolean))];
+        if (topics.length > 0) {
+          unsubs.push(
+            unsGraphQLClient.subscribeMqttMessages(topics, (message) => {
+              const match = rows.find((row) => row.mqttTopic === message.topic);
+              if (!match) return;
+              setLiveByKey((prev) => ({
+                ...prev,
+                [rowKey(match)]: {
+                  value:
+                    typeof message.payload === 'object' && message.payload && 'data' in message.payload
+                      ? (message.payload as { data?: unknown }).data
+                      : message.payload,
+                  status: 'Good',
+                },
+              }));
+            }),
+          );
         }
-        unsubs.push(
-          unsGraphQLClient.subscribeOpcUaDataChanges(group.endpoint, group.nodeIds, (reading) => {
-            applyReading(group.serverId, reading);
-          }),
-        );
+      } else {
+        const groups = new Map<string, { serverId: string; endpoint: string; nodeIds: string[] }>();
+        for (const target of liveTargets) {
+          const endpoint = endpointById.get(target.serverId);
+          if (!endpoint) continue;
+          const group = groups.get(target.serverId) ?? {
+            serverId: target.serverId,
+            endpoint,
+            nodeIds: [],
+          };
+          group.nodeIds.push(target.nodeId);
+          groups.set(target.serverId, group);
+        }
+
+        const applyReading = (serverId: string, reading: GraphqlOpcUaDataValue) => {
+          setLiveByKey((prev) => ({
+            ...prev,
+            [rowKey({ serverId, nodeId: reading.nodeId })]: {
+              value: reading.value,
+              status: reading.status,
+            },
+          }));
+        };
+
+        for (const group of groups.values()) {
+          try {
+            const values = await unsGraphQLClient.readOpcUaNodes(group.endpoint, group.nodeIds);
+            if (cancelled) return;
+            for (const reading of values) applyReading(group.serverId, reading);
+          } catch {
+            // Live reads are optional — the catalog row still stands.
+          }
+          unsubs.push(
+            unsGraphQLClient.subscribeOpcUaDataChanges(group.endpoint, group.nodeIds, (reading) => {
+              applyReading(group.serverId, reading);
+            }),
+          );
+        }
       }
     })();
 
@@ -298,7 +335,7 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
       cancelled = true;
       for (const unsub of unsubs) unsub();
     };
-  }, [liveTargets]);
+  }, [cloudEdgeMode, liveTargets, rows, servers]);
 
   const displayedRows = useMemo(
     () => rows.map((row) => mergeSignalDraft(row, drafts[rowKey(row)])),
@@ -335,7 +372,10 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
     [servers, serverId],
   );
   const showAddSignal = Boolean(
-    selectedServer && (selectedServer.protocol === 'S7' || selectedServer.protocol === 'ETHERNET_IP'),
+    selectedServer &&
+      (selectedServer.protocol === 'S7' ||
+        selectedServer.protocol === 'ETHERNET_IP' ||
+        selectedServer.protocol === 'MODBUS'),
   );
 
   const applyPatch = async (
@@ -344,7 +384,12 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
     patch: GraphqlConnectivityTagPatch,
   ): Promise<boolean> => {
     try {
-      const updated = await unsGraphQLClient.updateConnectivityTag(serverIdValue, nodeId, patch);
+      const updated = await unsGraphQLClient.updateConnectivityTag(
+        serverIdValue,
+        nodeId,
+        patch,
+        cloudWrite,
+      );
       setRows((prev) =>
         prev.map((row) =>
           row.serverId === serverIdValue && row.nodeId === nodeId
@@ -473,14 +518,18 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
     setAddSignalError(null);
     try {
       const displayName = newDisplayName.trim() || nodeId;
-      const saved = await unsGraphQLClient.saveConnectivityTag(selectedServer.id, {
-        nodeId,
-        browsePath: '',
-        displayName,
-        mqttTopic,
-        subscribed: true,
-        dataType: newDataType || null,
-      });
+      const saved = await unsGraphQLClient.saveConnectivityTag(
+        selectedServer.id,
+        {
+          nodeId,
+          browsePath: '',
+          displayName,
+          mqttTopic,
+          subscribed: true,
+          dataType: newDataType || null,
+        },
+        cloudWrite,
+      );
       const tag: GraphqlSubscribedSignal = {
         serverId: selectedServer.id,
         serverName: selectedServer.name,
@@ -509,7 +558,11 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
     setSaveError(null);
     try {
       for (const target of targets) {
-        await unsGraphQLClient.unsubscribeConnectivityTag(target.serverId, target.nodeId);
+        await unsGraphQLClient.unsubscribeConnectivityTag(
+          target.serverId,
+          target.nodeId,
+          cloudWrite,
+        );
         const key = rowKey(target);
         setRows((prev) =>
           prev.filter((row) => !(row.serverId === target.serverId && row.nodeId === target.nodeId)),
@@ -1067,6 +1120,7 @@ export const SignalsTab: React.FC<SignalsTabProps> = ({ renderToolbar }) => {
       {openSignal && (
         <SignalContextPanel
           signal={openSignal}
+          cloudWrite={cloudWrite}
           onClose={() => setOpenSignal(null)}
           onUpdated={(next) => {
             setRows((prev) =>
