@@ -62,12 +62,26 @@ def _build_publication_service() -> PublicationIngressService | None:
         return None
     if not config.routes:
         return None
-    database = Database.shared()
+    try:
+        database = Database.shared()
+    except Exception:
+        LOGGER.warning(
+            "Publication API unavailable; asset model database is not configured",
+            exc_info=True,
+        )
+        return None
     return PublicationIngressService(database, config=config)
 
 
-def _build_edge_management_service() -> EdgeManagementService:
-    database = Database.shared()
+def _build_edge_management_service() -> EdgeManagementService | None:
+    try:
+        database = Database.shared()
+    except Exception:
+        LOGGER.warning(
+            "Edge management API unavailable; asset model database is not configured",
+            exc_info=True,
+        )
+        return None
     repository = EdgeRepository(database)
     issuer = EdgeCertificateIssuer(generate_authority())
     secret_store: EdgeSecretStore | None
@@ -203,7 +217,9 @@ class UNSGraphql:
         allow_headers=["*"],
     )
     app.include_router(graphql_app, prefix="/graphql")
-    app.include_router(create_edge_router(_build_edge_management_service()))
+    edge_service = _build_edge_management_service()
+    if edge_service is not None:
+        app.include_router(create_edge_router(edge_service))
     publication_service = _build_publication_service()
     if publication_service is not None:
         app.include_router(create_publication_router(publication_service))
