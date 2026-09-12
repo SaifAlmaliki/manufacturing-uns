@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 import yaml
 
-from uns_datalake.config import DatalakeConfig
 from uns_kafka.uns_kafka_config import IngestionSettings
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -98,9 +97,9 @@ def test_settings_keep_canonical_ingestion_and_historian_batching(settings: dict
     assert historian["batch"]["max_events"] == 500
 
 
-def test_prometheus_scrapes_ingestion_and_lake_mappers(compose: dict, prometheus: dict):
+def test_prometheus_scrapes_ingestion_and_lake_mappers(compose: dict, prometheus: dict, settings: dict):
     ingestion_port = IngestionSettings.metrics_port
-    datalake_port = DatalakeConfig.metrics_port
+    datalake_port = settings["default"]["datalake"]["metrics_port"]
     jobs = {job["job_name"]: job for job in prometheus["scrape_configs"]}
     assert jobs["uns_kafka_mapper"]["static_configs"][0]["targets"] == [
         f"kafka_mapper_client:{ingestion_port}"
