@@ -36,7 +36,15 @@ class ConnectivityServerInput:
     server_certificate: str = ""
     protocol_config: JSON | None = strawberry.field(
         default=None,
-        description='S7/EtherNet-IP knobs, e.g. {"controllerType": "S7_1500"}. Unused for OPC UA.',
+        description='Protocol knobs, e.g. {"controllerType": "S7_1500"} or Modbus unit_id.',
+    )
+    edge_id: str | None = strawberry.field(
+        default=None,
+        description="Target edge for cloud-mode writes. Required when cloud_mode is enabled.",
+    )
+    expected_revision: int | None = strawberry.field(
+        default=None,
+        description="Optimistic desired-state revision for cloud-mode writes.",
     )
 
 

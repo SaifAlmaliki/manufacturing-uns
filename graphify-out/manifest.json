@@ -500,9 +500,9 @@
     "semantic_hash": "fc8186f0d6eb8002a63cf7a9eb3f055e"
   },
   "07_uns_graphql/src/uns_graphql/auth/require.py": {
-    "mtime": 1788808928.4020321,
-    "ast_hash": "7f3eb5ef8f2e7c00afb17bf0c75e72c0",
-    "semantic_hash": "7f3eb5ef8f2e7c00afb17bf0c75e72c0"
+    "mtime": 1789204746.2511704,
+    "ast_hash": "6ba92c7eb99c279e385365f6c42e8964",
+    "semantic_hash": ""
   },
   "07_uns_graphql/src/uns_graphql/auth/scope.py": {
     "mtime": 1788943629.995841,
@@ -545,9 +545,9 @@
     "semantic_hash": "a11e5b984d8a16d70b476947424e6245"
   },
   "07_uns_graphql/src/uns_graphql/input/connectivity.py": {
-    "mtime": 1789137672.575678,
-    "ast_hash": "9db182cc7c7ee7515fb1d906ec0b1949",
-    "semantic_hash": "9db182cc7c7ee7515fb1d906ec0b1949"
+    "mtime": 1789204680.2769287,
+    "ast_hash": "dc40afaf423d04d4d0a4209e5996817a",
+    "semantic_hash": ""
   },
   "07_uns_graphql/src/uns_graphql/input/hierarchy.py": {
     "mtime": 1788686668.8481703,
@@ -580,8 +580,8 @@
     "semantic_hash": "ea289da2bf629f90f0607f8d53c6a47b"
   },
   "07_uns_graphql/src/uns_graphql/mutations/connectivity.py": {
-    "mtime": 1788942972.4422925,
-    "ast_hash": "c3ebf90acaa351a486e49121e73fb577",
+    "mtime": 1789204935.3905938,
+    "ast_hash": "9c3a268727f36a2e4460eefce0b59714",
     "semantic_hash": ""
   },
   "07_uns_graphql/src/uns_graphql/mutations/hierarchy.py": {
@@ -685,9 +685,9 @@
     "semantic_hash": "a93de7bb3cb98a60938036677dae8d5c"
   },
   "07_uns_graphql/src/uns_graphql/type/connectivity.py": {
-    "mtime": 1788808928.407033,
-    "ast_hash": "8ee2d8ca28084c41c222f40138c933d8",
-    "semantic_hash": "8ee2d8ca28084c41c222f40138c933d8"
+    "mtime": 1789204729.2412639,
+    "ast_hash": "d435316245f9af98c8e6a1bb1e7a7ec5",
+    "semantic_hash": ""
   },
   "07_uns_graphql/src/uns_graphql/type/hierarchy.py": {
     "mtime": 1788686668.5114937,
@@ -725,8 +725,8 @@
     "semantic_hash": ""
   },
   "07_uns_graphql/src/uns_graphql/uns_graphql_app.py": {
-    "mtime": 1789171205.2731442,
-    "ast_hash": "3ffb6d6004402a371bac991edd47cffd",
+    "mtime": 1789204992.5376604,
+    "ast_hash": "7e1de32544234f5695fecefced64a179",
     "semantic_hash": ""
   },
   "07_uns_graphql/test/__init__.py": {
@@ -1070,8 +1070,8 @@
     "semantic_hash": ""
   },
   "09_uns_model/src/uns_model/connectivity.py": {
-    "mtime": 1789169246.354678,
-    "ast_hash": "d6b71649cebbd94766f4eeb5f4a5b453",
+    "mtime": 1789204627.2628446,
+    "ast_hash": "d44cfb9605407b5ddb950a26e580c352",
     "semantic_hash": ""
   },
   "09_uns_model/src/uns_model/engine.py": {
@@ -1130,8 +1130,8 @@
     "semantic_hash": ""
   },
   "09_uns_model/src/uns_model/tables.py": {
-    "mtime": 1789169222.268969,
-    "ast_hash": "17cc36f78143eedd6be7e5082aaaaaaf",
+    "mtime": 1789204231.660529,
+    "ast_hash": "f03154c092497491b180646c43a7717a",
     "semantic_hash": ""
   },
   "09_uns_model/src/uns_model/topic_binder.py": {
@@ -3020,8 +3020,8 @@
     "semantic_hash": ""
   },
   "09_uns_model/src/uns_model/edge_repository.py": {
-    "mtime": 1789169223.7675993,
-    "ast_hash": "979975711f171fb51eb5e7cbf278bea4",
+    "mtime": 1789204332.152099,
+    "ast_hash": "a757197e87391959d20c200425db0aca",
     "semantic_hash": ""
   },
   "09_uns_model/src/uns_model/edge_tables.py": {
@@ -3210,8 +3210,33 @@
     "semantic_hash": ""
   },
   "15_uns_edge_agent/test/test_reconcile.py": {
-    "mtime": 1789202530.0878136,
-    "ast_hash": "67dcdd4e7214f38e4c38a2d2ca6ccbff",
+    "mtime": 1789203562.403311,
+    "ast_hash": "920859c66f1525f2ab4dd053e6b36c68",
+    "semantic_hash": ""
+  },
+  "07_uns_graphql/src/uns_graphql/mutations/edge.py": {
+    "mtime": 1789204765.4601297,
+    "ast_hash": "5692e35e6aef3e5c9eeb6be40d1778cb",
+    "semantic_hash": ""
+  },
+  "07_uns_graphql/src/uns_graphql/queries/edge.py": {
+    "mtime": 1789204658.433546,
+    "ast_hash": "a53029cfdcc3534d637903602d579d64",
+    "semantic_hash": ""
+  },
+  "07_uns_graphql/src/uns_graphql/type/edge.py": {
+    "mtime": 1789204656.921307,
+    "ast_hash": "6fd68163f0cdd524a799b53869d6101e",
+    "semantic_hash": ""
+  },
+  "07_uns_graphql/test/mutations/test_edge_configuration.py": {
+    "mtime": 1789205160.6422563,
+    "ast_hash": "26c13175748fffb3c7ee7c866f05b928",
+    "semantic_hash": ""
+  },
+  "09_uns_model/src/uns_model/edge_desired.py": {
+    "mtime": 1789204385.6175785,
+    "ast_hash": "259200d7d9429987819c367817a0394e",
     "semantic_hash": ""
   }
 }

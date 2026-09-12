@@ -25,7 +25,7 @@ from typing import Any
 
 import strawberry
 from uns_config.hivemq_edge_api import EdgeApplyError, apply_catalog_adapters_live
-from uns_config.hivemq_edge_xml import EdgeAdapterInput, apply_catalog_adapters_file
+from uns_config.hivemq_edge_xml import EdgeAdapterInput, adapter_id_for, apply_catalog_adapters_file
 from uns_config.loader import resolve_conf_dir
 from uns_model.connectivity import (
     EDGE_APPLY_ERROR,
@@ -34,14 +34,18 @@ from uns_model.connectivity import (
     ConnectivityServerSpec,
     ConnectivityTagSpec,
     edge_adapters_from_rows,
+    is_cloud_edge_mode,
     parse_host_port,
 )
+from uns_model.edge_desired import CloudDesiredContext, commit_connectivity_desired
+from uns_model.edge_repository import EdgeRepository, EdgeRevisionConflict
 from uns_model.engine import Database
 from uns_model.tables import ConnectivityServer
 from uns_opcua import browse as opcua_browse
 from uns_opcua.session import open_client
 
-from uns_graphql.auth.require import require
+from uns_graphql.auth.context import identity_in
+from uns_graphql.auth.require import require, require_edge_access
 from uns_graphql.backend.historian import HistorianRepository
 from uns_graphql.input.connectivity import (
     ConnectivityServerInput,
@@ -58,9 +62,51 @@ def _repository() -> ConnectivityRepository:
     return ConnectivityRepository(Database.shared("graphql"))
 
 
+def _edge_repository() -> EdgeRepository:
+    return EdgeRepository(Database.shared("graphql"))
+
+
 def _sync_edge(adapters: list[EdgeAdapterInput]) -> None:
     """Splice the catalog's Edge rows into HiveMQ Edge's `config.xml`. Sync, per `after_flush`'s contract."""
     apply_catalog_adapters_file(resolve_conf_dir() / "hivemq" / "config.xml", adapters)
+
+
+def _cloud_context(
+    info: strawberry.Info,
+    edge_id: str,
+    expected_revision: int,
+    *,
+    deleted_adapter_ids: tuple[str, ...] = (),
+) -> CloudDesiredContext:
+    identity = identity_in(getattr(info, "context", None))
+    return CloudDesiredContext(
+        edge_id=edge_id,
+        expected_revision=expected_revision,
+        actor=getattr(identity, "username", None),
+        deleted_adapter_ids=deleted_adapter_ids,
+        edge_repository=_edge_repository(),
+    )
+
+
+def _desired_flush(ctx: CloudDesiredContext):
+    async def _flush(session):
+        await commit_connectivity_desired(session, ctx)
+
+    return _flush
+
+
+async def _edge_status(edge_id: str | None):
+    if not edge_id:
+        return None
+    return await _edge_repository().device_status(edge_id)
+
+
+def _require_cloud_revision(server: ConnectivityServerInput) -> tuple[str, int]:
+    if not server.edge_id:
+        raise ValueError("edge_id is required in cloud edge mode")
+    if server.expected_revision is None:
+        raise ValueError("expected_revision is required in cloud edge mode")
+    return server.edge_id, int(server.expected_revision)
 
 
 async def _finish_live_apply(mutated_ids: list[str]) -> None:
@@ -140,22 +186,36 @@ class Mutation:
     ) -> ConnectivityServerType:
         require(info, "saveConnectivityServer")
         repo = _repository()
+        spec = ConnectivityServerSpec(
+            id=server.id,
+            name=server.name,
+            protocol=server.protocol.value,
+            endpoint=server.endpoint,
+            edge_id=server.edge_id,
+            auth_mode=server.auth_mode.value,
+            security_policy=server.security_policy.value,
+            security_mode=server.security_mode.value,
+            username=server.username,
+            password=server.password,
+            certificate=server.certificate,
+            private_key=server.private_key,
+            server_certificate=server.server_certificate,
+            protocol_config=server.protocol_config,
+        )
+        if is_cloud_edge_mode():
+            edge_id, expected_revision = _require_cloud_revision(server)
+            await require_edge_access(info, edge_id)
+            ctx = _cloud_context(info, edge_id, expected_revision)
+            try:
+                saved = await repo.save_server(spec, after_flush_async=_desired_flush(ctx))
+            except EdgeRevisionConflict as exc:
+                raise ValueError(str(exc)) from exc
+            status = await _edge_status(saved.edge_id)
+            LOGGER.info("Connectivity server %s saved for edge %s", saved.id, edge_id)
+            return ConnectivityServerType.from_server(saved, edge_status=status)
+
         saved = await repo.save_server(
-            ConnectivityServerSpec(
-                id=server.id,
-                name=server.name,
-                protocol=server.protocol.value,
-                endpoint=server.endpoint,
-                auth_mode=server.auth_mode.value,
-                security_policy=server.security_policy.value,
-                security_mode=server.security_mode.value,
-                username=server.username,
-                password=server.password,
-                certificate=server.certificate,
-                private_key=server.private_key,
-                server_certificate=server.server_certificate,
-                protocol_config=server.protocol_config,
-            ),
+            spec,
             after_flush=_sync_edge,
         )
         if saved.protocol in EDGE_PROTOCOLS:
@@ -169,10 +229,35 @@ class Mutation:
     @strawberry.mutation(
         description="Delete a Connectivity server and its tags (cascade). False when there was no such server."
     )
-    async def delete_connectivity_server(self, info: strawberry.Info, id: str) -> bool:  # noqa: A002
+    async def delete_connectivity_server(
+        self,
+        info: strawberry.Info,
+        id: str,  # noqa: A002
+        edge_id: str | None = None,
+        expected_revision: int | None = None,
+    ) -> bool:
         require(info, "deleteConnectivityServer")
         repo = _repository()
         existing = await _find_server(repo, id)
+        if is_cloud_edge_mode():
+            if not edge_id or expected_revision is None:
+                raise ValueError("edge_id and expected_revision are required in cloud edge mode")
+            await require_edge_access(info, edge_id)
+            deleted_id = adapter_id_for(id) if existing is not None else None
+            ctx = _cloud_context(
+                info,
+                edge_id,
+                int(expected_revision),
+                deleted_adapter_ids=(deleted_id,) if deleted_id else (),
+            )
+            try:
+                deleted = await repo.delete_server(id, after_flush_async=_desired_flush(ctx))
+            except EdgeRevisionConflict as exc:
+                raise ValueError(str(exc)) from exc
+            if deleted:
+                LOGGER.info("Connectivity server %s deleted from edge %s", id, edge_id)
+            return deleted
+
         deleted = await repo.delete_server(id, after_flush=_sync_edge)
         if deleted and existing is not None and existing.protocol in EDGE_PROTOCOLS:
             await _finish_live_apply([])
@@ -193,6 +278,10 @@ class Mutation:
         node_id: str | None = strawberry.UNSET,
     ) -> list[ConnectivityTagType]:
         require(info, "subscribeOpcUaVariables")
+        if is_cloud_edge_mode():
+            raise ValueError(
+                "OPC UA discovery is unavailable in cloud edge mode; add tags manually."
+            )
         server = await _find_server(_repository(), server_id)
         if server is None:
             raise ValueError(f"No Connectivity server with id {server_id!r}")
@@ -220,10 +309,40 @@ class Mutation:
         "discovered. The one way to add a tag on an S7/EtherNet-IP server."
     )
     async def save_connectivity_tag(
-        self, info: strawberry.Info, server_id: str, tag: ConnectivityTagInput
+        self,
+        info: strawberry.Info,
+        server_id: str,
+        tag: ConnectivityTagInput,
+        expected_revision: int | None = None,
     ) -> ConnectivityTagType:
         require(info, "saveConnectivityTag")
         repo = _repository()
+        server = await _find_server(repo, server_id)
+        if is_cloud_edge_mode():
+            if server is None or not server.edge_id:
+                raise ValueError(f"No edge-scoped Connectivity server with id {server_id!r}")
+            if expected_revision is None:
+                raise ValueError("expected_revision is required in cloud edge mode")
+            await require_edge_access(info, server.edge_id)
+            ctx = _cloud_context(info, server.edge_id, int(expected_revision))
+            try:
+                stored = await repo.save_tag(
+                    server_id,
+                    ConnectivityTagSpec(
+                        node_id=tag.node_id,
+                        browse_path=tag.browse_path,
+                        display_name=tag.display_name,
+                        mqtt_topic=tag.mqtt_topic,
+                        subscribed=tag.subscribed,
+                        data_type=tag.data_type.value if tag.data_type is not None else None,
+                    ),
+                    after_flush_async=_desired_flush(ctx),
+                )
+            except EdgeRevisionConflict as exc:
+                raise ValueError(str(exc)) from exc
+            LOGGER.info("Connectivity tag %s saved on %s", tag.node_id, server_id)
+            return ConnectivityTagType.from_tag(stored)
+
         stored = await repo.save_tag(
             server_id,
             ConnectivityTagSpec(
@@ -236,7 +355,6 @@ class Mutation:
             ),
             after_flush=_sync_edge,
         )
-        server = await _find_server(repo, server_id)
         if server is not None and server.protocol in EDGE_PROTOCOLS:
             await _finish_live_apply([server_id])
         LOGGER.info("Connectivity tag %s saved on %s", tag.node_id, server_id)
@@ -246,24 +364,47 @@ class Mutation:
         description="Set the MQTT topic an engineer wants this node republished under."
     )
     async def update_connectivity_tag_topic(
-        self, info: strawberry.Info, server_id: str, node_id: str, mqtt_topic: str
+        self,
+        info: strawberry.Info,
+        server_id: str,
+        node_id: str,
+        mqtt_topic: str,
+        expected_revision: int | None = None,
     ) -> ConnectivityTagType:
         require(info, "updateConnectivityTagTopic")
         repo = _repository()
         server = await _find_server(repo, server_id)
-        tag = await repo.update_tag_topic(
-            server_id,
-            node_id,
-            mqtt_topic,
-            after_flush=_sync_edge,
-            on_topic_rewrite=_rewrite_topics,
-        )
+        if is_cloud_edge_mode():
+            if server is None or not server.edge_id:
+                raise ValueError(f"No edge-scoped Connectivity server with id {server_id!r}")
+            if expected_revision is None:
+                raise ValueError("expected_revision is required in cloud edge mode")
+            await require_edge_access(info, server.edge_id)
+            ctx = _cloud_context(info, server.edge_id, int(expected_revision))
+            try:
+                tag = await repo.update_tag_topic(
+                    server_id,
+                    node_id,
+                    mqtt_topic,
+                    after_flush_async=_desired_flush(ctx),
+                    on_topic_rewrite=_rewrite_topics,
+                )
+            except EdgeRevisionConflict as exc:
+                raise ValueError(str(exc)) from exc
+        else:
+            tag = await repo.update_tag_topic(
+                server_id,
+                node_id,
+                mqtt_topic,
+                after_flush=_sync_edge,
+                on_topic_rewrite=_rewrite_topics,
+            )
+            if server is not None and server.protocol in EDGE_PROTOCOLS:
+                await _finish_live_apply([server_id])
         if tag is None:
             raise ValueError(
                 f"No Connectivity tag for server {server_id!r} node {node_id!r}"
             )
-        if server is not None and server.protocol in EDGE_PROTOCOLS:
-            await _finish_live_apply([server_id])
         return ConnectivityTagType.from_tag(tag)
 
     @strawberry.mutation(
@@ -271,16 +412,34 @@ class Mutation:
         "False when there was no such tag."
     )
     async def unsubscribe_connectivity_tag(
-        self, info: strawberry.Info, server_id: str, node_id: str
+        self,
+        info: strawberry.Info,
+        server_id: str,
+        node_id: str,
+        expected_revision: int | None = None,
     ) -> bool:
         require(info, "unsubscribeConnectivityTag")
         repo = _repository()
         server = await _find_server(repo, server_id)
-        tag = await repo.unsubscribe_tag(server_id, node_id, after_flush=_sync_edge)
+        if is_cloud_edge_mode():
+            if server is None or not server.edge_id:
+                raise ValueError(f"No edge-scoped Connectivity server with id {server_id!r}")
+            if expected_revision is None:
+                raise ValueError("expected_revision is required in cloud edge mode")
+            await require_edge_access(info, server.edge_id)
+            ctx = _cloud_context(info, server.edge_id, int(expected_revision))
+            try:
+                tag = await repo.unsubscribe_tag(
+                    server_id, node_id, after_flush_async=_desired_flush(ctx)
+                )
+            except EdgeRevisionConflict as exc:
+                raise ValueError(str(exc)) from exc
+        else:
+            tag = await repo.unsubscribe_tag(server_id, node_id, after_flush=_sync_edge)
+            if server is not None and server.protocol in EDGE_PROTOCOLS:
+                await _finish_live_apply([server_id])
         if tag is None:
             return False
-        if server is not None and server.protocol in EDGE_PROTOCOLS:
-            await _finish_live_apply([server_id])
         LOGGER.info("Unsubscribed %s on %s", node_id, server_id)
         return True
 
@@ -311,19 +470,37 @@ class Mutation:
         server_id: str,
         node_id: str,
         patch: ConnectivityTagUpdateInput,
+        expected_revision: int | None = None,
     ) -> ConnectivityTagType:
         require(info, "updateConnectivityTag")
         repo = _repository()
         server = await _find_server(repo, server_id)
-        tag = await repo.update_tag(
-            server_id, node_id, after_flush=_sync_edge, **_tag_update_fields(patch)
-        )
+        if is_cloud_edge_mode():
+            if server is None or not server.edge_id:
+                raise ValueError(f"No edge-scoped Connectivity server with id {server_id!r}")
+            if expected_revision is None:
+                raise ValueError("expected_revision is required in cloud edge mode")
+            await require_edge_access(info, server.edge_id)
+            ctx = _cloud_context(info, server.edge_id, int(expected_revision))
+            try:
+                tag = await repo.update_tag(
+                    server_id,
+                    node_id,
+                    after_flush_async=_desired_flush(ctx),
+                    **_tag_update_fields(patch),
+                )
+            except EdgeRevisionConflict as exc:
+                raise ValueError(str(exc)) from exc
+        else:
+            tag = await repo.update_tag(
+                server_id, node_id, after_flush=_sync_edge, **_tag_update_fields(patch)
+            )
+            if server is not None and server.protocol in EDGE_PROTOCOLS:
+                await _finish_live_apply([server_id])
         if tag is None:
             raise ValueError(
                 f"No Connectivity tag for server {server_id!r} node {node_id!r}"
             )
-        if server is not None and server.protocol in EDGE_PROTOCOLS:
-            await _finish_live_apply([server_id])
         return ConnectivityTagType.from_tag(tag)
 
     @strawberry.mutation(
@@ -337,6 +514,9 @@ class Mutation:
         server = await _find_server(repo, id)
         if server is None:
             raise ValueError(f"No Connectivity server with id {id!r}")
+        if is_cloud_edge_mode():
+            status = await _edge_status(server.edge_id)
+            return ConnectivityServerType.from_server(server, edge_status=status)
         was_pending = server.last_status == "pending"
         if server.protocol == "opc_ua":
             ok, error, _elapsed_ms = await opcua_browse.test_connection(server.endpoint)
@@ -344,9 +524,6 @@ class Mutation:
             host, port = parse_host_port(server.endpoint)
             ok, error = probe_tcp(host, port)
         if ok and was_pending:
-            # The row was pending its first HiveMQ Edge apply, not actually broken.
-            # A successful probe does not prove Edge accepted the config — keep
-            # EDGE_APPLY_ERROR rather than clearing it to "connected".
             error = EDGE_APPLY_ERROR
         updated = await repo.record_test(id, ok=ok, error=error)
         LOGGER.info("Connectivity server %s tested: ok=%s", id, ok)

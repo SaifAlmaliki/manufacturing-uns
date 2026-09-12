@@ -191,11 +191,15 @@ class ConnectivityServerSpec:
             raise ValueError(f"Connectivity server {self.id!r} needs an endpoint")
         if is_cloud_edge_mode() and not self.edge_id:
             raise ValueError(f"Connectivity server {self.id!r} needs edge_id in cloud edge mode")
-        if self.protocol in PLC_PROTOCOLS:
+        if self.protocol in PLC_PROTOCOLS or self.protocol == "modbus":
             parse_host_port(self.endpoint)
             if self.protocol == "s7":
                 controller = (self.protocol_config or {}).get("controllerType", "S7_1500")
                 _require_one_of("controllerType", controller, S7_CONTROLLER_TYPES)
+            if self.protocol == "modbus":
+                unit_id = (self.protocol_config or {}).get("unit_id", 1)
+                if not isinstance(unit_id, int) or unit_id < 0 or unit_id > 255:
+                    raise ValueError("unit_id must be 0–255")
         else:
             if not _ENDPOINT.match(self.endpoint):
                 raise ValueError("Endpoint must be opc.tcp://host:port")
@@ -327,6 +331,7 @@ class ConnectivityRepository:
         spec: ConnectivityServerSpec,
         *,
         after_flush: Callable[[list[EdgeAdapterInput]], None] | None = None,
+        after_flush_async: Callable[[AsyncSession], Awaitable[None]] | None = None,
     ) -> ConnectivityServer:
         """
         Create or replace one Connectivity server.
@@ -344,7 +349,7 @@ class ConnectivityRepository:
             if existing is not None and existing.password:
                 spec.password = existing.password
         values = spec.column_values()
-        if after_flush is not None and spec.protocol in EDGE_PROTOCOLS:
+        if (after_flush is not None or after_flush_async is not None) and spec.protocol in EDGE_PROTOCOLS:
             values = values | {"last_status": "pending", "last_error": EDGE_APPLY_ERROR}
         async with self._database.session() as session:
             statement = (
@@ -360,7 +365,9 @@ class ConnectivityRepository:
             server = (
                 await session.execute(select(ConnectivityServer).where(ConnectivityServer.id == spec.id))
             ).scalar_one()
-            if after_flush is not None:
+            if after_flush_async is not None:
+                await self._sync_desired_async(session, after_flush_async)
+            elif after_flush is not None:
                 await self._sync_edge(session, after_flush)
             return server
 
@@ -375,6 +382,7 @@ class ConnectivityRepository:
         server_id: str,
         *,
         after_flush: Callable[[list[EdgeAdapterInput]], None] | None = None,
+        after_flush_async: Callable[[AsyncSession], Awaitable[None]] | None = None,
     ) -> bool:
         """Delete a server and its tags (cascade). False when there was nothing to delete."""
         async with self._database.session() as session:
@@ -382,7 +390,9 @@ class ConnectivityRepository:
                 delete(ConnectivityServer).where(ConnectivityServer.id == server_id)
             )
             deleted = bool(result.rowcount)
-            if after_flush is not None and deleted:
+            if after_flush_async is not None and deleted:
+                await self._sync_desired_async(session, after_flush_async)
+            elif after_flush is not None and deleted:
                 await self._sync_edge(session, after_flush)
             return deleted
 
@@ -392,6 +402,7 @@ class ConnectivityRepository:
         spec: ConnectivityTagSpec,
         *,
         after_flush: Callable[[list[EdgeAdapterInput]], None] | None = None,
+        after_flush_async: Callable[[AsyncSession], Awaitable[None]] | None = None,
     ) -> ConnectivityTag:
         """
         Create or replace one tag, engineer-authored rather than discovered.
@@ -423,7 +434,7 @@ class ConnectivityRepository:
                     | {"updated_at": func.now()},
                 )
             )
-            if after_flush is not None:
+            if after_flush is not None or after_flush_async is not None:
                 await self._mark_pending_if_edge(session, server_id)
             row = (
                 await session.execute(
@@ -432,7 +443,9 @@ class ConnectivityRepository:
                     .where(ConnectivityTag.server_id == server_id, ConnectivityTag.node_id == spec.node_id)
                 )
             ).scalar_one()
-            if after_flush is not None:
+            if after_flush_async is not None:
+                await self._sync_desired_async(session, after_flush_async)
+            elif after_flush is not None:
                 await self._sync_edge(session, after_flush)
             return row
 
@@ -484,12 +497,22 @@ class ConnectivityRepository:
         servers = list((await session.execute(statement)).scalars())
         after_flush(edge_adapters_from_rows(servers))
 
+    async def _sync_desired_async(
+        self,
+        session: AsyncSession,
+        after_flush_async: Callable[[AsyncSession], Awaitable[None]],
+    ) -> None:
+        """Flush catalog edits, then commit the edge desired snapshot in the same transaction."""
+        await session.flush()
+        await after_flush_async(session)
+
     async def replace_subscribed_tags(
         self,
         server_id: str,
         tags: Sequence[ConnectivityTagSpec],
         *,
         after_flush: Callable[[list[EdgeAdapterInput]], None] | None = None,
+        after_flush_async: Callable[[AsyncSession], Awaitable[None]] | None = None,
     ) -> list[ConnectivityTag]:
         """
         Fold a freshly discovered set of tags into the catalog for one server.
@@ -535,8 +558,11 @@ class ConnectivityRepository:
                         set_=on_conflict_set,
                     )
                 )
-            if after_flush is not None:
+            if after_flush is not None or after_flush_async is not None:
                 await self._mark_pending_if_edge(session, server_id)
+            if after_flush_async is not None:
+                await self._sync_desired_async(session, after_flush_async)
+            elif after_flush is not None:
                 await self._sync_edge(session, after_flush)
             return await self.list_subscribed_tags(server_id)
 
@@ -547,6 +573,7 @@ class ConnectivityRepository:
         mqtt_topic: str,
         *,
         after_flush: Callable[[list[EdgeAdapterInput]], None] | None = None,
+        after_flush_async: Callable[[AsyncSession], Awaitable[None]] | None = None,
         on_topic_rewrite: Callable[[AsyncSession, str, str], Awaitable[None]] | None = None,
     ) -> ConnectivityTag | None:
         """Set the MQTT topic an engineer wants this node republished under."""
@@ -554,6 +581,7 @@ class ConnectivityRepository:
             server_id,
             node_id,
             after_flush=after_flush,
+            after_flush_async=after_flush_async,
             on_topic_rewrite=on_topic_rewrite,
             mqtt_topic=mqtt_topic,
         )
@@ -576,6 +604,7 @@ class ConnectivityRepository:
         node_id: str,
         *,
         after_flush: Callable[[list[EdgeAdapterInput]], None] | None = None,
+        after_flush_async: Callable[[AsyncSession], Awaitable[None]] | None = None,
         on_topic_rewrite: Callable[[AsyncSession, str, str], Awaitable[None]] | None = None,
         **fields: Any,
     ) -> ConnectivityTag | None:
@@ -638,8 +667,11 @@ class ConnectivityRepository:
                 and on_topic_rewrite is not None
             ):
                 await on_topic_rewrite(session, old_topic, new_topic)
-            if after_flush is not None:
+            if after_flush is not None or after_flush_async is not None:
                 await self._mark_pending_if_edge(session, server_id)
+            if after_flush_async is not None:
+                await self._sync_desired_async(session, after_flush_async)
+            elif after_flush is not None:
                 await self._sync_edge(session, after_flush)
             if row.asset_id is not None and row.unit_of_measure is not None:
                 asset_path = (
@@ -700,6 +732,7 @@ class ConnectivityRepository:
         node_id: str,
         *,
         after_flush: Callable[[list[EdgeAdapterInput]], None] | None = None,
+        after_flush_async: Callable[[AsyncSession], Awaitable[None]] | None = None,
     ) -> ConnectivityTag | None:
         """Stop subscribing to a node. A deliberate act, never done by omission."""
         async with self._database.session() as session:
@@ -716,8 +749,11 @@ class ConnectivityRepository:
                     )
                 )
             ).scalar_one_or_none()
-            if after_flush is not None:
+            if after_flush is not None or after_flush_async is not None:
                 await self._mark_pending_if_edge(session, server_id)
+            if after_flush_async is not None:
+                await self._sync_desired_async(session, after_flush_async)
+            elif after_flush is not None:
                 await self._sync_edge(session, after_flush)
             return row
 
@@ -848,6 +884,7 @@ __all__ = [
     "assert_unique_mqtt_topic",
     "assert_xml_safe",
     "edge_adapters_from_rows",
+    "is_cloud_edge_mode",
     "merge_discovered",
     "metric_key_for_tag",
     "parse_host_port",

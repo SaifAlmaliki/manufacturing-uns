@@ -21,6 +21,7 @@ from typing import TypeVar
 import strawberry
 from sqlalchemy import inspect as sa_inspect
 from strawberry.scalars import JSON
+from uns_model.edge_repository import EdgeStatusSnapshot
 from uns_model.tables import ConnectivityServer, ConnectivityTag
 
 _E = TypeVar("_E", bound=Enum)
@@ -31,6 +32,7 @@ class ConnectivityProtocol(Enum):
     OPC_UA = "opc_ua"
     S7 = "s7"
     ETHERNET_IP = "ethernet_ip"
+    MODBUS = "modbus"
 
 
 @strawberry.enum(description="How the console authenticates to an OPC UA server.")
@@ -244,13 +246,26 @@ class ConnectivityServerType:
     last_status: str
     last_error: str
     protocol_config: JSON | None = None
+    edge_id: str | None = None
+    desired_revision: int | None = None
+    applied_revision: int | None = None
+    connection_health: str | None = None
+    last_seen: datetime.datetime | None = None
     last_tested_at: datetime.datetime | None = None
     created_at: datetime.datetime | None = None
     updated_at: datetime.datetime | None = None
     tags: list[ConnectivityTagType] = strawberry.field(default_factory=list)
 
     @classmethod
-    def from_server(cls, server: ConnectivityServer) -> "ConnectivityServerType":
+    def from_server(
+        cls,
+        server: ConnectivityServer,
+        *,
+        edge_status: EdgeStatusSnapshot | None = None,
+    ) -> "ConnectivityServerType":
+        from uns_model.edge_desired import connection_health_from_server
+
+        health = connection_health_from_server(server)
         return cls(
             id=server.id,
             name=server.name,
@@ -267,6 +282,11 @@ class ConnectivityServerType:
             has_private_key=bool(getattr(server, "private_key", None)),
             server_certificate=getattr(server, "server_certificate", None) or "",
             protocol_config=getattr(server, "protocol_config", None),
+            edge_id=getattr(server, "edge_id", None),
+            desired_revision=edge_status.desired_revision if edge_status else None,
+            applied_revision=edge_status.applied_revision if edge_status else None,
+            connection_health=health,
+            last_seen=edge_status.last_seen if edge_status else None,
             last_status=server.last_status,
             last_error=server.last_error,
             last_tested_at=server.last_tested_at,

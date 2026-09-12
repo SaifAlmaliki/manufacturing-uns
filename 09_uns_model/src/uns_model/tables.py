@@ -449,13 +449,13 @@ class AlertRuleRole(Base):
 
 # The vocabularies the Connectivity catalog uses. Declared once here so the
 # CHECK constraints, the migration and the GraphQL enums cannot drift apart.
-CONNECTIVITY_PROTOCOLS: tuple[str, ...] = ("opc_ua", "s7", "ethernet_ip")
+CONNECTIVITY_PROTOCOLS: tuple[str, ...] = ("opc_ua", "s7", "ethernet_ip", "modbus")
 
 CONNECTIVITY_STATUSES: tuple[str, ...] = ("untested", "pending", "connected", "failed")
 
 PLC_PROTOCOLS: frozenset[str] = frozenset({"s7", "ethernet_ip"})
 
-EDGE_PROTOCOLS: frozenset[str] = frozenset({"s7", "ethernet_ip", "opc_ua"})
+EDGE_PROTOCOLS: frozenset[str] = frozenset({"s7", "ethernet_ip", "opc_ua", "modbus"})
 
 S7_CONTROLLER_TYPES: tuple[str, ...] = ("S7_1500", "S7_1200", "S7_300", "S7_400")
 

@@ -16,6 +16,8 @@ from typing import Any
 from uns_graphql.auth.context import identity_in
 from uns_graphql.auth.scope import scope_for
 from uns_graphql.auth.token import CONSOLE_ROLES, Identity
+from uns_model.edge_repository import EdgeRepository
+from uns_model.engine import Database
 
 ANY_AUTHENTICATED_ROLE: frozenset[str] = CONSOLE_ROLES
 
@@ -56,6 +58,13 @@ MUTATION_ROLES: dict[str, frozenset[str]] = {
     # (unlike the query-side testOpcUaConnection) because it calls record_test.
     "saveConnectivityTag": frozenset({"engineer", "admin"}),
     "testConnectivityServer": frozenset({"engineer", "admin"}),
+    # Cloud edge administration (Task 8)
+    "registerEdgeDevice": frozenset({"admin"}),
+    "createEdgeEnrollmentToken": frozenset({"admin"}),
+    "revokeEdgeDevice": frozenset({"admin"}),
+    "assignConnectivityServerToEdge": frozenset({"admin"}),
+    "grantEdgeAccess": frozenset({"admin"}),
+    "revokeEdgeAccess": frozenset({"admin"}),
 }
 
 
@@ -84,6 +93,21 @@ def require(info: Any, mutation: str) -> Identity:
             f"You hold: {', '.join(sorted(identity.roles)) or 'no recognised role'}."
         )
 
+    return identity
+
+
+async def require_edge_access(info: Any, edge_id: str) -> Identity:
+    """The caller's identity when they may write one edge's connectivity catalog."""
+    identity = identity_in(getattr(info, "context", None))
+    if identity is None:
+        raise NotPermittedError(
+            f"This edge is outside your Access Groups: {edge_id}."
+        )
+    if identity.has_any(frozenset({"admin"})):
+        return identity
+    repo = EdgeRepository(Database.shared("graphql"))
+    if not await repo.user_has_grant(edge_id, identity.subject):
+        raise NotPermittedError(f"This edge is outside your Access Groups: {edge_id}.")
     return identity
 
 

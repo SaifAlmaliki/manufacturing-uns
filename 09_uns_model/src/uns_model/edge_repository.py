@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -21,6 +21,7 @@ from uns_model.edge_tables import (
     EdgeDevice,
     EdgeManagementLease,
     EdgeReport,
+    EdgeUserGrant,
 )
 from uns_model.tables import ConnectivityServer
 
@@ -74,6 +75,18 @@ class SavedDesiredConfiguration:
     revision: int
     digest: str
     document: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class EdgeStatusSnapshot:
+    """Public edge lifecycle fields separate from connection probe state."""
+
+    edge_id: str
+    desired_revision: int
+    applied_revision: int
+    applied_phase: str
+    last_seen: datetime | None
+    capabilities: dict[str, Any]
 
 
 class EdgeRepository:
@@ -252,6 +265,11 @@ class EdgeRepository:
             ).scalar_one_or_none()
             if server is None:
                 raise EdgeRepositoryError("connection_not_found", connection_id)
+            if server.edge_id is not None and server.edge_id != edge_id:
+                raise EdgeRepositoryError(
+                    "edge_assignment_conflict",
+                    f"{connection_id} is assigned to {server.edge_id}",
+                )
             server.edge_id = edge_id
             session.add(
                 EdgeAuditEvent(
@@ -262,6 +280,98 @@ class EdgeRepository:
             )
             await session.flush()
             return server
+
+    async def list_devices(self) -> list[EdgeDevice]:
+        async with self._database.session() as session:
+            return list((await session.execute(select(EdgeDevice).order_by(EdgeDevice.edge_id))).scalars())
+
+    async def get_device(self, edge_id: str) -> EdgeDevice | None:
+        async with self._database.session() as session:
+            return (
+                await session.execute(select(EdgeDevice).where(EdgeDevice.edge_id == edge_id))
+            ).scalar_one_or_none()
+
+    async def grant_user(self, edge_id: str, user_id: str) -> None:
+        async with self._database.session() as session:
+            await self._ensure_device(session, edge_id)
+            session.add(EdgeUserGrant(edge_id=edge_id, user_id=user_id))
+            await session.flush()
+
+    async def revoke_user(self, edge_id: str, user_id: str) -> bool:
+        async with self._database.session() as session:
+            result = await session.execute(
+                delete(EdgeUserGrant).where(
+                    EdgeUserGrant.edge_id == edge_id,
+                    EdgeUserGrant.user_id == user_id,
+                )
+            )
+            return bool(result.rowcount)
+
+    async def user_has_grant(self, edge_id: str, user_id: str) -> bool:
+        async with self._database.session() as session:
+            row = (
+                await session.execute(
+                    select(EdgeUserGrant.user_id).where(
+                        EdgeUserGrant.edge_id == edge_id,
+                        EdgeUserGrant.user_id == user_id,
+                    )
+                )
+            ).scalar_one_or_none()
+            return row is not None
+
+    async def device_status(self, edge_id: str) -> EdgeStatusSnapshot | None:
+        async with self._database.session() as session:
+            device = (
+                await session.execute(select(EdgeDevice).where(EdgeDevice.edge_id == edge_id))
+            ).scalar_one_or_none()
+            if device is None:
+                return None
+            last_report = (
+                await session.execute(
+                    select(EdgeReport)
+                    .where(EdgeReport.edge_id == edge_id)
+                    .order_by(EdgeReport.received_at.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            capabilities: dict[str, Any] = {}
+            last_seen: datetime | None = None
+            if last_report is not None:
+                last_seen = last_report.received_at
+                payload = last_report.payload or {}
+                raw_capabilities = payload.get("capabilities")
+                if isinstance(raw_capabilities, dict):
+                    capabilities = dict(raw_capabilities)
+            return EdgeStatusSnapshot(
+                edge_id=edge_id,
+                desired_revision=device.desired_head_revision,
+                applied_revision=device.latest_applied_revision,
+                applied_phase=device.latest_applied_phase,
+                last_seen=last_seen,
+                capabilities=capabilities,
+            )
+
+    async def revoke_device(self, edge_id: str) -> None:
+        async with self._database.session() as session:
+            device = await self._lock_device(session, edge_id)
+            device.status = "revoked"
+            now = self._now()
+            await session.execute(
+                update(EdgeManagementLease)
+                .where(
+                    EdgeManagementLease.edge_id == edge_id,
+                    EdgeManagementLease.revoked_at.is_(None),
+                )
+                .values(revoked_at=now)
+            )
+            session.add(
+                EdgeAuditEvent(
+                    edge_id=edge_id,
+                    event_type="device_revoked",
+                    details={},
+                )
+            )
+            await session.flush()
 
     async def _lock_device(self, session: AsyncSession, edge_id: str) -> EdgeDevice:
         await self._ensure_device(session, edge_id)

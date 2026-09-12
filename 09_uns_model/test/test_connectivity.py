@@ -64,12 +64,12 @@ from uns_model.tables import (
 
 
 def test_protocols_include_s7_and_ethernet_ip():
-    assert CONNECTIVITY_PROTOCOLS == ("opc_ua", "s7", "ethernet_ip")
+    assert CONNECTIVITY_PROTOCOLS == ("opc_ua", "s7", "ethernet_ip", "modbus")
     assert PLC_PROTOCOLS == frozenset({"s7", "ethernet_ip"})
 
 
 def test_edge_protocols_include_opc_ua():
-    assert EDGE_PROTOCOLS == frozenset({"s7", "ethernet_ip", "opc_ua"})
+    assert EDGE_PROTOCOLS == frozenset({"s7", "ethernet_ip", "opc_ua", "modbus"})
     assert PLC_PROTOCOLS == frozenset({"s7", "ethernet_ip"})
 
 
@@ -861,7 +861,12 @@ async def test_update_tag_topic_forwards_after_flush_and_mqtt_topic_to_update_ta
         result = await repo.update_tag_topic("s1", "ns=3;s=A", "Plant/B", after_flush=sentinel)
     assert result == "stored"
     mocked.assert_awaited_once_with(
-        "s1", "ns=3;s=A", after_flush=sentinel, on_topic_rewrite=None, mqtt_topic="Plant/B"
+        "s1",
+        "ns=3;s=A",
+        after_flush=sentinel,
+        after_flush_async=None,
+        on_topic_rewrite=None,
+        mqtt_topic="Plant/B",
     )
 
 
@@ -872,7 +877,12 @@ async def test_update_tag_topic_without_after_flush_still_works():
         result = await repo.update_tag_topic("s1", "ns=3;s=A", "Plant/B")
     assert result == "stored"
     mocked.assert_awaited_once_with(
-        "s1", "ns=3;s=A", after_flush=None, on_topic_rewrite=None, mqtt_topic="Plant/B"
+        "s1",
+        "ns=3;s=A",
+        after_flush=None,
+        after_flush_async=None,
+        on_topic_rewrite=None,
+        mqtt_topic="Plant/B",
     )
 
 
