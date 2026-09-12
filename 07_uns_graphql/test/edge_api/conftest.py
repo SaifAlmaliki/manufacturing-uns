@@ -48,11 +48,23 @@ def frozen_now():
     return datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
 
 
+async def _require_edge_schema(database: Database) -> None:
+    async with database.begin() as connection:
+        jobs = (await connection.execute(text("SELECT to_regclass('edge.jobs')"))).scalar()
+        devices = (await connection.execute(text("SELECT to_regclass('edge.devices')"))).scalar()
+    if jobs is None or devices is None:
+        pytest.fail(
+            "Edge catalog tables are missing. Apply Asset Model migrations first: "
+            "`uv run uns_model_setup --skip-seed --skip-oee-import`."
+        )
+
+
 @pytest_asyncio.fixture(loop_scope="session", scope="session")
 async def database():
     config = ModelConfig.from_settings()
     assert config.is_valid()
     db = Database.from_config(config)
+    await _require_edge_schema(db)
     yield db
     await db.dispose()
 

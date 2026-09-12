@@ -17,9 +17,11 @@ on:
       - "07_uns_graphql/pyproject.toml"
       - "07_uns_graphql/uv.lock"
       - "07_uns_graphql/Dockerfile"
+      - "04_uns_historian/sql_scripts/**"
       - "09_uns_model/**/*.py"
       - "09_uns_model/pyproject.toml"
       - "09_uns_model/uv.lock"
+      - "09_uns_model/alembic.ini"
       - ".github/workflows/uns_graphql-app.yml"
       - ".github/include/**"
 
@@ -36,9 +38,11 @@ on:
       - "07_uns_graphql/pyproject.toml"
       - "07_uns_graphql/uv.lock"
       - "07_uns_graphql/Dockerfile"
+      - "04_uns_historian/sql_scripts/**"
       - "09_uns_model/**/*.py"
       - "09_uns_model/pyproject.toml"
       - "09_uns_model/uv.lock"
+      - "09_uns_model/alembic.ini"
       - ".github/workflows/uns_graphql-app.yml"
       - ".github/include/**"
 
@@ -189,6 +193,16 @@ jobs:
 
           SELECT create_hypertable('$UNS_historian__table', 'time');
           " | PGPASSWORD=${UNS_historian__password} psql -h ${UNS_historian__hostname} -U $UNS_historian__username -d $UNS_historian__database  -p 5432
+
+          # Enrichment views and edge migrations (0009+) need the metrics hypertable.
+          PGPASSWORD=${UNS_historian__password} psql -h ${UNS_historian__hostname} -U $UNS_historian__username -d $UNS_historian__database -p 5432 -v ON_ERROR_STOP=1 -f 04_uns_historian/sql_scripts/04_setup_metrics_hypertable.sql
+
+      - name: Apply the Asset Model schema
+        # edge_api integration tests write edge.jobs / edge.devices. Seed is skipped:
+        # GraphQL suites mock catalog writes or register their own pytest edge ids.
+        run: |
+          cd ./07_uns_graphql
+          uv run uns_model_setup --skip-seed --skip-oee-import -v
 
       - name: Run all type of tests
         uses: ./.github/include/execute_tests/
