@@ -36,12 +36,31 @@ from uns_graphql.mutations.connectivity import Mutation as ConnectivityMutation
 from uns_graphql.mutations.hierarchy import Mutation as HierarchyMutation, Query as HierarchyQuery
 from uns_graphql.mutations.oee import Mutation as OeeMutation
 from uns_graphql.queries import access_group, alert_rule, asset, connectivity, graph, historian, oee
+from uns_graphql.edge_api import create_edge_router
+from uns_graphql.edge_api.issuer import EdgeCertificateIssuer, generate_authority
+from uns_graphql.edge_api.service import EdgeManagementService
 from uns_graphql.subscriptions.kafka import KAFKASubscription
 from uns_graphql.subscriptions.mqtt import MQTTSubscription
 from uns_graphql.subscriptions.opcua import Subscription as OpcUaSubscription
 from uns_graphql.type.basetype import Int64
+from uns_model.edge_repository import EdgeRepository
+from uns_model.edge_secrets import EdgeKeyRing, EdgeSecretStore
+from uns_model.engine import Database
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _build_edge_management_service() -> EdgeManagementService:
+    database = Database.shared()
+    repository = EdgeRepository(database)
+    issuer = EdgeCertificateIssuer(generate_authority())
+    secret_store: EdgeSecretStore | None
+    try:
+        secret_store = EdgeSecretStore(EdgeKeyRing.from_settings())
+    except Exception:
+        LOGGER.warning("Edge secret store unavailable; /secrets will return 503", exc_info=True)
+        secret_store = None
+    return EdgeManagementService(database, repository, issuer, secret_store)
 
 
 @strawberry.type(description="Query the UNS for current or historic Nodes/Events ")
@@ -165,4 +184,5 @@ class UNSGraphql:
         allow_headers=["*"],
     )
     app.include_router(graphql_app, prefix="/graphql")
+    app.include_router(create_edge_router(_build_edge_management_service()))
     app.lifespan = lifespan

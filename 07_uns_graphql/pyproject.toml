@@ -44,6 +44,7 @@ dependencies = [
     "neo4j~=6.1",
     "asyncpg>=0.30,<0.32",
     "psutil>=7.2.2,<8",
+    "cryptography>=44,<46",
 ]
 
 [project.urls]
@@ -64,6 +65,7 @@ test = [
     "pytest-cov>=6.0.0,<8",
     "safety>=3.4.0,<4",
     "pytest-retry>=1.7.0,<2",
+    "httpx>=0.28,<1",
 ]
 
 [tool.uv]
