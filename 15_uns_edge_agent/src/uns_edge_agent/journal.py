@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterator
 
-from uns_config.edge_contracts import EdgeConfig, EdgeReport
+from uns_config.edge_contracts import AdapterConfig, EdgeConfig, EdgeReport
 
 
 class JournalError(Exception):
@@ -43,6 +43,19 @@ def _utc_now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _adapter_to_dict(adapter: AdapterConfig | dict[str, Any]) -> dict[str, Any]:
+    if isinstance(adapter, dict):
+        return dict(adapter)
+    return {
+        "adapter_id": adapter.adapter_id,
+        "protocol": adapter.protocol,
+        "connection": dict(adapter.connection),
+        "tags": [dict(tag) for tag in adapter.tags],
+        "northbound_mappings": [dict(mapping) for mapping in adapter.northbound_mappings],
+        "southbound_mappings": [dict(mapping) for mapping in adapter.southbound_mappings],
+    }
+
+
 def _edge_config_to_dict(config: EdgeConfig | dict[str, Any]) -> dict[str, Any]:
     if isinstance(config, dict):
         return dict(config)
@@ -51,7 +64,7 @@ def _edge_config_to_dict(config: EdgeConfig | dict[str, Any]) -> dict[str, Any]:
         "edge_id": config.edge_id,
         "revision": config.revision,
         "digest": config.digest,
-        "adapters": [dict(adapter.__dict__) for adapter in config.adapters],
+        "adapters": [_adapter_to_dict(adapter) for adapter in config.adapters],
         "required_route_revision": config.required_route_revision,
         "secret_refs": [dict(ref) for ref in config.secret_refs],
         "deleted_adapter_ids": list(config.deleted_adapter_ids),

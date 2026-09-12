@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 POLL_INTERVAL_SECONDS = 15.0
@@ -16,11 +16,21 @@ LEASE_RENEW_BEFORE_SECONDS = 30.0
 MQTT_KEYSTORE_PASSWORD_LENGTH = 32
 
 
+def _endpoint_allowlist_from_env() -> frozenset[str]:
+    raw = os.environ.get("UNS_EDGE_ENDPOINT_ALLOWLIST", "")
+    if not raw.strip():
+        return frozenset()
+    return frozenset(part.strip() for part in raw.split(",") if part.strip())
+
+
 @dataclass(frozen=True, slots=True)
 class AgentConfig:
     cloud_base_url: str
     data_dir: Path
     edge_api_url: str | None = None
+    edge_api_username: str = "admin"
+    edge_api_password: str = "hivemq"
+    endpoint_allowlist: frozenset[str] = field(default_factory=frozenset)
     poll_interval_seconds: float = POLL_INTERVAL_SECONDS
     poll_jitter_seconds: float = POLL_JITTER_SECONDS
     heartbeat_interval_seconds: float = HEARTBEAT_INTERVAL_SECONDS
@@ -38,6 +48,9 @@ class AgentConfig:
             cloud_base_url=cloud_base_url.rstrip("/"),
             data_dir=data_dir,
             edge_api_url=edge_api_url,
+            edge_api_username=os.environ.get("UNS_EDGE_API_USERNAME", "admin"),
+            edge_api_password=os.environ.get("UNS_EDGE_API_PASSWORD", "hivemq"),
+            endpoint_allowlist=_endpoint_allowlist_from_env(),
         )
 
     @property

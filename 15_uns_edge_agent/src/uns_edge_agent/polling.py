@@ -16,7 +16,9 @@ from uns_edge_agent.config import (
     POLL_INTERVAL_SECONDS,
     POLL_JITTER_SECONDS,
 )
+from uns_edge_agent.edge_client import EdgeClient, snapshot_owned
 from uns_edge_agent.journal import Journal, JournalError
+from uns_edge_agent.reconcile import Reconciler
 
 
 class Clock(Protocol):
@@ -69,6 +71,8 @@ class PollLoop:
         rng: random.Random | None = None,
         on_configuration: Callable[[ConfigurationSnapshot], None] | None = None,
         edge_id_loader: Callable[[], str] | None = None,
+        edge_client: EdgeClient | None = None,
+        reconciler: Reconciler | None = None,
     ) -> None:
         self._cloud = cloud_client
         self._journal = journal
@@ -77,6 +81,8 @@ class PollLoop:
         self._rng = rng or random.Random(0)
         self._on_configuration = on_configuration
         self._edge_id_loader = edge_id_loader
+        self._edge_client = edge_client
+        self._reconciler = reconciler
         self.state = PollLoopState()
 
     def stop(self) -> None:
@@ -175,11 +181,47 @@ class PollLoop:
         self.state.config_etag = snapshot.digest
         if self._on_configuration is not None:
             self._on_configuration(snapshot)
+        self._queue_configuration_apply(snapshot)
         return snapshot
+
+    def process_pending_apply(self) -> None:
+        if self._reconciler is None:
+            return
+        pending = self._journal.pending_apply()
+        if pending is None:
+            return
+        try:
+            report = self._reconciler.resume_pending(self._journal)
+        except Exception:
+            self._register_backoff()
+            return
+        if report is None:
+            return
+        try:
+            sequence = self._journal.finish_apply(_report_dict(report))
+            report_payload = _report_dict(report)
+            report_payload["report_sequence"] = sequence
+            if self.ensure_session() and self.state.lease is not None:
+                self._cloud.submit_report(self.state.lease, report_payload)
+                self._journal.ack_report(sequence)
+            self._clear_backoff()
+        except (CloudClientError, JournalError):
+            self._register_backoff()
+
+    def _queue_configuration_apply(self, snapshot: ConfigurationSnapshot) -> None:
+        if self._edge_client is None:
+            return
+        from uns_config.edge_contracts import decode_edge_config
+
+        edge_id = self._edge_id()
+        current = self._edge_client.read_owned(edge_id)
+        recovery_snapshot = snapshot_owned(current)
+        self._journal.begin_apply(snapshot.document, recovery_snapshot)
 
     def run_once(self) -> None:
         self.flush_pending_reports()
         self.send_heartbeat_if_due()
+        self.process_pending_apply()
         self.poll_configuration()
 
     def run_until_stopped(self) -> None:
@@ -200,6 +242,22 @@ class PollLoop:
         if pending is not None:
             return str(pending.config.get("edge_id", "unknown"))
         return "unknown"
+
+
+def _report_dict(report) -> dict[str, Any]:
+    return {
+        "edge_id": report.edge_id,
+        "boot_id": report.boot_id,
+        "report_sequence": report.report_sequence,
+        "desired_revision": report.desired_revision,
+        "applied_revision": report.applied_revision,
+        "applied_digest": report.applied_digest,
+        "phase": report.phase,
+        "adapter_results": list(report.adapter_results),
+        "last_error_code": report.last_error_code,
+        "versions": dict(report.versions),
+        "capabilities": dict(report.capabilities),
+    }
 
 
 def _heartbeat_report(edge_id: str, boot_id: str) -> dict[str, Any]:
