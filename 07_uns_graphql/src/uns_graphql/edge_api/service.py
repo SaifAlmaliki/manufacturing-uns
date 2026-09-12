@@ -327,7 +327,12 @@ class EdgeManagementService:
                 raise EdgeServiceError("expired_identity", 401)
             if not self._issuer.renewal_allowed(current.not_before, now):
                 raise EdgeServiceError("renewal_too_early", 409)
-            issued = self._issuer.issue_from_csr(csr_pem, edge_id=identity.edge_id, purpose=purpose, now=now)
+            issued = self._issuer.renew_from_csr(
+                csr_pem,
+                edge_id=identity.edge_id,
+                purpose=purpose,
+                previous_not_after=current.not_after,
+            )
             await store_certificate(
                 session,
                 certificate_id=issued.certificate_id,

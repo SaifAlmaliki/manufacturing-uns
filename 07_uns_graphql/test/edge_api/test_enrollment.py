@@ -3,24 +3,35 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from httpx import AsyncClient
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
+
+from uns_model.edge_repository import EdgeRepository
 
 from uns_graphql.edge_api.enrollment import (
     ENROLLMENT_TOKEN_VALIDITY,
+    MAX_ENROLLMENT_BODY_BYTES,
+    EnrollmentRateLimiter,
     create_enrollment_attempt,
     hash_token,
     mint_enrollment_token,
     revoke_device,
 )
-from uns_graphql.edge_api.issuer import CERTIFICATE_LIFETIME, RENEWAL_WINDOW, generate_csr
-from uns_graphql.edge_api.router import identity_headers
+from uns_graphql.edge_api.issuer import (
+    CERTIFICATE_LIFETIME,
+    OVERLAP_DURATION,
+    RENEWAL_WINDOW,
+    generate_csr,
+)
+from uns_graphql.edge_api.router import create_edge_router, identity_headers
 from uns_graphql.edge_api.service import EdgeManagementService
 
-from test.edge_api.conftest import TEST_EDGE, enroll_edge, open_session
+from test.edge_api.conftest import TEST_EDGE, enroll_edge, lease_headers, open_session
 
 
 @pytest.mark.integrationtest
@@ -223,4 +234,114 @@ async def test_renew_after_day_twenty_with_overlap(
         json={"purpose": "management", "csr": renewed_csr},
     )
     assert renewed.status_code == 200
-    assert renewed.json()["purpose"] == "management"
+    renewed_payload = renewed.json()
+    assert renewed_payload["purpose"] == "management"
+    original_not_after = frozen_now + CERTIFICATE_LIFETIME
+    expected_not_before = original_not_after - OVERLAP_DURATION
+    assert datetime.fromisoformat(renewed_payload["not_before"]) == expected_not_before
+    assert datetime.fromisoformat(renewed_payload["not_after"]) == expected_not_before + CERTIFICATE_LIFETIME
+
+
+@pytest.mark.integrationtest
+@pytest.mark.asyncio(loop_scope="session")
+async def test_enrollment_body_too_large(
+    edge_service: EdgeManagementService,
+    client: AsyncClient,
+    csrs,
+):
+    management_csr, mqtt_csr = csrs
+    token = await edge_service.create_enrollment_token(TEST_EDGE)
+    padding = "x" * (MAX_ENROLLMENT_BODY_BYTES + 1)
+    body = json.dumps(
+        {
+            "enrollment_token": token,
+            "management_csr": management_csr,
+            "mqtt_csr": mqtt_csr + padding,
+        }
+    )
+    response = await client.post(
+        "/api/edge/v1/enroll",
+        content=body,
+        headers={"content-type": "application/json"},
+    )
+    assert response.status_code == 413
+    assert response.json()["error"] == "body_too_large"
+
+
+@pytest.mark.integrationtest
+@pytest.mark.asyncio(loop_scope="session")
+async def test_enrollment_rate_limited(
+    database,
+    issuer,
+    secret_store,
+    frozen_now,
+    csrs,
+):
+    repo = EdgeRepository(database, now=lambda: frozen_now)
+    service = EdgeManagementService(
+        database,
+        repo,
+        issuer,
+        secret_store,
+        now=lambda: frozen_now,
+        rate_limiter=EnrollmentRateLimiter(limit_per_minute=1),
+    )
+    await repo.register_device(TEST_EDGE)
+    app = FastAPI()
+    app.include_router(create_edge_router(service))
+    transport = ASGITransport(app=app)
+    management_csr, mqtt_csr = csrs
+
+    async with AsyncClient(transport=transport, base_url="http://test") as http_client:
+        token = await service.create_enrollment_token(TEST_EDGE)
+        first = await http_client.post(
+            "/api/edge/v1/enroll",
+            json={
+                "enrollment_token": token,
+                "management_csr": management_csr,
+                "mqtt_csr": mqtt_csr,
+            },
+        )
+        assert first.status_code == 200
+
+        second_token = await service.create_enrollment_token(TEST_EDGE)
+        second = await http_client.post(
+            "/api/edge/v1/enroll",
+            json={
+                "enrollment_token": second_token,
+                "management_csr": management_csr,
+                "mqtt_csr": mqtt_csr,
+            },
+        )
+        assert second.status_code == 429
+        assert second.json()["error"] == "rate_limited"
+
+
+@pytest.mark.integrationtest
+@pytest.mark.asyncio(loop_scope="session")
+async def test_secret_fetch_returns_503_when_store_unavailable(
+    edge_service: EdgeManagementService,
+    client: AsyncClient,
+    csrs,
+):
+    enrolled = await enroll_edge(edge_service, client, TEST_EDGE, *csrs)
+    await edge_service._repository.save_desired(  # noqa: SLF001
+        TEST_EDGE,
+        0,
+        {
+            "contract_version": 1,
+            "adapters": [],
+            "required_route_revision": 1,
+            "secret_refs": [{"secret_id": "conn-password", "version": 1}],
+            "deleted_adapter_ids": [],
+        },
+    )
+    session_payload = await open_session(client, TEST_EDGE, enrolled["management_serial"])
+    headers = {
+        **identity_headers(TEST_EDGE, serial=enrolled["management_serial"]),
+        **lease_headers(session_payload),
+    }
+    edge_service._secret_store = None  # noqa: SLF001
+    response = await client.get("/api/edge/v1/secrets/conn-password/1", headers=headers)
+    assert response.status_code == 503
+    assert response.json()["error"] == "secrets_unavailable"

@@ -81,6 +81,7 @@ class EdgeCertificateIssuer:
         edge_id: str,
         purpose: EdgeCertPurpose,
         now: datetime,
+        not_before: datetime | None = None,
     ) -> IssuedCertificate:
         csr = x509.load_pem_x509_csr(csr_pem.encode("ascii"))
         if not csr.is_signature_valid:
@@ -91,15 +92,15 @@ class EdgeCertificateIssuer:
                 x509.NameAttribute(NameOID.COMMON_NAME, f"{edge_id}.{purpose}.uns"),
             ]
         )
-        not_before = now
-        not_after = now + CERTIFICATE_LIFETIME
+        effective_not_before = not_before if not_before is not None else now
+        not_after = effective_not_before + CERTIFICATE_LIFETIME
         certificate = (
             x509.CertificateBuilder()
             .subject_name(subject)
             .issuer_name(self._authority_cert.subject)
             .public_key(csr.public_key())
             .serial_number(x509.random_serial_number())
-            .not_valid_before(not_before)
+            .not_valid_before(effective_not_before)
             .not_valid_after(not_after)
             .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
             .add_extension(
@@ -115,8 +116,25 @@ class EdgeCertificateIssuer:
             pem=leaf_pem,
             chain_pem=(leaf_pem, self._authority.certificate_pem),
             subject=self.derived_subject(edge_id, purpose),
-            not_before=not_before,
+            not_before=effective_not_before,
             not_after=not_after,
+        )
+
+    def renew_from_csr(
+        self,
+        csr_pem: str,
+        *,
+        edge_id: str,
+        purpose: EdgeCertPurpose,
+        previous_not_after: datetime,
+    ) -> IssuedCertificate:
+        not_before = self.overlap_not_before(previous_not_after)
+        return self.issue_from_csr(
+            csr_pem,
+            edge_id=edge_id,
+            purpose=purpose,
+            now=not_before,
+            not_before=not_before,
         )
 
     def renewal_allowed(self, not_before: datetime, now: datetime) -> bool:
