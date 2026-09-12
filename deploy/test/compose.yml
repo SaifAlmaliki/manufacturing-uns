@@ -223,10 +223,36 @@ services:
       retries: 20
       start_period: 90s
 
+  protocol-collector:
+    build:
+      <<: *stub_build
+    command: ["protocol_collector_stub.py"]
+    environment:
+      EDGE_ID: edge-01
+      FIXTURE_PROFILE: edge_simulation
+      FIXTURE_PROFILE_FILE: /app/fixtures.json
+    depends_on:
+      hivemq-edge:
+        condition: service_healthy
+      cloud-management:
+        condition: service_healthy
+      opcua-simulator:
+        condition: service_healthy
+      modbus-simulator:
+        condition: service_healthy
+    networks:
+      dmz:
+        ipv4_address: 172.30.20.55
+      ot:
+        ipv4_address: 172.30.30.55
+      cloud:
+
   opcua-simulator:
     build:
       context: ../..
       dockerfile: conf/simulator/protocols/Dockerfile.opcua
+    environment:
+      FIXTURE_PROFILE: qualification
     networks:
       ot:
         ipv4_address: 172.30.30.10
@@ -241,6 +267,8 @@ services:
     build:
       context: ../..
       dockerfile: conf/simulator/protocols/Dockerfile.modbus
+    environment:
+      FIXTURE_PROFILE: qualification
     networks:
       ot:
         ipv4_address: 172.30.30.20

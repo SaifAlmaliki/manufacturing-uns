@@ -6,6 +6,7 @@ RUN apt-get update \
 COPY deploy/test/support/generate_qualification_ca.sh /app/
 RUN chmod +x /app/generate_qualification_ca.sh \
     && /app/generate_qualification_ca.sh /qualification-ca
-RUN pip install --no-cache-dir confluent-kafka minio paho-mqtt
+RUN pip install --no-cache-dir confluent-kafka minio paho-mqtt "asyncua>=1.1.0,<2" "pymodbus>=3.8.0,<4"
 COPY deploy/test/support/*.py /app/
+COPY conf/simulator/protocols/fixtures.json /app/fixtures.json
 ENTRYPOINT ["python"]

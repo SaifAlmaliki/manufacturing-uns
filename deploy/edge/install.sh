@@ -79,7 +79,25 @@ fi
 mkdir -p "${DESTINATION}"
 install -d -m 0750 "${DESTINATION}/secrets" "${DESTINATION}/hivemq" "${DESTINATION}/state"
 
-rsync -a --exclude 'state/' --exclude 'secrets/edge-api.env' --exclude 'agent.env' "${SCRIPT_DIR}/" "${DESTINATION}/"
+rsync -a \
+  --exclude 'state/' \
+  --exclude 'secrets/edge-api.env' \
+  --exclude 'agent.env' \
+  --exclude 'simulation/secrets/mqtt-sim.env' \
+  --exclude 'simulation/secrets/mqtt-tls.env' \
+  "${SCRIPT_DIR}/" "${DESTINATION}/"
+
+if [[ ! -f "${DESTINATION}/simulation/secrets/mqtt-sim.env" ]]; then
+  install -m 0600 \
+    "${DESTINATION}/simulation/secrets/mqtt-sim.env.example" \
+    "${DESTINATION}/simulation/secrets/mqtt-sim.env"
+fi
+
+if [[ ! -f "${DESTINATION}/simulation/secrets/mqtt-tls.env" ]]; then
+  install -m 0600 \
+    "${DESTINATION}/simulation/secrets/mqtt-tls.env.example" \
+    "${DESTINATION}/simulation/secrets/mqtt-tls.env"
+fi
 
 if [[ ! -f "${DESTINATION}/agent.env" ]]; then
   install -m 0640 "${DESTINATION}/agent.env.example" "${DESTINATION}/agent.env"
@@ -95,3 +113,5 @@ fi
 
 echo "Installed verified bundle to ${DESTINATION}. Start with:"
 echo "  docker compose --project-directory ${DESTINATION} -f ${DESTINATION}/compose.yml up -d"
+echo "Optional simulation overlay (disabled by default):"
+echo "  docker compose --project-directory ${DESTINATION} -f ${DESTINATION}/compose.yml -f ${DESTINATION}/compose.simulation.yml --profile edge-sim up -d"

@@ -16,6 +16,8 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 COMPOSE_FILE = Path(__file__).with_name("compose.yml")
+EDGE_SIM_CONNECTIONS = REPO_ROOT / "deploy" / "edge" / "simulation" / "connections.json"
+EDGE_SIM_FIXTURES = REPO_ROOT / "conf" / "simulator" / "protocols" / "fixtures.json"
 PROJECT_NAME = "uns-cloud-edge-qualification"
 DMZ_MGMT_HOST = "172.30.21.10"
 DMZ_MGMT_PORT = 8443
@@ -49,6 +51,18 @@ class EventIdentity:
     site_id: str
     source_id: str
     source_sequence: int
+
+
+@dataclass(slots=True)
+class SourceDataResult:
+    protocol: str
+    revision: int
+    topics: list[str]
+    local_mqtt_payloads: dict[str, bytes]
+    lake_rows: list[dict[str, Any]]
+    values_match_fixture: bool
+    lake_payloads_match_local_mqtt: bool
+    uses_updated_mapping: bool = False
 
 
 @dataclass(slots=True)
@@ -130,6 +144,7 @@ class CloudEdgeHarness:
             "hivemq-edge",
             "opcua-simulator",
             "modbus-simulator",
+            "protocol-collector",
         )
         while time.monotonic() < deadline:
             result = self._compose("ps", "--format", "json", check=False)
@@ -494,6 +509,137 @@ class CloudEdgeHarness:
 
     def restart_broker(self) -> None:
         self._compose("restart", "cloud-mqtt", check=False)
+
+    def _simulation_connections(self) -> dict[str, Any]:
+        return json.loads(EDGE_SIM_CONNECTIONS.read_text(encoding="utf-8"))
+
+    def _fixture_manifest(self) -> dict[str, Any]:
+        data = json.loads(EDGE_SIM_FIXTURES.read_text(encoding="utf-8"))
+        return data["profiles"]["edge_simulation"]
+
+    def configure_simulated_source(self, protocol: str) -> int:
+        connections = self._simulation_connections()
+        key = "opcua" if protocol == "opcua" else "modbus"
+        settings = dict(connections[key]["initial"])
+        settings.pop("protocol", None)
+        cloud_protocol = "opc_ua" if protocol == "opcua" else "modbus"
+        return self.save_connection("edge-01", cloud_protocol, settings)
+
+    def change_simulated_mapping(self, protocol: str) -> int:
+        connections = self._simulation_connections()
+        key = "opcua" if protocol == "opcua" else "modbus"
+        settings = dict(connections[key]["remapped"])
+        settings.pop("protocol", None)
+        cloud_protocol = "opc_ua" if protocol == "opcua" else "modbus"
+        return self.save_connection("edge-01", cloud_protocol, settings)
+
+    def wait_source_data(
+        self,
+        protocol: str,
+        revision: int,
+        timeout: float,
+        *,
+        expect_remapped: bool = False,
+    ) -> SourceDataResult:
+        manifest = self._fixture_manifest()["manifest"]["revisions"]
+        manifest_key = f"{protocol}_{'remapped' if expect_remapped else 'initial'}"
+        expected = manifest[manifest_key]
+        topics = list(expected["topics"])
+        expected_values = expected["expected_values"]
+        deadline = time.monotonic() + timeout
+        local_payloads: dict[str, bytes] = {}
+        while time.monotonic() < deadline:
+            for topic in topics:
+                if topic in local_payloads:
+                    continue
+                payload = self._capture_edge_mqtt(topic)
+                if payload is not None:
+                    local_payloads[topic] = payload
+            if len(local_payloads) == len(topics):
+                break
+            time.sleep(2.0)
+        if len(local_payloads) != len(topics):
+            raise TimeoutError(f"protocol data for revision {revision} not observed on edge MQTT")
+
+        lake_rows: list[dict[str, Any]] = []
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            for topic in topics:
+                rows = self._lake_rows_by_topic(topic)
+                if rows:
+                    lake_rows.extend(rows)
+            if lake_rows:
+                break
+            time.sleep(2.0)
+        if not lake_rows:
+            raise TimeoutError(f"lake rows for protocol revision {revision} not observed")
+
+        values_match = True
+        for name, expected in expected_values.items():
+            topic = next(
+                (candidate for candidate in topics if name.lower() in candidate.lower()),
+                None,
+            )
+            if topic is None:
+                values_match = False
+                break
+            observed = json.loads(local_payloads[topic].decode("utf-8"))["value"]
+            if abs(float(observed) - float(expected)) >= 0.01:
+                values_match = False
+                break
+        lake_match = self._lake_matches_local_mqtt(local_payloads, lake_rows)
+        return SourceDataResult(
+            protocol=protocol,
+            revision=revision,
+            topics=topics,
+            local_mqtt_payloads=local_payloads,
+            lake_rows=lake_rows,
+            values_match_fixture=values_match,
+            lake_payloads_match_local_mqtt=lake_match,
+            uses_updated_mapping=expect_remapped,
+        )
+
+    def _capture_edge_mqtt(self, topic: str) -> bytes | None:
+        self._exec("dmz-probe", "apk add --no-cache mosquitto-clients >/dev/null", check=False)
+        result = self._exec(
+            "dmz-probe",
+            (
+                "timeout 3 mosquitto_sub -h hivemq-edge -p 1883 "
+                f"-t '{topic}' -C 1 -W 2 || true"
+            ),
+            check=False,
+        )
+        line = (result.stdout or "").strip()
+        return line.encode("utf-8") if line else None
+
+    def _lake_rows_by_topic(self, topic: str) -> list[dict[str, Any]]:
+        result = self._exec(
+            "qualification-lake-sink",
+            f"python /app/harness_client.py lake-topic-rows --topic={shlex_quote(topic)}",
+            check=False,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return []
+        return json.loads(result.stdout)
+
+    def _lake_matches_local_mqtt(
+        self,
+        local_payloads: dict[str, bytes],
+        lake_rows: list[dict[str, Any]],
+    ) -> bool:
+        import base64
+
+        for topic, payload in local_payloads.items():
+            matching = [row for row in lake_rows if row.get("topic") == topic]
+            if not matching:
+                return False
+            lake_payload = matching[0].get("payload", {})
+            original_b64 = lake_payload.get("original_payload_base64")
+            if not original_b64:
+                return False
+            if base64.b64decode(original_b64) != payload:
+                return False
+        return True
 
 
 def shlex_quote(value: str) -> str:

@@ -1,0 +1,107 @@
+# Optional hardware-free commissioning overlay. Enable with:
+#   docker compose -f compose.yml -f compose.simulation.yml --profile edge-sim up -d
+#
+# Simulators publish to hivemq-edge:8883 only. No cloud broker address or credentials.
+
+name: uns-edge
+
+networks:
+  sim-ot:
+    driver: bridge
+    internal: true
+
+x-sim-mqtt-env: &sim_mqtt_env
+  MQTT_TLS: "1"
+  MQTT_TLS_VERIFY: "1"
+  MQTT_HOST: hivemq-edge
+  MQTT_PORT: "8883"
+  ENTERPRISE: EdgeSimulation
+  SITE: EdgeSimulation
+  SITE_ID: edge-simulation
+  TOPIC_PREFIX: EdgeSimulation/EdgeSimulation
+
+x-sim-image: &sim_image_defaults
+  restart: unless-stopped
+  profiles: [edge-sim]
+  networks: [sim-ot]
+
+services:
+  hivemq-edge:
+    networks:
+      - edge-internal
+      - sim-ot
+
+  oee-simulator:
+    <<: *sim_image_defaults
+    image: uns-oee-simulator@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    environment:
+      <<: *sim_mqtt_env
+      H: hivemq-edge
+      P: "8883"
+      B: EdgeSimulation/EdgeSimulation/Production
+      CLIENT_ID_PREFIX: edge-sim-oee
+      ACCEPTANCE_MODE: ${OEE_ACCEPTANCE_MODE:-0}
+      RUN_ID: ${SIM_RUN_ID:-}
+      SEED: ${SIM_SEED:-}
+      CASE_COUNT: ${OEE_CASE_COUNT:-0}
+    secrets:
+      - mqtt_sim_credentials
+      - mqtt_sim_tls
+    depends_on:
+      hivemq-edge:
+        condition: service_healthy
+
+  multi-system-simulator:
+    <<: *sim_image_defaults
+    image: uns-multi-system-simulator@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    environment:
+      <<: *sim_mqtt_env
+      INTERVAL_SECONDS: "15"
+      ACCEPTANCE_MODE: ${MULTI_ACCEPTANCE_MODE:-0}
+      RUN_ID: ${SIM_RUN_ID:-}
+      SEED: ${SIM_SEED:-}
+      CASE_COUNT: ${MULTI_CASE_COUNT:-0}
+    secrets:
+      - mqtt_sim_credentials
+      - mqtt_sim_tls
+    depends_on:
+      hivemq-edge:
+        condition: service_healthy
+
+  opcua-simulator:
+    <<: *sim_image_defaults
+    image: uns-opcua-simulator@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+    environment:
+      FIXTURE_PROFILE: edge_simulation
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import socket; s=socket.create_connection(('127.0.0.1',4840),2); s.close()\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  modbus-simulator:
+    <<: *sim_image_defaults
+    image: uns-modbus-simulator@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+    environment:
+      FIXTURE_PROFILE: edge_simulation
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import socket; s=socket.create_connection(('127.0.0.1',1502),2); s.close()\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+secrets:
+  mqtt_sim_credentials:
+    file: ./simulation/secrets/mqtt-sim.env
+  mqtt_sim_tls:
+    file: ./simulation/secrets/mqtt-tls.env

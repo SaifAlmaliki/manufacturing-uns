@@ -2,4 +2,6 @@ FROM python:3.14-slim
 RUN pip install --no-cache-dir "paho-mqtt>=2.1.0,<3"
 COPY conf/simulator/multi_system_publishers.py /simulator/multi_system_publishers.py
 ENV MQTT_HOST=uns_mqtt_broker MQTT_PORT=1883 INTERVAL_SECONDS=15
+ENV MQTT_CREDENTIALS_FILE=/run/secrets/mqtt_sim_credentials
+ENV MQTT_TLS_CONFIG_FILE=/run/secrets/mqtt_sim_tls
 ENTRYPOINT ["python", "/simulator/multi_system_publishers.py"]

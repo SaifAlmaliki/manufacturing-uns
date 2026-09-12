@@ -13,7 +13,9 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EDGE_DIR = REPO_ROOT / "deploy" / "edge"
 COMPOSE_FILE = EDGE_DIR / "compose.yml"
+SIM_COMPOSE_FILE = EDGE_DIR / "compose.simulation.yml"
 RELEASE_FILE = EDGE_DIR / "release.json"
+SIM_README = EDGE_DIR / "simulation" / "README.md"
 HIVEMQ_TEMPLATE = EDGE_DIR / "hivemq" / "config.xml.template"
 AGENT_EXAMPLE = EDGE_DIR / "agent.yaml.example"
 INSTALL_SCRIPT = EDGE_DIR / "install.sh"
@@ -43,6 +45,7 @@ def edge_release() -> dict:
 def test_edge_bundle_files_exist():
     required = [
         COMPOSE_FILE,
+        SIM_COMPOSE_FILE,
         RELEASE_FILE,
         HIVEMQ_TEMPLATE,
         AGENT_EXAMPLE,
@@ -50,6 +53,9 @@ def test_edge_bundle_files_exist():
         VERIFY_SCRIPT,
         UPGRADE_SCRIPT,
         DOCS_FILE,
+        SIM_README,
+        EDGE_DIR / "simulation" / "connections.json",
+        EDGE_DIR / "simulation" / "publication-routes.yaml",
     ]
     for path in required:
         assert path.is_file(), path
@@ -59,7 +65,8 @@ def test_release_json_records_digest_pinned_images(edge_release):
     assert edge_release["bundle_version"] == 1
     assert "release_id" in edge_release
     images = edge_release["images"]
-    assert set(images) == {"hivemq-edge", "uns-edge-agent"}
+    assert {"hivemq-edge", "uns-edge-agent"}.issubset(images)
+    assert edge_release.get("simulation_overlay") == "compose.simulation.yml"
     for name, image in images.items():
         assert DIGEST_PATTERN.fullmatch(image["digest"])
         assert image["repository"]
@@ -184,6 +191,7 @@ def test_install_script_checks_runtime_digest_and_destination():
     assert "release.json" in script
     assert "sha256" in script
     assert "docker compose" in script
+    assert "compose.simulation.yml" in script
     assert "curl" not in script
     assert "wget" not in script
 
@@ -191,6 +199,8 @@ def test_install_script_checks_runtime_digest_and_destination():
 def test_verify_script_checks_destination_and_services():
     script = VERIFY_SCRIPT.read_text(encoding="utf-8")
     assert "--destination" in script
+    assert "--profile" in script
+    assert "edge-sim" in script
     assert "compose.yml" in script
     assert "uns-edge-agent" in script
     assert "hivemq-edge" in script

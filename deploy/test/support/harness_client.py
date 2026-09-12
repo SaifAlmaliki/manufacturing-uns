@@ -121,6 +121,25 @@ def cmd_lake_rows(args: argparse.Namespace) -> int:
     return 0
 
 
+def _lake_rows_by_topic(topic: str) -> list[dict[str, Any]]:
+    client = _minio_client()
+    rows: list[dict[str, Any]] = []
+    for obj in client.list_objects(LAKE_BUCKET, prefix="events/", recursive=True):
+        response = client.get_object(LAKE_BUCKET, obj.object_name)
+        row = json.loads(response.read().decode("utf-8"))
+        response.close()
+        response.release_conn()
+        if row.get("topic") == topic:
+            rows.append(row)
+    rows.sort(key=lambda row: (row.get("kafka_partition", 0), row.get("kafka_offset", 0)))
+    return rows
+
+
+def cmd_lake_topic_rows(args: argparse.Namespace) -> int:
+    print(json.dumps(_lake_rows_by_topic(args.topic), separators=(",", ":")))
+    return 0
+
+
 def cmd_kafka_rows(args: argparse.Namespace) -> int:
     from confluent_kafka import Consumer, KafkaException
 
@@ -182,6 +201,10 @@ def main() -> int:
     lake = subparsers.add_parser("lake-rows")
     lake.add_argument("--event-id", required=True)
     lake.set_defaults(func=cmd_lake_rows)
+
+    lake_topic = subparsers.add_parser("lake-topic-rows")
+    lake_topic.add_argument("--topic", required=True)
+    lake_topic.set_defaults(func=cmd_lake_topic_rows)
 
     kafka = subparsers.add_parser("kafka-rows")
     kafka.add_argument("--event-id", required=True)

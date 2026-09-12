@@ -1,0 +1,53 @@
+{
+  "site_id": "edge-simulation",
+  "edge_id": "edge-01",
+  "note": "Submit these through cloud mutations after enrollment. Starting the overlay does not install adapters locally.",
+  "opcua": {
+    "initial": {
+      "protocol": "opc_ua",
+      "endpoint": "opc.tcp://opcua-simulator:4840/uns-sim/",
+      "security_mode": "None",
+      "namespace_uri": "urn:uns:edge-simulation",
+      "nodes": [
+        {"name": "Temperature", "node_id": "ns=2;s=Temperature", "topic": "Enterprise/EdgeSimulation/OPCUA/Temperature"},
+        {"name": "Pressure", "node_id": "ns=2;s=Pressure", "topic": "Enterprise/EdgeSimulation/OPCUA/Pressure"}
+      ],
+      "poll_interval_ms": 1000
+    },
+    "remapped": {
+      "protocol": "opc_ua",
+      "endpoint": "opc.tcp://opcua-simulator:4840/uns-sim/",
+      "security_mode": "None",
+      "namespace_uri": "urn:uns:edge-simulation",
+      "nodes": [
+        {"name": "SampleCounter", "node_id": "ns=2;s=SampleCounter", "topic": "Enterprise/EdgeSimulation/OPCUA/SampleCounter"}
+      ],
+      "poll_interval_ms": 1000
+    }
+  },
+  "modbus": {
+    "initial": {
+      "protocol": "modbus",
+      "host": "modbus-simulator",
+      "port": 1502,
+      "unit_id": 1,
+      "address_convention": "zero_based_holding_register",
+      "registers": [
+        {"address": 0, "name": "temperature", "scale": 10, "topic": "Enterprise/EdgeSimulation/Modbus/Temperature"},
+        {"address": 1, "name": "pressure", "scale": 100, "topic": "Enterprise/EdgeSimulation/Modbus/Pressure"}
+      ],
+      "poll_interval_ms": 1000
+    },
+    "remapped": {
+      "protocol": "modbus",
+      "host": "modbus-simulator",
+      "port": 1502,
+      "unit_id": 1,
+      "address_convention": "zero_based_holding_register",
+      "registers": [
+        {"address": 2, "name": "sample_counter", "scale": 1, "topic": "Enterprise/EdgeSimulation/Modbus/SampleCounter"}
+      ],
+      "poll_interval_ms": 1000
+    }
+  }
+}

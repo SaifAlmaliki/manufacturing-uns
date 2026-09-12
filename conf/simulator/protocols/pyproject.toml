@@ -1,0 +1,14 @@
+[project]
+name = "uns-simulator-protocols"
+version = "0.1.0"
+description = "Isolated OPC UA and Modbus test-server fixtures for edge simulation"
+requires-python = ">=3.14, <4"
+dependencies = [
+    "asyncua>=1.1.0,<2",
+    "pymodbus>=3.8.0,<4",
+]
+
+[dependency-groups]
+test = [
+    "pytest>=9.0.3,<10",
+]

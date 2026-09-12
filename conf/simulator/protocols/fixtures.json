@@ -1,18 +1,81 @@
 {
-  "opcua": {
-    "endpoint": "opc.tcp://0.0.0.0:4840/cloud-edge-qualification/",
-    "namespace_uri": "urn:uns:cloud-edge-qualification",
-    "nodes": [
-      {"node_id": "ns=2;i=1001", "name": "Temperature", "value": 21.4},
-      {"node_id": "ns=2;i=1002", "name": "Pressure", "value": 1.01}
-    ]
-  },
-  "modbus": {
-    "listen_host": "0.0.0.0",
-    "listen_port": 1502,
-    "holding_registers": {
-      "40001": 214,
-      "40002": 101
+  "profiles": {
+    "qualification": {
+      "opcua": {
+        "endpoint": "opc.tcp://0.0.0.0:4840/cloud-edge-qualification/",
+        "namespace_uri": "urn:uns:cloud-edge-qualification",
+        "nodes": [
+          {"node_id": "ns=2;i=1001", "name": "Temperature", "value": 21.4},
+          {"node_id": "ns=2;i=1002", "name": "Pressure", "value": 1.01}
+        ]
+      },
+      "modbus": {
+        "listen_host": "0.0.0.0",
+        "listen_port": 1502,
+        "unit_id": 1,
+        "address_convention": "one_based_holding_register",
+        "holding_registers": {
+          "40001": 214,
+          "40002": 101
+        }
+      }
+    },
+    "edge_simulation": {
+      "opcua": {
+        "endpoint": "opc.tcp://0.0.0.0:4840/uns-sim/",
+        "namespace_uri": "urn:uns:edge-simulation",
+        "nodes": [
+          {"node_id": "ns=2;s=Temperature", "name": "Temperature", "value": 23.5},
+          {"node_id": "ns=2;s=Pressure", "name": "Pressure", "value": 1.15},
+          {"node_id": "ns=2;s=SampleCounter", "name": "SampleCounter", "value": 42}
+        ],
+        "schedule": [
+          {"hold_seconds": 120, "values": {"Temperature": 23.5, "Pressure": 1.15, "SampleCounter": 42}},
+          {"hold_seconds": 120, "values": {"Temperature": 24.0, "Pressure": 1.20, "SampleCounter": 43}}
+        ]
+      },
+      "modbus": {
+        "listen_host": "0.0.0.0",
+        "listen_port": 1502,
+        "unit_id": 1,
+        "address_convention": "zero_based_holding_register",
+        "registers": {
+          "0": {"name": "temperature", "scale": 10, "value": 235},
+          "1": {"name": "pressure", "scale": 100, "value": 115},
+          "2": {"name": "sample_counter", "scale": 1, "value": 42}
+        },
+        "schedule": [
+          {"hold_seconds": 120, "registers": {"0": 235, "1": 115, "2": 42}},
+          {"hold_seconds": 120, "registers": {"0": 240, "1": 120, "2": 43}}
+        ]
+      },
+      "manifest": {
+        "site_id": "edge-simulation",
+        "revisions": {
+          "opcua_initial": {
+            "expected_values": {"Temperature": 23.5, "Pressure": 1.15},
+            "topics": [
+              "Enterprise/EdgeSimulation/OPCUA/Temperature",
+              "Enterprise/EdgeSimulation/OPCUA/Pressure"
+            ]
+          },
+          "opcua_remapped": {
+            "expected_values": {"SampleCounter": 42},
+            "topics": ["Enterprise/EdgeSimulation/OPCUA/SampleCounter"]
+          },
+          "modbus_initial": {
+            "expected_values": {"temperature": 23.5, "pressure": 1.15},
+            "topics": [
+              "Enterprise/EdgeSimulation/Modbus/Temperature",
+              "Enterprise/EdgeSimulation/Modbus/Pressure"
+            ]
+          },
+          "modbus_remapped": {
+            "expected_values": {"sample_counter": 42},
+            "topics": ["Enterprise/EdgeSimulation/Modbus/SampleCounter"]
+          }
+        }
+      }
     }
   }
 }

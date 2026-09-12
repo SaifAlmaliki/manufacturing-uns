@@ -15,8 +15,33 @@
       "digest": "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
       "status": "blocked",
       "blocker": "Agent image must be built and digest-pinned in the release archive before rollout"
+    },
+    "oee-simulator": {
+      "repository": "uns-oee-simulator",
+      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "status": "blocked",
+      "blocker": "Build and pin the OEE simulator image before offline bundle export"
+    },
+    "multi-system-simulator": {
+      "repository": "uns-multi-system-simulator",
+      "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "status": "blocked",
+      "blocker": "Build and pin the multi-system simulator image before offline bundle export"
+    },
+    "opcua-simulator": {
+      "repository": "uns-opcua-simulator",
+      "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "status": "blocked",
+      "blocker": "Build and pin the OPC UA simulator image before offline bundle export"
+    },
+    "modbus-simulator": {
+      "repository": "uns-modbus-simulator",
+      "digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "status": "blocked",
+      "blocker": "Build and pin the Modbus simulator image before offline bundle export"
     }
   },
+  "simulation_overlay": "compose.simulation.yml",
   "buffering_license_required": true,
   "buffering_license_status": "blocked",
   "notes": "Replace placeholder digests with verified values from docker inspect or registry manifest before production installation."

@@ -53,7 +53,13 @@ def _historic_envelope(topic: str, payload: bytes) -> dict[str, Any]:
             "original_payload_base64": base64.b64encode(original).decode("ascii"),
             "occurred_at": publication.get("occurred_at"),
         }
-    event_id = _source_event_id(SITE_ID, topic.replace("/", ":"), BOOT_ID, int(time.time()))
+    try:
+        body = json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        body = {}
+    sequence = int(body.get("source_revision", time.time()))
+    boot_id = f"protocol-rev-{body.get('source_revision', 'live')}"
+    event_id = _source_event_id(SITE_ID, topic.replace("/", ":"), boot_id, sequence)
     return {
         "schema_version": 1,
         "event_id": event_id,

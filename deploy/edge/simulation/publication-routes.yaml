@@ -1,0 +1,16 @@
+# Route registrations for the edge-simulation namespace. Activate in the cloud console
+# after enrollment; the overlay alone does not pre-report an apply.
+site_id: edge-simulation
+routes:
+  - topic_filter: Enterprise/EdgeSimulation/Production/#
+    application: oee
+    description: OEE demo plant under EdgeSimulation namespace
+  - topic_filter: Enterprise/EdgeSimulation/#
+    application: multi-system
+    description: Machine, MES, LIMS, and SAP-shaped MQTT publications
+  - topic_filter: Enterprise/EdgeSimulation/OPCUA/#
+    application: opcua
+    description: OPC UA adapter publications after cloud configuration applies
+  - topic_filter: Enterprise/EdgeSimulation/Modbus/#
+    application: modbus
+    description: Modbus adapter publications after cloud configuration applies
