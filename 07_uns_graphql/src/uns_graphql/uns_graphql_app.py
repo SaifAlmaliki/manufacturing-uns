@@ -15,7 +15,7 @@
 *    -
 *******************************************************************************
 
-Entry point for all GraphQL queries to the Industrial Intelligence Platform
+Entry point for all GraphQL queries to the platform
 """
 
 import logging
@@ -93,7 +93,9 @@ def _build_edge_management_service() -> EdgeManagementService | None:
     return EdgeManagementService(database, repository, issuer, secret_store)
 
 
-@strawberry.type(description="Query the Industrial Intelligence Platform for current or historic Nodes/Events")
+@strawberry.type(
+    description=f"Query {PlatformConfig.product_name} for current or historic Nodes/Events"
+)
 class Query(
     historian.Query,
     graph.Query,
@@ -128,7 +130,7 @@ class Query(
                 await asset.Query.on_shutdown()
 
 
-@strawberry.type(description="Write configuration to the Industrial Intelligence Platform")
+@strawberry.type(description=f"Write configuration to {PlatformConfig.product_name}")
 class Mutation(
     AlertRuleMutation,
     OeeMutation,
@@ -156,7 +158,7 @@ class Mutation(
         await OeeMutation.on_shutdown()
 
 
-@strawberry.type(description="Subscribe to IIP events or streams")
+@strawberry.type(description=f"Subscribe to {PlatformConfig.product_short_name} events or streams")
 class Subscription(MQTTSubscription, KAFKASubscription, OpcUaSubscription, ConnectivitySubscription):
     @classmethod
     async def on_shutdown(cls):
@@ -171,7 +173,7 @@ class Subscription(MQTTSubscription, KAFKASubscription, OpcUaSubscription, Conne
 
 class UNSGraphql:
     """
-    Class providing the entry point for all GraphQL queries to the IIP and Sparkplug B namespaces
+    Class providing the entry point for all GraphQL queries to the platform and Sparkplug B namespaces
     """
 
     @asynccontextmanager

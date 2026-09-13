@@ -13,6 +13,7 @@ import { useUNS } from '../../context/UNSContext';
 import { useAlarms } from '../../context/AlarmContext';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { CONSOLE_NAME } from '../../config/branding';
 import { UserSessionMenu } from './UserSessionMenu';
 
 interface HeaderProps {
@@ -71,7 +72,7 @@ function getPageHeading(
   }
   return {
     title: `${getGreeting()}, ${firstName} 👋`,
-    subtitle: 'Industrial Intelligence Platform console.',
+    subtitle: `${CONSOLE_NAME}.`,
   };
 }
 

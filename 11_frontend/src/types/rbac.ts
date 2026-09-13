@@ -84,7 +84,7 @@ export const SYSTEM_FEATURES: FeatureDefinition[] = [
   {
     key: 'connectivity',
     label: 'Assets & Connectivity',
-    description: 'Add OPC UA servers, test endpoints, browse tags, and subscribe variables to the UNS',
+    description: 'Add OPC UA servers, test endpoints, browse tags, and subscribe variables to the Unified Namespace',
     category: 'Core Navigation',
   },
   {

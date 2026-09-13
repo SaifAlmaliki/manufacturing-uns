@@ -53,7 +53,7 @@ async def _visible_events(info: strawberry.Info, events: list[HistoricalUNSEvent
 @strawberry.type(description="Query Historic Events")
 class Query:
     """
-    All Queries for historical events from the Industrial Intelligence Platform
+    All Queries for historical events from the platform
     """
 
     @strawberry.field(description="Get all historical published on the given array of topics and between the time slots.")

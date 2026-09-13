@@ -56,6 +56,8 @@ def test_edge_bundle_files_exist():
         SIM_README,
         EDGE_DIR / "simulation" / "connections.json",
         EDGE_DIR / "simulation" / "publication-routes.yaml",
+        EDGE_DIR / "agent.env.example",
+        EDGE_DIR / "secrets" / "edge-api.env.example",
     ]
     for path in required:
         assert path.is_file(), path

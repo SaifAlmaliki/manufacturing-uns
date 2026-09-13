@@ -27,22 +27,28 @@ if [[ ! -f "${BUNDLE_DIR}/settings.yaml" ]]; then
   cp "${BUNDLE_DIR}/settings.yaml.example" "${BUNDLE_DIR}/settings.yaml"
 fi
 
-replace_in_file "${BUNDLE_DIR}/settings.yaml" "enroll.iip.example.com" "${ENROLL_HOST}"
-replace_in_file "${BUNDLE_DIR}/settings.yaml" "edge-mgmt.iip.example.com" "${MGMT_HOST}"
-replace_in_file "${BUNDLE_DIR}/settings.yaml" "mqtt.iip.example.com" "${MQTT_HOST}"
-replace_in_file "${BUNDLE_DIR}/settings.yaml" "https://iip.example.com" "${PUBLIC_ORIGIN}"
-replace_in_file "${BUNDLE_DIR}/settings.yaml" "iip.example.com" "${CONSOLE_HOST}"
+EXAMPLE_PUBLIC_HOST="$(yaml_scalar "${BUNDLE_DIR}/settings.yaml" example_public_host)"
+EXAMPLE_PUBLIC_HOST="${EXAMPLE_PUBLIC_HOST:-iip.example.com}"
+PRODUCT_NAME="$(yaml_scalar "${BUNDLE_DIR}/settings.yaml" product_name)"
+PRODUCT_NAME="${PRODUCT_NAME:-Industrial Intelligence Platform}"
+
+replace_in_file "${BUNDLE_DIR}/settings.yaml" "enroll.${EXAMPLE_PUBLIC_HOST}" "${ENROLL_HOST}"
+replace_in_file "${BUNDLE_DIR}/settings.yaml" "edge-mgmt.${EXAMPLE_PUBLIC_HOST}" "${MGMT_HOST}"
+replace_in_file "${BUNDLE_DIR}/settings.yaml" "mqtt.${EXAMPLE_PUBLIC_HOST}" "${MQTT_HOST}"
+replace_in_file "${BUNDLE_DIR}/settings.yaml" "https://${EXAMPLE_PUBLIC_HOST}" "${PUBLIC_ORIGIN}"
+replace_in_file "${BUNDLE_DIR}/settings.yaml" "${EXAMPLE_PUBLIC_HOST}" "${CONSOLE_HOST}"
 replace_in_file "${BUNDLE_DIR}/settings.yaml" "eu-central-1" "${AWS_REGION}"
 replace_in_file "${BUNDLE_DIR}/settings.yaml" "uns-historic-events" "${S3_BUCKET}"
 
 # Frontend bakes conf/settings.yaml at image build time.
 cp "${BUNDLE_DIR}/settings.yaml" "${REPO_ROOT}/conf/settings.yaml"
 
-python3 - "${REPO_ROOT}/conf/keycloak/realm.json" "${BUNDLE_DIR}/keycloak/realm.json" "${PUBLIC_ORIGIN}" <<'PY'
+python3 - "${REPO_ROOT}/conf/keycloak/realm.json" "${BUNDLE_DIR}/keycloak/realm.json" "${PUBLIC_ORIGIN}" "${PRODUCT_NAME}" <<'PY'
 import json, pathlib, sys
-src, dest, origin = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]), sys.argv[3]
+src, dest, origin, product_name = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]), sys.argv[3], sys.argv[4]
 doc = json.loads(src.read_text(encoding="utf-8"))
 doc["sslRequired"] = "external"
+doc["displayName"] = product_name
 for client in doc.get("clients", []):
     cid = client.get("clientId")
     if cid == "uns-console":
@@ -92,10 +98,10 @@ if [[ ! -f "${BUNDLE_DIR}/secrets/backup.env" ]]; then
   cp "${BUNDLE_DIR}/secrets/backup.env.example" "${BUNDLE_DIR}/secrets/backup.env"
 fi
 
-replace_in_file "${BUNDLE_DIR}/proxy/nginx.conf" "enroll.iip.example.com" "${ENROLL_HOST}"
-replace_in_file "${BUNDLE_DIR}/proxy/nginx.conf" "edge-mgmt.iip.example.com" "${MGMT_HOST}"
-replace_in_file "${BUNDLE_DIR}/proxy/nginx.conf" "publications.iip.example.com" "${PUBLICATIONS_HOST}"
-replace_in_file "${BUNDLE_DIR}/proxy/nginx.conf" "iip.example.com" "${CONSOLE_HOST}"
+replace_in_file "${BUNDLE_DIR}/proxy/nginx.conf" "enroll.${EXAMPLE_PUBLIC_HOST}" "${ENROLL_HOST}"
+replace_in_file "${BUNDLE_DIR}/proxy/nginx.conf" "edge-mgmt.${EXAMPLE_PUBLIC_HOST}" "${MGMT_HOST}"
+replace_in_file "${BUNDLE_DIR}/proxy/nginx.conf" "publications.${EXAMPLE_PUBLIC_HOST}" "${PUBLICATIONS_HOST}"
+replace_in_file "${BUNDLE_DIR}/proxy/nginx.conf" "${EXAMPLE_PUBLIC_HOST}" "${CONSOLE_HOST}"
 
 case "${TLS_MODE}" in
   demo)

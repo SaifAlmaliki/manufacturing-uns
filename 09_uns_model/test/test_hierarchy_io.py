@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
+from uns_config import PlatformConfig
 
 from uns_model.hierarchy import (
     HierarchyArea,
@@ -372,7 +373,7 @@ def test_apply_enterprise_to_settings_sets_platform_branding():
 
     doc = yaml.safe_load(text)
     assert doc["default"]["platform"]["organization_name"] == "Contoso"
-    assert doc["default"]["platform"]["display_name"] == "Contoso UNS"
+    assert doc["default"]["platform"]["display_name"] == PlatformConfig.instance_display_name("Contoso")
 
 
 def test_apply_enterprise_to_settings_rewrites_mapper_topic_filters():

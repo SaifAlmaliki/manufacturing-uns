@@ -874,9 +874,9 @@ async def test_a_server_outside_the_vocabulary_never_reaches_the_database(
     connectivity: ConnectivityRepository,
 ):
     with pytest.raises(ValueError, match="protocol must be one of"):
-        await connectivity.save_server(_server(protocol="modbus"))
+        await connectivity.save_server(_server(protocol="not-a-protocol"))
 
-    assert await connectivity.list_servers(protocol="modbus") == []
+    assert await connectivity.list_servers(protocol="not-a-protocol") == []
 
 
 @pytest.mark.integrationtest

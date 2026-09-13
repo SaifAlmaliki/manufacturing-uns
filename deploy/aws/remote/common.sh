@@ -25,6 +25,16 @@ ensure_dir() {
   chmod "$2" "$1" 2>/dev/null || true
 }
 
+yaml_scalar() {
+  python3 - "$1" "$2" <<'PY'
+import pathlib, re, sys
+text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+key = re.escape(sys.argv[2])
+match = re.search(rf"(?m)^\s*{key}:\s*[\"']?([^\"'#\n]+?)[\"']?\s*(?:#.*)?$", text)
+print(match.group(1).strip() if match else "")
+PY
+}
+
 replace_in_file() {
   local file="$1"
   local from="$2"

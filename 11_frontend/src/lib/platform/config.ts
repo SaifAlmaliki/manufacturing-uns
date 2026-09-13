@@ -1,4 +1,8 @@
 export type PlatformSettings = {
+  productName: string
+  productShortName: string
+  consoleName: string
+  examplePublicHost: string
   instanceName: string
   organizationName: string
   displayName: string

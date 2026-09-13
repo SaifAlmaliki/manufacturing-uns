@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { CONSOLE_NAME, PRODUCT_NAME } from '../../config/branding';
 import { ResponsiveHeroBanner } from '../ui/responsive-hero-banner';
 import heroImage from '../../assets/images/smart_factory_uns_1788007138686.jpg';
 
@@ -69,8 +70,8 @@ export const LandingView: React.FC = () => {
       <ResponsiveHeroBanner
         backgroundImageUrl={heroImage}
         badgeLabel="Live"
-        badgeText="ISA-95 Unified Namespace · Industrial Intelligence Platform"
-        title="Industrial Intelligence Platform"
+        badgeText={`ISA-95 Unified Namespace · ${PRODUCT_NAME}`}
+        title={PRODUCT_NAME}
         titleLine2="for Smart Manufacturing"
         description="A universal industrial data platform. Standardize shop-floor telemetry, Sparkplug B edge computing, Timescale historian analytics, and ISO/IEC 62443 security across every manufacturing site."
         primaryButtonText="Launch Enterprise Console"
@@ -625,7 +626,7 @@ export const LandingView: React.FC = () => {
         <div className="bg-amber-500 dark:bg-amber-500/10 border border-amber-600/30 dark:border-[#FFC107]/30 rounded-2xl p-8 sm:p-12 text-center text-slate-950 dark:text-[#F8FAFC] space-y-6 shadow-xl relative overflow-hidden">
           <div className="max-w-2xl mx-auto space-y-3">
             <h2 className="font-serif text-2xl sm:text-4xl font-bold tracking-tight">
-              Ready to Access the IIP Console?
+              Ready to Access the {CONSOLE_NAME}?
             </h2>
             <p className="text-sm sm:text-base text-slate-900/90 dark:text-[#94A3B8]">
               Sign in with your plant credentials through Keycloak to access real-time MQTT telemetry, Sparkplug B decoding, and process alarms.
@@ -651,9 +652,9 @@ export const LandingView: React.FC = () => {
               <Layers className="w-3.5 h-3.5" />
             </div>
             <span className="font-serif font-bold text-sm text-[#0F172A] dark:text-[#F8FAFC]">
-              IIP Console
+              {CONSOLE_NAME}
             </span>
-            <span>• Industrial Intelligence Platform</span>
+            <span>• {PRODUCT_NAME}</span>
           </div>
 
           <div className="flex items-center gap-6 font-mono text-[11px]">

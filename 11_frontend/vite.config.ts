@@ -1,14 +1,25 @@
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
-import { defineConfig } from 'vite'
-import { loadPlatformSettings } from './platform/settings.ts'
+import { defineConfig, type Plugin } from 'vite'
+import { loadPlatformSettings, type PlatformSettings } from './platform/settings.ts'
 
 const platform = loadPlatformSettings()
 
+function brandHtmlPlugin(settings: PlatformSettings): Plugin {
+  return {
+    name: 'brand-html',
+    transformIndexHtml(html) {
+      return html
+        .replaceAll('%CONSOLE_NAME%', settings.consoleName)
+        .replaceAll('%PRODUCT_NAME%', settings.productName)
+    },
+  }
+}
+
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), brandHtmlPlugin(platform)],
     define: {
       __UNS_PLATFORM_CONFIG__: platform,
     },

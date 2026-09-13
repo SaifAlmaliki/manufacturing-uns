@@ -15,7 +15,7 @@
 *    -
 *******************************************************************************
 
-Type of data to be retrieved from the IIP
+Type of data to be retrieved from the platform
 Node are formed by the merging of multiple events
 """
 

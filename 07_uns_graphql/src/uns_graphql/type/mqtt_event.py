@@ -15,7 +15,7 @@
 *    -
 *******************************************************************************
 
-Type of data to be retrieved from the IIP
+Type of data to be retrieved from the platform
 Maps to MQTT messages on the platform
 """
 
@@ -24,6 +24,7 @@ import logging
 
 import strawberry
 from strawberry.types import Info
+from uns_config import PlatformConfig
 from uns_mqtt.mqtt_listener import UnsMQTTClient
 
 from uns_graphql.type.basetype import BytesPayload, JSONPayload
@@ -31,10 +32,10 @@ from uns_graphql.type.basetype import BytesPayload, JSONPayload
 LOGGER = logging.getLogger(__name__)
 
 
-@strawberry.type(description="MQTT message published on the Industrial Intelligence Platform")
+@strawberry.type(description=f"MQTT message published on {PlatformConfig.product_name}")
 class MQTTMessage:
     """
-    Model of an IIP event
+    Model of a platform event
     """
 
     # Fully qualified path of the namespace including current name
@@ -57,7 +58,12 @@ class MQTTMessage:
             LOGGER.error("Expected JSON String in payload:%s", self._raw_payload)
             return BytesPayload(data=self._raw_payload)
 
-    @strawberry.field(name="payload", description="the payload of the MQTT message\n -JSON for IIP \n -bytes for sparkplugB")
+    @strawberry.field(
+        name="payload",
+        description=(
+            f"the payload of the MQTT message\n -JSON for {PlatformConfig.product_short_name} \n -bytes for sparkplugB"
+        ),
+    )
     def resolve_payload(
         self,
         info: Info,  # noqa: ARG002

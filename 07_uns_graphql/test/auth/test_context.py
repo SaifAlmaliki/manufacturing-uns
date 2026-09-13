@@ -17,6 +17,7 @@ from uns_graphql.auth.context import (
 )
 from uns_graphql.auth.jwks import JwksCache
 from uns_graphql.auth.token import Identity
+from uns_graphql.graphql_config import PlatformConfig
 
 from .keys import jwks_document, make_key
 
@@ -61,6 +62,7 @@ async def test_no_authorization_header_is_a_401():
         await graphql_context(FakeConnection())
 
     assert raised.value.status_code == 401
+    assert raised.value.detail == PlatformConfig.bearer_required_detail()
     # Without this header a browser's fetch cannot tell an expired session from a server
     # fault, and the console's refresh-once path (Task 9) has nothing to key on.
     assert raised.value.headers["WWW-Authenticate"] == "Bearer"

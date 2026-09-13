@@ -1,14 +1,19 @@
 # Agent notes
 
-The product is **Industrial Intelligence Platform (IIP)**. User-facing names,
-console chrome, GraphQL schema descriptions, operator docs, and example hostnames
-(`iip.example.com`) use IIP. The MQTT architecture remains an ISA-95 **Unified
-Namespace**. Do not call the product "the UNS platform" or "Unified Namespace
-Console".
+The product name is configured in `conf/settings.yaml` (`platform.product_name`,
+`platform.product_short_name`, `platform.example_public_host`). It is currently
+**Industrial Intelligence Platform (IIP)**. User-facing GraphQL descriptions,
+console chrome, 401 copy, and example hostnames must read those keys (Python:
+`PlatformConfig`; frontend: `11_frontend/src/config/branding.ts`). Do not
+hardcode a product name in APIs or the console. The MQTT architecture remains
+an ISA-95 **Unified Namespace**. Do not call the product "the UNS platform" or
+"Unified Namespace Console".
 
 Internal identifiers stay as they are: Python packages (`uns_graphql`, …), Compose
 service names, Dynaconf `UNS_` overrides, and the Keycloak realm id `uns`. Do not
-rename those as part of branding.
+rename those as part of branding. To rebrand, change the `platform.product_*`
+keys (and matching example hosts in nginx / cloud settings example); do not
+scatter a new name through the tree.
 
 ## Orientation and local workflow
 

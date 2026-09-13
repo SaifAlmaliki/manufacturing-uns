@@ -191,6 +191,7 @@ class ConnectivityServerSpec:
             raise ValueError(f"Connectivity server {self.id!r} needs an endpoint")
         if is_cloud_edge_mode() and not self.edge_id:
             raise ValueError(f"Connectivity server {self.id!r} needs edge_id in cloud edge mode")
+        _require_one_of("protocol", self.protocol, CONNECTIVITY_PROTOCOLS)
         if self.protocol in PLC_PROTOCOLS or self.protocol == "modbus":
             parse_host_port(self.endpoint)
             if self.protocol == "s7":
@@ -216,7 +217,6 @@ class ConnectivityServerSpec:
                     raise ValueError("Certificate and private key paths are required for X509 authentication")
                 if self.security_policy == "None":
                     raise ValueError("X509 authentication needs a security policy other than None")
-        _require_one_of("protocol", self.protocol, CONNECTIVITY_PROTOCOLS)
         _require_one_of("auth_mode", self.auth_mode, CONNECTIVITY_AUTH_MODES)
         _require_one_of("security_policy", self.security_policy, CONNECTIVITY_SECURITY_POLICIES)
         _require_one_of("security_mode", self.security_mode, CONNECTIVITY_SECURITY_MODES)

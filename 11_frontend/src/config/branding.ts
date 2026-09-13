@@ -1,10 +1,15 @@
 import { AppSettings } from '../types/uns';
 import { platformConfig } from '../lib/platform/config';
 
-/** Product chrome. Internal packages and env vars stay `uns_*` / `UNS_`. */
-export const PRODUCT_NAME = 'Industrial Intelligence Platform';
-export const PRODUCT_SHORT_NAME = 'IIP';
-export const CONSOLE_NAME = 'IIP Console';
+/** Product chrome from conf/settings.yaml (`platform.product_*`). Internal packages stay `uns_*`. */
+export const PRODUCT_NAME = platformConfig.productName;
+export const PRODUCT_SHORT_NAME = platformConfig.productShortName;
+export const CONSOLE_NAME = platformConfig.consoleName;
+export const EXAMPLE_PUBLIC_HOST = platformConfig.examplePublicHost;
+
+export function bearerRequiredMessage(): string {
+  return `This endpoint requires a bearer token from the ${PRODUCT_SHORT_NAME} realm.`;
+}
 
 function httpToWs(httpUrl: string): string {
   if (httpUrl.startsWith('https://')) {

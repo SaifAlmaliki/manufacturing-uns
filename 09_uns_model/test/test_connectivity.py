@@ -144,6 +144,17 @@ def test_opc_ua_spec_still_requires_opc_tcp():
         spec.validate()
 
 
+def test_spec_rejects_protocol_outside_vocabulary_before_endpoint_shape():
+    spec = ConnectivityServerSpec(
+        id="srv_x",
+        name="Unknown protocol",
+        protocol="not-a-protocol",
+        endpoint="not-even-an-endpoint",
+    )
+    with pytest.raises(ValueError, match="protocol must be one of"):
+        spec.validate()
+
+
 def test_edge_apply_error_copy():
     assert EDGE_APPLY_ERROR == "Waiting for HiveMQ Edge to apply"
 

@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
-import sys
 from dataclasses import dataclass
 from typing import Protocol
 
+from confluent_kafka import KafkaError, KafkaException
 from confluent_kafka.admin import AdminClient, ConfigResource, NewTopic, ResourceType
 from uns_config import get_settings
 from uns_config.kafka import sanitize_kafka_config
+
 from uns_kafka.rejections import DLQ_TOPIC
 
 LOGGER = logging.getLogger(__name__)
@@ -104,6 +105,17 @@ def verify_existing_topic(
         raise TopicMismatchError(f"topic {spec.name} mismatch: " + "; ".join(mismatches))
 
 
+def _is_topic_already_exists(exc: BaseException) -> bool:
+    kafka_error = exc.args[0] if getattr(exc, "args", None) else None
+    code = getattr(kafka_error, "code", None)
+    if callable(code):
+        try:
+            return code() == KafkaError.TOPIC_ALREADY_EXISTS
+        except TypeError:
+            return False
+    return False
+
+
 def ensure_topic(admin: AdminPort, spec: TopicSpec, *, timeout: float = 10.0) -> None:
     metadata = admin.list_topics(timeout=timeout)
     topics = getattr(metadata, "topics", metadata)
@@ -118,10 +130,20 @@ def ensure_topic(admin: AdminPort, spec: TopicSpec, *, timeout: float = 10.0) ->
                 )
             ]
         )
+        created = True
         for future in future_map.values():
-            future.result(timeout=timeout)
-        LOGGER.info("Created Kafka topic %s", spec.name)
-        return
+            try:
+                future.result(timeout=timeout)
+            except KafkaException as exc:
+                if not _is_topic_already_exists(exc):
+                    raise
+                created = False
+        if created:
+            LOGGER.info("Created Kafka topic %s", spec.name)
+            return
+        LOGGER.info("Kafka topic %s already existed during create; verifying", spec.name)
+        metadata = admin.list_topics(timeout=timeout)
+        topics = getattr(metadata, "topics", metadata)
 
     topic_meta = topics[spec.name]
     partition_count = len(topic_meta.partitions)

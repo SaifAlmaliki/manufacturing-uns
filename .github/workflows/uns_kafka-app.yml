@@ -96,6 +96,18 @@ jobs:
         with:
           module: 06_uns_kafka
 
+      - name: Bootstrap Kafka pipeline topics
+        working-directory: 06_uns_kafka
+        run: |
+          for i in $(seq 1 10); do
+            if uv run uns_kafka_bootstrap; then
+              exit 0
+            fi
+            echo "Kafka bootstrap attempt ${i} failed; waiting for broker..."
+            sleep 3
+          done
+          exit 1
+
       - name: Run all type of tests
         uses: ./.github/include/execute_tests/
         timeout-minutes: 3

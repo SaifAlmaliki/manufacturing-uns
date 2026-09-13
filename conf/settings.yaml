@@ -1,10 +1,15 @@
-# Industrial Intelligence Platform configuration.
-# Edit this file and conf/.secrets.yaml for your deployment.
+# Product identity lives here. APIs, console chrome, and example hostnames read these
+# keys — do not hardcode the product name in GraphQL descriptions or the frontend.
+# Internal packages, Compose services, and UNS_ env vars stay uns_*.
 # Override any value with environment variables: export UNS_PLATFORM__INSTANCE_NAME=MyPlant
 # Per-module overrides use Dynaconf environments (graphql, graphdb, historian, etc.).
 
 default:
   platform:
+    product_name: "Industrial Intelligence Platform"
+    product_short_name: "IIP"
+    # console_name defaults to "{product_short_name} Console"
+    example_public_host: "iip.example.com"
     instance_name: "Instance01"
     organization_name: "HalabjaWTP"
     display_name: "HalabjaWTP IIP"

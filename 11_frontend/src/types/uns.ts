@@ -1,5 +1,5 @@
 /**
- * Industrial Intelligence Platform (IIP) & GraphQL domain types
+ * Platform GraphQL domain types
  * Based on ISA-95 IIoT Hierarchy and 07_uns_graphql schema
  */
 

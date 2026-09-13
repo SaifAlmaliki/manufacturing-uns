@@ -1,1 +1,1 @@
-"""Read-only Factory Copilot agent for the UNS console."""
+"""Read-only Factory Copilot agent for the console."""

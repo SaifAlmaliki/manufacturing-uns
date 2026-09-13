@@ -20,6 +20,7 @@ from typing import Any
 
 import yaml
 from ruamel.yaml import YAML
+from uns_config import PlatformConfig
 from uns_config.uns_ingest import MAPPER_ENVS, UNS_WILDCARD
 
 from uns_model.hierarchy import (
@@ -148,7 +149,8 @@ def apply_enterprise_to_settings(settings_text: str, enterprise: str) -> str:
     """Return `settings_text` with branding and mapper filters derived from `enterprise`.
 
     Sets `default.platform.organization_name` to `enterprise` and
-    `default.platform.display_name` to `f"{enterprise} UNS"`. In the mapper
+    `default.platform.display_name` to the enterprise plus the product short
+    name from settings (`PlatformConfig.instance_display_name`). In the mapper
     environments, any `mqtt.topics` entry of the form `Something/#` that is not
     the Unified Namespace wildcard `#`, not `test/uns/#`, and not Sparkplug
     (`spBv1.0...`) is replaced with `f"{enterprise}/#"`. `#`, `test/uns/#`, and
@@ -166,7 +168,7 @@ def apply_enterprise_to_settings(settings_text: str, enterprise: str) -> str:
             platform = {}
             default["platform"] = platform
         platform["organization_name"] = enterprise
-        platform["display_name"] = f"{enterprise} UNS"
+        platform["display_name"] = PlatformConfig.instance_display_name(enterprise)
 
     new_filter = f"{enterprise}/#"
     for env in MAPPER_ENVS:

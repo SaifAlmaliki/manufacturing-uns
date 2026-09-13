@@ -47,13 +47,48 @@ def _resolved_cors_origins(settings, console_origin: str) -> list[str]:
 _public_origin = _resolved_public_origin(_settings)
 _console_origin = _console_origin(_settings, _public_origin)
 
+_DEFAULT_PRODUCT_NAME = "Industrial Intelligence Platform"
+_DEFAULT_PRODUCT_SHORT_NAME = "IIP"
+
+
+def _str_setting(key: str, default: str) -> str:
+    raw = _settings.get(key, default)
+    text = str(raw).strip() if raw is not None else ""
+    return text or default
+
+
+_product_name = _str_setting("platform.product_name", _DEFAULT_PRODUCT_NAME)
+_product_short_name = _str_setting("platform.product_short_name", _DEFAULT_PRODUCT_SHORT_NAME)
+_console_name_override = _settings.get("platform.console_name")
+_console_name = (
+    str(_console_name_override).strip()
+    if _console_name_override
+    else f"{_product_short_name} Console"
+)
+_example_host_override = _settings.get("platform.example_public_host")
+_example_public_host = (
+    str(_example_host_override).strip()
+    if _example_host_override
+    else f"{_product_short_name.lower()}.example.com"
+)
+
 
 class PlatformConfig:
-    """Client-specific platform identity and URL settings."""
+    """Client-specific platform identity and URL settings.
+
+    Product chrome (name, short name, console name, example host) is configured
+    under `platform` in conf/settings.yaml so a rebrand does not require hunting
+    GraphQL descriptions, frontend copy, or example URLs.
+    """
+
+    product_name: str = _product_name
+    product_short_name: str = _product_short_name
+    console_name: str = _console_name
+    example_public_host: str = _example_public_host
 
     instance_name: str = _settings.get("platform.instance_name", "default")
     organization_name: str = _settings.get("platform.organization_name", "")
-    display_name: str = _settings.get("platform.display_name", "Industrial Intelligence Platform")
+    display_name: str = _settings.get("platform.display_name", _product_name)
 
     graphql_host: str = _settings.get("urls.graphql_host", "localhost")
     graphql_port: int = int(_settings.get("urls.graphql_port", 8000))
@@ -69,6 +104,22 @@ class PlatformConfig:
 
     mqtt_public_host: str = str(_settings.get("mqtt.public_host", _settings.get("mqtt.host", "localhost")))
     mqtt_public_port: int = int(_settings.get("mqtt.public_port", _settings.get("mqtt.port", 1883)))
+
+    @classmethod
+    def example_origin(cls) -> str:
+        return f"https://{cls.example_public_host}"
+
+    @classmethod
+    def example_subdomain(cls, prefix: str) -> str:
+        return f"{prefix}.{cls.example_public_host}"
+
+    @classmethod
+    def instance_display_name(cls, enterprise: str) -> str:
+        return f"{enterprise} {cls.product_short_name}"
+
+    @classmethod
+    def bearer_required_detail(cls) -> str:
+        return f"This endpoint requires a bearer token from the {cls.product_short_name} realm."
 
     @classmethod
     def public_origin(cls) -> str | None:

@@ -15,7 +15,7 @@
 *    -
 *******************************************************************************
 
-Type of data to be retrieved from the IIP
+Type of data to be retrieved from the platform
 Events map to a single message in the queue or historization of those messages
 """
 

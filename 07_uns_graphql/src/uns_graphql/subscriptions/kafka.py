@@ -10,7 +10,7 @@ import strawberry
 
 from uns_graphql.auth.scope import scope_from_info
 from uns_graphql.backend.event_stream import get_dispatcher
-from uns_graphql.graphql_config import EventStreamConfig
+from uns_graphql.graphql_config import EventStreamConfig, PlatformConfig
 from uns_graphql.input.kafka import KAFKATopicInput
 from uns_graphql.queries.asset import _context_resolver
 from uns_graphql.type.streaming_event import StreamingMessage
@@ -18,7 +18,9 @@ from uns_graphql.type.streaming_event import StreamingMessage
 LOGGER = logging.getLogger(__name__)
 
 
-@strawberry.type(description="Subscribe to authorized live IIP events from the canonical stream.")
+@strawberry.type(
+    description=f"Subscribe to authorized live {PlatformConfig.product_short_name} events from the canonical stream."
+)
 class KAFKASubscription:
     """Subscription class providing methods for subscribing to live canonical events."""
 

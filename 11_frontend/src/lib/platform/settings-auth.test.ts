@@ -26,5 +26,24 @@ describe('platformSettingsFromConfig auth values', () => {
 
     expect(settings.authIssuer).toBe('http://localhost:8088/auth/realms/uns')
     expect(settings.authClientId).toBe('uns-console')
+    expect(settings.productName).toBe('Industrial Intelligence Platform')
+    expect(settings.productShortName).toBe('IIP')
+    expect(settings.consoleName).toBe('IIP Console')
+    expect(settings.examplePublicHost).toBe('iip.example.com')
+  })
+
+  it('reads product chrome from the platform block', () => {
+    const settings = platformSettingsFromConfig({
+      platform: {
+        product_name: 'Acme Intelligence',
+        product_short_name: 'AIM',
+        example_public_host: 'aim.example.com',
+      },
+    })
+
+    expect(settings.productName).toBe('Acme Intelligence')
+    expect(settings.productShortName).toBe('AIM')
+    expect(settings.consoleName).toBe('AIM Console')
+    expect(settings.examplePublicHost).toBe('aim.example.com')
   })
 })

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+from confluent_kafka import KafkaError, KafkaException
 
 from uns_kafka.bootstrap import (
     HISTORIC_TOPIC,
@@ -87,6 +88,36 @@ def test_ensure_topic_creates_missing_topic():
     assert new_topic.topic == HISTORIC_TOPIC
     assert new_topic.num_partitions == 12
     assert new_topic.replication_factor == 1
+
+
+def test_ensure_topic_treats_already_exists_as_success_then_verifies():
+    spec = TopicSpec(
+        name=HISTORIC_TOPIC,
+        partitions=12,
+        replication_factor=1,
+        retention_ms=SEVEN_DAYS_MS,
+    )
+    existing = SimpleNamespace(partitions={i: object() for i in range(spec.partitions)})
+    admin = MagicMock()
+    admin.list_topics.side_effect = [
+        SimpleNamespace(topics={}),
+        SimpleNamespace(topics={HISTORIC_TOPIC: existing}),
+    ]
+    future = MagicMock()
+    already_exists = MagicMock()
+    already_exists.code.return_value = KafkaError.TOPIC_ALREADY_EXISTS
+    future.result.side_effect = KafkaException(already_exists)
+    admin.create_topics.return_value = {HISTORIC_TOPIC: future}
+    config_future = MagicMock()
+    config_future.result.return_value = {
+        key: SimpleNamespace(value=value) for key, value in spec.new_topic_configs().items()
+    }
+    admin.describe_configs.return_value = {"topic": config_future}
+
+    ensure_topic(admin, spec)
+
+    admin.describe_configs.assert_called_once()
+    admin.create_topics.assert_called_once()
 
 
 def test_ensure_topic_verifies_existing_topic_without_recreate():

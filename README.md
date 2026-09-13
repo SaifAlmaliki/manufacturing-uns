@@ -3,10 +3,13 @@
 [![UNS Project](https://github.com/mkashwin/unifiednamespace/actions/workflows/python-app.yml/badge.svg)](https://github.com/mkashwin/unifiednamespace/actions/workflows/python-app.yml)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
-**Industrial Intelligence Platform (IIP)** is an open-source implementation of an
-ISA-95 Unified Namespace for IIoT transformation. Internal Python packages,
-Compose services, and `UNS_` environment variables keep the historical `uns_*`
-identifiers; user-facing names and example hostnames (`iip.example.com`) use IIP.
+**Industrial Intelligence Platform (IIP)** is the current product name
+(`platform.product_name` in [`conf/settings.yaml`](./conf/settings.yaml)). It is
+an open-source implementation of an ISA-95 Unified Namespace for IIoT
+transformation. Internal Python packages, Compose services, and `UNS_`
+environment variables keep the historical `uns_*` identifiers; user-facing names
+and example hostnames (`platform.example_public_host`, currently
+`iip.example.com`) follow that config.
 
 This project aims to create an open sourced option for setting up a Unified Namespace for IIOT transformation.
 

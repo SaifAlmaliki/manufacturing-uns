@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ArrowRight, ArrowUpRight, Layers, Menu, Play, X } from 'lucide-react';
+import { PRODUCT_NAME, PRODUCT_SHORT_NAME } from '../../config/branding';
 
 export interface NavLink {
   label: string;
@@ -38,8 +39,8 @@ export const ResponsiveHeroBanner: React.FC<ResponsiveHeroBannerProps> = ({
   ctaButtonText = 'Access Console',
   onCtaClick,
   badgeLabel = 'Live',
-  badgeText = 'ISA-95 Unified Namespace · IIP',
-  title = 'Industrial Intelligence Platform',
+  badgeText = `ISA-95 Unified Namespace · ${PRODUCT_SHORT_NAME}`,
+  title = PRODUCT_NAME,
   titleLine2 = 'for Smart Manufacturing',
   description = 'Standardize shop-floor telemetry, Sparkplug B edge computing, Timescale historian analytics, and enterprise MQTT streams across every plant in your organization.',
   primaryButtonText = 'Launch Console',
@@ -81,10 +82,10 @@ export const ResponsiveHeroBanner: React.FC<ResponsiveHeroBannerProps> = ({
                   </div>
                   <div>
                     <div className="font-serif text-lg font-bold tracking-tight text-white">
-                      IIP<span className="text-amber-400">CONSOLE</span>
+                      {PRODUCT_SHORT_NAME}<span className="text-amber-400">CONSOLE</span>
                     </div>
                     <div className="font-mono text-[10px] uppercase tracking-wider text-white/60">
-                      Industrial Intelligence Platform
+                      {PRODUCT_NAME}
                     </div>
                   </div>
                 </>

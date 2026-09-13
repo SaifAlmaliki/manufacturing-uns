@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from uns_config import PlatformConfig
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CLOUD_DIR = REPO_ROOT / "deploy" / "cloud"
@@ -169,16 +170,22 @@ def test_compose_proxy_and_broker_are_only_public_entrypoints(cloud_compose):
 def test_settings_example_uses_https_public_origin():
     settings = yaml.safe_load(SETTINGS_EXAMPLE.read_text(encoding="utf-8"))["default"]
     origin = settings["platform"]["public_origin"]
+    host = PlatformConfig.example_public_host
     assert origin.startswith("https://")
     assert "localhost" not in origin
+    assert settings["platform"]["product_name"] == PlatformConfig.product_name
+    assert settings["platform"]["product_short_name"] == PlatformConfig.product_short_name
+    assert settings["platform"]["example_public_host"] == host
+    assert host in origin
     assert settings["platform"]["edge_management"]["cloud_mode"] is True
 
 
 def test_proxy_terminates_console_enrollment_and_management_separately():
     proxy = PROXY_FILE.read_text(encoding="utf-8")
-    assert "server_name iip.example.com" in proxy
-    assert "server_name enroll.iip.example.com" in proxy
-    assert "server_name edge-mgmt.iip.example.com" in proxy
+    host = PlatformConfig.example_public_host
+    assert f"server_name {host}" in proxy
+    assert f"server_name {PlatformConfig.example_subdomain('enroll')}" in proxy
+    assert f"server_name {PlatformConfig.example_subdomain('edge-mgmt')}" in proxy
     assert "ssl_verify_client on" in proxy
     assert "X-UNS-Trusted-Proxy" in proxy
     assert "X-Edge-Id" in proxy
@@ -238,7 +245,12 @@ def test_validate_rejects_unqualified_broker_release(tmp_path: Path):
 
 
 def test_validate_rejects_http_public_origin(tmp_path: Path):
-    bundle = _fixture_bundle(tmp_path, qualified_broker=True, with_tls=True, public_origin="http://iip.example.com")
+    bundle = _fixture_bundle(
+        tmp_path,
+        qualified_broker=True,
+        with_tls=True,
+        public_origin=f"http://{PlatformConfig.example_public_host}",
+    )
     result = _run_validate(bundle, skip_disk=True)
     assert result.returncode != 0
     assert "HTTPS" in (result.stderr or result.stdout)
@@ -304,10 +316,11 @@ def _fixture_bundle(
     *,
     qualified_broker: bool,
     with_tls: bool = False,
-    public_origin: str = "https://iip.example.com",
+    public_origin: str | None = None,
     contract_version: int = 1,
     for_compose_config: bool = False,
 ) -> Path:
+    origin = public_origin or PlatformConfig.example_origin()
     bundle = tmp_path / "uns-cloud"
     bundle.mkdir()
     compose_text = COMPOSE_FILE.read_text(encoding="utf-8")
@@ -334,7 +347,7 @@ def _fixture_bundle(
         broker.pop("blocker", None)
     (bundle / "release.json").write_text(json.dumps(release), encoding="utf-8")
     settings = yaml.safe_load(SETTINGS_EXAMPLE.read_text(encoding="utf-8"))
-    settings["default"]["platform"]["public_origin"] = public_origin
+    settings["default"]["platform"]["public_origin"] = origin
     (bundle / "settings.yaml").write_text(yaml.safe_dump(settings), encoding="utf-8")
     secrets = bundle / "secrets"
     runtime = secrets / "runtime.env"
@@ -342,7 +355,7 @@ def _fixture_bundle(
     runtime.write_text(
         "\n".join(
             [
-                "UNS_CONSOLE_ORIGIN=https://iip.example.com",
+                f"UNS_CONSOLE_ORIGIN={origin}",
                 "PGPASSWORD=fixture-postgres",
                 "UNS_graphdb__password=fixture-graphdb",
                 "UNS_historian__password=fixture-historian",

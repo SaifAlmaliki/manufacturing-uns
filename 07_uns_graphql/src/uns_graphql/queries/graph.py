@@ -28,7 +28,7 @@ from uns_mqtt.mqtt_listener import UnsMQTTClient
 
 from uns_graphql.auth.scope import allowed_topic, scope_from_info
 from uns_graphql.backend.graphdb import GraphDB
-from uns_graphql.graphql_config import GraphDBConfig
+from uns_graphql.graphql_config import GraphDBConfig, PlatformConfig
 from uns_graphql.input.mqtt import MQTTTopicInput
 from uns_graphql.queries.asset import _context_resolver
 from uns_graphql.type.basetype import JSONPayload
@@ -85,10 +85,15 @@ def epoch_to_datetime(ts: float | int | None) -> datetime:
     return datetime.fromtimestamp(value, UTC)
 
 
-@strawberry.type(description="Query GraphDB for current consolidated IIP nodes created by merging multiple IIP events")
+@strawberry.type(
+    description=(
+        f"Query GraphDB for current consolidated {PlatformConfig.product_short_name} nodes "
+        f"created by merging multiple {PlatformConfig.product_short_name} events"
+    )
+)
 class Query:
     """
-    All Queries for latest consolidated node from the Industrial Intelligence Platform
+    All Queries for latest consolidated node from the platform
     """
 
     # Label filters to be used in the queries

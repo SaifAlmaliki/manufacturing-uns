@@ -1,6 +1,19 @@
 """Prometheus instrumentation for the Kafka ingestion mapper."""
 
+from __future__ import annotations
+
+import errno
+import logging
+import threading
+
 from prometheus_client import Counter, Gauge, start_http_server
+
+LOGGER = logging.getLogger(__name__)
+_started_ports: set[int] = set()
+_lock = threading.Lock()
+_ADDR_IN_USE = {errno.EADDRINUSE}
+if hasattr(errno, "WSAEADDRINUSE"):
+    _ADDR_IN_USE.add(errno.WSAEADDRINUSE)
 
 INGEST_RECEIVED = Counter(
     "uns_kafka_ingest_received_total",
@@ -40,4 +53,14 @@ INGEST_READY = Gauge(
 
 
 def start_metrics_server(port: int) -> None:
-    start_http_server(port)
+    """Expose /metrics. Safe to call more than once, including across pytest workers."""
+    with _lock:
+        if port in _started_ports:
+            return
+        try:
+            start_http_server(port)
+        except OSError as exc:
+            if exc.errno not in _ADDR_IN_USE:
+                raise
+            LOGGER.info("Prometheus metrics port %s already bound; reusing existing listener", port)
+        _started_ports.add(port)

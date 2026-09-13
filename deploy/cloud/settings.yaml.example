@@ -4,6 +4,9 @@
 
 default:
   platform:
+    product_name: "Industrial Intelligence Platform"
+    product_short_name: "IIP"
+    example_public_host: "iip.example.com"
     instance_name: "cloud-production"
     organization_name: "ExamplePlant"
     display_name: "Industrial Intelligence Platform"

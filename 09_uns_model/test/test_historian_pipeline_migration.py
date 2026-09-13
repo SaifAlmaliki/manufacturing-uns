@@ -104,6 +104,17 @@ def test_legacy_migration_helpers_produce_stable_ids():
     assert legacy_migration_event_id(event_time, LEGACY_TOPIC, "legacy-client", payload) == event_id
 
 
+def test_legacy_migration_helpers_match_postgres_jsonb_key_order():
+    """0009 hashes mqtt_msg::jsonb, which orders object keys by byte length then bytes."""
+    event_time = datetime(2026, 9, 9, 10, 15, 0, tzinfo=UTC)
+    payload = {"timestamp": 12345678, "value": 99.5}
+    event_id = legacy_migration_event_id(event_time, LEGACY_TOPIC, "legacy-client", payload)
+    assert event_id == "legacy:cce1150746ed7290929b9609947085e1580a9eb29c166d424863c334d0ae8c28"
+    assert event_id == legacy_migration_event_id(
+        event_time, LEGACY_TOPIC, "legacy-client", {"value": 99.5, "timestamp": 12345678}
+    )
+
+
 @pytest.mark.integrationtest
 @pytest.mark.asyncio(loop_scope="session")
 async def test_migration_upgrade_twice_and_pipeline_tables_exist(database: Database):

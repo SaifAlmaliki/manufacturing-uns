@@ -4,6 +4,10 @@ import { fileURLToPath } from 'node:url'
 import { parse } from 'yaml'
 
 export type PlatformSettings = {
+  productName: string
+  productShortName: string
+  consoleName: string
+  examplePublicHost: string
   instanceName: string
   organizationName: string
   displayName: string
@@ -50,10 +54,21 @@ export function platformSettingsFromConfig(
   const authRealm = String(auth.realm ?? 'uns')
   const authBaseUrl = String(auth.base_url ?? 'http://localhost:8088/auth')
 
+  const productName = String(platform.product_name ?? 'Industrial Intelligence Platform')
+  const productShortName = String(platform.product_short_name ?? 'IIP')
+  const consoleName = String(platform.console_name ?? `${productShortName} Console`)
+  const examplePublicHost = String(
+    platform.example_public_host ?? `${productShortName.toLowerCase()}.example.com`,
+  )
+
   return {
+    productName,
+    productShortName,
+    consoleName,
+    examplePublicHost,
     instanceName: String(platform.instance_name ?? 'default'),
     organizationName: String(platform.organization_name ?? ''),
-    displayName: String(platform.display_name ?? 'Industrial Intelligence Platform'),
+    displayName: String(platform.display_name ?? productName),
     graphqlHost,
     graphqlPort,
     graphqlPath,

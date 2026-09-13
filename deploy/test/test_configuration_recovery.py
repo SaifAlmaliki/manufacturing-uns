@@ -68,6 +68,27 @@ def test_release_workflow_exists_and_never_publishes_on_push_only():
     assert platforms == {"linux/amd64", "linux/arm64"}
 
 
+def test_release_workflow_materializes_edge_example_env_before_compose_config():
+    """Compose config requires operator env files that are gitignored; CI must copy examples."""
+    workflow = yaml.safe_load(WORKFLOW_FILE.read_text(encoding="utf-8"))
+    steps = workflow["jobs"]["unit-contract"]["steps"]
+    validate = next(
+        step
+        for step in steps
+        if step.get("name") == "Validate edge base and simulation overlays"
+    )
+    script = validate["run"]
+    compose_at = script.index("docker compose")
+    for example in (
+        "agent.env.example",
+        "edge-api.env.example",
+        "mqtt-sim.env.example",
+        "mqtt-tls.env.example",
+    ):
+        assert example in script
+        assert script.index(example) < compose_at
+
+
 def _decorator_names(node: ast.AST) -> set[str]:
     names: set[str] = set()
     if isinstance(node, ast.Name):

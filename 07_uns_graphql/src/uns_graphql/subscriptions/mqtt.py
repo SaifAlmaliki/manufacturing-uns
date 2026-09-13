@@ -29,7 +29,7 @@ import strawberry
 from aiomqtt import Client, MqttError
 
 from uns_graphql.auth.scope import allowed_topic, scope_from_info
-from uns_graphql.graphql_config import MQTTConfig
+from uns_graphql.graphql_config import MQTTConfig, PlatformConfig
 from uns_graphql.input.mqtt import MQTTTopicInput
 from uns_graphql.queries.asset import _context_resolver
 from uns_graphql.type.mqtt_event import MQTTMessage
@@ -37,7 +37,7 @@ from uns_graphql.type.mqtt_event import MQTTMessage
 LOGGER = logging.getLogger(__name__)
 
 
-@strawberry.type(description="Subscribe to all MQTT events in the IIP")
+@strawberry.type(description=f"Subscribe to all MQTT events in {PlatformConfig.product_short_name}")
 class MQTTSubscription:
     """
     Subscription class providing methods for subscribing to MQTT messages.

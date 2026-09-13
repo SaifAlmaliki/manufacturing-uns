@@ -56,6 +56,10 @@ jobs:
 
       - name: Validate edge base and simulation overlays
         run: |
+          cp deploy/edge/agent.env.example deploy/edge/agent.env
+          cp deploy/edge/secrets/edge-api.env.example deploy/edge/secrets/edge-api.env
+          cp deploy/edge/simulation/secrets/mqtt-sim.env.example deploy/edge/simulation/secrets/mqtt-sim.env
+          cp deploy/edge/simulation/secrets/mqtt-tls.env.example deploy/edge/simulation/secrets/mqtt-tls.env
           docker compose -f deploy/edge/compose.yml config --quiet
           docker compose -f deploy/edge/compose.yml -f deploy/edge/compose.simulation.yml config --quiet
 

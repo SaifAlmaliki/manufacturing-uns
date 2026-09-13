@@ -17,7 +17,7 @@ from strawberry.fastapi import GraphQLRouter
 
 from uns_graphql.auth.jwks import JwksCache
 from uns_graphql.auth.token import AuthError, Identity, bearer_from_header, identity_from_token
-from uns_graphql.graphql_config import AuthConfig
+from uns_graphql.graphql_config import AuthConfig, PlatformConfig
 
 LOGGER = logging.getLogger(__name__)
 
@@ -90,7 +90,7 @@ async def graphql_context(connection: HTTPConnection) -> dict:
     if token is None:
         raise HTTPException(
             status_code=401,
-            detail="This endpoint requires a bearer token from the IIP realm.",
+            detail=PlatformConfig.bearer_required_detail(),
             headers=_UNAUTHENTICATED,
         )
 

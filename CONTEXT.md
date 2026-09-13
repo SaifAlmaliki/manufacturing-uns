@@ -1,23 +1,31 @@
 # Industrial Intelligence Platform
 
-**Industrial Intelligence Platform (IIP)** is the product. It implements an ISA-95
-Unified Namespace: plant data published to an MQTT broker is projected into a graph
-of current state, a time-series history, and an event log, then read back through a
-single query surface (the IIP Console and GraphQL API).
+**Industrial Intelligence Platform (IIP)** is the current product name. It is
+configured in one place: `conf/settings.yaml` under `platform.product_name`,
+`platform.product_short_name`, and `platform.example_public_host`. GraphQL
+descriptions, console chrome, 401 copy, and example hostnames read those keys.
+Instance chrome (`platform.display_name`, e.g. HalabjaWTP IIP) is separate from
+the product name.
 
-Public example hostnames use `iip.example.com`. Python packages, Compose services,
-and `UNS_` environment variables keep the historical `uns_*` identifiers.
+IIP implements an ISA-95 Unified Namespace: plant data published to an MQTT
+broker is projected into a graph of current state, a time-series history, and
+an event log, then read back through a single query surface (the console and
+GraphQL API).
+
+Python packages, Compose services, and `UNS_` environment variables keep the
+historical `uns_*` identifiers. The Keycloak realm **id** remains `uns`.
 
 ## Language
 
-**Industrial Intelligence Platform (IIP)**:
-The product — IIP Console, GraphQL API, historian, lake, and edge management.
+**Product name** (`platform.product_name` / `platform.product_short_name`):
+The product — console, GraphQL API, historian, lake, and edge management.
 Distinct from the Unified Namespace, which is the MQTT topic tree this platform
-implements.
-_Avoid_: UNS platform, Unified Namespace Console, calling the product "the UNS"
+implements. Today that is Industrial Intelligence Platform (IIP).
+_Avoid_: UNS platform, Unified Namespace Console, hardcoding the product name
+in APIs or frontend copy
 
-**IIP Console**:
-The web operations console (`11_frontend`). User-facing chrome says IIP Console.
+**Console** (`platform.console_name`, default `{short} Console`):
+The web operations console (`11_frontend`).
 _Avoid_: UNS Console
 
 **Unified Namespace**:
@@ -117,7 +125,7 @@ green health indicator ends up meaning nothing.
 _Avoid_: monitoring, health, telemetry
 
 **Instance**:
-One deployment of IIP, either at a single facility or centrally for the
+One deployment of the product, either at a single facility or centrally for the
 whole enterprise. Determines which stores a dashboard can reach.
 _Avoid_: environment, site, tenant, cluster
 
@@ -134,8 +142,8 @@ _Avoid_: alarm, alert, threshold, notification rule
 **Realm**:
 The Keycloak realm whose **id remains `uns`** (issuer path `/auth/realms/uns`).
 That id is an internal identifier, not the product name. The realm display name
-is Industrial Intelligence Platform. It is the authority on who exists and what
-Console Roles they hold. Served under `/auth` on the IIP Console's own origin, so
+matches `platform.product_name`. It is the authority on who exists and what
+Console Roles they hold. Served under `/auth` on the console's own origin, so
 its issuer and its session cookie are first-party.
 _Avoid_: auth server, IdP, identity provider, renaming the realm id without a
 migration
