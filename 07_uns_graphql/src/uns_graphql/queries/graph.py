@@ -85,10 +85,10 @@ def epoch_to_datetime(ts: float | int | None) -> datetime:
     return datetime.fromtimestamp(value, UTC)
 
 
-@strawberry.type(description="Query GraphDB for current consolidated UNS Nodes created by merging multiple UNS Events ")
+@strawberry.type(description="Query GraphDB for current consolidated IIP nodes created by merging multiple IIP events")
 class Query:
     """
-    All Queries for latest consolidated node from the Unified Namespace
+    All Queries for latest consolidated node from the Industrial Intelligence Platform
     """
 
     # Label filters to be used in the queries

@@ -38,6 +38,7 @@ Operator runbooks:
 
 - [`docs/operations/dmz-edge-installation.md`](../../docs/operations/dmz-edge-installation.md)
 - [`docs/operations/edge-simulation-demo.md`](../../docs/operations/edge-simulation-demo.md) (initial canary with `edge-sim`)
+- Windows-to-AWS EC2: [`deploy/aws/README.md`](../aws/README.md)
 
 Hardware-free overlay:
 

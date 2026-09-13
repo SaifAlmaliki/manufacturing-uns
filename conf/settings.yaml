@@ -1,4 +1,4 @@
-# Unified Namespace platform configuration.
+# Industrial Intelligence Platform configuration.
 # Edit this file and conf/.secrets.yaml for your deployment.
 # Override any value with environment variables: export UNS_PLATFORM__INSTANCE_NAME=MyPlant
 # Per-module overrides use Dynaconf environments (graphql, graphdb, historian, etc.).
@@ -7,7 +7,7 @@ default:
   platform:
     instance_name: "Instance01"
     organization_name: "HalabjaWTP"
-    display_name: "HalabjaWTP UNS"
+    display_name: "HalabjaWTP IIP"
     public_origin: "http://localhost:8088"
     # Local/dev keeps HiveMQ XML apply. Production cloud bundle sets this true.
     edge_management:

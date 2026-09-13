@@ -16,6 +16,7 @@ import {
   ChevronRight,
   Command,
 } from 'lucide-react';
+import { CONSOLE_NAME, PRODUCT_SHORT_NAME } from '../../config/branding';
 import { useUNS } from '../../context/UNSContext';
 import { useAuth } from '../../context/AuthContext';
 import { useAlarms } from '../../context/AlarmContext';
@@ -169,11 +170,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="flex h-16 shrink-0 items-center justify-between border-b border-border px-4">
         <div className={`flex items-center gap-3 min-w-0 ${isCollapsed ? 'justify-center w-full' : ''}`}>
           <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-[#FF7A00]">
-            <span className="font-heading text-lg font-bold text-[#140800]">U</span>
+            <span className="font-heading text-lg font-bold text-[#140800]">{PRODUCT_SHORT_NAME[0]}</span>
           </div>
           {!isCollapsed && (
             <div className="min-w-0 leading-tight">
-              <div className="font-heading truncate text-[15px] font-semibold tracking-tight text-foreground">UNS Console</div>
+              <div className="font-heading truncate text-[15px] font-semibold tracking-tight text-foreground">{CONSOLE_NAME}</div>
               <div className="truncate text-xs text-muted-foreground">
                 {settings.organization || 'Smart Manufacturing'}
               </div>

@@ -4,6 +4,24 @@ Deploy the production cloud bundle on a single Amazon EC2 Linux instance. The bu
 images, and validation contracts are identical to the Hostinger VPS profile; only the
 provider provisioning steps differ.
 
+## Windows operator scripts
+
+From a Windows workstation, after the two EC2 instances and DNS records exist, use the
+PowerShell orchestrators in [`deploy/aws/README.md`](../aws/README.md):
+
+```powershell
+Copy-Item deploy\aws\uns-aws.params.example.ps1 deploy\aws\uns-aws.params.ps1
+.\deploy\aws\Install-UnsCloud.ps1
+.\deploy\aws\Install-UnsEdge.ps1
+.\deploy\aws\Enroll-UnsEdge.ps1 -Token '<console-token>'
+```
+
+Those scripts sync the repository, install Docker, build images on the instances, and
+start the cloud and DMZ bundles. They are a demo/canary path: they generate
+`compose.images.yml` with real tags because `release.json` digests remain placeholders
+until operator qualification. DNS, TLS, credentials, licenses, and first enrollment
+remain operator actions.
+
 ## Provision
 
 1. Launch a supported Linux EC2 instance in the target region with instance storage
@@ -11,10 +29,10 @@ provider provisioning steps differ.
    to `minimum_data_disk_gb` for Docker volumes.
 2. Allocate an Elastic IP and associate it with the instance.
 3. Create Route 53 (or delegated DNS) records:
-   - `uns.example.com`
-   - `enroll.uns.example.com`
-   - `edge-mgmt.uns.example.com`
-   - `mqtt.uns.example.com`
+   - `iip.example.com`
+   - `enroll.iip.example.com`
+   - `edge-mgmt.iip.example.com`
+   - `mqtt.iip.example.com`
 4. Configure the instance security group:
    - Allow inbound TCP `443`, `80`, and `8883` from the required client networks.
    - Deny inbound `5432`, `9092`, `7474`, `7687`, `9090`, `8000`, `8080`, and `3000`.
@@ -49,11 +67,11 @@ docker compose --env-file secrets/runtime.env -f compose.yml up -d
 
 ## Verify
 
-1. Open `https://uns.example.com` and complete OIDC sign-in.
+1. Open `https://iip.example.com` and complete OIDC sign-in.
 2. Confirm `/graphql` and embedded Grafana dashboards respond on the same origin.
-3. Register and enroll a canary edge via `enroll.uns.example.com`.
-4. Verify DMZ-initiated mTLS management traffic to `edge-mgmt.uns.example.com` and
-   MQTT TLS to `mqtt.uns.example.com:8883`.
+3. Register and enroll a canary edge via `enroll.iip.example.com`.
+4. Verify DMZ-initiated mTLS management traffic to `edge-mgmt.iip.example.com` and
+   MQTT TLS to `mqtt.iip.example.com:8883`.
 5. Execute an on-demand encrypted backup:
 
 ```bash

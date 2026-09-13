@@ -1,0 +1,1 @@
+{"nodes": [{"id": "c_dev_manufacturing_uns_deploy_aws_install_unscloud_ps1", "label": "Install-UnsCloud.ps1", "file_type": "code", "source_file": "deploy/aws/Install-UnsCloud.ps1", "source_location": "L1"}], "edges": [], "raw_calls": []}

@@ -1,6 +1,6 @@
 # Cloud platform operations
 
-Operate the central UNS platform from the production bundle in `deploy/cloud/`.
+Operate the central Industrial Intelligence Platform from the production bundle in `deploy/cloud/`.
 Simulators, HiveMQ Edge, and PLC collectors run only on DMZ edge VMs (`deploy/edge/`).
 All plant traffic follows **source → edge → cloud**.
 
@@ -20,13 +20,13 @@ All plant traffic follows **source → edge → cloud**.
 
 | Endpoint | Purpose |
 | --- | --- |
-| `https://uns.example.com/` | Console SPA |
-| `https://uns.example.com/graphql` | GraphQL API and subscriptions |
-| `https://uns.example.com/grafana/` | Embedded Grafana dashboards |
-| `https://uns.example.com/auth/` | OIDC (single public issuer) |
-| `https://enroll.uns.example.com/` | One-time edge enrollment (server TLS only) |
-| `https://edge-mgmt.uns.example.com/` | Edge management API (mTLS, trusted-proxy headers) |
-| `mqtt.uns.example.com:8883` | Central MQTT TLS (terminates at the broker, not HTTP proxy) |
+| `https://iip.example.com/` | Console SPA |
+| `https://iip.example.com/graphql` | GraphQL API and subscriptions |
+| `https://iip.example.com/grafana/` | Embedded Grafana dashboards |
+| `https://iip.example.com/auth/` | OIDC (single public issuer) |
+| `https://enroll.iip.example.com/` | One-time edge enrollment (server TLS only) |
+| `https://edge-mgmt.iip.example.com/` | Edge management API (mTLS, trusted-proxy headers) |
+| `mqtt.iip.example.com:8883` | Central MQTT TLS (terminates at the broker, not HTTP proxy) |
 
 Private ports (Kafka, SQL, Neo4j, Prometheus, internal GraphQL `:8000`, Grafana `:3000`,
 Keycloak `:8080`) stay off the host firewall.

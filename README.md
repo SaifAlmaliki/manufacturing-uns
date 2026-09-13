@@ -1,11 +1,16 @@
-# Unified Name Space (UNS)
+# Industrial Intelligence Platform (IIP)
 
 [![UNS Project](https://github.com/mkashwin/unifiednamespace/actions/workflows/python-app.yml/badge.svg)](https://github.com/mkashwin/unifiednamespace/actions/workflows/python-app.yml)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
+**Industrial Intelligence Platform (IIP)** is an open-source implementation of an
+ISA-95 Unified Namespace for IIoT transformation. Internal Python packages,
+Compose services, and `UNS_` environment variables keep the historical `uns_*`
+identifiers; user-facing names and example hostnames (`iip.example.com`) use IIP.
+
 This project aims to create an open sourced option for setting up a Unified Namespace for IIOT transformation.
 
-My objective is to build an open source, free to use UNS solution for the community which can be enhanced and adapted by other enthusiasts.
+My objective is to build an open source, free to use IIP for the community which can be enhanced and adapted by other enthusiasts.
 
 All components used in this solution are community versions and I do not own any rights on them. Most of them also provide a commercial / enterprise version which may also be considered to have better tool support.
 I also used this, as an opportunity to learn Python.
@@ -16,7 +21,7 @@ If you are looking for an alternative Unified Namespace implementation with ente
 
 A Unified Namespace is an **_architecture_** that establishes a ***centralized repository*** of data, events,  information, and context **_across all IT and OT systems_** where any application or device can consume or publish data needed for a specific action via an **_event-driven_** and **_loosely coupled architecture_** ​along with the **_relevant context and history_**
 
-This is a critical concept to allow scalability by preventing point to point connectivity.
+This is a critical concept to allow scalability by preventing point to point connectivity. IIP is this repository's implementation of that architecture.
 ![Credit Walter Reynolds -- IIOT University](./images/UNS.png)
 
 ### **References / Further Reading**
@@ -38,16 +43,16 @@ The overall architecture and the deployment setup is as follows
    - MQTT edge installed on K8s
    - Bridge between Factory1 and the Enterprise MQTT clusters
    - Graph DB installed and running on docker
-   - UNS graphdb client to persist messages to the Graph DB instance
-   - UNS SparkplugB client to translate message from SparkPlug to UNS
+   - IIP graphdb client to persist messages to the Graph DB instance
+   - IIP SparkplugB client to translate Sparkplug messages into the Unified Namespace
 
 1. Factory2
    - K8s Cluster on the edge
    - MQTT edge installed on K8s
    - Bridge between Factory2 and the Enterprise MQTT clusters
    - Graph DB installed and running on docker
-   - UNS graphdb client to persist messages to the Graph DB instance
-   - UNS SparkplugB client to translate message from SparkPlug to UNS
+   - IIP graphdb client to persist messages to the Graph DB instance
+   - IIP SparkplugB client to translate Sparkplug messages into the Unified Namespace
 
 1. Enterprise on Cloud
    - K8s Cluster of the enterprise
@@ -56,10 +61,10 @@ The overall architecture and the deployment setup is as follows
    - Graph DB installed and running on docker / cluster / K8s / hosted service
    - Kafka cluster/ K8s / hosted service
    - GraphQL service running and connected to the cloud data stores
-   - UNS graphdb client to persist messages to the Graph DB instance
-   - UNS Kafka ingestion mapper publishes canonical events to `uns.historic-events`
-   - UNS historian client consumes `uns.historic-events` into TimescaleDB
-   - UNS datalake mapper archives envelopes to object storage (MinIO in development)
+   - IIP graphdb client to persist messages to the Graph DB instance
+   - IIP Kafka ingestion mapper publishes canonical events to `uns.historic-events`
+   - IIP historian client consumes `uns.historic-events` into TimescaleDB
+   - IIP datalake mapper archives envelopes to object storage (MinIO in development)
    - Prometheus scraping mapper, historian, lake, and GraphQL metrics; Grafana dashboards
 
 ![Logical Architecture for implementing UNS](./images/UNS-Architecture.png)
@@ -104,7 +109,7 @@ Release contract gate: [`deploy/release-contract.json`](./deploy/release-contrac
 
 ## **Local Docker Compose stack**
 
-[`docker-compose.yml`](./docker-compose.yml) starts a **local, non-production** UNS: MQTT, databases, mappers, GraphQL, and the console UI. Do not use this compose file for production.
+[`docker-compose.yml`](./docker-compose.yml) starts a **local, non-production** IIP stack: MQTT, databases, mappers, GraphQL, and the IIP Console. Do not use this compose file for production.
 
 In Docker Desktop the project is `manufacturing-uns`. Container names look like `manufacturing-uns-<service>-1`.
 
@@ -121,7 +126,7 @@ Compose cannot read YAML secrets by itself. The `uns_compose` wrapper loads `con
 
 ### Start the stack
 
-One command starts the backend and the console UI in Docker:
+One command starts the backend and the IIP Console in Docker:
 
 ```bash
 npm run stack
@@ -130,7 +135,7 @@ npm run stack
 | Layer | Where it runs | URL |
 | --- | --- | --- |
 | Backend (DB, MQTT, mappers, GraphQL) | Docker | GraphQL: **http://localhost:8000/graphql** |
-| Console UI | Docker (`uns_frontend`) | **http://localhost:8088** (Grafana at `/grafana`) |
+| IIP Console | Docker (`uns_frontend`) | **http://localhost:8088** (Grafana at `/grafana`) |
 
 Plant signals come from external publishers (OPC UA, Modbus, or any connector) on the MQTT broker (`uns_mqtt_broker`) on **1883**.
 
@@ -175,7 +180,7 @@ npm run down
 | `kafka_mapper_client` | MQTT-to-Kafka bridge: copies UNS MQTT messages onto Kafka topics. |
 | `oee_client` | Computes shift OEE from the historised `uns_metrics` rows and publishes each result to `<line>/KPI/ShiftOee`. Reads the historian, writes the `oee` schema, never writes to a control system (ADR-0008). Metrics on `9095`, unpublished. |
 | `graphql_server` | GraphQL API over MQTT (live), Neo4j (current tree), TimescaleDB (history), Postgres `model` / `console` (Asset Model and Alert Rules), and Kafka. Host port: **`8000`** (`http://localhost:8000/graphql`). |
-| `uns_frontend` | Web console for the namespace tree, payload inspector, live feed, search, historian, and Grafana. Host port: **`8088`** (`http://localhost:8088`). Grafana is proxied at `/grafana` (System Operations in the console). The browser calls GraphQL on port `8000`. |
+| `uns_frontend` | IIP Console for the namespace tree, payload inspector, live feed, search, historian, and Grafana. Host port: **`8088`** (`http://localhost:8088`). Grafana is proxied at `/grafana` (System Operations in the console). The browser calls GraphQL on port `8000`. |
 | `uns_prometheus` | Scrapes the `/metrics` endpoints exposed by the mapper clients. Host port: `9090`. |
 | `uns_grafana` | Dashboards for Process Visualization (plant measurements from `uns_metrics_1m_enriched`), OEE (shift results and downtime from the `oee` schema), and Platform Observability (platform health). Not published on the host: open them from the console at `http://localhost:8088` → System Operations, or `http://localhost:8088/grafana/`. Signs in against the Keycloak `uns` realm — see [Known Limitations](#known-limitations--workarounds) and [ADR 0009](./docs/adr/0009-oidc-authentication-for-console-and-graphql.md). |
 
@@ -197,7 +202,7 @@ Pulled images:
 
 Images built from this repo (`manufacturing-uns-<service>`):
 
-- `uns_frontend` — web console for the namespace tree, live feed, historian, and Grafana.
+- `uns_frontend` — IIP Console for the namespace tree, live feed, historian, and Grafana.
 - `asset_model_setup` — one-shot job that creates `model` / `console` schemas and imports the plant hierarchy.
 - `oee_client` — computes shift OEE from historised metrics and publishes `<line>/KPI/ShiftOee`.
 - `spb_mapper_client` — Sparkplug B translator: protobuf in, ISA-95 JSON out.
@@ -345,7 +350,7 @@ Since I did not have the enterprise version of the MQTT brokers, I decided to de
 - The MQTT listener to persist UNS messages & SPB messages to the Historian can be found at [04_uns_historian](./04_uns_historian/README.md)
 - The MQTT listener to read SPB messages, translate and transform them to the UNS can be found at [05_sparkplugb](./05_sparkplugb/README.md)
 - The MQTT listener to publish UNS messages, to a kafka topic [06_uns_kafka](./06_uns_kafka/README.md)
-- A module which connects with all the data sources; Neo4j, TimescaleDB, Kafka and MQTT to provide GraphQL apis to query the UNS [07_uns_graphql](./07_uns_graphql/README.md)
+- A module which connects with all the data sources; Neo4j, TimescaleDB, Kafka and MQTT to provide GraphQL APIs to query IIP [07_uns_graphql](./07_uns_graphql/README.md)
 - Prometheus and Grafana configuration for Process Visualization and Platform Observability [08_uns_observability](./08_uns_observability/README.md)
 - The authored Asset Model in Postgres, which contextualizes and enriches everything the historian stores [09_uns_model](./09_uns_model/README.md)
 - The shift OEE engine, which turns that history into Availability x Performance x Quality per line [12_uns_oee](./12_uns_oee/README.md)
@@ -370,7 +375,7 @@ Sparkplug B consist of three primary features in its definition.
 ### **GraphQL Support**
 
 GraphQL is a query language for APIs and a runtime for executing those queries with your existing data. It allows clients to request only the data they need and nothing more, enabling precise and efficient data fetching.
-Some key benefits of adding this support to the UNS are:
+Some key benefits of adding this support to IIP are:
 
 1. **Simplified Data Access**: A Unified Namespace typically brings together diverse data sources or systems into a single cohesive structure. By integrating GraphQL capabilities, it provides a unified and simplified way to access and query this diverse dataset. GraphQL's flexible querying allows for precise data retrieval, avoiding the need to interact with each individual data source separately.
 1. **Consolidated Querying**: With GraphQL, querying data from different sources becomes seamless. It allows for composing complex queries across multiple data sources within the Unified Namespace, retrieving precisely the required data without unnecessary overhead or complexity.
@@ -456,7 +461,7 @@ The current project contains the following microservices
 1. [08_uns_observability](./08_uns_observability/README.md): Prometheus scrape configuration and Grafana provisioning (data sources + dashboards). Configuration only — no Python package, so it is not part of the `uv` workspace and has no tests
 1. [09_uns_model](./09_uns_model/README.md): Python project holding the authored Asset Model (the ISA-95 hierarchy, equipment facts and units of measure) in Postgres via SQLAlchemy and Alembic, plus the views that enrich time-series rows with it at read time
 1. [10_uns_opcua](./10_uns_opcua/README.md): Read-only OPC UA edge connector that subscribes to PLC/SCADA nodes and publishes them into the Unified Namespace with disk-backed store-and-forward
-1. [11_frontend](./11_frontend/README.md): React console that talks only to GraphQL — Asset Model–first tree, payload inspector with read-time enrichment, live feed, search, and historian
+1. [11_frontend](./11_frontend/README.md): IIP Console (React) that talks only to GraphQL — Asset Model–first tree, payload inspector with read-time enrichment, live feed, search, and historian
 1. [12_uns_oee](./12_uns_oee/README.md): Python project that computes OEE for closed shifts from historised UNS data, stores the result and its downtime breakdown in the `oee` schema, and publishes it back to MQTT
 
 Python packages are a **uv workspace**. Create **one** virtualenv at this repository root. Do not run `uv venv` inside a module folder (`03_uns_graphdb/.venv`, and so on): those duplicate the workspace env and make the editor pick the wrong interpreter.

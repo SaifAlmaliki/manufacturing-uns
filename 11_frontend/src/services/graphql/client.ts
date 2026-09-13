@@ -318,7 +318,7 @@ export class UnsGraphQLClient {
         if (!hadToken) {
           // The landing page and the OIDC callback both mount providers that query GraphQL
           // before a token exists. Sending that visitor to the realm races completeRedirect.
-          return { data: null, error: 'This endpoint requires a bearer token from the UNS realm.' }
+          return { data: null, error: 'This endpoint requires a bearer token from the IIP realm.' }
         }
         this.auth.onExpired()
         // An expired session is not an empty result. Every caller of this method turns

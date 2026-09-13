@@ -1,7 +1,7 @@
 {
   "realm": "uns",
   "enabled": true,
-  "displayName": "Unified Namespace",
+  "displayName": "Industrial Intelligence Platform",
   "sslRequired": "none",
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,

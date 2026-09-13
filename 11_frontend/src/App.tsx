@@ -1,5 +1,5 @@
 /**
- * Unified Namespace (UNS) Console Main Application Component
+ * IIP Console main application component
  * Communicates with 07_uns_graphql for all platform data.
  * Modern Multi-Route Architecture:
  * - Public Landing Page (/) with generated industrial hero image & feature highlights

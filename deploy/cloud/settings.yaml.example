@@ -6,12 +6,12 @@ default:
   platform:
     instance_name: "cloud-production"
     organization_name: "ExamplePlant"
-    display_name: "Unified Namespace"
-    public_origin: "https://uns.example.com"
+    display_name: "Industrial Intelligence Platform"
+    public_origin: "https://iip.example.com"
     edge_management:
       cloud_mode: true
-      enrollment_hostname: "enroll.uns.example.com"
-      management_hostname: "edge-mgmt.uns.example.com"
+      enrollment_hostname: "enroll.iip.example.com"
+      management_hostname: "edge-mgmt.iip.example.com"
       trusted_proxy_value: "1"
 
   urls:
@@ -19,13 +19,13 @@ default:
     graphql_port: 8000
     graphql_path: "/graphql"
     cors_origins:
-      - "https://uns.example.com"
+      - "https://iip.example.com"
 
   auth:
     realm: "uns"
     # Derived at runtime from platform.public_origin when set; literals kept for readers.
-    base_url: "https://uns.example.com/auth"
-    issuer: "https://uns.example.com/auth/realms/uns"
+    base_url: "https://iip.example.com/auth"
+    issuer: "https://iip.example.com/auth/realms/uns"
     console_client_id: "uns-console"
     grafana_client_id: "uns-grafana"
     audience: "uns-console"
@@ -35,7 +35,7 @@ default:
   mqtt:
     host: "uns_mqtt_broker"
     port: 8883
-    public_host: "mqtt.uns.example.com"
+    public_host: "mqtt.iip.example.com"
     public_port: 8883
     qos: 1
     keep_alive: 30

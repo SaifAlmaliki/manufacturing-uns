@@ -53,7 +53,7 @@ export function platformSettingsFromConfig(
   return {
     instanceName: String(platform.instance_name ?? 'default'),
     organizationName: String(platform.organization_name ?? ''),
-    displayName: String(platform.display_name ?? 'Unified Namespace'),
+    displayName: String(platform.display_name ?? 'Industrial Intelligence Platform'),
     graphqlHost,
     graphqlPort,
     graphqlPath,

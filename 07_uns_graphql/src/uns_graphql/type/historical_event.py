@@ -15,7 +15,7 @@
 *    -
 *******************************************************************************
 
-Type of data to be retrieved from the UNS
+Type of data to be retrieved from the IIP
 Events map to a single message in the queue or historization of those messages
 """
 

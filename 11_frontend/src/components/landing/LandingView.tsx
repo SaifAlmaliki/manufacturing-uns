@@ -69,8 +69,8 @@ export const LandingView: React.FC = () => {
       <ResponsiveHeroBanner
         backgroundImageUrl={heroImage}
         badgeLabel="Live"
-        badgeText="ISA-95 & Sparkplug B Unified Namespace Platform"
-        title="Unified Namespace"
+        badgeText="ISA-95 Unified Namespace · Industrial Intelligence Platform"
+        title="Industrial Intelligence Platform"
         titleLine2="for Smart Manufacturing"
         description="A universal industrial data platform. Standardize shop-floor telemetry, Sparkplug B edge computing, Timescale historian analytics, and ISO/IEC 62443 security across every manufacturing site."
         primaryButtonText="Launch Enterprise Console"
@@ -625,7 +625,7 @@ export const LandingView: React.FC = () => {
         <div className="bg-amber-500 dark:bg-amber-500/10 border border-amber-600/30 dark:border-[#FFC107]/30 rounded-2xl p-8 sm:p-12 text-center text-slate-950 dark:text-[#F8FAFC] space-y-6 shadow-xl relative overflow-hidden">
           <div className="max-w-2xl mx-auto space-y-3">
             <h2 className="font-serif text-2xl sm:text-4xl font-bold tracking-tight">
-              Ready to Access the Unified Namespace Console?
+              Ready to Access the IIP Console?
             </h2>
             <p className="text-sm sm:text-base text-slate-900/90 dark:text-[#94A3B8]">
               Sign in with your plant credentials through Keycloak to access real-time MQTT telemetry, Sparkplug B decoding, and process alarms.
@@ -651,9 +651,9 @@ export const LandingView: React.FC = () => {
               <Layers className="w-3.5 h-3.5" />
             </div>
             <span className="font-serif font-bold text-sm text-[#0F172A] dark:text-[#F8FAFC]">
-              UNS Console
+              IIP Console
             </span>
-            <span>• Universal Enterprise Unified Namespace Operating System</span>
+            <span>• Industrial Intelligence Platform</span>
           </div>
 
           <div className="flex items-center gap-6 font-mono text-[11px]">

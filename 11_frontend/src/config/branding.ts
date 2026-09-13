@@ -1,6 +1,11 @@
 import { AppSettings } from '../types/uns';
 import { platformConfig } from '../lib/platform/config';
 
+/** Product chrome. Internal packages and env vars stay `uns_*` / `UNS_`. */
+export const PRODUCT_NAME = 'Industrial Intelligence Platform';
+export const PRODUCT_SHORT_NAME = 'IIP';
+export const CONSOLE_NAME = 'IIP Console';
+
 function httpToWs(httpUrl: string): string {
   if (httpUrl.startsWith('https://')) {
     return `wss://${httpUrl.slice('https://'.length)}`;

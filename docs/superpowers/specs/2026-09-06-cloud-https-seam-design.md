@@ -56,14 +56,14 @@ publish the private list; put TLS in front of the public list.
 ```
 
 The edge is not in this repository yet. The repo's job is that flipping
-`platform.public_origin` to `https://uns.example.com` retargets OIDC and Grafana
+`platform.public_origin` to `https://iip.example.com` retargets OIDC and Grafana
 without forking `nginx.conf`.
 
 ## 5. Config
 
 | Key | Local default | Cloud Instance |
 | --- | --- | --- |
-| `platform.public_origin` | `http://localhost:8088` | `https://uns.example.com` |
+| `platform.public_origin` | `http://localhost:8088` | `https://iip.example.com` |
 | `mqtt.public_host` | `localhost` | hostname plant connectors dial |
 | `mqtt.public_port` | `1883` | `8883` |
 
@@ -126,7 +126,7 @@ Owner: `00_uns_config` (`test_compose_env.py`, settings loader tests).
    the Grafana browser OAuth URL — matching today's compose literals.
 3. `compose_environment()` exports `UNS_CONSOLE_ORIGIN`. Compose interpolations
    stay a subset of `COMPOSE_ENV_KEYS`.
-4. `UNS_PLATFORM__PUBLIC_ORIGIN=https://uns.example.com` changes
+4. `UNS_PLATFORM__PUBLIC_ORIGIN=https://iip.example.com` changes
    `UNS_CONSOLE_ORIGIN`. `auth.internal_base_url` stays
    `http://uns_keycloak:8080`.
 5. Placeholder `mqtt.username` / `mqtt.password` do not fail `compose_environment()`.

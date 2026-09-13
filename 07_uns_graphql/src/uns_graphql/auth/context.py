@@ -90,7 +90,7 @@ async def graphql_context(connection: HTTPConnection) -> dict:
     if token is None:
         raise HTTPException(
             status_code=401,
-            detail="This endpoint requires a bearer token from the UNS realm.",
+            detail="This endpoint requires a bearer token from the IIP realm.",
             headers=_UNAUTHENTICATED,
         )
 

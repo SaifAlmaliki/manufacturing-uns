@@ -9,7 +9,7 @@ Plan: [Implementation plan](../plans/2026-09-12-cloud-platform-outbound-edge.md)
 
 ## 1. Goal and approved boundaries
 
-Run the central UNS platform on Hostinger VPS or AWS. Deploy HiveMQ Edge and one
+Run the central Industrial Intelligence Platform on Hostinger VPS or AWS. Deploy HiveMQ Edge and one
 small UNS management agent on a Linux VM in each site's DMZ. On-premises IT installs
 and enrolls that package once; platform owners subsequently configure connections
 through the cloud console.

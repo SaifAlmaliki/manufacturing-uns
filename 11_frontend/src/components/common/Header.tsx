@@ -71,7 +71,7 @@ function getPageHeading(
   }
   return {
     title: `${getGreeting()}, ${firstName} 👋`,
-    subtitle: 'Unified Namespace management console.',
+    subtitle: 'Industrial Intelligence Platform console.',
   };
 }
 

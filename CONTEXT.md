@@ -1,10 +1,24 @@
-# Unified Namespace
+# Industrial Intelligence Platform
 
-An ISA-95 Unified Namespace platform: plant data published to an MQTT broker is
-projected into a graph of current state, a time-series history, and an event log,
-then read back through a single query surface.
+**Industrial Intelligence Platform (IIP)** is the product. It implements an ISA-95
+Unified Namespace: plant data published to an MQTT broker is projected into a graph
+of current state, a time-series history, and an event log, then read back through a
+single query surface (the IIP Console and GraphQL API).
+
+Public example hostnames use `iip.example.com`. Python packages, Compose services,
+and `UNS_` environment variables keep the historical `uns_*` identifiers.
 
 ## Language
+
+**Industrial Intelligence Platform (IIP)**:
+The product — IIP Console, GraphQL API, historian, lake, and edge management.
+Distinct from the Unified Namespace, which is the MQTT topic tree this platform
+implements.
+_Avoid_: UNS platform, Unified Namespace Console, calling the product "the UNS"
+
+**IIP Console**:
+The web operations console (`11_frontend`). User-facing chrome says IIP Console.
+_Avoid_: UNS Console
 
 **Unified Namespace**:
 The single MQTT topic tree that every producer publishes into and every consumer
@@ -103,7 +117,7 @@ green health indicator ends up meaning nothing.
 _Avoid_: monitoring, health, telemetry
 
 **Instance**:
-One deployment of the platform, either at a single facility or centrally for the
+One deployment of IIP, either at a single facility or centrally for the
 whole enterprise. Determines which stores a dashboard can reach.
 _Avoid_: environment, site, tenant, cluster
 
@@ -118,10 +132,13 @@ _Avoid_: alarm, alert, threshold, notification rule
 ### Access
 
 **Realm**:
-The Keycloak realm `uns` — the authority on who exists and what Console Roles they
-hold. Served under `/auth` on the console's own origin, so its issuer and its
-session cookie are first-party.
-_Avoid_: auth server, IdP, identity provider
+The Keycloak realm whose **id remains `uns`** (issuer path `/auth/realms/uns`).
+That id is an internal identifier, not the product name. The realm display name
+is Industrial Intelligence Platform. It is the authority on who exists and what
+Console Roles they hold. Served under `/auth` on the IIP Console's own origin, so
+its issuer and its session cookie are first-party.
+_Avoid_: auth server, IdP, identity provider, renaming the realm id without a
+migration
 
 **Console Role**:
 One of `admin`, `engineer`, `operator`, `auditor`, `viewer`. The GraphQL enum

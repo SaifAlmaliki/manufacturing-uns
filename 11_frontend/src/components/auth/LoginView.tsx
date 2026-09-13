@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { CONSOLE_NAME, PRODUCT_SHORT_NAME } from '../../config/branding';
 import { platformConfig } from '../../lib/platform/config';
 import { consoleTokens } from '../ui/console-ui';
 
@@ -20,9 +21,9 @@ export const LoginView: React.FC = () => {
       <div className={`w-full max-w-sm ${consoleTokens.card} p-8`}>
         <div className="mb-8 text-center">
           <div className="mx-auto mb-4 flex size-11 items-center justify-center rounded-xl bg-[#FF7A00]">
-            <span className="text-lg font-bold text-[#140800]">U</span>
+            <span className="text-lg font-bold text-[#140800]">{PRODUCT_SHORT_NAME[0]}</span>
           </div>
-          <h1 className="text-xl font-semibold text-foreground">UNS Console</h1>
+          <h1 className="text-xl font-semibold text-foreground">{CONSOLE_NAME}</h1>
           <p className="mt-1 text-sm text-muted-foreground">Sign in to continue</p>
         </div>
 

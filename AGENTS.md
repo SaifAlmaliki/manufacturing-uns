@@ -1,12 +1,22 @@
 # Agent notes
 
+The product is **Industrial Intelligence Platform (IIP)**. User-facing names,
+console chrome, GraphQL schema descriptions, operator docs, and example hostnames
+(`iip.example.com`) use IIP. The MQTT architecture remains an ISA-95 **Unified
+Namespace**. Do not call the product "the UNS platform" or "Unified Namespace
+Console".
+
+Internal identifiers stay as they are: Python packages (`uns_graphql`, …), Compose
+service names, Dynaconf `UNS_` overrides, and the Keycloak realm id `uns`. Do not
+rename those as part of branding.
+
 ## Orientation and local workflow
 
-- Read `CONTEXT.md` and relevant `docs/adr/` before changing domain behavior; use the glossary's terms and flag ADR conflicts. See `docs/agents/domain.md`.
+- Read `CONTEXT.md` and relevant `docs/adr/` before changing domain behavior; use the glossary's terms (IIP for the product, Unified Namespace for the MQTT tree) and flag ADR conflicts. See `docs/agents/domain.md`.
 - When `graphify-out/graph.json` exists, start code exploration with `graphify query "<question>"`, `graphify path "<A>" "<B>"`, or `graphify explain "<concept>"`, then verify relevant source. Include this rule when delegating exploration. After code changes, run `graphify update .`.
 - Specs: `.scratch/<feature>/spec.md`. Tickets: `.scratch/<feature>/issues/<NN>-<slug>.md`, one file per ticket. Follow `docs/agents/issue-tracker.md` and `docs/agents/triage-labels.md` for status and comments.
 - User-invoked orchestrators remain explicit-only: `/grill-with-docs`, `/grill-me`, `/to-spec`, `/to-tickets`, `/implement`, `/triage`, `/wayfinder`, `/ask-matt`, `/improve-codebase-architecture`, `/handoff`, `/wait-what`.
-- For compact console layouts, load `.agents/skills/console-compact-layout/SKILL.md` before designing or editing. This is the only currently checked-in local skill.
+- For compact IIP Console layouts, load `.agents/skills/console-compact-layout/SKILL.md` before designing or editing. This is the only currently checked-in local skill. The skill file still says "UNS console"; apply it to the IIP Console.
 
 ## Package boundaries
 
@@ -52,5 +62,5 @@ npm run build
 - From root, `uv sync` then `npm run stack` builds/starts the local stack; `npm run down` stops it. For custom Compose commands use `uv run uns_compose -f docker-compose.yml -f docker-compose.dev.yml <args>`: the wrapper translates YAML secrets into Compose environment variables.
 - `postgres.password` is the database superuser secret; `historian.password` is the application's `uns_dbuser` secret. They serve different roles in initialization and runtime connections.
 - Keep the dev overlay: it passes `--skip-oee-import` because the current plant seed and OEE seed name different plants; without it, the one-shot setup can block GraphQL. Successful exits from `asset_model_setup` and `tsdb_setup_script` are expected.
-- Local console: `http://localhost:8088`; GraphQL: `http://localhost:8000/graphql`. The host simulator (`npm run simulator`) needs Bash; Windows also has `scripts/run-oee-simulator.ps1`. `npm run stack:demo` runs the simulator in Docker.
+- Local IIP Console: `http://localhost:8088`; GraphQL: `http://localhost:8000/graphql`. Production example origin is `https://iip.example.com`. The host simulator (`npm run simulator`) needs Bash; Windows also has `scripts/run-oee-simulator.ps1`. `npm run stack:demo` runs the simulator in Docker.
 - Root Compose is development-only. Production bundles and validation/install flows are in `deploy/cloud/README.md` and `deploy/edge/README.md`; release requirements live in `deploy/release-contract.json`.

@@ -176,9 +176,9 @@ def test_settings_example_uses_https_public_origin():
 
 def test_proxy_terminates_console_enrollment_and_management_separately():
     proxy = PROXY_FILE.read_text(encoding="utf-8")
-    assert "server_name uns.example.com" in proxy
-    assert "server_name enroll.uns.example.com" in proxy
-    assert "server_name edge-mgmt.uns.example.com" in proxy
+    assert "server_name iip.example.com" in proxy
+    assert "server_name enroll.iip.example.com" in proxy
+    assert "server_name edge-mgmt.iip.example.com" in proxy
     assert "ssl_verify_client on" in proxy
     assert "X-UNS-Trusted-Proxy" in proxy
     assert "X-Edge-Id" in proxy
@@ -238,7 +238,7 @@ def test_validate_rejects_unqualified_broker_release(tmp_path: Path):
 
 
 def test_validate_rejects_http_public_origin(tmp_path: Path):
-    bundle = _fixture_bundle(tmp_path, qualified_broker=True, with_tls=True, public_origin="http://uns.example.com")
+    bundle = _fixture_bundle(tmp_path, qualified_broker=True, with_tls=True, public_origin="http://iip.example.com")
     result = _run_validate(bundle, skip_disk=True)
     assert result.returncode != 0
     assert "HTTPS" in (result.stderr or result.stdout)
@@ -304,7 +304,7 @@ def _fixture_bundle(
     *,
     qualified_broker: bool,
     with_tls: bool = False,
-    public_origin: str = "https://uns.example.com",
+    public_origin: str = "https://iip.example.com",
     contract_version: int = 1,
     for_compose_config: bool = False,
 ) -> Path:
@@ -342,7 +342,7 @@ def _fixture_bundle(
     runtime.write_text(
         "\n".join(
             [
-                "UNS_CONSOLE_ORIGIN=https://uns.example.com",
+                "UNS_CONSOLE_ORIGIN=https://iip.example.com",
                 "PGPASSWORD=fixture-postgres",
                 "UNS_graphdb__password=fixture-graphdb",
                 "UNS_historian__password=fixture-historian",

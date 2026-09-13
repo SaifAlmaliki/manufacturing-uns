@@ -53,7 +53,7 @@ class PlatformConfig:
 
     instance_name: str = _settings.get("platform.instance_name", "default")
     organization_name: str = _settings.get("platform.organization_name", "")
-    display_name: str = _settings.get("platform.display_name", "Unified Namespace")
+    display_name: str = _settings.get("platform.display_name", "Industrial Intelligence Platform")
 
     graphql_host: str = _settings.get("urls.graphql_host", "localhost")
     graphql_port: int = int(_settings.get("urls.graphql_port", 8000))

@@ -15,7 +15,7 @@
 *    -
 *******************************************************************************
 
-Common basetype needed across all graphQL queries and subscriptions to the UNS
+Common basetype needed across all graphQL queries and subscriptions to the IIP
 """
 
 import json

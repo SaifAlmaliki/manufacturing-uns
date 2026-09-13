@@ -18,7 +18,7 @@ from uns_graphql.type.streaming_event import StreamingMessage
 LOGGER = logging.getLogger(__name__)
 
 
-@strawberry.type(description="Subscribe to authorized live UNS events from the canonical stream.")
+@strawberry.type(description="Subscribe to authorized live IIP events from the canonical stream.")
 class KAFKASubscription:
     """Subscription class providing methods for subscribing to live canonical events."""
 

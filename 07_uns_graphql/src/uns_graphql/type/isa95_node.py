@@ -15,7 +15,7 @@
 *    -
 *******************************************************************************
 
-Type of data to be retrieved from the UNS
+Type of data to be retrieved from the IIP
 Node are formed by the merging of multiple events
 """
 

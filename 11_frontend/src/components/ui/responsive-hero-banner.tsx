@@ -38,8 +38,8 @@ export const ResponsiveHeroBanner: React.FC<ResponsiveHeroBannerProps> = ({
   ctaButtonText = 'Access Console',
   onCtaClick,
   badgeLabel = 'Live',
-  badgeText = 'ISA-95 & Sparkplug B Unified Namespace',
-  title = 'Unified Namespace',
+  badgeText = 'ISA-95 Unified Namespace · IIP',
+  title = 'Industrial Intelligence Platform',
   titleLine2 = 'for Smart Manufacturing',
   description = 'Standardize shop-floor telemetry, Sparkplug B edge computing, Timescale historian analytics, and enterprise MQTT streams across every plant in your organization.',
   primaryButtonText = 'Launch Console',
@@ -81,10 +81,10 @@ export const ResponsiveHeroBanner: React.FC<ResponsiveHeroBannerProps> = ({
                   </div>
                   <div>
                     <div className="font-serif text-lg font-bold tracking-tight text-white">
-                      UNS<span className="text-amber-400">CONSOLE</span>
+                      IIP<span className="text-amber-400">CONSOLE</span>
                     </div>
                     <div className="font-mono text-[10px] uppercase tracking-wider text-white/60">
-                      Unified Namespace
+                      Industrial Intelligence Platform
                     </div>
                   </div>
                 </>

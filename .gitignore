@@ -139,3 +139,26 @@ dmypy.json
 
 # graphify — commit the graph; keep local cost totals out of git
 graphify-out/cost.json
+
+# AWS operator params and generated host-side compose overrides
+deploy/aws/uns-aws.params.ps1
+deploy/aws/work/
+deploy/cloud/compose.images.yml
+deploy/cloud/settings.yaml
+deploy/cloud/keycloak/realm.json
+deploy/cloud/secrets/runtime.env
+deploy/cloud/secrets/broker-tls.env
+deploy/cloud/secrets/backup.env
+deploy/cloud/secrets/tls/
+deploy/cloud/secrets/broker-tls/*.jks
+deploy/cloud/secrets/broker-tls/*.p12
+deploy/edge/compose.images.yml
+deploy/edge/agent.env
+deploy/edge/hivemq/config.xml
+deploy/edge/secrets/edge-api.env
+deploy/edge/secrets/cloud-ca.pem
+deploy/edge/simulation/secrets/mqtt-sim.env
+deploy/edge/simulation/secrets/mqtt-tls.env
+deploy/edge/simulation/secrets/*.pem
+deploy/edge/simulation/secrets/*.key
+deploy/edge/hivemq/tls/

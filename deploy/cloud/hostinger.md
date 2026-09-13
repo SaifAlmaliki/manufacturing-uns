@@ -11,10 +11,10 @@ certificate issuance, and firewall changes remain human prerequisites.
 2. Attach a data volume for Docker named volumes if the root disk is smaller than
    the declared retention budget.
 3. Create public DNS records:
-   - `uns.example.com` → VPS public IP (console/API/Grafana/OIDC)
-   - `enroll.uns.example.com` → VPS public IP (one-time enrollment)
-   - `edge-mgmt.uns.example.com` → VPS public IP (mTLS management API)
-   - `mqtt.uns.example.com` → VPS public IP (MQTT TLS listener on TCP 8883)
+   - `iip.example.com` → VPS public IP (console/API/Grafana/OIDC)
+   - `enroll.iip.example.com` → VPS public IP (one-time enrollment)
+   - `edge-mgmt.iip.example.com` → VPS public IP (mTLS management API)
+   - `mqtt.iip.example.com` → VPS public IP (MQTT TLS listener on TCP 8883)
 4. Open the host firewall for TCP `443`, `80` (redirect only), and `8883`. Do not
    publish Postgres, Kafka, Neo4j, Prometheus, Grafana, Keycloak, or GraphQL ports.
 
@@ -44,12 +44,12 @@ docker compose --env-file secrets/runtime.env -f compose.yml up -d
 
 ## Verify
 
-1. Browse `https://uns.example.com` and sign in through OIDC.
+1. Browse `https://iip.example.com` and sign in through OIDC.
 2. Confirm Grafana dashboards load under `/grafana/`.
-3. Enroll a canary edge through `enroll.uns.example.com` and verify heartbeat in the
+3. Enroll a canary edge through `enroll.iip.example.com` and verify heartbeat in the
    console.
-4. From the DMZ VM, confirm MQTT TLS reaches `mqtt.uns.example.com:8883` and that
-   management traffic uses `edge-mgmt.uns.example.com` with client certificates.
+4. From the DMZ VM, confirm MQTT TLS reaches `mqtt.iip.example.com:8883` and that
+   management traffic uses `edge-mgmt.iip.example.com` with client certificates.
 5. Run the backup profile on demand before declaring the host production-ready:
 
 ```bash

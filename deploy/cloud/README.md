@@ -1,6 +1,6 @@
 # Cloud production bundle
 
-Central UNS platform for outbound-only edge ingestion. Plant traffic follows
+Central Industrial Intelligence Platform for outbound-only edge ingestion. Plant traffic follows
 **source → edge → cloud**. This bundle does not run HiveMQ Edge, simulators, or
 site collectors.
 

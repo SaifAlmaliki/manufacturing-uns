@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
+import ssl
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
 
 import httpx
-
 from uns_config.edge_contracts import EdgeReport
 
 from uns_edge_agent.credentials import CredentialStore
@@ -69,11 +70,19 @@ class CloudClient:
         self._timeout = httpx.Timeout(request_timeout_seconds, connect=connect_timeout_seconds)
         self._transport = transport
 
-    def _client(self) -> httpx.Client:
+    def _verify(self, *, for_enrollment: bool = False) -> ssl.SSLContext | bool:
+        if not for_enrollment and self._credentials.has_credentials():
+            return self._credentials.management_ssl_context()
+        cafile = os.environ.get("UNS_EDGE_CA_FILE")
+        if cafile:
+            return ssl.create_default_context(cafile=cafile)
+        return True
+
+    def _client(self, *, for_enrollment: bool = False) -> httpx.Client:
         if self._transport is not None:
             return httpx.Client(transport=self._transport, timeout=self._timeout)
         return httpx.Client(
-            verify=self._credentials.management_ssl_context(),
+            verify=self._verify(for_enrollment=for_enrollment),
             timeout=self._timeout,
         )
 
@@ -89,7 +98,7 @@ class CloudClient:
             "management_csr": management_csr,
             "mqtt_csr": mqtt_csr,
         }
-        with self._client() as client:
+        with self._client(for_enrollment=True) as client:
             response = client.post(f"{self._base_url}/api/edge/v1/enroll", json=payload)
         if response.status_code != 200:
             raise CloudClientError(_error_reason(response), response.status_code)

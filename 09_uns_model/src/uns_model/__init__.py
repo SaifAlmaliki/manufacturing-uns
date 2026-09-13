@@ -1,4 +1,4 @@
-"""Asset Model and Enrichment for the Unified Namespace platform.
+"""Asset Model and Enrichment for the Industrial Intelligence Platform.
 
 A small surface deliberately: most callers need a resolver or a binder, not the
 tables underneath.
