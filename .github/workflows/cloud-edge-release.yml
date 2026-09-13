@@ -33,7 +33,6 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ghcr.io/${{ github.repository }}
 
 jobs:
   unit-contract:
@@ -92,6 +91,9 @@ jobs:
             runner: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+
+      - name: Lowercase GHCR image prefix
+        run: echo "IMAGE_PREFIX=${REGISTRY}/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4

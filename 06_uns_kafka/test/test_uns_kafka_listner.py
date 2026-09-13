@@ -19,11 +19,12 @@ Test cases for uns_kafka.uns_kafka_listener
 """
 
 import json
+import time
 import uuid
 
 import pytest
-from confluent_kafka import OFFSET_END, Consumer
-from confluent_kafka.admin import AdminClient
+from confluent_kafka import Consumer
+from mapper_harness import live_mapper, patch_unique_ingestion_config, wait_for_kafka_assignment, wait_until
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 from uns_config.events import decode_event
@@ -35,10 +36,11 @@ from uns_kafka.uns_kafka_listener import UNSKafkaMapper
 
 
 @pytest.mark.integrationtest()
-def test_uns_kafka_mapper_init():
+def test_uns_kafka_mapper_init(monkeypatch):
     """
     Test case for UNSKafkaMapper#init()
     """
+    patch_unique_ingestion_config(monkeypatch)
     uns_kafka_mapper: UNSKafkaMapper = None
     try:
         uns_kafka_mapper = UNSKafkaMapper()
@@ -73,71 +75,58 @@ def test_uns_kafka_mapper_init():
         ),
     ],
 )
-def test_uns_kafka_mapper_publishing(mqtt_topic: str, mqtt_message, expected_payload):
+def test_uns_kafka_mapper_publishing(monkeypatch, mqtt_topic: str, mqtt_message, expected_payload):
     """
     End to end: MQTT publish lands as a canonical historic envelope on uns.historic-events.
     """
-    uns_kafka_mapper: UNSKafkaMapper = None
-    admin_client = None
     mqtt_topic = f"{mqtt_topic}/{uuid.uuid4()}"
-
+    kafka_listener: Consumer | None = None
     try:
-        uns_kafka_mapper = UNSKafkaMapper()
-        admin_client = AdminClient(KAFKAConfig.kafka_config_map)
+        with live_mapper(monkeypatch) as uns_kafka_mapper:
+            publish_properties = None
+            if uns_kafka_mapper.uns_client.protocol == MQTTVersion.MQTTv5:
+                publish_properties = Properties(PacketTypes.PUBLISH)
 
-        publish_properties = None
-        if uns_kafka_mapper.uns_client.protocol == MQTTVersion.MQTTv5:
-            publish_properties = Properties(PacketTypes.PUBLISH)
-
-        payload = json.dumps(mqtt_message)
-
-        def on_message_decorator(client, userdata, msg):
-            old_on_message(client, userdata, msg)
-            uns_kafka_mapper.kafka_handler.flush()
-            kafka_listener: Consumer = get_kafka_consumer(KAFKAConfig.kafka_config_map)
-
-            def reset_offset(consumer, partitions):
-                for part in partitions:
-                    part.offset = OFFSET_END
-                consumer.assign(partitions)
-
-            kafka_listener.subscribe([HISTORIC_TOPIC], on_assign=reset_offset)
+            kafka_listener = get_kafka_consumer(KAFKAConfig.kafka_config_map)
+            wait_for_kafka_assignment(kafka_listener, HISTORIC_TOPIC, from_end=True)
+            delivered_before = uns_kafka_mapper.kafka_handler.delivered_count
+            uns_kafka_mapper.uns_client.publish(
+                topic=mqtt_topic,
+                payload=json.dumps(mqtt_message),
+                qos=1,
+                retain=False,
+                properties=publish_properties,
+            )
+            if not wait_until(
+                lambda: _kafka_delivered(uns_kafka_mapper, delivered_before),
+                timeout_s=10.0,
+            ):
+                pytest.fail("mapper did not deliver a Kafka record after MQTT publish")
             check_kafka_envelope(kafka_listener, mqtt_topic, expected_payload)
-
-        old_on_message = uns_kafka_mapper.uns_client.on_message
-        uns_kafka_mapper.uns_client.on_message = on_message_decorator
-
-        uns_kafka_mapper.uns_client.publish(
-            topic=mqtt_topic,
-            payload=payload,
-            qos=1,
-            retain=False,
-            properties=publish_properties,
-        )
-
-    except Exception as ex:
-        pytest.fail(
-            f"Connection to either the MQTT Broker or Kafka broker did not happen: Exception {ex}")
     finally:
-        if uns_kafka_mapper is not None:
-            uns_kafka_mapper.uns_client.disconnect()
+        if kafka_listener is not None:
+            kafka_listener.close()
+
+
+def _kafka_delivered(mapper: UNSKafkaMapper, delivered_before: int) -> bool:
+    mapper.kafka_handler.poll(0)
+    return mapper.kafka_handler.delivered_count > delivered_before
 
 
 def check_kafka_envelope(kafka_listener: Consumer, expected_topic: str, expected_payload: dict):
-    try:
-        while True:
-            msg = kafka_listener.poll(1.0)
-            if msg is None:
-                print("Waiting...")  # noqa: T201
-            elif msg.error():
-                pytest.fail(msg.error())
-            else:
-                envelope = decode_event(msg.value())
-                assert envelope.topic == expected_topic
-                assert envelope.payload == expected_payload
-                break
-    finally:
-        kafka_listener.close()
+    deadline = time.monotonic() + 15.0
+    while time.monotonic() < deadline:
+        msg = kafka_listener.poll(1.0)
+        if msg is None:
+            continue
+        if msg.error():
+            pytest.fail(msg.error())
+        envelope = decode_event(msg.value())
+        if envelope.topic != expected_topic:
+            continue
+        assert envelope.payload == expected_payload
+        return
+    pytest.fail(f"Timeout waiting for envelope on {expected_topic}")
 
 
 def get_kafka_consumer(kafka_producer_config: dict) -> Consumer:
@@ -148,6 +137,6 @@ def get_kafka_consumer(kafka_producer_config: dict) -> Consumer:
     consumer_config["bootstrap.servers"] = kafka_producer_config.get(
         "bootstrap.servers")
     consumer_config["client.id"] = "uns_kafka_mapper_test_consumer"
-    consumer_config["group.id"] = "uns_kafka_mapper_test_consumers"
+    consumer_config["group.id"] = f"uns_kafka_mapper_test_consumers_{uuid.uuid4()}"
     consumer_config["auto.offset.reset"] = "earliest"
     return Consumer(consumer_config)

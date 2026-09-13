@@ -13,6 +13,7 @@ from sqlalchemy.exc import DBAPIError
 from uns_config.events import HistoricEventEnvelope, encode_event, immutable_content_hash, ingress_event_id, source_event_id
 from uns_historian.batch import ConsumedEvent, HISTORIC_KAFKA_TOPIC
 from uns_historian.historian_handler import HistorianHandler
+from uns_historian.metric_flattener import flatten_payload_to_metrics
 
 
 def _telemetry_envelope(**overrides) -> HistoricEventEnvelope:
@@ -258,7 +259,13 @@ async def test_persist_batch_replay_is_idempotent(historian_pool):  # noqa: ARG0
                 topic,
                 envelope.event_id,
             )
-        assert metrics[0]["count"] == 1
+            raw = await reader.execute_prepared(
+                f"SELECT COUNT(*) AS count FROM unifiednamespace WHERE topic = $1 AND event_id = $2",  # noqa: S608
+                topic,
+                envelope.event_id,
+            )
+        assert raw[0]["count"] == 1
+        assert metrics[0]["count"] == len(flatten_payload_to_metrics(envelope.payload))
     finally:
         async with HistorianHandler() as cleaner:
             await cleaner.execute_prepared(f"DELETE FROM uns_metrics WHERE topic = $1", topic)  # noqa: S608

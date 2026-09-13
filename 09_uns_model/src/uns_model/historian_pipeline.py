@@ -55,3 +55,31 @@ def legacy_migration_content_hash(
 ) -> str:
     parts = (_format_time(time), topic, mqtt_msg)
     return legacy_migration_digest(parts)
+
+
+def _payload_dict(mqtt_msg: dict[str, Any] | str) -> dict[str, Any]:
+    if isinstance(mqtt_msg, str):
+        loaded = json.loads(mqtt_msg)
+        if not isinstance(loaded, dict):
+            raise TypeError("legacy historian inserts require a JSON object payload")
+        return loaded
+    return mqtt_msg
+
+
+def legacy_raw_insert_params(
+    time: datetime,
+    topic: str,
+    client_id: str | None,
+    mqtt_msg: dict[str, Any] | str,
+) -> dict[str, Any]:
+    """Columns required for a post-0009 insert into unifiednamespace."""
+    payload = _payload_dict(mqtt_msg)
+    return {
+        "time": time,
+        "topic": topic,
+        "client_id": client_id,
+        "mqtt_msg": mqtt_msg,
+        "event_id": legacy_migration_event_id(time, topic, client_id, payload),
+        "received_at": time,
+        "immutable_content_hash": legacy_migration_content_hash(time, topic, payload),
+    }

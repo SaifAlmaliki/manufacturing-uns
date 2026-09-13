@@ -25,9 +25,11 @@ from typing import Literal
 import pytest
 import pytest_asyncio
 from sqlalchemy import text
+from uns_model.engine import Database
+from uns_model.historian_pipeline import legacy_raw_insert_params
+
 from uns_graphql.backend.historian import HistorianRepository
 from uns_graphql.graphql_config import HistorianConfig
-from uns_model.engine import Database
 
 # model for db entry
 DatabaseRow = tuple[datetime, str, str, dict]
@@ -57,10 +59,23 @@ test_data_set: list[DatabaseRow] = [
 ]
 
 
-INSERT_SQL = f"""INSERT INTO {HistorianConfig.table} ( time, topic, client_id, mqtt_msg )
-                 VALUES (:time, :topic, :client_id, CAST(:mqtt_msg AS jsonb));"""  # noqa: S608
+INSERT_SQL = f"""INSERT INTO {HistorianConfig.table} (
+                     time, topic, client_id, mqtt_msg, event_id, received_at, immutable_content_hash
+                 ) VALUES (
+                     :time, :topic, :client_id, CAST(:mqtt_msg AS jsonb),
+                     :event_id, :received_at, :immutable_content_hash
+                 );"""  # noqa: S608
 DELETE_SQL = f"""DELETE FROM {HistorianConfig.table}
                  WHERE time = :time AND topic = :topic AND client_id = :client_id;"""  # noqa: S608
+
+
+def test_seed_insert_covers_not_null_identity_columns():
+    """0009 made event identity NOT NULL; the seed INSERT must supply those columns."""
+    row = legacy_raw_insert_params(*test_data_set[0])
+    for column in ("event_id", "received_at", "immutable_content_hash"):
+        assert column in INSERT_SQL
+        assert f":{column}" in INSERT_SQL
+        assert row[column]
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
@@ -84,7 +99,7 @@ async def prepare_database(historian_database: Database):
     repository only reads, and giving it a write method for the sake of its own tests
     would widen the interface the service depends on.
     """
-    rows = [{"time": row[0], "topic": row[1], "client_id": row[2], "mqtt_msg": row[3]} for row in test_data_set]
+    rows = [legacy_raw_insert_params(*row) for row in test_data_set]
 
     async with historian_database.begin() as connection:
         # Delete first: a previous run that crashed would otherwise leave duplicates.

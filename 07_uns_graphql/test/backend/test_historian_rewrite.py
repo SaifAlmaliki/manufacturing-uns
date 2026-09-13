@@ -23,15 +23,21 @@ from datetime import UTC, datetime
 import pytest
 import pytest_asyncio
 from sqlalchemy import text
+from uns_model.engine import Database
+from uns_model.historian_pipeline import legacy_raw_insert_params
+
 from uns_graphql.backend.historian import HistorianRepository
 from uns_graphql.graphql_config import HistorianConfig
-from uns_model.engine import Database
 
 CLIENT_ID = "pytest-historian-rewrite"
 REWRITE_AT = datetime.fromtimestamp(1999999999, UTC)
 
-INSERT_SQL = f"""INSERT INTO {HistorianConfig.table} ( time, topic, client_id, mqtt_msg )
-                 VALUES (:time, :topic, :client_id, CAST(:mqtt_msg AS jsonb));"""  # noqa: S608
+INSERT_SQL = f"""INSERT INTO {HistorianConfig.table} (
+                     time, topic, client_id, mqtt_msg, event_id, received_at, immutable_content_hash
+                 ) VALUES (
+                     :time, :topic, :client_id, CAST(:mqtt_msg AS jsonb),
+                     :event_id, :received_at, :immutable_content_hash
+                 );"""  # noqa: S608
 SELECT_SQL = f"""SELECT topic FROM {HistorianConfig.table}
                  WHERE client_id = :client_id ORDER BY topic;"""  # noqa: S608
 DELETE_SQL = f"""DELETE FROM {HistorianConfig.table} WHERE client_id = :client_id;"""  # noqa: S608
@@ -40,6 +46,15 @@ METRICS_INSERT_SQL = """INSERT INTO uns_metrics (time, topic, metric_name, value
 METRICS_SELECT_SQL = """SELECT topic FROM uns_metrics WHERE topic = ANY(:topics) ORDER BY topic;"""
 METRICS_DELETE_SQL = """DELETE FROM uns_metrics WHERE topic = ANY(:topics);"""
 TEST_TOPICS = ["E/S1/a", "E/S2/b", "E/Nord/a", "E/S_1/a", "E/SX1/a"]
+
+
+def test_seed_insert_covers_not_null_identity_columns():
+    """0009 made event identity NOT NULL; the seed INSERT must supply those columns."""
+    row = legacy_raw_insert_params(REWRITE_AT, TEST_TOPICS[0], CLIENT_ID, "{}")
+    for column in ("event_id", "received_at", "immutable_content_hash"):
+        assert column in INSERT_SQL
+        assert f":{column}" in INSERT_SQL
+        assert row[column]
 
 
 class _FakeResult:
@@ -126,10 +141,7 @@ def historian(historian_database: Database) -> HistorianRepository:
 
 
 async def _insert_raw(database: Database, topics: list[str]) -> None:
-    rows = [
-        {"time": REWRITE_AT, "topic": topic, "client_id": CLIENT_ID, "mqtt_msg": "{}"}
-        for topic in topics
-    ]
+    rows = [legacy_raw_insert_params(REWRITE_AT, topic, CLIENT_ID, "{}") for topic in topics]
     async with database.begin() as connection:
         await connection.execute(text(DELETE_SQL), {"client_id": CLIENT_ID})
         for row in rows:

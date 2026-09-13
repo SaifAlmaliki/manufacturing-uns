@@ -10,7 +10,8 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-from confluent_kafka import OFFSET_END, Consumer
+from confluent_kafka import Consumer
+from mapper_harness import live_mapper, wait_for_kafka_assignment, wait_until
 from uns_config.events import decode_event, ingress_event_id, source_event_id
 
 from uns_kafka.ingest import HISTORIC_TOPIC, IngestionConfig, IngestionOwner, OwnershipMapping, ReceiptToken
@@ -165,79 +166,78 @@ def test_ownership_loss_is_modeled_as_delivery_failure():
     assert mqtt.acks == []
 
 
+def _kafka_accepted(mapper: UNSKafkaMapper, delivered_before: int) -> bool:
+    mapper.kafka_handler.poll(0)
+    return mapper.kafka_handler.delivered_count > delivered_before
+
+
+def _publish_and_flush(mapper: UNSKafkaMapper, topic: str, payload: dict) -> None:
+    delivered_before = mapper.kafka_handler.delivered_count
+    mapper.uns_client.publish(topic, json.dumps(payload), qos=1)
+    if not wait_until(lambda: _kafka_accepted(mapper, delivered_before), timeout_s=10.0):
+        mapper.kafka_handler.flush(5)
+    if not _kafka_accepted(mapper, delivered_before):
+        pytest.fail(f"mapper did not deliver a Kafka record after MQTT publish of {topic}")
+
+
+def _poll_matching_envelopes(consumer: Consumer, topic: str, *, count: int, timeout_s: float):
+    observed = []
+    deadline = datetime.now(tz=UTC).timestamp() + timeout_s
+    while len(observed) < count and datetime.now(tz=UTC).timestamp() < deadline:
+        message = consumer.poll(1.0)
+        if message is None:
+            continue
+        if message.error():
+            pytest.fail(str(message.error()))
+        envelope = decode_event(message.value())
+        if envelope.topic == topic:
+            observed.append(envelope)
+    return observed
+
+
 @pytest.mark.integrationtest
-def test_end_to_end_mqtt_publish_lands_on_historic_topic():
+def test_end_to_end_mqtt_publish_lands_on_historic_topic(monkeypatch):
     _require_pipeline_stack()
     topic = f"Acceptance/{uuid.uuid4()}/Temperature"
     payload = {"value": 21.4, "timestamp": 1_788_948_000_000}
-    mapper: UNSKafkaMapper | None = None
     consumer: Consumer | None = None
     try:
-        mapper = UNSKafkaMapper()
-        consumer = _get_kafka_consumer()
+        with live_mapper(monkeypatch) as mapper:
+            consumer = _get_kafka_consumer()
+            wait_for_kafka_assignment(consumer, HISTORIC_TOPIC, from_end=True)
+            _publish_and_flush(mapper, topic, payload)
 
-        def reset_offset(consumer_obj, partitions):
-            for part in partitions:
-                part.offset = OFFSET_END
-            consumer_obj.assign(partitions)
-
-        consumer.subscribe([HISTORIC_TOPIC], on_assign=reset_offset)
-        mapper.uns_client.publish(topic, json.dumps(payload), qos=1)
-        mapper.kafka_handler.flush()
-
-        deadline = datetime.now(tz=UTC).timestamp() + 15.0
-        while datetime.now(tz=UTC).timestamp() < deadline:
-            message = consumer.poll(1.0)
-            if message is None:
-                continue
-            if message.error():
-                pytest.fail(str(message.error()))
-            envelope = decode_event(message.value())
-            if envelope.topic == topic:
-                assert envelope.payload["value"] == payload["value"]
-                assert envelope.event_id.startswith("ingress:")
-                return
-        pytest.fail(f"did not observe canonical envelope for topic {topic}")
+            observed = _poll_matching_envelopes(consumer, topic, count=1, timeout_s=15.0)
+            if not observed:
+                pytest.fail(f"did not observe canonical envelope for topic {topic}")
+            assert observed[0].payload["value"] == payload["value"]
+            assert observed[0].event_id.startswith("ingress:")
     finally:
         if consumer is not None:
             consumer.close()
-        if mapper is not None:
-            mapper.uns_client.disconnect()
 
 
 @pytest.mark.integrationtest
-def test_legacy_redelivery_produces_distinct_ingress_ids():
+def test_legacy_redelivery_produces_distinct_ingress_ids(monkeypatch):
     _require_pipeline_stack()
     topic = f"Acceptance/Legacy/{uuid.uuid4()}/Temperature"
     payload = {"value": 9.9, "timestamp": 1_788_948_000_000}
-    mapper: UNSKafkaMapper | None = None
     consumer: Consumer | None = None
     try:
-        mapper = UNSKafkaMapper()
-        consumer = _get_kafka_consumer()
-        consumer.subscribe([HISTORIC_TOPIC])
-        for _ in range(2):
-            mapper.uns_client.publish(topic, json.dumps(payload), qos=1)
-            mapper.kafka_handler.flush()
+        with live_mapper(monkeypatch) as mapper:
+            consumer = _get_kafka_consumer()
+            wait_for_kafka_assignment(consumer, HISTORIC_TOPIC, from_end=True)
+            for _ in range(2):
+                _publish_and_flush(mapper, topic, payload)
 
-        observed: list[str] = []
-        deadline = datetime.now(tz=UTC).timestamp() + 20.0
-        while len(observed) < 2 and datetime.now(tz=UTC).timestamp() < deadline:
-            message = consumer.poll(1.0)
-            if message is None or message.error():
-                continue
-            envelope = decode_event(message.value())
-            if envelope.topic == topic:
-                observed.append(envelope.event_id)
-        assert len(observed) == 2
-        assert observed[0].startswith("ingress:")
-        assert observed[1].startswith("ingress:")
-        assert observed[0] != observed[1]
+            observed = _poll_matching_envelopes(consumer, topic, count=2, timeout_s=20.0)
+            assert len(observed) == 2
+            assert observed[0].event_id.startswith("ingress:")
+            assert observed[1].event_id.startswith("ingress:")
+            assert observed[0].event_id != observed[1].event_id
     finally:
         if consumer is not None:
             consumer.close()
-        if mapper is not None:
-            mapper.uns_client.disconnect()
 
 
 @pytest.mark.integrationtest

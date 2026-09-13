@@ -68,6 +68,20 @@ def test_release_workflow_exists_and_never_publishes_on_push_only():
     assert platforms == {"linux/amd64", "linux/arm64"}
 
 
+def test_release_workflow_lowercases_ghcr_image_prefix():
+    """OCI/GHCR tags must be lowercase; github.repository keeps mixed-case owners."""
+    text = WORKFLOW_FILE.read_text(encoding="utf-8")
+    assert "ghcr.io/${{ github.repository }}" not in text
+    workflow = yaml.safe_load(text)
+    env = workflow.get("env") or {}
+    assert "github.repository" not in str(env.get("IMAGE_PREFIX", ""))
+    build_steps = workflow["jobs"]["build-images"]["steps"]
+    lowercase = next(
+        step for step in build_steps if "GITHUB_REPOSITORY,," in step.get("run", "")
+    )
+    assert "IMAGE_PREFIX=" in lowercase["run"]
+
+
 def test_release_workflow_materializes_edge_example_env_before_compose_config():
     """Compose config requires operator env files that are gitignored; CI must copy examples."""
     workflow = yaml.safe_load(WORKFLOW_FILE.read_text(encoding="utf-8"))

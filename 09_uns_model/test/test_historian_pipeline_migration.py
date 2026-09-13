@@ -13,7 +13,11 @@ import pytest_asyncio
 from sqlalchemy import text
 
 from uns_model.engine import Database
-from uns_model.historian_pipeline import legacy_migration_content_hash, legacy_migration_event_id
+from uns_model.historian_pipeline import (
+    legacy_migration_content_hash,
+    legacy_migration_event_id,
+    legacy_raw_insert_params,
+)
 from uns_model.model_config import ModelConfig
 
 MODEL_DIR = Path(__file__).resolve().parents[1]
@@ -102,6 +106,18 @@ def test_legacy_migration_helpers_produce_stable_ids():
     assert event_id.startswith("legacy:")
     assert len(content_hash) == 64
     assert legacy_migration_event_id(event_time, LEGACY_TOPIC, "legacy-client", payload) == event_id
+
+
+def test_legacy_raw_insert_params_fill_required_identity_columns():
+    event_time = datetime(2026, 9, 9, 10, 0, 0, tzinfo=UTC)
+    payload = {"key1": "value1"}
+    params = legacy_raw_insert_params(event_time, LEGACY_TOPIC, "legacy-client", payload)
+    assert params["event_id"] == legacy_migration_event_id(event_time, LEGACY_TOPIC, "legacy-client", payload)
+    assert params["received_at"] == event_time
+    assert params["immutable_content_hash"] == legacy_migration_content_hash(event_time, LEGACY_TOPIC, payload)
+    from_json = legacy_raw_insert_params(event_time, LEGACY_TOPIC, "legacy-client", json.dumps(payload))
+    assert from_json["event_id"] == params["event_id"]
+    assert from_json["mqtt_msg"] == json.dumps(payload)
 
 
 def test_legacy_migration_helpers_match_postgres_jsonb_key_order():

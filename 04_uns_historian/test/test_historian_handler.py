@@ -26,8 +26,17 @@ from unittest.mock import patch
 import pytest
 from sqlalchemy.exc import DBAPIError
 
+from uns_model.historian_pipeline import legacy_raw_insert_params
+
 from uns_historian.historian_config import HistorianConfig
 from uns_historian.historian_handler import HistorianHandler
+
+_PREPARED_INSERT = legacy_raw_insert_params(
+    datetime.fromtimestamp(1701232000, UTC),
+    "a/b/c",
+    "historian_test_client1",
+    '{"key1": "value1"}',
+)
 
 
 @pytest.fixture(scope="function")
@@ -194,8 +203,19 @@ async def test_persist_mqtt_msg_dual_writes_metrics():
     [
         (f"SELECT * from {HistorianConfig.table};", [], False),  # noqa: S608
         (
-            f"INSERT INTO {HistorianConfig.table} ( time, topic, client_id, mqtt_msg ) VALUES ($1,$2,$3,$4) RETURNING *;",  # noqa: S608
-            [datetime.fromtimestamp(1701232000, UTC), "a/b/c", "historian_test_client1", '{"key1": "value1"}'],
+            (
+                f"INSERT INTO {HistorianConfig.table} ( time, topic, client_id, mqtt_msg, "  # noqa: S608
+                "event_id, received_at, immutable_content_hash ) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *;"
+            ),
+            [
+                _PREPARED_INSERT["time"],
+                _PREPARED_INSERT["topic"],
+                _PREPARED_INSERT["client_id"],
+                _PREPARED_INSERT["mqtt_msg"],
+                _PREPARED_INSERT["event_id"],
+                _PREPARED_INSERT["received_at"],
+                _PREPARED_INSERT["immutable_content_hash"],
+            ],
             False,
         ),
         (
