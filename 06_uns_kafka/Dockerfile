@@ -34,7 +34,7 @@ ENV UNS_MODULE="06_uns_kafka"\
     PYTHONUNBUFFERED=1 \
     PYTHONFAULTHANDLER=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    LIBRDKAFKA_VER="2.15.0" \
+    LIBRDKAFKA_VER="2.15.1" \
     UNS_CONF_DIR="/app/conf"
 # spell-checker:enable
 LABEL org.opencontainers.image.source=https://github.com/mkashwin/unifiednamespace/tree/main/06_uns_kafka
