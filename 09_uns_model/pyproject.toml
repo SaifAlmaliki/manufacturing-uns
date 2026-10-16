@@ -29,7 +29,7 @@ classifiers = [
 dependencies = [
     "uns_config",
     "sqlalchemy[asyncio]>=2.0.36,<3",
-    "asyncpg>=0.31.0,<0.32",
+    "asyncpg>=0.31.0,<0.33",
     "alembic>=1.14.0,<2",
     "dynaconf~=3.2",
     "pyyaml>=6.0.2,<7",
